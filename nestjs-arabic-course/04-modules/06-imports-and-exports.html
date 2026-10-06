@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Imports و Exports</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-imports-and-exports.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Imports و Exports</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>عبور الحد عمدًا: وحدة تصدّر مزوّدًا، وأخرى تستورد الوحدة لتحقنه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الطلبات تحتاج أن تسأل &quot;هل الكتاب موجود؟&quot; من غير أن تملك SQL الكتب ومن غير نسخ <code>BooksService</code>. الاستيراد العشوائي للملف يخرق التغليف الذي بنيناه.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>exports</code> واجهة الوحدة. <code>imports</code> إعلان أنك تستخدم تلك الواجهة. الاثنان معًا يشاركان النسخة المصدَّرة.</p>
+<h2>التعريف التقني</h2>
+<p>من التوثيق: أضف المزوّد إلى <code>exports</code>. أي وحدة تستورد هذه الوحدة تحصل على المزوّد وتشارك النسخة مع كل مستورد آخر. إعادة تسجيل الصنف في المستورد تعطيه نسخة منفصلة.</p>
+<p>يمكن إعادة تصدير وحدة كاملة بوضعها في <code>imports</code> و <code>exports</code> معًا، فيمرر جسر مثل <code>CoreModule</code> ما صدّرته الوحدة الداخلية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksModule exports BooksService
+OrdersModule imports BooksModule
+OrdersService constructor(booksService)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  controllers: [BooksController],
+  providers: [BooksService],
+  exports: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [BooksModule],
+  controllers: [OrdersController],
+  providers: [OrdersService],
+})
+export class OrdersModule {}
+</code></pre>
+<pre><code class="language-ts">constructor(private readonly books: BooksService) {}
+</code></pre>
+<p>داخل <code>OrdersService</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>التصدير لا ينسخ الكود. يشير إلى الرمز المسجّل.</li>
+<li>الاستيراد لا يعيد <code>providers: [BooksService]</code>.</li>
+<li>متحكم الطلبات لا يستورد وحدة الكتب إن كانت الخدمة فقط تحتاجها. الاستيراد على الوحدة التي يقع فيها الطالب.</li>
+<li>إن حذفت <code>exports</code> وفشل الإقلاع، الرسالة عن رمز غير موجود في السياق. أصلح التصدير لا بـ <code>new</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحاوية عند بناء <code>OrdersModule</code> تدمج الرموز المصدَّرة من <code>BooksModule</code> في المجموعة المرئية. تطابق <code>design:paramtypes</code> مع <code>BooksService</code>. النسخة هي التي أُنشئت مع <code>BooksModule</code> لا نسخة ثانية. لذلك حالة في الذاكرة داخل الخدمة — إن وُجدت — واحدة لكل المستوردين. هذا مفيد لاتصال مشترك، وخطر إن خزنت طلبًا على حقل.</p>
+<p>إعادة التصدير:</p>
+<pre><code class="language-ts">@Module({
+  imports: [BooksModule],
+  exports: [BooksModule],
+})
+export class CatalogModule {}
+</code></pre>
+<p>من يستورد <code>CatalogModule</code> يرى ما تصدّره <code>BooksModule</code> من غير أن يذكرها. استخدم الجسر عندما تكون الحزمة فعلًا واجهة واحدة، لا لإخفاء كل الاستيرادات.</p>
+<h2>مثال عملي</h2>
+<p>وحدة الطلبات تتحقق من وجود كتاب عبر <code>BooksService.findOne</code> قبل إنشاء الطلب. لا تستورد مستودع الكتب الداخلي إن لم يُصدَّر. إن احتجت دالة لا تريد نشرها، أبقها <code>private</code> على الصنف ولا تضف رمزًا ثانيًا إلى <code>exports</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استيراد الوحدة وتسجيل الخدمة مرة أخرى.</li>
+<li>تصدير خدمة كي &quot;ربما&quot; تُستخدم.</li>
+<li>حل فشل الحقن بجعل الوحدة <code>@Global</code> فورًا. الدرس التالي يشرح لماذا هذا آخر خيار.</li>
+</ul>
+<h2>متى نصدر؟</h2>
+<p>عندما توجد وحدة مستهلكة حقيقية.</p>
+<h2>متى لا نستورد الجذر؟</h2>
+<p>لا أحد يستورد <code>AppModule</code> ليحصل على خدمة. الاتجاه من الجذر إلى الميزات، والميزات تتبادل عبر واجهات ضيقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>imports</th>
+<th>exports</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>على الوحدة</td>
+<td>ماذا أحتاج من الغير</td>
+<td>ماذا أسمح به</td>
+</tr>
+<tr>
+<td>أثر النسخة</td>
+<td>أرى المصدَّر</td>
+<td>أشاركه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مفتاح في وحدة الكتب يسمح للطلبات بالحقن؟</p>
+<details><summary>الحل</summary>
+
+<p><code>exports</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما السطر الناقص في وحدة الطلبات؟</p>
+<details><summary>الحل</summary>
+
+<p><code>imports: [BooksModule]</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا شاركت كل المستوردات حالة المصفوفة داخل <code>BooksService</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن التصدير والاستيراد يشاركان نسخة الوحدة الواحدة، والمصفوفة حقل على تلك النسخة. الحالة الخاصة بطلب لا تُخزَّن هناك.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الواجهة العامة للوحدة؟</li>
+<li>ماذا ينشئ تسجيل الصنف مرتين؟</li>
+<li>أين يُكتب <code>imports</code>: في الطالب أم في المطلوب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التصدير يفتح الرمز، والاستيراد يستخدمه، والنسخة واحدة. هذا عبور الحد لا إلغاء له.</p>
+<h2>ماذا بعد؟</h2>
+<p>المشاركة المتكررة اسمها Shared Module، وهي نفس الآلية باسم أوضح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules (Shared modules): <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

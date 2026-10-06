@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>حدث اشتراك يصل إلى رف، ثم حدث نشر يخرج إلى شريك.</p>
+<h2>المثال 1 — وارد</h2>
+<p><code>bootstrap</code> فيه <code>{ rawBody: true }</code>. <code>POST /webhooks/billing</code> يقرأ <code>req.rawBody</code> ويطابق HMAC. ثم <code>applyBillingEvent</code> يدرج <code>evt_1</code> ويضع <code>active</code> على منظمة عميل Stripe المخزن. إعادة نفس البايتات ترد 200 ولا تمدد شيئًا مرتين. جسم بلا توقيع 400 ولا يُعاد كخطأ مؤقت.</p>
+<h2>المثال 2 — صادر</h2>
+<p>نشر كتاب يلتزم الصف والتدقيق ثم <code>WebhookDelivery</code> بمعرّف <code>evt_pub_b1</code>. العامل يرسل <code>POST</code> مع <code>X-Raf-Event-Id: evt_pub_b1</code> وتوقيع الطابع والجسم الخام. الشريك أعاد 503. <code>nextDelayMs</code> يجدول المحاولة بنفس المعرّف. بعد 2xx يتوقف الصف. الكتاب لا يعود مسودة.</p>
+<h2>المثال 3 — ما لا يحدث</h2>
+<p>الموظف فتح <code>/billing/success</code>. لا HMAC ولا إدراج <code>evt_1</code>. الحالة تبقى حتى يصل المثال 1.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

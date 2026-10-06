@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interface Segregation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-interface-segregation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Interface Segregation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تقسيم عقد واسع إلى واجهات يطلبها المستهلك فعلًا، حتى لا تعتمد وحدة Nest على دوال لا تناديها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>Store</code> فيها <code>find</code> و <code>save</code> و <code>sendMail</code> و <code>chargeCard</code>. المتحكم الذي يعرض كتابًا يحقن <code>Store</code> فيصبح قابلًا لإرسال بريد من مسار القراءة، واختباره يوفّر أربع دوال. مبدأ عزل الواجهات: لا تُجبر المستدعي على الاعتماد على ما لا يستخدم. في Nest ذلك رمز حقن أصغر أو خدمة مصدَّرة أضيق، لا واجهة ورقية فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اقسم حسب من ينادي: <code>BooksRead</code> للعرض و <code>BooksWrite</code> للإنشاء. ميزة التقارير تحقن القراءة. ميزة التحرير تحقن الكتابة. إن كان الصنف نفسه ينفذ الاثنين، سجّله مرة واربط الرمزين بـ <code>useExisting</code> حتى لا تزدوج النسخة. المستهلك يرى الواجهة الضيقة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export interface BooksRead {
+  findTitle(id: string): Promise&lt;string | null&gt;;
+}
+
+export interface BooksWrite {
+  save(input: { title: string; priceMinor: number }): Promise&lt;{ id: string }&gt;;
+}
+
+export const BOOKS_READ = Symbol(&#39;BOOKS_READ&#39;);
+export const BOOKS_WRITE = Symbol(&#39;BOOKS_WRITE&#39;);
+</code></pre>
+<pre><code class="language-ts">@Module({
+  providers: [
+    PrismaBooks,
+    { provide: BOOKS_READ, useExisting: PrismaBooks },
+    { provide: BOOKS_WRITE, useExisting: PrismaBooks },
+  ],
+  exports: [BOOKS_READ, BOOKS_WRITE],
+})
+export class BooksModule {}
+</code></pre>
+<p><code>CatalogController</code> يحقن <code>BOOKS_READ</code> فقط. وحدة لا تستورد الكتابة إن كانت لا تنشئ كتبًا. تصدير الرمزين من غير أن تستوردهما كل الميزة قرار المستورد: من يحتاج القراءة يستورد الوحدة ويسأل الرمز الذي يحقنه. إن أردت منع الكتابة عن مستورد معين، قسّم الوحدة إلى <code>BooksReadModule</code> تصدّر القراءة فقط.</p>
+<p>لا تفصل واجهتين تستعملهما دائمًا نفس الحالة. <code>place</code> التي تقرأ ثم تكتب يجوز أن ترى منفذًا واحدًا <code>OrdersPort</code> بعمليتين. العزل يتبع تنوع المستهلكين لا عدد الدوال.</p>
+<p>على مستوى الـ Module: لا تصدّر <code>BillingService</code> الكاملة إن كان الجار يحتاج <code>quoteTax</code> فقط. استخرج <code>TaxPolicy</code> وصدّرها. ذلك عزل سطح التصدير.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">PrismaBooks ينفذ القراءتين
+BOOKS_READ  -&gt; التقارير
+BOOKS_WRITE -&gt; التحرير
+useExisting يحافظ على نسخة واحدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تقرير:</p>
+<pre><code class="language-ts">constructor(@Inject(BOOKS_READ) private readonly books: BooksRead) {}
+</code></pre>
+<p>المترجم يمنع <code>save</code> على هذا الحقل. مزيف الاختبار دالة واحدة. هذا ربح يومي أوضح من اسم المبدأ.</p>
+<h2>شرح المثال</h2>
+<p>الرمز الضيق يوثق النية في الـ <code>constructor</code>. مراجعة السحب ترى أن التقرير لا يكتب. <code>useExisting</code> يبقي خطاف <code>onModuleDestroy</code> مرة على <code>PrismaBooks</code> إن كان هناك. فصل الرموز لا يفصل مجمع الاتصالات.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>صنف واحد يُبنى.</li>
+<li>رمزان يشيران إليه.</li>
+<li>كل مستهلك يُحقن بما طلب.</li>
+<li>وحدة تصدّر الرمزين ما زالت تملك التنفيذ.</li>
+<li>تقسيم الوحدة يمنع المستورد من حقن الكتابة حتى لو عرف اسم الرمز، إن لم يُصدَّر له.</li>
+<li>واجهة واسعة ما زالت تُمرر إن حقن أحدهم <code>PrismaBooks</code> مباشرة. لا تصدّر الصنف إن كان العزل مطلوبًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>Notifier</code> كان <code>email</code> و <code>sms</code> و <code>push</code>. الفاتورة ترسل بريدًا فقط. استخرج <code>ReceiptMail</code> بحقن واحد. الإضافة لاحقًا لقناة SMS ميزة أخرى تحقن عقد <code>Sms</code>، كما في الفتح والإغلاق. لا تُبقِ <code>notifyAll</code> على مسار الفاتورة «لأنه موجود على الواجهة».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>واجهة بكل عمليات CRUD لكل مستهلك.</li>
+<li>تقسيم دالتين يستعملهما دائمًا صنف واحد.</li>
+<li>تصدير الصنف العريض بجانب الرمز الضيق فيتسرب.</li>
+<li><code>useClass</code> مرتين بدل <code>useExisting</code> عند التقسيم.</li>
+<li>واجهات بلا مستهلكين مختلفين، ملفات فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مستهلكون يختلفون في العمليات التي ينادونها على نفس التنفيذ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حالة استخدام واحدة تحتاج القراءة والكتابة معًا. منفذ واحد أصدق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العقد</th>
+<th>من يحقنه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>BooksRead</code></td>
+<td>تقرير، صفحة عامة</td>
+</tr>
+<tr>
+<td><code>BooksWrite</code></td>
+<td>لوحة التحرير</td>
+</tr>
+<tr>
+<td><code>OrdersPort</code> بقراءتين</td>
+<td><code>PlaceOrder</code> وحده</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا مزيف التقرير أقصر بعد عزل <code>BooksRead</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يوفّر <code>findTitle</code> فقط، بلا <code>save</code> ولا بريد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تشارك <code>PrismaBooks</code> بين الرمزين بنسخة واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>سجّل الصنف مرة، ثم <code>useExisting</code> لكل من <code>BOOKS_READ</code> و <code>BOOKS_WRITE</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تقسم الوحدة لا الواجهة فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يجب ألا يستطيع المستورد حقن الكتابة أصلًا. أخرج <code>BooksReadModule</code> يصدّر رمز القراءة دون رمز الكتابة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يتبع التقسيم: عدد الدوال أم تنوع المستهلك؟</li>
+<li>لماذا لا يُصدَّر الصنف العريض؟</li>
+<li>متى يبقى المنفذ مجمّعًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>أعطِ كل مستهلك عقد النداء الذي يحتاجه. التنفيذ قد يبقى صنفًا واحدًا خلف <code>useExisting</code>. اقسم الوحدة عندما يجب أن يختفي الرمز من سطح التصدير.</p>
+<h2>ماذا بعد؟</h2>
+<p>Dependency Inversion: الوحدة العالية تعتمد على الرمز الذي تملكه، والتنفيذ الأدنى يطبّقه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

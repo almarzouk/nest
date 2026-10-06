@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Supertest</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-supertest.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Supertest</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرسال طلبات HTTP إلى تطبيق الاختبار عبر <code>supertest</code> وقراءة الرمز والجسم، مع <code>init</code> و <code>close</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نداء دالة المتحكم لا يمر على المسار ولا على JSON ولا على الأنبوب. متصفح يدوي لا يتكرر في CI. Supertest يستدعي الخادم الذي تبنيه Nest من غير متصفح، وعلى <code>getHttpServer()</code> من غير فتح منفذ إن لم تحتجه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد <code>createNestApplication</code> و <code>init</code>، <code>request(app.getHttpServer())</code> يبني الطلب. <code>expect(201)</code> يفحص الرمز. <code>expect({ id: &#39;42&#39; })</code> يفحص الجسم عندما يكون وهم الخدمة يعيد ذلك. في النهاية <code>close</code>.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة <code>supertest</code> وأنواعها للتطوير. صفحة Nest تستعملها للرحلة.</p>
+<pre><code class="language-ts">import request from &#39;supertest&#39;;
+import { Test } from &#39;@nestjs/testing&#39;;
+
+const books = { create: vi.fn(async () =&gt; ({ id: &#39;42&#39;, title: &#39;NestJS&#39; })) };
+
+const moduleRef = await Test.createTestingModule({
+  controllers: [BooksController],
+  providers: [{ provide: BooksService, useValue: books }],
+}).compile();
+
+const app = moduleRef.createNestApplication();
+app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+await app.init();
+
+await request(app.getHttpServer())
+  .post(&#39;/books&#39;)
+  .send({ title: &#39;NestJS&#39; })
+  .expect(201)
+  .expect({ id: &#39;42&#39;, title: &#39;NestJS&#39; });
+
+await app.close();
+</code></pre>
+<p><code>send</code> يضبط JSON. <code>post</code> يطابق <code>@Post(&#39;books&#39;)</code> أو <code>@Controller(&#39;books&#39;)</code> مع <code>@Post()</code>. إن كانت البادئة العامة <code>api</code> فركّبها في الاختبار كما في <code>main.ts</code>: <code>app.setGlobalPrefix(&#39;api&#39;)</code>.</p>
+<p>قالب Jest يستعمل <code>jest.fn</code> وقد يستورد <code>supertest</code> بالأسلوب نفسه. ESM قد يحتاج <code>import request from &#39;supertest&#39;</code> حسب إعداد القالب.</p>
+<p>لا تستدعِ <code>listen(3000)</code> إلا لعميل خارجي. Supertest لا يحتاجه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">init
+  request(getHttpServer()).post.send.expect
+close
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>جسم باطل:</p>
+<pre><code class="language-ts">await request(app.getHttpServer()).post(&#39;/books&#39;).send({}).expect(400);
+expect(books.create).not.toHaveBeenCalled();
+</code></pre>
+<p>هذا يثبت الأنبوب على التطبيق الاختباري. إن نُودي <code>create</code> فـ <code>useGlobalPipes</code> غير مطابق للإنتاج.</p>
+<h2>شرح المثال</h2>
+<p><code>expect</code> الثاني في السلسلة من Supertest يقارن الجسم. <code>expect</code> من Vitest ما زال متاحًا للوهم. لا تخلط قراءة الفشل: رمز <code>400</code> من Supertest، وعدد النداءات من الوهم. الإثنان معًا يمنعان «400 بعد ما كتبت الصف».</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>getHttpServer()</code> يعيد خادم HTTP الخاص بالمحول. Supertest يمرر الطلب في السلسلة: بادئة، أنبوب، حارس، متحكم، وهم. الرد يُسلسَل كأي تطبيق. <code>close</code> يوقف الخادم والخطافات. مؤقت <code>@Interval</code> إن سُجّل في الوحدة قد يبقي العملية حية حتى <code>close</code> أو حتى إلغاء الجدولة. لا تستورد <code>ScheduleModule</code> في هذا المصنع.</p>
+<p>لملف غلاف، <code>attach</code> من Supertest يرسل multipart. أبقِ تلك الرحلة واحدة. بقية حالات الملف وحدة على الأنبوب إن استخرجت التحقق.</p>
+<h2>مثال عملي</h2>
+<p>نشر بلا صلاحية، والحارس حقيقي لا وهم:</p>
+<pre><code class="language-ts">await request(app.getHttpServer()).post(&#39;/books/42/publish&#39;).expect(403);
+</code></pre>
+<p>لا <code>Authorization</code>. إن كان الحارس مستبدلًا بـ <code>overrideGuard</code> الذي يسمح دائمًا، فالرحلة لا تثبت <code>403</code>. اترك الحارس عندما يكون هو السؤال، واستبدل Prisma حتى لا تكتب صفًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>listen</code> على منفذ ثابت.</li>
+<li>نسيان <code>setGlobalPrefix</code> المطابق للإنتاج.</li>
+<li>رحلة واحدة تتصل بـ Redis والناشر.</li>
+<li>عدم <code>close</code> في <code>afterAll</code> عندما يرمي اختبار في الوسط. ضع <code>close</code> في <code>afterAll</code> لا بعد آخر توقع فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لعقد HTTP: رمز، جسم، ورفض الأنبوب أو الحارس، بعدد صغير من الطلبات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكل حالة في جدول <code>mapStatus</code>. تلك وحدة. Supertest هنا إطار حول التطبيق لا أداة متصفح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النداء</th>
+<th>الأنبوب</th>
+<th>الرمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>دالة المتحكم</td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>Supertest على <code>getHttpServer</code></td>
+<td>نعم إن رُكّب</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>متصفح</td>
+<td>نعم</td>
+<td>نعم، وغير متكرر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تعطي Supertest خادم Nest بلا <code>listen</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.getHttpServer()</code> بعد <code>init</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>afterAll</code> لـ <code>close</code> أفضل من سطر في نهاية الاختبار السعيد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الفشل قبل ذلك السطر يترك التطبيق مفتوحًا. <code>afterAll</code> يعمل بعد النجاح والفشل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رحلة <code>403</code> استبدلت الحارس بآخر يسمح دائمًا. ماذا أثبتت؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا شيء عن المنع. أثبتت المسار مع حارس وهمي. اترك الحارس الحقيقي واستبدل القاعدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضبط <code>send</code>؟</li>
+<li>أي إعداد من <code>main.ts</code> يجب أن يشاركه المصنع؟</li>
+<li>لماذا لا يُستورد <code>ScheduleModule</code> هنا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Supertest يضرب <code>getHttpServer()</code> بعد <code>init</code> ويقرأ الرمز والجسم، ثم <code>close</code> في <code>afterAll</code>. الأنبوب والحارس يُركَّبان كما في الإقلاع، والفروع تبقى في الوحدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>كيف تُفتح قاعدة الاختبار وتُنظَّف من غير لمس الإنتاج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+<li>Supertest: <a href="https://github.com/ladjs/supertest">https://github.com/ladjs/supertest</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

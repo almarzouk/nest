@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>الأخطاء الآن أصناف ورموز، والفلتر يكتب الجسم من غير أن يطوّل كل دالة. ما زال المتحكم يقرأ <code>request.user</code> و <code>request.headers</code> في التوقيع، والحارس يبحث عن مفتاح نصي مثل <code>&#39;roles&#39;</code> إن ألصقته بـ <code>SetMetadata</code> يدويًا في كل ملف.</p>
+<p>الفصل <code>16-custom-decorators</code> يبني زينة تخفي هذه القراءة: <code>createParamDecorator</code> لمعامل مثل المستخدم الحالي، و <code>SetMetadata</code> للبيانات، و <code>Reflector</code> لقراءتها. الشكل الذي يولّده Nest CLI 12 للزينة هو <code>Reflector.createDecorator()</code>. ثم <code>@CurrentUser</code> و <code>@Roles</code> و <code>@Public</code>. الأخيرة هي العلامة التي تفتح الصحة وتسجيل الدخول أمام حارس عام من غير <code>exclude</code> في Middleware.</p>
+<p>الزينة القديمة في TypeScript تحتاج <code>experimentalDecorators</code> و <code>emitDecoratorMetadata</code> و <code>reflect-metadata</code>. مشاريع CLI تفعّلها لأن الحقن يعتمد على بيانات المعاملات.</p>
+<p>افتح <a href="../16-custom-decorators/README.html"><code>16-custom-decorators</code></a> عندما تستطيع أن تشير إلى <code>request.user</code> في متحكم وتقول: هذا مكان زينة معامل لا مكان فلتر.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

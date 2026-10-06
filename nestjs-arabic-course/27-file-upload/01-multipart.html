@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multipart</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-multipart.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Multipart</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة طلب <code>multipart/form-data</code>: أجزاء نصية وملف ثنائي في رسالة HTTP واحدة، قبل أي حديث عن Multer أو المسار على القرص.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>غلاف الكتاب ثنائي. وضعه داخل JSON يجبرك على <code>base64</code>، فيكبر الجسم نحو الثلث، ويمر على <code>ValidationPipe</code> كأنه نص. جسم <code>application/octet-stream</code> يحمل ملفًا واحدًا بلا حقول مرافقة مثل <code>bookId</code>. النموذج الذي يرسل العنوان والصورة معًا يستخدم نوعًا آخر: <code>multipart/form-data</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الطلب يُقسَم بسلسلة فاصلة اسمها <code>boundary</code>. كل جزء إما حقل نص وإما ملف. الجزء يعلن اسم الحقل في <code>Content-Disposition</code>. الملف يضيف <code>filename</code> ونوع محتوى خاصًا به. الخادم لا يرى «كائنًا». يرى تيارًا يجب أن يُحلَّل قبل أن يصل المعالج.</p>
+<h2>التعريف التقني</h2>
+<p>ترويسة الطلب تشبه:</p>
+<pre><code class="language-text">Content-Type: multipart/form-data; boundary=----BookBoundary
+</code></pre>
+<p>ثم الجسم، مختصرًا:</p>
+<pre><code class="language-text">------BookBoundary
+Content-Disposition: form-data; name=&quot;title&quot;
+
+NestJS in Practice
+------BookBoundary
+Content-Disposition: form-data; name=&quot;cover&quot;; filename=&quot;cover.png&quot;
+Content-Type: image/png
+
+&lt;bytes&gt;
+------BookBoundary--
+</code></pre>
+<ul>
+<li><code>name</code> هو مفتاح الحقل. في المثال: <code>title</code> و <code>cover</code>.</li>
+<li><code>filename</code> يميّز جزء الملف عن جزء النص.</li>
+<li><code>Content-Type</code> داخل الجزء يعلنه العميل. هو ادّعاء، لا فحصًا للمحتوى.</li>
+<li>الحد الفاصل الأخير ينتهي بـ <code>--</code>.</li>
+</ul>
+<p><code>express.json()</code> و <code>ValidationPipe</code> على DTO لا يفكّان هذا الشكل. Multer، في صفحة الرفع، يتعامل مع <code>multipart/form-data</code> فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل (نموذج)
+  boundary
+    جزء name=&quot;title&quot;          نص
+    جزء name=&quot;cover&quot;          ملف + filename
+  محلل multipart              يفصل الأجزاء
+  المعالج                     يرى الحقول والملف جاهزين
+</code></pre>
+<p>JSON حقول. Multipart حقول وملفات. التحليل خطوة قبل الدالة.</p>
+<h2>أبسط مثال</h2>
+<p>نموذج يطابق الحقل الذي ستربطه لاحقًا بـ <code>FileInterceptor(&#39;cover&#39;)</code>.</p>
+<pre><code class="language-html">&lt;form action=&quot;/books/42/cover&quot; method=&quot;post&quot; enctype=&quot;multipart/form-data&quot;&gt;
+  &lt;input name=&quot;title&quot; value=&quot;NestJS in Practice&quot; /&gt;
+  &lt;input name=&quot;cover&quot; type=&quot;file&quot; accept=&quot;image/png&quot; /&gt;
+  &lt;button type=&quot;submit&quot;&gt;رفع&lt;/button&gt;
+&lt;/form&gt;
+</code></pre>
+<p>الأمر نفسه من الطرفية:</p>
+<pre><code class="language-bash">curl -F &quot;title=NestJS in Practice&quot; \
+  -F &quot;cover=@./cover.png;type=image/png&quot; \
+  http://localhost:3000/books/42/cover
+</code></pre>
+<p><code>-F</code> في curl يضبط <code>multipart/form-data</code> ويولّد الـ boundary. <code>-d</code> يرسل جسمًا آخر، فالمحلل الخاص بالملفات يرفضه.</p>
+<h2>شرح المثال</h2>
+<p><code>enctype</code> هو العقد. بدونه يرسل المتصفح <code>application/x-www-form-urlencoded</code>، فيضيع الملف أو يتحول إلى اسم فقط. اسم <code>cover</code> سيصبح <code>fieldName</code> في المعترض. اسم <code>title</code> سيظهر لاحقًا في <code>@Body()</code> بعد التحليل. الامتداد في <code>accept</code> توجيه للمتصفح، والخادم ما زال يرى بايتات.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>العميل يكتب الأجزاء متتابعة على الاتصال. المحلل يبحث عن الـ boundary، يقرأ ترويسات الجزء، ثم ينسخ البايتات حتى الفاصل التالي. الحقول النصية تُجمع في جسم. جزء الملف يُمسك حتى يكتمل أو يُرفض بسبب حد. إن غاب المحلل، يصل الجسم خامًا إلى مسار يتوقع JSON، فيفشل التحليل أو يُتجاهل الملف.</p>
+<p>ترتيب الأجزاء قرار للعميل. في رفع Express المعتاد يكتمل التحليل قبل المعالج. التدفق أثناء الوصول، على Fastify، هو <code>FileStreamInterceptor</code>.</p>
+<h2>مثال عملي</h2>
+<p>عقد غلاف: <code>title</code> و <code>notes</code> نص يقرؤهما <code>@Body()</code>، و <code>cover</code> ملف واحد يقرؤه <code>@UploadedFile()</code>. المعالج لا يقصّ الـ boundary بيده.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرسال الملف مع <code>Content-Type: application/json</code>.</li>
+<li>تسمية الحقل <code>file</code> في النموذج وانتظار <code>cover</code> في المعترض.</li>
+<li>الوثوق بـ <code>Content-Type</code> داخل الجزء كأنه فحص سحري للمحتوى.</li>
+<li>وضع صورة كبيرة كـ <code>base64</code> داخل JSON لأن «أبسط في Postman».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجتمع نص وملف في عملية واحدة: غلاف، مرفق تذكرة، شعار منظمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقائمة كتب بلا ملف. JSON يبقى العقد. ولرفع مباشر من المتصفح إلى مخزن كائن موقّع، الرسالة لا تمر أصلًا على Nest.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشكل</th>
+<th>ماذا يحمل</th>
+<th>من يحلله في Nest المعتاد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>application/json</code></td>
+<td>حقول</td>
+<td><code>express.json</code> ثم <code>ValidationPipe</code></td>
+</tr>
+<tr>
+<td><code>multipart/form-data</code></td>
+<td>حقول وملفات</td>
+<td>Multer عبر معترض الملف</td>
+</tr>
+<tr>
+<td><code>application/octet-stream</code></td>
+<td>بايتات بلا أسماء حقول</td>
+<td>جسم خام، عقد مختلف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الذي يفصل أجزاء الجسم بعضها عن بعض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قيمة <code>boundary</code> المعلنة في <code>Content-Type</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>-d &#39;{&quot;cover&quot;:&quot;...&quot;}&#39;</code> لا يغني عن <code>-F</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>-d</code> لا يبني <code>multipart/form-data</code>. المحلل الذي تنتظره معترضات الملفات يشترط هذا النوع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>جزء يحمل <code>filename</code> و <code>Content-Type: image/png</code> واسمه <code>cover</code>. ماذا يثبت ذلك عن البايتات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يثبت ادّعاء العميل فقط: اسم الحقل، واسم الملف، والنوع المعلن. البايتات قد تكون غير صورة. الفحص لاحق.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين جزء نصي وجزء ملف في <code>Content-Disposition</code>؟</li>
+<li>لماذا لا يكفي <code>ValidationPipe</code> هنا؟</li>
+<li>أي حقل في النموذج يجب أن يطابق <code>fieldName</code> لاحقًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Multipart رسالة متعددة الأجزاء بفاصل معلن. الحقول النصية والملف يسافران معًا، والتحليل شرط قبل أي تخزين.</p>
+<h2>ماذا بعد؟</h2>
+<p>Multer: المحلل الذي يقرأ هذه الرسالة على Express، وأين تذهب البايتات إن لم تختر قرصًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — File upload: <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+<li>MDN — <code>multipart/form-data</code>: <a href="https://developer.mozilla.org/docs/Web/HTTP/Reference/Methods/POST">https://developer.mozilla.org/docs/Web/HTTP/Reference/Methods/POST</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

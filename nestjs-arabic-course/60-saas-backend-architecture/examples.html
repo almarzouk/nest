@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>مكتبة «دار النيل» في رف من التسجيل حتى إشعار الدعوة.</p>
+<h2>المثال 1 — صفوف</h2>
+<p>مستخدم <code>u_sara</code> ومنظمة <code>org_nile</code> وعضوية <code>owner</code>. كتاب جديد يحمل <code>organizationId = org_nile</code> لا <code>userId</code>. مستخدم ثانٍ يُدعى بعضوية <code>editor</code>. دوره في الخريطة يسمح بالنشر ولا يسمح بقراءة الفوترة.</p>
+<h2>المثال 2 — نشر مشروط</h2>
+<p><code>PlanPolicy</code> ترى <code>trial</code> فتسمح. المعاملة تحدّث الكتاب وتدرج <code>audit_logs</code> بالفعل <code>books.publish</code> والفاعل <code>u_sara</code>. بعد الالتزام تُجدول <code>cover.resize</code> بحمولة <code>{ organizationId: org_nile, bookId }</code>. صفحة نجاح دفع لا تظهر في هذا المسار.</p>
+<h2>المثال 3 — دعوة لا تنتظر البريد</h2>
+<p><code>MembershipService</code> تدرج العضوية وصف <code>notifications</code> بحالة <code>pending</code> ونوع <code>member.invited</code> من غير رمز الدعوة داخل الحمولة. الرد 201. العامل لاحقًا يرسل البريد. تعطله يترك العضوية. مدير دار النيل يقرأ التدقيق في منظمته فقط فيرى النشر ولا يرى كتب مكتبة أخرى.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

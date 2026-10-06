@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Subscriptions و Payments</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-subscriptions-and-payments.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Subscriptions و Payments</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط نشر مشروع رف بخطة محلية، وبدء Checkout من الخادم، ومنع كتابة <code>active</code> عندما يفتح المتصفح صفحة النجاح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>أي مسودة تُنشر فورًا. أو <code>GET /billing/success</code> يحدّث الاشتراك لأن الموظف وصل. أو <code>BooksService</code> يستورد Stripe فيتعطل النشر مع المزود.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صف <code>Subscription</code> للمنظمة يبدأ <code>trial</code>. <code>POST /projects/:id/publish</code> يسمح به في <code>trial</code> و <code>active</code> فقط. <code>POST /billing/checkout</code> يعيد <code>{ url }</code> بمفتاح idempotency. الحالة <code>active</code> تُكتب لاحقًا في درس الويب هوك من حدث موقّع. هذه الشريحة توقف المسار الخطأ حتى لو تأخر الحدث.</p>
+<h2>التعريف التقني</h2>
+<p><code>PlanPolicy</code> تقرأ Prisma. <code>BillingModule</code> وحدها تعرف SDK. <code>price</code> من البيئة لا من الجسم. <code>metadata.organizationId</code> من السياق. success URL ثابت في الإعداد. لا رقم بطاقة. إن لم تصل مفاتيح Stripe في التطوير، السياسة تبقى على <code>trial</code> الذي يُزرع عند إنشاء المنظمة حتى يعمل النشر في الاختبار بلا شبكة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">trial عند إنشاء المنظمة
+publish يسأل السياسة
+checkout يعيد url فقط
+success لا يكتب
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async publish(organizationId: string, projectId: string) {
+  const status = await this.plans.statusOf(organizationId);
+  if (status !== &#39;trial&#39; &amp;&amp; status !== &#39;active&#39;) throw new ForbiddenException(&#39;plan blocked&#39;);
+  return this.prisma.project.update({
+    where: { id: projectId, organizationId },
+    data: { status: &#39;published&#39; },
+  });
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>where</code> المركب يمنع نشر مشروع الجار.</li>
+<li><code>past_due</code> يسقط في 403.</li>
+<li>لا استدعاء Stripe داخل الدالة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>إنشاء المنظمة يزرع <code>trial</code> في نفس المعاملة إن أمكن.</li>
+<li>النشر يقرأ الحالة ثم يحدّث المشروع.</li>
+<li>Checkout ينشئ جلسة ويعيد الرابط ولا يغيّر <code>trial</code>.</li>
+<li>الواجهة على success تستدعي <code>GET /billing</code> وترى الحالة القديمة حتى يصل الحدث.</li>
+<li>درس الويب هوك لاحقًا هو الكاتب لـ <code>active</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Get(&#39;success&#39;)
+success() {
+  return this.billing.view(currentTenantId());
+}
+</code></pre>
+<p><code>view</code> قراءة صف. لا <code>update</code>. إن غاب المسار أصلًا فالواجهة تتحدث إلى <code>GET /billing</code> فقط. المهم ألا يوجد <code>data: { status: &#39;active&#39; }</code> هنا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تفعيل في <code>success</code>.</li>
+<li>زر النشر ينتظر Stripe.</li>
+<li>تجربة محلية بلا صف <code>trial</code> فكل نشر 403 بلا تفسير.</li>
+<li>مفتاح idempotency من <code>Date.now()</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بعد وجود المشاريع. انشروا من <code>trial</code> في الاختبارات حتى لا تحتاج كل بيئة مفتاحًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنوا بوابة فواتير كاملة. ولا تمنعوا <code>GET /projects</code> عند <code>past_due</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الفعل</th>
+<th>يغيّر <code>Subscription.status</code> إلى active؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء منظمة</td>
+<td>يزرع <code>trial</code></td>
+</tr>
+<tr>
+<td>Checkout</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>success</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>publish</td>
+<td>يقرأ فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد Checkout للواجهة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ url }</code> والصف المحلي يبقى <code>trial</code> أو <code>incomplete</code> لا <code>active</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>past_due</code> ثم <code>POST publish</code>. ما الرمز وهل يتغير المشروع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>403 ولا <code>update</code>. القراءة ما زالت 200.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار بلا شبكة Stripe. كيف يُنشر مشروع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>زرع <code>Subscription.status = trial</code> للمنظمة ثم استدعاء النشر. لا حاجة إلى Checkout في هذا الاختبار. اختبار Checkout منفصل يتوقع <code>{ url }</code> فقط عندما يكون المفتاح موجودًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يزرع <code>trial</code>؟</li>
+<li>أي حالات تسمح بالنشر؟</li>
+<li>ماذا لا يفعل success؟</li>
+<li>أين يُمنع استيراد Stripe؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>النشر مشروط بحالة محلية. Checkout رابط. صفحة النجاح قراءة. <code>active</code> ليس نتيجة زر ولا نتيجة عودة المتصفح.</p>
+<h2>ماذا بعد؟</h2>
+<p>دعوة موظف لا تنتظر البريد. الدرس التالي الإشعارات في المشروع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Stripe — Checkout: <a href="https://docs.stripe.com/payments/checkout">https://docs.stripe.com/payments/checkout</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Users و Organizations</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-users-and-organizations.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Users و Organizations</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنشاء مكتبة رف وربط صاحب الحساب بعضوية <code>owner</code>، وجعل الطلبات التالية تعمل بمستأجر من ترويسة لا من جسم المشروع.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عمود <code>user.libraryName</code> يمنع الموظف الثاني. أو <code>POST /organizations</code> يأخذ <code>ownerId</code> من الجسم فيصبح أي شخص مالكًا. أو الترويسة تُقبل بلا فحص عضوية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>POST /organizations</code> بالاسم و slug، والمالك هو <code>user.id</code> من الإثبات. المعاملة تنشئ المنظمة والعضوية. بعدها يرسل العميل <code>X-Tenant-Id</code> بمعرّف منظمة هو عضو فيها. الحارس يرفض الغياب والتعارض مع الجسم.</p>
+<h2>التعريف التقني</h2>
+<p>جداول <code>Organization</code> و <code>Membership</code> بمفتاح <code>(userId, organizationId)</code> ودور <code>owner</code>. slug فريد وآمن للنطاق لاحقًا. لا كتب بعد؛ المشروع درس تالٍ حتى لا يُنشر كتالوج بلا مالك. <code>TenantGuard</code> من فصل العزل: المصدر الترويسة، ثم العضوية، والجسم إن حمل <code>organizationId</code> مخالفًا يُرفض بـ 400. سياق <code>AsyncLocalStorage</code> يحمل المعرّف للخدمات singleton.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إثبات user
+→ إنشاء منظمة + owner
+→ كل طلب لاحق: ترويسة + عضوية
+→ current organizationId
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model Organization {
+  id   String @id
+  name String
+  slug String @unique
+}
+
+model Membership {
+  userId         String
+  organizationId String
+  role           String
+  @@id([userId, organizationId])
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المفتاح المركب يمنع عضويتين مكررتين.</li>
+<li>الدور نص مغلق في الخدمة لا في قاعدة بلا فحص: <code>owner</code> فقط عند الإنشاء.</li>
+<li>المنظمة بلا مشاريع بعد مقبولة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحارس العام يعرف المستخدم. المسار ليس <code>@Public</code>.</li>
+<li>المعاملة تدرج المنظمة والعضوية.</li>
+<li>الرد 201 فيه <code>id</code> و <code>slug</code> لا قائمة مشاريع.</li>
+<li>الطلب التالي بلا ترويسة 403.</li>
+<li>ترويسة منظمة أخرى ليس عضوًا فيها 403 ولا تكشف مشاريعها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Post()
+@HttpCode(201)
+create(@CurrentUser(&#39;id&#39;) userId: string, @Body() body: { name: string; slug: string }) {
+  return this.orgs.createFor(userId, body);
+}
+</code></pre>
+<p><code>createFor</code> لا يقرأ <code>body.userId</code>. slug يطابق <code>^[a-z0-9-]+$</code> وإلا 400.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مالك من الجسم.</li>
+<li>ترويسة تكفي بلا عضوية.</li>
+<li>إنشاء مشروع تجريبي داخل معاملة المنظمة فيصعب حذف المكتبة في الاختبار.</li>
+<li>slug فيه أحرف تسمح بخلط المضيف لاحقًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مباشرة بعد التسجيل وقبل أي كتاب. كل الجداول التالية تحمل <code>organizationId</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنوا دعوة الموظف في هذه الشريحة إن لم تحتاجوها قبل المشاريع. الدعوة تعود مع الإشعارات. المالك وحده يكفي لأول نشر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>النتيجة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /organizations</code></td>
+<td>201 ومالك من الإثبات</td>
+</tr>
+<tr>
+<td>ترويسة بلا عضوية</td>
+<td>403</td>
+</tr>
+<tr>
+<td>جسم <code>organizationId</code> مخالف</td>
+<td>400</td>
+</tr>
+<tr>
+<td>قائمة منظمات الشخص</td>
+<td>200 وقد تكون فارغة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يُكتب في عضوية الإنشاء؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CurrentUser</code> لا حقل الجسم. الدور <code>owner</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا 403 لا 404 لترويسة منظمة لا ينتمي إليها الشخص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العقد هنا عن العضوية لا عن غياب مورد كتاب. 404 تُحفظ لمشروع بمعرّف داخل المكتبة لا يوجد. المنظمة التي لا تملكونها ليست «غير موجودة» بالضرورة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>شخص في مكتبتين. ماذا يتغير بين الطلبين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الترويسة فقط. الإثبات نفسه. الحارس يحمّل عضوية الزوج <code>(user, tenant)</code> كل مرة. لا دور داخل الرمز يغطي المكتبتين.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تُنشئ المعاملة؟</li>
+<li>من أين يُؤخذ المستأجر بعد الإنشاء؟</li>
+<li>ماذا يُرفض في الجسم؟</li>
+<li>لماذا slug مقيّد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المنظمة مكتبة والمالك من الإثبات في معاملة مع العضوية. الطلبات التالية ترويسة وعضوية. الجسم لا يختار المستأجر.</p>
+<h2>ماذا بعد؟</h2>
+<p>داخل المكتبة يُنشأ كتاب قيد التجهيز. الدرس التالي المشاريع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

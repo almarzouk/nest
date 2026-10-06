@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClientProxy</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-client-proxy.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ClientProxy</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرسال طلب أو حدث من عملية Nest إلى أخرى عبر <code>ClientProxy</code>، مع <code>send</code> البارد و <code>emit</code> الساخن والاتصال الكسول.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استدعاء HTTP يدوي لكل خدمة يكرر التسلسل والمهلة. <code>ClientProxy</code> واجهة موحّدة فوق الناقل: <code>send(pattern, payload)</code> للطلب-الرد و <code>emit(pattern, payload)</code> للحدث. تحصل على النسخة من <code>ClientsModule.register</code> برمز تحقنه، أو من <code>ClientProxyFactory.create</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>سجّل عميلًا باسم <code>&#39;BILLING&#39;</code> مع <code>transport</code> وخياراته. احقن <code>@Inject(&#39;BILLING&#39;)</code>. <code>send</code> يعيد <code>Observable</code> باردًا لا يرسل حتى <code>subscribe</code> أو <code>lastValueFrom</code>. <code>emit</code> ساخن ويحاول النشر فورًا. الاتصال لا يُفتح عند البناء. افتحه في <code>onApplicationBootstrap</code> بـ <code>connect()</code> إن أردت فشل الإقلاع عند غياب الناقل.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ClientsModule, Transport } from &#39;@nestjs/microservices&#39;;
+
+@Module({
+  imports: [
+    ClientsModule.register([
+      {
+        name: &#39;BILLING&#39;,
+        transport: Transport.TCP,
+        options: { port: 3001 },
+      },
+    ]),
+  ],
+})
+export class CheckoutModule {}
+</code></pre>
+<pre><code class="language-ts">import { Inject, Injectable, OnApplicationBootstrap } from &#39;@nestjs/common&#39;;
+import { ClientProxy } from &#39;@nestjs/microservices&#39;;
+import { lastValueFrom } from &#39;rxjs&#39;;
+
+@Injectable()
+export class CheckoutService implements OnApplicationBootstrap {
+  constructor(@Inject(&#39;BILLING&#39;) private readonly billing: ClientProxy) {}
+
+  async onApplicationBootstrap(): Promise&lt;void&gt; {
+    await this.billing.connect();
+  }
+
+  issue(orderId: string): Promise&lt;{ invoiceId: string }&gt; {
+    return lastValueFrom(
+      this.billing.send&lt;{ invoiceId: string }&gt;({ cmd: &#39;invoice.issue&#39; }, { orderId }),
+    );
+  }
+}
+</code></pre>
+<p>من غير <code>lastValueFrom</code> أو اشتراك، <code>send</code> لا يرسل. هذا سلوك الـ Observable البارد في التوثيق.</p>
+<p><code>emit(&#39;invoice.issued&#39;, payload)</code> للحدث. التوثيق يصف عائده كـ Observable ساخن يحاول التسليم حتى بلا اشتراك.</p>
+<p><code>ClientProxyFactory.create</code> عندما تأتي الخيارات من <code>ConfigService</code>. أغلق العميل في <code>onModuleDestroy</code> بـ <code>close()</code>.</p>
+<p>في Docker عنوان TCP هو اسم الخدمة <code>billing</code> لا <code>localhost</code> إن كان العميل في حاوية أخرى. <code>localhost</code> يبقى صحيحًا لعمليتين على الجهاز نفسه.</p>
+<p>من NestJS 12.1.1 على TCP، مستمعو <code>on()</code> على العميل يبقون حتى <code>close()</code> ويعاد لصقهم على المقبس التالي. لا تسجل المستمع داخل كل إعادة اتصال فتتضاعف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ClientsModule name BILLING
+  send -&gt; بارد -&gt; lastValueFrom -&gt; ناتج
+  emit -&gt; ساخن -&gt; حدث
+connect في onApplicationBootstrap
+close في onModuleDestroy
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>issue</code> أعلاه. النمط يطابق <code>@MessagePattern({ cmd: &#39;invoice.issue&#39; })</code>. الناتج <code>{ invoiceId }</code> بعد أن يرد المعالج.</p>
+<h2>شرح المثال</h2>
+<p><code>name</code> رمز الحقن مثل أي رمز نصي، فيحتاج <code>@Inject</code>. <code>connect</code> يؤخر الجاهزية حتى يقوم المقبس، وهو ما يربط هذا الدرس بـ <code>OnApplicationBootstrap</code>. إن كان الغياب مقبولًا عند الإقلاع فاترك الاتصال الكسول حتى أول <code>send</code>، وتوقع أول طلب أبطأ أو فاشلًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>التسجيل يبني مزودًا بالرمز <code>&#39;BILLING&#39;</code>.</li>
+<li>أول استخدام أو <code>connect</code> يفتح النقل.</li>
+<li><code>send</code> يسلسل النمط والحمولة وينتظر الرد على الـ Observable.</li>
+<li><code>lastValueFrom</code> يأخذ القيمة الأخيرة ويكمل الوعد أو يرفض عند خطأ أو إكمال فارغ.</li>
+<li><code>emit</code> ينشر دون انتظار معالج الطرف الآخر.</li>
+<li><code>close</code> عند الإيقاف يحرر المقبس إن استدعيتها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>إعداد من بيئة:</p>
+<pre><code class="language-ts">ClientsModule.registerAsync([
+  {
+    name: &#39;BILLING&#39;,
+    useFactory: (config: ConfigService) =&gt; ({
+      transport: Transport.TCP,
+      options: {
+        host: config.getOrThrow&lt;string&gt;(&#39;BILLING_HOST&#39;),
+        port: config.getOrThrow&lt;number&gt;(&#39;BILLING_PORT&#39;),
+      },
+    }),
+    inject: [ConfigService],
+  },
+])
+</code></pre>
+<p><code>BILLING_HOST=billing</code> في Compose و <code>127.0.0.1</code> على جهازك. لا تثبت <code>localhost</code> في الصورة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>send</code> بلا اشتراك فلا رسالة.</li>
+<li><code>localhost</code> من حاوية إلى حاوية.</li>
+<li>نسيان <code>close</code> فيترك مقبضًا بعد <code>app.close()</code>.</li>
+<li>حقن العميل في كيان الدومين.</li>
+<li>تسجيل <code>on()</code> داخل مسار الطلب على TCP فيتضاعف بعد 12.1.1.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>من عملية عميل نحو مستمع <code>@MessagePattern</code> أو <code>@EventPattern</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>نداء داخل نفس العملية. احقن الخدمة. ولا <code>send</code> لأثر لا تحتاج ناتجه.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الدالة</th>
+<th>Observable</th>
+<th>متى تُرسل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>send</code></td>
+<td>بارد</td>
+<td>عند الاشتراك</td>
+</tr>
+<tr>
+<td><code>emit</code></td>
+<td>ساخن</td>
+<td>فور النداء</td>
+</tr>
+<tr>
+<td><code>connect</code></td>
+<td>وعد</td>
+<td>عند استدعائك له</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>lastValueFrom</code> حول <code>send</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>send</code> لا يرسل حتى يُشترك في الـ Observable البارد، والوعد أسهل لـ <code>async</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين تفتح الاتصال إن أردت منع <code>listen</code> قبل الناقل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>await client.connect()</code> داخل <code>onApplicationBootstrap</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا تضع في <code>BILLING_HOST</code> داخل شبكة Compose؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اسم خدمة الفوترة مثل <code>billing</code>، لا <code>localhost</code>، لأن <code>localhost</code> هو الحاوية الحالية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رمز الحقن في <code>register</code>؟</li>
+<li>ما الفرق بين بارد وساخن هنا؟</li>
+<li>متى <code>ClientProxyFactory</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ClientProxy</code> يرسل نمطًا وحمولة. اشترك في <code>send</code>، واستعمل <code>emit</code> للحدث، وصل عند الإقلاع إن كان الناقل شرطًا، وأغلق عند الإيقاف، واستعمل اسم الخدمة بين الحاويات.</p>
+<h2>ماذا بعد؟</h2>
+<p>TCP: النقل الافتراضي بلا وسيط رسالة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

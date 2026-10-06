@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rate Limiting و @nestjs/throttler</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-rate-limiting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Rate Limiting و @nestjs/throttler</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع سقف لعدد الطلبات على الدخول وقراءة القوائم عبر <code>@nestjs/throttler</code> حتى يبطؤ التخمين والضغط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>POST /auth/sign-in</code> بلا سقف يسمح بتجربة كلمات المرور بسرعة. <code>GET /posts</code> المفتوح يمكن أن يُطلب آلاف المرات في ثانية. الحظر داخل الخدمة بعد نجاح المصادقة لا يحمي مسار الدخول أصلًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ThrottlerModule.forRoot</code> يعرّف نافذة زمنية <code>ttl</code> بالملي ثانية وحدًا <code>limit</code>. <code>ThrottlerGuard</code> يعدّ الطلبات لكل متتبع، غالبًا عنوان الشبكة. عند تجاوز الحد يرجع رفضًا. مسار أضيق مثل الدخول يأخذ حدًا أقل بـ <code>@Throttle</code>. مسار صحة يمكن استثناؤه بـ <code>@SkipThrottle</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm i --save @nestjs/throttler
+</code></pre>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { APP_GUARD } from &quot;@nestjs/core&quot;;
+import { ThrottlerGuard, ThrottlerModule } from &quot;@nestjs/throttler&quot;;
+
+@Module({
+  imports: [
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60_000, limit: 100 }],
+    }),
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
+export class AppModule {}
+</code></pre>
+<p><code>ttl</code> بالملي ثانية منذ الإصدار 5. المساعد <code>seconds(60)</code> من الحزمة أوضح من الرقم الخام. عدة نوافذ: مصفوفة فيها <code>name</code> مثل <code>short</code> و <code>long</code>.</p>
+<pre><code class="language-ts">@Throttle({ default: { limit: 5, ttl: 60_000 } })
+@Post(&quot;sign-in&quot;)
+signIn() {}
+</code></pre>
+<p>المفتاح <code>default</code> إن لم تسمِّ المجموعة. <code>@SkipThrottle()</code> على مسار الصحة. خلف وكيل اضبط <code>trust proxy</code> وإلا فكل الزوار يُحسبون عنوان الوكيل أو يُحسب عنوان خاطئ. الصفحة تعرض <code>ThrottlerBehindProxyGuard</code> الذي يقرأ <code>req.ips</code>.</p>
+<p>المخزن في الذاكرة لا يُجمع بين النسخ. الإنتاج متعدد النسخ يحتاج مخزنًا مشتركًا مثل Redis من مزودات المجتمع التي تذكرها الصفحة، ما دام ينفّذ <code>ThrottlerStorage</code>.</p>
+<p><code>forRootAsync</code> يقرأ الحد من <code>ConfigService</code>. هذا <code>forRootAsync</code> حقيقي ثانٍ بعد معاينة قاعدة البيانات.</p>
+<p>الحارس العام للـ throttler مستقل عن حارس المصادقة. ضعه بحيث يعدّ حتى الطلبات المرفوضة بـ <code>401</code>، وإلا فالتخمين لا يُحسب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">متتبع = عنوان
+نافذة 60ث
+عداد
+تجاوز -&gt; رفض
+الدخول حد أضيق من القائمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Post } from &quot;@nestjs/common&quot;;
+import { Throttle } from &quot;@nestjs/throttler&quot;;
+
+@Controller(&quot;auth&quot;)
+export class AuthController {
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Post(&quot;sign-in&quot;)
+  signIn() {
+    return { ok: true };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>خمسة محاولات في الدقيقة لهذا المسار، بينما الحد العام قد يكون أوسع للقراءة. العداد هنا ما زال على العنوان لا على البريد. مهاجم يبدّل العناوين يتخطى سقفًا ساذجًا، لذلك السقف يبطئ ولا يستبدل قفل الحساب أو تكلفة <code>scrypt</code>. اجمع الاثنين.</p>
+<p>لا تضع الحد <code>5</code> على <code>GET /posts</code> العام إن كان الموقع يحمّل الصفحة بعدة طلبات مشروعة، ولا تضع <code>1000</code> على الدخول.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحارس يزيد مفتاح التخزين لكل طلب ضمن <code>ttl</code>. عند بلوغ <code>limit</code> يرمي استثناء الحد، غالبًا <code>429</code> في هذا الإصدار من الحزمة، مع رؤوس <code>X-RateLimit-*</code> إن لم تعطّل <code>setHeaders</code>. انتهاء النافذة يعيد العد. النسخ بلا مخزن مشترك لكل واحدة عدادها، فيتضاعف الحد الفعلي بعدد العمليات.</p>
+<p>خلف <code>trust proxy</code> غير المضبوط قد يزوّر العميل <code>X-Forwarded-For</code> إن وثقت بكل وكيل. اضبط الثقة على الحلقة أو على وكيل معروف كما في الصفحة.</p>
+<h2>مثال عملي</h2>
+<p>اختبار يرسل ست محاولات دخول خاطئة من عنوان واحد ويتوقع رفض السادسة حتى لو كانت الكلمة صحيحة، ضمن النافذة. هذا يمنع إخفاء التخمين داخل <code>401</code> فقط. مسار <code>GET /health</code> عليه <code>@SkipThrottle</code> حتى لا يسقط فحص المنصة. في الإنتاج مفتاح Redis واحد لكل النسخ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>ttl: 60</code> بعد الإصدار 5 معتقدًا أنها دقيقة، وهي <code>60</code> مللي ثانية.</li>
+<li>حد الدخول نفسه حد تنزيل القوائم.</li>
+<li>ذاكرة محلية مع عشر نسخ.</li>
+<li><code>trust proxy</code> مفتوح لكل عنوان.</li>
+<li>اعتبار السقف بديلًا عن تجزئة بطيئة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على الدخول والتسجيل وأي مسار رخيص على المهاجم ومكلف عليك.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحماية وحيدة لكلمة المرور. ولا على حركة داخلية موثوقة بين خدمات بلا تمييز المتتبع، حتى لا تحظر نفسك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>حد عام</th>
+<th><code>@Throttle</code> على الدخول</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يحمي التطبيق من الضغط</td>
+<td>يضيّق التخمين</td>
+</tr>
+<tr>
+<td>قد يكون مئة في الدقيقة</td>
+<td>خمسة في الدقيقة مثلًا</td>
+</tr>
+<tr>
+<td>الحارس العام</td>
+<td>يضيّق مجموعة <code>default</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما وحدة <code>ttl</code> في <code>@nestjs/throttler</code> الحديث؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المللي ثانية. <code>seconds</code> من الحزمة توضح النية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا عداد الذاكرة لا يكفي خلف نسختين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل عملية تعد لنفسها، فيصبح الحد الفعلي مضاعفًا ويستطيع المهاجم توزيع المحاولات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الحد على عنوان IP فقط، والمهاجم يبدّل العناوين على <code>sign-in</code>. ماذا يبقى فعالًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تكلفة <code>PasswordHasher</code>، ورسالة موحدة، وقفل أو تأخير على البريد في الخدمة إن صممته، لا سقف العنوان وحده.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حارس يعدّ الطلبات؟</li>
+<li>لماذا الدخول أضيق؟</li>
+<li>ماذا خلف وكيل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/throttler</code> يعدّ الطلبات في نافذة ويمنع التجاوز. ضيّق الدخول، وشارك المخزن بين النسخ، وأبقِ التجزئة المكلفة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-csrf.html">CSRF</a> طلب المتصفح المزوّر من موقع آخر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Rate limiting: <a href="https://docs.nestjs.com/security/rate-limiting">https://docs.nestjs.com/security/rate-limiting</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

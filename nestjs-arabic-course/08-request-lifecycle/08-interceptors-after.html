@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interceptors بعد Controller</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-interceptors-after.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Interceptors بعد Controller</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت طريق العودة: Interceptors من المسار إلى Controller ثم إلى العام، لأن <code>Observable</code> أول داخل آخر خارج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مؤقت عام يقيس زمن الدالة إن خرج قبل مؤقت المسار سيرى زمنًا ناقصًا أو مكررًا. طريق الدخول كان من العام إلى المسار. الخروج عكسه، والقيمة المعادة أو الخطأ يصعدان في هذا العكس. معاملة الخروج كترتيب <code>@UseInterceptors</code> المكتوب على الملف تقلب القياس.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد Service، البند 8: Interceptor المسار، ثم Interceptor الـ Controller، ثم العام. إن تعددوا داخل المستوى، فترتيب الدخول كان ترتيب الربط، والخروج يعكسه أيضًا لأن كل غلاف يحيط بالذي يليه.</p>
+<p>التوثيق يلخص المستويات: 8.1 المسار، 8.2 Controller، 8.3 العام. أغلفة الدخول <code>G1</code> ثم <code>G2</code> ثم <code>C1</code> ثم <code>R1</code> تخرج <code>R1</code> ثم <code>C1</code> ثم <code>G2</code> ثم <code>G1</code>.</p>
+<h2>التعريف التقني</h2>
+<p>القيمة التي ترجع من المعالج تصدر من أضيق <code>Observable</code> إلى الأوسع. Interceptor يقدر أن يبدّل القيمة في طريق الصعود، مثل إضافة حقل وقت، ما دام الأسلوب القياسي شغالًا.</p>
+<p><code>@Res()</code> من غير <code>passthrough</code> يوقف هذا التعاقد: أنت تكتب الرد، و Interceptors التي تعتمد على القيمة المعادة لا ترى السلوك القياسي. <code>passthrough: true</code> يبقي الصعود.</p>
+<p>خطأ من الدالة أو الخدمة أو Pipe يصعد في الأغلفة نفسها عبر <code>catchError</code> بدل قيمة نجاح. معالج <code>catchError</code> الذي يرجع قيمة بديلة يكمل كنجاح من تلك النقطة إلى الأغلفة الأوسع. الذي يعيد الرمي يبقي الاستثناء لـ Exception Filters.</p>
+<p>Guards لا تشارك في هذا الصعود؛ هي انتهت قبل الدخول إلى اللف.</p>
+<p>كتابة <code>map</code> و <code>tap</code> فصل Interceptors. هنا اتجاه الصعود فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دخول: G1 -&gt; G2 -&gt; C1 -&gt; R1 -&gt; Pipes -&gt; الدالة
+خروج: R1 -&gt; C1 -&gt; G2 -&gt; G1 -&gt; طبقة الاستجابة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, UseInterceptors } from &#39;@nestjs/common&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+import { C1 } from &#39;./c1.interceptor.js&#39;;
+import { G1 } from &#39;./g1.interceptor.js&#39;;
+import { G2 } from &#39;./g2.interceptor.js&#39;;
+import { R1 } from &#39;./r1.interceptor.js&#39;;
+
+@UseInterceptors(C1)
+@Controller(&#39;loans&#39;)
+export class LoansTimingController {
+  constructor(private readonly loans: LoansService) {}
+
+  @UseInterceptors(R1)
+  @Get(&#39;open&#39;)
+  open() {
+    return this.loans.openList();
+  }
+}
+</code></pre>
+<p>افترض الربط العام <code>@UseInterceptors</code> العالمي أو <code>APP_INTERCEPTOR</code> بالترتيب <code>G1</code> ثم <code>G2</code>. الدخول <code>G1</code> ثم <code>G2</code> ثم <code>C1</code> ثم <code>R1</code>. الخروج بعد <code>openList</code> هو <code>R1</code> ثم <code>C1</code> ثم <code>G2</code> ثم <code>G1</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>openList</code> تعيد قائمة فتصعد JSON بعد آخر غلاف، برمز 200.</li>
+<li><code>R1</code> أول من يستطيع استبدال القائمة.</li>
+<li><code>G1</code> آخر من يراها قبل إرسال Nest.</li>
+<li>قياس في <code>G1</code> على طريق الخروج يشمل ما استهلكته الأغلفة الداخلية بعد رجوع الدالة، لا Middleware التي سبقت اللف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الاشتراك في الـ <code>Observable</code> الخارجي يشغّل الداخلي حتى الدالة. عندما تُحل القيمة تُطبق عمليات الغلاف الداخلي أولًا ثم الخارجي. هذا معنى أول داخل آخر خارج على طريق الاستجابة، وهو ما يلخصه التوثيق بـ «من المسار إلى Controller إلى العام».</p>
+<p>عدة Interceptors في <code>@UseInterceptors(G1, G2)</code> على المستوى العام: <code>G1</code> دخل أولًا لذا خرج آخرًا. لا حاجة إلى قاعدة ثانية غير اللف.</p>
+<p>بعد آخر غلاف عام تأخذ طبقة الاستجابة القيمة: كائن أو مصفوفة إلى JSON، وقيمة أولية كما هي، ورمز 200 أو 201 لـ POST. <code>@HttpCode</code> و <code>@Header</code> ما زالا جزءًا من ذلك الإرسال.</p>
+<h2>مثال عملي</h2>
+<p>غلاف مسار يضيف <code>handled: true</code> وغلاف عام يضيف <code>tookMs</code>. العميل يرى الحقلين لأن العام يخرج آخرًا ويرى كائن المسار بعد الإضافة. إن أضاف العام الحقل ثم استبدله غلاف المسار، فالترتيب المقلوب يعني أن المسار يعمل أولًا في الخروج ولا يرى حقل العام بعد. ضع الإضافة النهائية على الغلاف الأوسع.</p>
+<p>رمي <code>openList</code> لا يمرر القائمة على <code>map</code> النجاح. <code>catchError</code> في <code>R1</code> إن رجعت <code>{ handled: false }</code> يراها <code>C1</code> ثم <code>G2</code> ثم <code>G1</code> كقيمة. المرشح لا يعمل.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إضافة حقل نهائي داخل Interceptor المسار وتوقع أن العام سبقه</td>
+<td>العام يلف من الخارج ويخرج آخرًا</td>
+</tr>
+<tr>
+<td>قياس Middleware داخل غلاف الخروج</td>
+<td>Middleware خارج سلسلة <code>Observable</code> هذه</td>
+</tr>
+<tr>
+<td><code>@Res()</code> بلا <code>passthrough</code> وتوقع <code>map</code> على القيمة</td>
+<td>الأسلوب القياسي متوقف</td>
+</tr>
+<tr>
+<td>اعتبار ترتيب الخروج نسخة من ترتيب Guards</td>
+<td>Guards بلا صعود قيمة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لتعديل القيمة بعد القاعدة أو لقياس يشمل الدالة: حقل استجابة، زمن، أو تسجيل الناتج. الأوسع يحيط بالأضيق في القياس الكلي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمنع الطلب. الحارس انتهى. لتحويل <code>id</code> قبل الخدمة. Pipe سبقت الدالة. لرد خطأ بعد استثناء غير ممسوك. ذلك Exception Filter، إلا إذا اخترت أن <code>catchError</code> يحوّل الخطأ إلى قيمة ويكمل نجاحًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاتجاه</th>
+<th>الترتيب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>دخول Interceptor</td>
+<td>عام، Controller، مسار</td>
+</tr>
+<tr>
+<td>خروج Interceptor</td>
+<td>مسار، Controller، عام</td>
+</tr>
+<tr>
+<td>داخل المستوى عند الخروج</td>
+<td>عكس ترتيب الربط</td>
+</tr>
+<tr>
+<td>Exception Filter</td>
+<td>بعد أن يبقى الخطأ غير ممسوك، لا على طريق القيمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يرى القيمة أولًا بعد <code>return</code> من الدالة: Interceptor المسار أم العام؟</p>
+<details><summary>الحل</summary>
+
+<p>Interceptor المسار. العام آخر أغلفة الخروج.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>العام مربوط <code>G1</code> ثم <code>G2</code>. أي منهما يلمس القيمة آخرًا؟</p>
+<details><summary>الحل</summary>
+
+<p><code>G1</code>. دخل أولًا فخرج آخرًا داخل المستوى نفسه، وبعده لا غلاف Interceptor.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>R1</code> في <code>catchError</code> يرجع <code>{ ok: false }</code> بعد رمي الخدمة. ماذا يصل إلى <code>G1</code>، وهل يعمل مرشح المسار؟</p>
+<details><summary>الحل</summary>
+
+<p><code>G1</code> يرى <code>{ ok: false }</code> كقيمة صاعدة من الأغلفة الأضيق. مرشح المسار لا يعمل لأن الاستثناء مُسك وأُبدِل بقيمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما البنود 8.1 و 8.2 و 8.3؟</li>
+<li>لماذا <code>G1</code> يخرج بعد <code>G2</code> إن رُبطا بهذا الترتيب؟</li>
+<li>متى لا تصعد القيمة في هذه الأغلفة بالأسلوب القياسي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>بعد الخدمة تصعد القيمة من Interceptor المسار إلى Controller ثم العام، وعكس الربط داخل المستوى، لأن <code>Observable</code> أول داخل آخر خارج. آخر غلاف عام يسبق إرسال Nest. الخطأ غير الممسوك لا يكتمل كقيمة نجاح.</p>
+<h2>ماذا بعد؟</h2>
+<p>عندما يبقى الاستثناء: مرحلة Exception Filters.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle (Interceptors): <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

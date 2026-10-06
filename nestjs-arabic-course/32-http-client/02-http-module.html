@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HttpModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-http-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>HttpModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل عميل Axios كوحدة ديناميكية حتى يُحقن <code>HttpService</code> في خدمة الغلاف فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>axios.get</code> مباشرة داخل الخدمة يعمل ويتجاوز اختبار Nest ومهلة موحّدة. كل دالة تنسخ <code>baseURL</code> والمفتاح. <code>HttpModule.register</code> يبني النسخة مرة ويمنحها لمن يستورد الوحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحزمة <code>@nestjs/axios</code>. <code>HttpModule.register</code> خيارات Axios مثل <code>baseURL</code> و <code>timeout</code> و <code>maxRedirects</code>. الوحدة التي تستوردها تستطيع حقن <code>HttpService</code>. صفحة التوثيق الحالية لـ «HTTP client» تصف <code>@nestjs/http-client</code> و <code>HttpClientModule.register</code> بوعود <code>fetch</code>. هذا الدرس عن عميل Axios الذي بقي مدعومًا، لا عن ذلك المسار.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm i @nestjs/axios axios
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { HttpModule } from &#39;@nestjs/axios&#39;;
+import { IsbnService } from &#39;./isbn.service.js&#39;;
+
+@Module({
+  imports: [
+    HttpModule.register({
+      baseURL: &#39;https://isbn.example/v1&#39;,
+      timeout: 800,
+      maxRedirects: 2,
+    }),
+  ],
+  providers: [IsbnService],
+  exports: [IsbnService],
+})
+export class IsbnModule {}
+</code></pre>
+<p><code>timeout</code> بالميلي ثانية على طلب Axios نفسه، فيُقطع المقبس لا الملاحظ فقط. <code>baseURL</code> يُلصق بالمسار النسبي في <code>get(&#39;/books/978...&#39;)</code>.</p>
+<p><code>registerAsync</code> عندما يأتي العنوان من <code>ConfigService</code>:</p>
+<pre><code class="language-ts">HttpModule.registerAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) =&gt; ({
+    baseURL: config.getOrThrow&lt;string&gt;(&#39;ISBN_BASE_URL&#39;),
+    timeout: config.get&lt;number&gt;(&#39;ISBN_TIMEOUT_MS&#39;) ?? 800,
+    headers: { authorization: `Bearer ${config.getOrThrow&lt;string&gt;(&#39;ISBN_TOKEN&#39;)}` },
+  }),
+});
+</code></pre>
+<p>لا تضع الرمز في المستودع. الترويسة هنا ترويسة الصادر نحو الناشر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">IsbnModule
+  HttpModule.register -&gt; HttpService واحد لهذه الوحدة
+  IsbnService يحقنه
+BooksModule تستورد IsbnModule وترى IsbnService المصدَّر فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الجذر يستورد الميزة لا خيارات Axios:</p>
+<pre><code class="language-ts">@Module({
+  imports: [IsbnModule, BooksModule],
+})
+export class AppModule {}
+</code></pre>
+<p><code>BooksService</code> تحقن <code>IsbnService</code> ولا تحقن <code>HttpService</code>. تغيير الناشر يبقى داخل <code>IsbnModule</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>exports: [IsbnService]</code> يمنع الوحدات الأخرى من استخدام Axios العام بلا ترجمة. إن صدّرت <code>HttpModule</code> نفسه صار كل متحكم قادرًا على نداء أي عنوان. أبقِ العميل خلف خدمتك. <code>timeout: 800</code> يطابق مهلة الوكيل القصيرة من فصل RxJS، على المصدر هذه المرة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>register</code> ينشئ مزوّدات Axios و <code>HttpService</code> في نطاق الوحدة المستورِدة. كل استيراد لـ <code>HttpModule.register</code> بكائن مختلف يصنع عميلًا لإعداد تلك الوحدة، وهذا مطلوب إن كان لديك ناشر ISBN وخدمة بريد بعناوين مختلفة. لا تسجّل عميلًا عامًا واحدًا بـ <code>baseURL</code> الناشر ثم تستخدمه للبريد. <code>HttpService.axiosRef</code> يصل إلى Axios لمعترض مكتبة. القراءة العادية تبقى على التوابع التي تعيد تيارًا.</p>
+<h2>مثال عملي</h2>
+<p>خدمتان صادرتان، وحدتان:</p>
+<pre><code class="language-text">IsbnModule   baseURL الناشر   timeout 800
+CoverModule  baseURL الصور    timeout 2000
+</code></pre>
+<p>صورة الغلاف أبطأ من بحث النص. مهلة واحدة على عميل عام تقطع الصورة أو تُطيل البحث. <code>BooksModule</code> تستورد الاثنتين وتتحدث إلى خدمتين لا إلى <code>HttpService</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>HttpModule</code> من <code>@nestjs/common</code>. المسار <code>@nestjs/axios</code> لهذا الفصل.</li>
+<li>اعتبار <code>HttpClientModule</code> الاسم نفسه. ذاك عميل <code>fetch</code> في التوثيق الحالي.</li>
+<li>تصدير <code>HttpModule</code> من وحدة مشتركة بلا <code>baseURL</code> لكل منبع.</li>
+<li>كتابة <code>timeout: 800</code> وظن أنها ثوانٍ.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل منبع HTTP خارجي له عنوان ومهلة. وحدة لكل منبع أو لكل عقد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لنداء دوال Nest داخل العملية. ولا تستبدله بـ <code>fetch</code> خام في المتحكم إن كنت تريد الحقن والاختبار على <code>IsbnService</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التسجيل</th>
+<th>الحزمة</th>
+<th>الإرجاع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>HttpModule.register</code></td>
+<td><code>@nestjs/axios</code></td>
+<td><code>HttpService</code> و <code>Observable</code></td>
+</tr>
+<tr>
+<td><code>HttpClientModule.register</code></td>
+<td><code>@nestjs/http-client</code></td>
+<td><code>HttpClient</code> و <code>Promise</code></td>
+</tr>
+</tbody></table>
+<p>المتجر في هذا الفصل يكمّل الصف الأول.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة يُستورد <code>HttpModule</code> هنا؟</p>
+<details>
+<summary>الحل</summary>
+من `@nestjs/axios`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يُحقن <code>HttpService</code> في <code>BooksController</code>؟</p>
+<details>
+<summary>الحل</summary>
+حتى يبقى عنوان الناشر والمفتاح والترجمة داخل `IsbnService`. المتحكم يعرف الكتب لا Axios.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا عميل البريد لا يشارك <code>baseURL</code> عميل ISBN؟</p>
+<details>
+<summary>الحل</summary>
+لأن المهلة والعنوان والمفتاح مختلفة. `register` منفصل في كل وحدة يمنع لصق مسار البريد على مضيف الناشر.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وحدة <code>timeout</code> في <code>register</code>؟</li>
+<li>ماذا تصدّر <code>IsbnModule</code>؟</li>
+<li>أي تسجيل تستعمله عندما يأتي العنوان من الإعداد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>HttpModule.register</code> يبني عميل Axios لوحدة المنبع. الخدمة المصدَّرة هي واجهة المجال، والمهلة على المقبس لا على المعترض فقط.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>HttpService.get</code> والتيار، ثم <code>firstValueFrom</code> عند حافة الخدمة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — HTTP module (Axios): <a href="https://docs.nestjs.com/techniques/http-module">https://docs.nestjs.com/techniques/http-module</a></li>
+<li>NestJS — HTTP client (<code>fetch</code>): <a href="https://docs.nestjs.com/application/http-client">https://docs.nestjs.com/application/http-client</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

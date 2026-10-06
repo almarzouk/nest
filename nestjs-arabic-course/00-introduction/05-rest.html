@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REST</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-rest.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>REST</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تصميم واجهة حول موارد وأفعال HTTP، بحيث يفهم عميل جديد العناوين من غير دليل سري لكل عملية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>يمكن بناء API كامل فوق HTTP هكذا:</p>
+<pre><code class="language-text">POST /do
+{ &quot;action&quot;: &quot;deleteBook&quot;, &quot;id&quot;: &quot;2&quot; }
+</code></pre>
+<p>وكل عملية ثانية:</p>
+<pre><code class="language-text">POST /do
+{ &quot;action&quot;: &quot;getBook&quot;, &quot;id&quot;: &quot;2&quot; }
+</code></pre>
+<p>البروتوكول يسمح بذلك. العميل لا يستفيد من معنى <code>GET</code> أو <code>DELETE</code>، ولا من الذاكرة الوسيطة، ولا من الرموز القياسية. كل فعل اسم خاص داخل JSON، والدليل يكبر مع كل زر في المنتج.</p>
+<p>REST يضع العملية في مكانين يفهمهما أي عميل HTTP: <strong>عنوان المورد</strong> و <strong>طريقة HTTP</strong>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>REST أسلوب معماري يصمم الواجهة كموارد تُسمى بأسماء، وتُدار بأفعال HTTP القياسية. الكتاب مورد. قائمة الكتب مورد. قراءة الكتاب <code>GET</code>. حذفه <code>DELETE</code>.</p>
+<p>الاسم جاء من Roy Fielding، أحد مؤلفي HTTP، في رسالته عام 2000. ما يستخدمه معظم مطوري الـ API اليوم هو تطبيق عملي لمجموعة من تلك الأفكار، وخصوصًا: موارد، وواجهة موحدة، ورسائل تصف نفسها، وعدم حفظ حالة الجلسة داخل البروتوكول.</p>
+<h2>التعريف التقني</h2>
+<p>REST اختصار Representational State Transfer.</p>
+<ul>
+<li><strong>Resource</strong>: أي شيء نسميه ونخاطبه. قد يكون كيانًا (كتاب) أو مجموعة (الكتب) أو عملية نريد كشفها كمورد (عملية دفع) عندما يكون ذلك أصدق من اختراع فعل.</li>
+<li><strong>Representation</strong>: ما يُنقل عبر الشبكة هو تمثيل للمورد، غالبًا JSON، لا الكائن الحي داخل الخادم.</li>
+<li><strong>Uniform interface</strong>: نخاطب الموارد بالطريقة نفسها: URI + Method + تمثيل.</li>
+<li><strong>Stateless</strong>: الطلب يحمل ما يلزم لفهمه. حالة المستخدم تُحفظ في مخزن ونشير إليها بإثبات يرسله العميل، لا في &quot;موقع داخل محادثة HTTP&quot; ضمنية.</li>
+</ul>
+<p>لن نحفظ القيود الأكاديمية الستة كقائمة اختبار. سنستخدم ما يغيّر تصميم المسارات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">اسم المورد في العنوان     الفعل في Method     التمثيل في الجسم
+
+/books                    GET                 قائمة
+/books                    POST                كتاب جديد في الطلب
+/books/2                  GET                 كتاب واحد
+/books/2                  PATCH               الحقول المتغيرة
+/books/2                  DELETE              لا تمثيل، أو تأكيد
+
+/books/2/reviews          GET                 مراجعات هذا الكتاب
+</code></pre>
+<p>المجموعة، ثم العنصر، ثم مورد فرعي يملكه العنصر.</p>
+<h2>أبسط مثال</h2>
+<p>كتب.</p>
+<pre><code class="language-text">GET    /books
+POST   /books
+GET    /books/2
+PUT    /books/2
+PATCH  /books/2
+DELETE /books/2
+</code></pre>
+<p>عنوان سيئ لنفس العمليات:</p>
+<pre><code class="language-text">GET  /getAllBooks
+POST /createNewBook
+GET  /getBookById?id=2
+POST /deleteBook
+</code></pre>
+<p>السطر الثاني يعيد اختراع الأفعال داخل الأسماء. <code>GET /getAllBooks</code> يقول &quot;اجلب&quot; مرتين، وبأسلوب خاص بك.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>/books</code> مجموعة. <code>GET</code> يقرأها. <code>POST</code> يضيف إليها عنصرًا لأن الخادم هو الذي سيختار المعرّف غالبًا.</li>
+<li><code>/books/2</code> عنصر معروف. المعرّف في المسار لأن العنوان يحدد المورد.</li>
+<li><code>PUT /books/2</code> يستبدل تمثيل الكتاب كاملًا.</li>
+<li><code>PATCH /books/2</code> يرسل الفرق.</li>
+<li><code>DELETE /books/2</code> يحذف هذا المورد.</li>
+<li><code>POST /deleteBook</code> يخفي الحذف داخل جسم أو داخل اسم. الوسيط الذي يرى <code>POST</code> لن يعرف أنها عملية حذف.</li>
+</ul>
+<p>جمع الاسم في المسار (<code>/books</code>) شائع لأنه جدول عناوين واضح. بعض الفرق تستخدم مفردًا. الأهم ثبات القاعدة. سنثبت قواعد التسمية في فصل REST API Design.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>REST ليس بروتوكولًا يعمل داخل Nest، ولا مكتبة. لا يوجد مفسّر REST يتحقق من مساراتك. الالتزام اتفاق بشري يراجعه الفريق.</p>
+<p>عندما يصل <code>GET /books/2</code>:</p>
+<ol>
+<li>HTTP يوصل الطريقة والمسار كما هما.</li>
+<li>إطار التوجيه — Express اليوم، و Nest لاحقًا — يطابق المسار إلى دالة.</li>
+<li>الدالة تقرأ المورد <code>2</code> من المخزن.</li>
+<li>تبني تمثيلًا مناسبًا للخارج. التمثيل قد يحذف حقولًا داخلية مثل تكلفة الجملة أو هاش كلمة المرور.</li>
+<li>تكتب <code>200</code> والتمثيل.</li>
+</ol>
+<p>المورد يبقى على الخادم. العميل حصل على نسخة وصفية في هذه اللحظة.</p>
+<h2>مثال عملي</h2>
+<p>متجر صغير: كتب، ومراجعات يملكها كتاب.</p>
+<pre><code class="language-text">GET    /books/2/reviews
+POST   /books/2/reviews
+DELETE /books/2/reviews/9
+</code></pre>
+<p>المراجعة <code>9</code> لا تُخاطب كـ <code>/reviews/9</code> إلا إذا كانت المراجعة في منتجك موردًا مستقلًا يُبحث عنه وحده. إذا كانت دائمًا ابنة كتاب، المسار المتداخل يصدق العلاقة.</p>
+<p>عملية ليست اسمًا بسيطًا: &quot;انشر الكتاب&quot;.</p>
+<p>خياران صادقان:</p>
+<pre><code class="language-text">POST /books/2/publication
+</code></pre>
+<p>هنا عملية النشر مورد: لها لحظة، وقد يكون لها سجل. أو:</p>
+<pre><code class="language-text">PATCH /books/2
+{ &quot;status&quot;: &quot;published&quot; }
+</code></pre>
+<p>هنا النشر حالة على الكتاب. اختر الشكل الذي يطابق عملك. كلاهما أوضح من:</p>
+<pre><code class="language-text">POST /books/publishBookNow
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الظن أن أي JSON على HTTP هو REST. الصيغة لا تصنع الأسلوب.</li>
+<li>أفعال داخل المسار: <code>/books/updatePrice</code>.</li>
+<li><code>GET</code> يغيّر حالة، مثل <code>GET /books/2/publish</code>.</li>
+<li>إرجاع كائن قاعدة البيانات كاملًا كأنه هو التمثيل. التمثيل عقد عام. شكل الجدول تفصيل داخلي.</li>
+<li>جعل كل العمليات <code>POST</code> على عنوان واحد &quot;لأن أسهل في الكود&quot;. السهولة تنتقل إلى كل عميل لاحق.</li>
+</ul>
+<h2>متى نستخدم REST؟</h2>
+<p>عندما يملك المنتج مواردًا واضحة، وعملاء متعددين (ويب، جوال، شركاء)، وتريد أن تكفي معرفة HTTP لتخمين نصف الواجهة.</p>
+<p>NestJS لا يفرض REST. التوثيق يشرح Controllers كمعالجات طلبات HTTP، وتقدر أن تصمم المسارات كما تشاء. الدورة ستصممها بأسلوب REST لأن العقد يبقى مفهومًا عندما يكبر الفريق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<ul>
+<li>عندما يحتاج العميل شكل شجرة بيانات تتغير مع كل شاشة، وتريد أن يطلب هو الحقول. هذا أحد دوافع GraphQL، وله فصل كامل بعد أن نتقن REST.</li>
+<li>عندما يكون الحديث أحداثًا بين خدمات، لا إدارة موارد يسأل عنها عميل. الرسائل والطوابير أنسب.</li>
+<li>لعملية داخلية واحدة بين برنمجين تسيطر عليهما أنت وقد يكون RPC أبسط. حتى هنا، مورد صغير غالبًا يكفي.</li>
+</ul>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>HTTP</th>
+<th>REST</th>
+<th>JSON</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ما هو</td>
+<td>بروتوكول نقل</td>
+<td>أسلوب تصميم واجهة فوقه</td>
+<td>صيغة تمثيل</td>
+</tr>
+<tr>
+<td>هل يلزم الآخرين</td>
+<td>الرسالة يجب أن تكون HTTP إذا اخترته</td>
+<td>اتفاق تصميمي</td>
+<td>اتفاق على شكل الجسم</td>
+</tr>
+<tr>
+<td>مثال كسره</td>
+<td>طلب لا يفهمه الخادم</td>
+<td><code>POST /doAction</code> لكل شيء</td>
+<td>جسم لا يُحل كـ JSON</td>
+</tr>
+</tbody></table>
+<p>Express:</p>
+<pre><code class="language-ts">app.get(&#39;/books&#39;, handler)
+app.post(&#39;/books&#39;, handler)
+app.delete(&#39;/books/:id&#39;, handler)
+</code></pre>
+<p>Nest لاحقًا:</p>
+<pre><code class="language-ts">@Get()
+@Post()
+@Delete(&#39;:id&#39;)
+</code></pre>
+<p>البادئة <code>/books</code> ستأتي من <code>@Controller(&#39;books&#39;)</code>. هذا تنظيم مسارات، وسنشرحه في فصله. المعنى REST واحد.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>حوّل العمليات إلى Method ومسار:</p>
+<ol>
+<li>قائمة مراجعات الكتاب 2.</li>
+<li>إنشاء مراجعة على الكتاب 2.</li>
+<li>حذف المراجعة 9 التابعة للكتاب 2.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>GET /books/2/reviews</code></li>
+<li><code>POST /books/2/reviews</code></li>
+<li><code>DELETE /books/2/reviews/9</code></li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>واجهة فيها <code>POST /books/2/update</code> وجسم <code>{ &quot;price&quot;: 10 }</code>. أعد كتابتها بأسلوب REST، وبرر الاختيار بين <code>PATCH</code> و <code>PUT</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>PATCH /books/2</code> مع الجسم <code>{ &quot;price&quot;: 10 }</code> لأن الطلب يغيّر جزءًا. <code>PUT</code> يناسب إرسال الكتاب كاملًا كما يجب أن يصبح. المسار <code>/update</code> يعيد الفعل داخل العنوان.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تصميم أولي: <code>GET /users/5/orders/8/items/3/setShipped</code>. اقترح موردًا أوضح لعملية الشحن. اذكر Status واحدًا للنجاح.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الشحن حالة على البند أو عملية مستقلة. خيار الحالة: <code>PATCH /users/5/orders/8/items/3</code> مع <code>{ &quot;status&quot;: &quot;shipped&quot; }</code> و <code>200</code>. خيار العملية إذا كان للشحن سجل ووقت وشركة نقل: <code>POST /orders/8/items/3/shipments</code> و <code>201</code>. لاحظ أن سلسلة <code>/users/5</code> قد تكون زائدة إذا كان رقم الطلب فريدًا عالميًا؛ العنوان يحمل ما يلزم لتحديد المورد. <code>GET</code> خرج لأنه كان يغيّر حالة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يعيش الفعل في واجهة REST، وأين يعيش اسم المورد؟</li>
+<li>لماذا لا يكفي إرجاع JSON لنسمي الواجهة REST؟</li>
+<li>ما الفرق بين المورد وتمثيله؟</li>
+<li>متى يصبح GraphQL مرشحًا، من غير أن ننتقل إليه الآن؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>REST يسمي الموارد في المسار ويستخدم أفعال HTTP بمعناها. العميل يحصل على تمثيل. الخادم يبقى صاحب الحالة. الأسلوب اتفاق تصميم، لا مفتاح تشغله داخل Nest.</p>
+<h2>ماذا بعد؟</h2>
+<p>التمثيل الأشيع في هذه الواجهات هو JSON. الدرس التالي يفصله: ماذا يصلح أن يُكتب، وماذا يرفضه المفسر، ولماذا لا يكفي <code>interface</code> في TypeScript ليفرضه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Roy Fielding، Architectural Styles and the Design of Network-based Software Architectures، الفصل الخامس (أصل تعريف REST): <a href="https://www.ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm">https://www.ics.uci.edu/~fielding/pubs/dissertation/rest_arch_style.htm</a></li>
+<li>MDN — HTTP request methods: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods</a></li>
+<li>NestJS — Controllers (ستقرأها لاحقًا عندما نربط المسارات بالدوال): <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

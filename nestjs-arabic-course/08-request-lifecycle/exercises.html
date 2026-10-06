@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس، ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>ما ترتيب Guards العام و Controller والمسار؟</li>
+<li>هل Exception Filter خطوة على <code>GET</code> يعيد قائمة من غير رمي؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>العام، ثم Controller، ثم المسار. داخل المستوى ترتيب الربط.</li>
+<li>لا. المرشح لاستثناء غير ممسوك. النجاح يمر بخروج Interceptors ثم الاستجابة.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>رتّب طلب <code>PATCH /loans/9</code> فيه: <code>ParseIntPipe</code> على <code>:id</code>، <code>MemberGuard</code> على الصنف، <code>TimingInterceptor</code> عام، <code>stamp</code> على وحدة <code>@Global()</code>، <code>requestId</code> في <code>app.use</code>، و <code>LoansService.update</code> أعادت كائنًا.</p>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>requestId</code> ثم <code>stamp</code> (وأي Middleware جذر أو وحدة أبعد حسب الرسم، بعد <code>@Global()</code>).</li>
+<li><code>MemberGuard</code> بعد أي <code>APP_GUARD</code>.</li>
+<li>دخول <code>TimingInterceptor</code>.</li>
+<li><code>ParseIntPipe</code> ضمن مرحلة Pipes، بعد Pipes العام و Controller والمسار إن وُجدت، لأنها Pipe معامل.</li>
+<li>المعالج ثم <code>update</code>.</li>
+<li>خروج <code>TimingInterceptor</code> ثم الاستجابة JSON برمز 200.</li>
+<li>لا مرشح.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>ثلاثة أعطال على التطبيق نفسه. حدد أول مرحلة تُتخطى وما الذي يرد:</p>
+<ol>
+<li><code>app.use</code> يرمي قبل <code>next</code>.</li>
+<li><code>MemberGuard</code> يعيد <code>false</code> و <code>@UsePipes(RouteSpecificPipe)</code> على <code>PATCH</code>.</li>
+<li>الخدمة ترمي، <code>TimingInterceptor</code> في <code>catchError</code> يرجع <code>{ ok: false }</code>، و <code>LoanPatchFilter</code> على الدالة.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Guards وما بعدها لا تبدأ. المرشح العام فقط يستطيع صياغة الخطأ. مرشح <code>PATCH</code> غير متاح.</li>
+<li><code>RouteSpecificPipe</code> والمعالج لا يبدآن. استثناء الرفض يُفحص من مرشح المسار إلى Controller ثم العام.</li>
+<li>طريق النجاح لا يحمل نتيجة <code>update</code>. <code>catchError</code> أمسك الخطأ، فـ <code>LoanPatchFilter</code> لا يرى الاستثناء. الأغلفة الأوسع من المؤقت ترى <code>{ ok: false }</code> كقيمة، ثم ترسلها Nest كنجاح.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

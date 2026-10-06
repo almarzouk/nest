@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>قبل التنفيذ وبعده</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-before-and-after.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>قبل التنفيذ وبعده</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفريق السطور التي قبل <code>next.handle()</code> عن العوامل التي داخل <code>pipe</code> بعد أن يصدر المعالج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عداد زمن يُطرح في المكان الخطأ فيقيس صفرًا، أو يغلف الرد قبل أن توجد قيمة. الفريق يضع كل الكود فوق <code>return</code> لأن الدالة تبدو متزامنة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ما يُكتب قبل نداء <code>handle</code> يعمل في طريق الدخول، بعد الحارس وقبل إكمال السلسلة الداخلية. ما يُكتب داخل <code>tap</code> أو <code>map</code> على التيار يعمل في طريق الخروج، بعد الدالة، أو لا يعمل إن أخطأ التيار قبل العامل.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة المعترضات تقول ذلك حرفيًا: المنطق قبل المعالج يوضع قبل نداء <code>handle</code>. ما بعد التنفيذ عوامل على الـ <code>Observable</code> الذي ترجعه <code>handle</code>.</p>
+<pre><code class="language-ts">intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+  const started = Date.now();
+  return next.handle().pipe(
+    tap(() =&gt; console.log(Date.now() - started)),
+  );
+}
+</code></pre>
+<p><code>started</code> يُلتقط في الدخول. الطرح داخل <code>tap</code> في الخروج. الفرق هو زمن ما بين اللحظتين، ومنه الأنبوب والدالة إن كان هذا المعترض يلفهما.</p>
+<p><code>tap</code> لا تُستدعى إن أخطأ المعالج، إلا إذا مررت كائن مراقب فيه <code>error</code>، أو استخدمت <code>finalize</code> الذي يعمل عند الاكتمال أو الخطأ. الصفحة تذكر هذا الحد حتى لا تظن أن «بعد» يشمل الفشل تلقائيًا.</p>
+<p><code>map</code> في الخروج تغيّر القيمة الصاعدة. سطر قبل <code>handle</code> لا يرى تلك القيمة لأنها لم تصدر.</p>
+<p>رمي استثناء قبل <code>return</code> يمنع بناء التيار في ذلك المعترض. رمي داخل <code>map</code> خطأ على التيار يقدر معترض خارجي أن يلتقطه بـ <code>catchError</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دخول: كود فوق handle     لا يرى جسم الرد
+        handle() يصف الداخل
+خروج: pipe(tap, map)     يرى القيمة أو يفشل قبلها
+</code></pre>
+<p>المتغير <code>started</code> يُغلق عليه من الدخول إلى الخروج. هذا جسر بين الوجهين، لا قراءة للمستقبل.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type CallHandler, type ExecutionContext, Injectable, type NestInterceptor } from &#39;@nestjs/common&#39;;
+import { type Observable } from &#39;rxjs&#39;;
+import { tap } from &#39;rxjs/operators&#39;;
+
+@Injectable()
+export class DeskTimingInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const request = context.switchToHttp().getRequest&lt;{ method: string }&gt;();
+    const method = request.method;
+    const started = Date.now();
+    return next.handle().pipe(
+      tap(() =&gt; {
+        console.log(`${method} ${Date.now() - started}ms`);
+      }),
+    );
+  }
+}
+</code></pre>
+<p><code>method</code> يُقرأ في الدخول لأن الطلب معروف قبل الدالة. المدة تُطبع في الخروج بعد النجاح فقط.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>قراءة <code>method</code> قبل <code>handle</code> صحيحة. الرد غير موجود بعد.</li>
+<li><code>tap</code> ترى لحظة الإصدار لا لحظة دخول <code>intercept</code> إلا عبر <code>started</code>.</li>
+<li>فشل <code>reserve</code> برمي استثناء يتخطى هذه <code>tap</code>. أضف <code>finalize</code> من <code>rxjs</code> إن أردت سطرًا في الحالتين: <code>finalize(() =&gt; log(Date.now() - started))</code>.</li>
+<li>لا تحسب المدة قبل <code>return</code> بطرح <code>Date.now()</code> من نفسه. الخروج لم يحدث.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الاستدعاء يعمل جسم <code>intercept</code> حتى <code>return</code>. في تلك النافذة الأنابيب الداخلية والدالة لم تعمل بعد إن كان هناك معترضات أقرب لم تُشغَّل. ثم يشترك الإطار. الداخل يعمل. عند الإصدار تنفرج عوامل هذا الـ <code>pipe</code> من الداخل نحو هذا المعترض.</p>
+<p>لذلك «قبل» في معترض عام قد يحيط بمعترض المسار كله: كود العام قبل كود المسار في الدخول، وعامل العام بعد عامل المسار في الخروج. الدرس الأخير يرسم ذلك. هنا يكفي أن وجهي الدالة نفسها مختلفان.</p>
+<p><code>catchError</code> عامل خروج. لا يلتقط رميًا حدث في سطر فوق <code>handle</code> في المعترض نفسه قبل بناء <code>pipe</code>. ضع ما تريد التقاطه على التيار.</p>
+<h2>مثال عملي</h2>
+<p>سجل الشباك يطبع <code>POST</code> فور دخول المعترض، ثم يطبع المدة حين يرجع <code>{ id }</code> من الحفظ. طلب يفشل في <code>ParseIntPipe</code> قبل الدالة: سطر الدخول طُبع، و <code>tap</code> النجاح لم تُطبع، و <code>finalize</code> إن أضفتها تطبع المدة حتى الفشل. هكذا تفرّق «وصلنا إلى الالتفاف» عن «المقعد حُفظ».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع <code>map</code> التي تقرأ ناتج الدالة فوق <code>handle</code>.</li>
+<li>قياس الزمن كله فوق <code>return</code> فيصبح صفرًا تقريبًا.</li>
+<li>توقع أن <code>tap</code> تسجّل أخطاء الحفظ.</li>
+<li>كتابة الرد على <code>response</code> قبل <code>handle</code> ثم تكرار الكتابة من القيمة الراجعة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>اقرأ الطلب والساعة والعنوان قبل <code>handle</code>. غيّر القيمة أو سجّل النجاح داخل <code>pipe</code>. سجّل الطرفين، نجاحًا وفشلًا، بـ <code>finalize</code> أو بفرعي <code>tap</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفحص الإذن في وجه الدخول. الحارس سبقك. لا تحوّل <code>seat</code> هنا إن كان الأنبوب لم يعمل بعد وأنت داخل معترض يلف الأنبوب: القيمة الخام قد تكون ما زالت نصًا في تلك اللحظة على الطريق إلى الأنبوب، بينما وجه الخروج يرى ما بعد الدالة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>يرى الطلب</th>
+<th>يرى ناتج الدالة</th>
+<th>عند رمي الدالة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قبل <code>handle</code></td>
+<td>نعم</td>
+<td>لا</td>
+<td>قد لا يُستأنف إن رميت أنت</td>
+</tr>
+<tr>
+<td><code>tap</code> بلا خطأ</td>
+<td>بعد النجاح</td>
+<td>نعم</td>
+<td>لا تُستدعى</td>
+</tr>
+<tr>
+<td><code>finalize</code></td>
+<td>—</td>
+<td>لا يبدّل القيمة</td>
+<td>يُستدعى أيضًا</td>
+</tr>
+<tr>
+<td><code>map</code></td>
+<td>—</td>
+<td>يبدّلها</td>
+<td>لا تُستدعى إن سبقها الخطأ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تضع <code>const started = Date.now()</code> وأين تطبع الفرق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القراءة قبل <code>next.handle()</code>. الطرح داخل <code>tap</code> أو <code>finalize</code> على <code>pipe</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تسجّل <code>tap(() =&gt; ...)</code> فشل <code>reserve</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>tap</code> بالدالة الواحدة تعمل عند الإصدار الناجح. الخطأ يمر بجانب هذا المسار. استخدم معالج الخطأ في <code>tap</code> أو <code>finalize</code> أو <code>catchError</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد رقم الحالة HTTP في السجل بعد التنفيذ. هل تقرؤه قبل <code>handle</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الحالة النهائية تُحدَّد بعد الناتج أو الاستثناء. على النجاح اقرأها في عامل الخروج. قبل <code>handle</code> قد تكون الحالة ما زالت الافتراضية ولم تكتب الدالة شيئًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعمل قبل <code>handle</code> وماذا يعمل داخل <code>pipe</code>؟</li>
+<li>لماذا المدة فوق <code>return</code> وحدها مضللة؟</li>
+<li>كيف تسجّل الفشل أيضًا؟</li>
+<li>هل <code>map</code> ترى قيمة قبل الدالة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>وجه الدخول سطور قبل <code>handle</code>: طلب وساعة. وجه الخروج عوامل التيار: قيمة أو خطأ بعد التنفيذ. أغلق على ما احتجته من الدخول، ولا تقرأ الناتج قبل أن يصدر.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي معترض تسجيل يطبع الطريقة والمسار والمدة باستخدام هذا الفرق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

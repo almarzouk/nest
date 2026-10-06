@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SQL Injection</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-sql-injection.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>SQL Injection</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إبقاء قيم المستخدم خارج نص SQL، في <code>pg</code> و Prisma و TypeORM و Drizzle.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بحث يبني الاستعلام هكذا:</p>
+<pre><code class="language-ts">`SELECT id, title FROM &quot;Post&quot; WHERE title ILIKE &#39;%${q}%&#39;`
+</code></pre>
+<p>إن كان <code>q</code> هو <code>&#39; OR 1=1 --</code> يتغير معنى الاستعلام. قد تُعاد صفوف لا تخص البحث، أو يُنفَّذ أمر إضافي إن سمحت الصلاحية. التحقق من أن <code>q</code> سلسلة لا يمنع ذلك: النص ما زال SQL.</p>
+<h2>الفكرة ببساطة</h2>
+<p>محرك القاعدة يفصل النص عن القيم. العنصر النائب <code>$1</code> في PostgreSQL، والقيمة في مصفوفة منفصلة. المحرك لا يفسّر القيمة كأوامر. أي مسار يلصق النص يعيد الخطر، حتى داخل ORM.</p>
+<h2>التعريف التقني</h2>
+<p><code>node-postgres</code> مع موضع:</p>
+<pre><code class="language-ts">await pool.query(
+  `SELECT id, title FROM &quot;Post&quot; WHERE title ILIKE $1 LIMIT $2`,
+  [`%${q}%`, 20],
+);
+</code></pre>
+<p>علامة <code>%</code> هنا حرف بحث <code>LIKE</code> داخل القيمة، لا لصق SQL. <code>q</code> نفسه لا يُقحم في النص.</p>
+<p>Prisma: الاستعلام الموسوم يمرّر القيم معاملات.</p>
+<pre><code class="language-ts">const rows = await prisma.$queryRaw&lt;Array&lt;{ id: number; title: string }&gt;&gt;`
+  SELECT id, title FROM &quot;Post&quot; WHERE title ILIKE ${&quot;%&quot; + q + &quot;%&quot;} LIMIT ${20}
+`;
+</code></pre>
+<p><code>$queryRawUnsafe</code> يأخذ نصًا واحدًا. لصق <code>q</code> داخله يعيد الحقن. استخدمه فقط لنص ثابت كتبته أنت.</p>
+<p>TypeORM: <code>dataSource.query(sql, [param])</code> مع مواضع. بناء النص بقالب من <code>req.query</code> هو الخطأ. <code>synchronize</code> لا علاقة له بالحقن.</p>
+<p>Drizzle: قالب <code>sql</code> يربط القيم. <code>sql.raw(q)</code> يدرج النص كما هو. لا تمرّر بحث المستخدم إلى <code>raw</code>.</p>
+<p><code>ValidationPipe</code> و <code>@IsString</code> يفحصان الشكل قبل المعالج. لا يحوّلان الاستعلام إلى معاملات. أنبوب نظيف ثم لصق في SQL يبقى حقنًا.</p>
+<p>Prisma <code>findMany({ where: { title: { contains: q } } })</code> يبني الاستعلام بمعاملات. فضّله على SQL خام للبحث العادي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نص الاستعلام ثابت
+القيمة في قناة ثانية
+المحرك يقارن النص لا ينفّذه
+لصق القالب يلغي القناة الثانية
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;../prisma/prisma.service.js&quot;;
+
+@Injectable()
+export class SearchService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  titles(q: string) {
+    return this.prisma.post.findMany({
+      where: { title: { contains: q, mode: &quot;insensitive&quot; } },
+      take: 20,
+      select: { id: true, title: true },
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>contains</code> يولّد <code>LIKE</code> مع معامل. <code>q</code> فيه اقتباس أو <code>--</code> يُبحث عنه كحروف في العنوان. <code>take: 20</code> حد التطبيق، منفصل عن الأمان، حتى لا يعيد البحث الجدول كله. <code>select</code> لا يسحب <code>passwordHash</code> من جدول آخر بالخطأ.</p>
+<p>إن احتجت ترتيبًا لا يعبر عنه العميل، أبقِ <code>ORDER BY</code> في النص الثابت. لا تضع <code>order</code> القادم من الاستعلام داخل القالب.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>البروتوكول يرسل الاستعلام ثم القيم. المخطط يربط <code>$1</code> بعد التحليل. لذلك <code>&#39; OR 1=1</code> يصبح نمط بحث لا شرطًا منطقيًا. في اللصق، المحلل يرى الشرط الجديد قبل التنفيذ.</p>
+<p>الصلاحيات على دور القاعدة ما زالت تهم: دور التطبيق لا يملك <code>DROP</code>. ذلك يضيّق الضرر ولا يجعل اللصق آمنًا.</p>
+<p>فهارس <code>title</code> بحث لاحق في فصل القوائم. الحقن مستقل عن وجود الفهرس.</p>
+<h2>مثال عملي</h2>
+<p>اختبار يمرّر <code>q = &quot;&#39; OR 1=1 --&quot;</code> إلى <code>titles</code> ويتوقع ألا تعود كل المقالات، بل ما يطابق النص حرفيًا، غالبًا مصفوفة فارغة. الاختبار نفسه على دالة تلصق القالب يفشل لأنه يعيد الصفوف. أضف الاختبار على أي <code>$queryRawUnsafe</code> بقي في المشروع.</p>
+<p>مراجعة: ابحث عن <code>queryRawUnsafe</code> و <code>sql.raw</code> و `.query(`` . كل تطابق مع إدخال مستخدم يُعاد كتابته بمعاملات.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تهريب يدوي للاقتباس بدل معامل.</li>
+<li><code>ORDER BY ${sort}</code> لأن Prisma لا يرتب بنص حر في <code>findMany</code> فينتقل أحدهم إلى SQL خام.</li>
+<li>ظن أن ORM يمنع الحقن في كل الدوال. الدالة غير الآمنة تكسر ذلك.</li>
+<li>وضع المنطق الأمني في <code>WHERE</code> الملصوق ثم الاكتفاء بـ <code>forbidNonWhitelisted</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>معاملات أو دوال ORM للمعاملات في كل استعلام يلمس إدخالًا خارجيًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن تفويض الصف. استعلام صحيح قد يعيد مقال Ada إن نسيت <code>authorId</code> أو <code>published</code>. الحقن والتخويل سؤالان.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>معامل / <code>findMany</code></th>
+<th>لصق نص</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>القيمة بيانات</td>
+<td>القيمة قد تصبح SQL</td>
+</tr>
+<tr>
+<td><code>$queryRaw</code> موسوم</td>
+<td><code>$queryRawUnsafe</code> مع إدخال</td>
+</tr>
+<tr>
+<td><code>sql</code> في Drizzle</td>
+<td><code>sql.raw</code> مع إدخال</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>@IsString()</code> على <code>q</code> يمنع الحقن؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. السلسلة قد تكون SQL. الفصل يتم بالمعامل أو بدالة ORM التي تربط القيمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اكتب استدعاء <code>pool.query</code> يبحث بعنوان مع حد <code>20</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>pool.query(&#39;SELECT id, title FROM &quot;Post&quot; WHERE title ILIKE $1 LIMIT $2&#39;, [&#39;%&#39; + q + &#39;%&#39;, 20])</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يبقى <code>ORDER BY ${sort}</code> خطيرًا حتى لو كان <code>sort</code> واحدًا من قائمتك في أغلب الطلبات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طلب واحد خارج القائمة يغيّر الاستعلام إن لُصق. اقبل المفتاح في <code>@IsIn</code> ثم اختر عمودًا من خريطة ثابتة في الكود، ولا تدرج النص في SQL.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما فرق <code>$queryRaw</code> عن <code>$queryRawUnsafe</code>؟</li>
+<li>أين توضع <code>%</code> في بحث <code>LIKE</code>؟</li>
+<li>هل الفهرس يمنع الحقن؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاستعلام الثابت والقيمة المنفصلة. ORM الآمن يربط القيم. أي دالة تستقبل SQL نصيًا تحتاج أن يكون النص منك وحدك.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./07-validation-as-security.html">Validation كطبقة أمن</a> ماذا يوقف الأنبوب وماذا يتركه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — TypeORM: <a href="https://docs.nestjs.com/data/typeorm">https://docs.nestjs.com/data/typeorm</a></li>
+<li>NestJS — Drizzle: <a href="https://docs.nestjs.com/data/drizzle">https://docs.nestjs.com/data/drizzle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

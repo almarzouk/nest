@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Complexity</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-complexity.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Complexity</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رفض استعلام كتب رف الذي تتجاوز تكلفته سقفًا تحسبه قبل التنفيذ، باستخدام <code>graphql-query-complexity</code> كما تدمجه صفحة Complexity في Nest، لا بديكور خيالي اسمه <code>@MaxComplexity</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد إصلاح N+1 ما زال العميل يستطيع طلب <code>books(limit: 500)</code> مع حقول علاقتها غالية. كل حقل رخيص وحده. المجموع يضغط القاعدة. التحقق من العمق لا يكفي لأن قائمة عريضة وضحلة قد تكون أغلى من سلسلة قصيرة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل حقل له رقم تكلفة. تُجمع الأرقام على المستند بعد ما يُفهم وقبل ما يُنفَّذ. إن تجاوز المجموع السقف تُرمى <code>GraphQLError</code> ولا تُستدعى الخدمات. الحقل الغالي يصرّح بتكلفته. الباقي يأخذ تكلفة افتراضية.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة رسمية للنهج code first. الحزمة <code>graphql-query-complexity</code> توفّر <code>getComplexity</code> و <code>fieldExtensionsEstimator</code> و <code>simpleEstimator</code>. تضع الصنف الذي ينفّذ <code>ApolloServerPlugin</code> وتوسمه بـ <code>@Plugin()</code> من <code>@nestjs/apollo</code>، وتحقن <code>GraphQLSchemaHost</code> من <code>@nestjs/graphql</code>. داخل <code>didResolveOperation</code> تحسب التعقيد من <code>schema</code> و <code>document</code> و <code>variables</code>. التقدير الأول الذي يعيد رقمًا يفوز. <code>fieldExtensionsEstimator</code> يقرأ <code>complexity</code> من <code>@Field</code> و <code>@Query</code>. <code>simpleEstimator({ defaultComplexity: 1 })</code> يغطي الباقي. السقف في مثال التوثيق 20 للعرض؛ رف تختار سقفها بالقياس. الصنف يُضاف إلى <code>providers</code>. لا يشحن Nest هذه القاعدة كخيار <code>complexity: 20</code> على <code>GraphQLModule</code> وحده.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">books(limit) تكلفة = limit × تكلفة الابن
+author تكلفة 1 عبر simpleEstimator
+المجموع &gt; السقف → GraphQLError قبل الخدمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Field, Int, ObjectType } from &#39;@nestjs/graphql&#39;;
+
+@ObjectType()
+export class Book {
+  @Field(() =&gt; Int, { complexity: 1 })
+  priceCents!: number;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>complexity: 1</code> يذهب إلى extensions ويقرأه <code>fieldExtensionsEstimator</code>.</li>
+<li>من غير الإضافة في خيارات الحقل، <code>simpleEstimator</code> هو الذي يضع الرقم الافتراضي.</li>
+<li>الحقل لا يرفض الاستعلام وحده. الجمع والسقف في الإضافة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Apollo يحل المستند ويصل إلى <code>didResolveOperation</code>.</li>
+<li><code>getComplexity</code> يمشي على الشجرة ويستدعي المقدّرات بالترتيب.</li>
+<li>حقل فيه <code>complexity</code> رقمًا أو دالة يأخذ ذلك الرقم.</li>
+<li>دالة على <code>@Query</code> مثل <code>options.args.limit * options.childComplexity</code> تجعل الحد يضاعف تكلفة الأبناء.</li>
+<li>فوق السقف تُرمى <code>GraphQLError</code> فلا يعمل <code>@Query</code> الذي يضرب Prisma.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تكلفة قائمة تتناسب مع <code>limit</code>، كما في صفحة Complexity:</p>
+<pre><code class="language-ts">import { Args, Int, Query, Resolver } from &#39;@nestjs/graphql&#39;;
+import { Book } from &#39;./book.model.js&#39;;
+
+@Resolver()
+export class BooksResolver {
+  @Query(() =&gt; [Book], {
+    complexity: (options) =&gt; Number(options.args.limit ?? 20) * (options.childComplexity ?? 1),
+  })
+  books(@Args(&#39;limit&#39;, { type: () =&gt; Int, nullable: true }) limit = 20) {
+    return [];
+  }
+}
+</code></pre>
+<p>الإضافة نفسها من التوثيق: <code>maxComplexity</code> الذي اخترتموه، والمقدّران <code>fieldExtensionsEstimator()</code> ثم <code>simpleEstimator({ defaultComplexity: 1 })</code>. <code>limit</code> غير المقيّد في الـ Pipe ما زال خطرًا؛ التعقيد خط دفاع ثانٍ بعد حد 50 من عقد REST إن شاركتم نفس الخدمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سقف 20 منسوخ من مثال العرض على مخطط إنتاج فيرفض <code>books { title author { name } }</code> العادي.</li>
+<li>حساب التعقيد بعد جلب الصفوف. الفائدة أن الرفض يسبق الخدمة.</li>
+<li>نسيان تسجيل الصنف في <code>providers</code> فتبقى الدالة بلا أثر.</li>
+<li>اعتبار التعقيد بديلًا عن DataLoader. استعلام تحت السقف ما زال يستطيع عمل N+1.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مخطط عام يفتح حقولًا متداخلة وحدود قوائم يختارها العميل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>مخطط داخلي بعمليات معروفة وثابتة. هناك قائمة استعلامات محفوظة أقوى، ودرسها لاحقًا. ولا كبديل لاختبار حمل حقيقي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>ماذا تحد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DataLoader</td>
+<td>عدد الرحلات لكل مستوى</td>
+</tr>
+<tr>
+<td>Complexity</td>
+<td>مجموع تكلفة الشجرة قبل التنفيذ</td>
+</tr>
+<tr>
+<td>حد <code>limit</code> في الـ Args</td>
+<td>عرض قائمة واحدة</td>
+</tr>
+<tr>
+<td>Depth</td>
+<td>طول السلسلة فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>حقل بلا <code>complexity</code> ومقدّر بسيط افتراضيه 1. كم يساهم الحقل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>1، لأن <code>simpleEstimator</code> يعمل عندما لا يعيد المقدّر السابق رقمًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تُضرب تكلفة <code>books</code> في <code>limit</code> لا تُترك 1؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل عنصر يعيد شجرة أبناء. تكلفة 1 للقائمة تخفي أن <code>limit: 200</code> أغلى بعشرين مرة من <code>limit: 10</code>. الدالة في مثال التوثيق تضرب <code>args</code> في <code>childComplexity</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الاستعلام تحت السقف وما زال SQL ينفجر. أي درس يعود، ولماذا لا ترفع السقف أولًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>درس N+1 و DataLoader. رفع السقف يسمح باستعلام أغلى على حل سيئ. أصلح الرحلات ثم عدّل السقف حسب قياس المسار الشرعي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة تحسب الرقم، وأي ديكور Nest يعلن الإضافة؟</li>
+<li>متى تُرمى <code>GraphQLError</code> نسبة إلى تنفيذ الـ Resolver؟</li>
+<li>ماذا يقرأ <code>fieldExtensionsEstimator</code>؟</li>
+<li>لماذا السقف 20 في التوثيق ليس معيار رف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التعقيد مجموع تكاليف الحقول قبل التنفيذ. Nest يدمجه بإضافة Apollo وحزمة <code>graphql-query-complexity</code> وخيار <code>complexity</code> على <code>@Field</code> و <code>@Query</code>. ليس خيارًا واحدًا على الوحدة يغني عن تسجيل الإضافة.</p>
+<h2>ماذا بعد؟</h2>
+<p>التعقيد يوزن العرض. سلسلة <code>book { author { books { author { books } } } }</code> قد تبقى تحت سقف ساذج إن كانت التكاليف 1. الدرس التالي يحد العمق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Complexity: <a href="https://docs.nestjs.com/graphql/complexity">https://docs.nestjs.com/graphql/complexity</a></li>
+<li>graphql-query-complexity: <a href="https://github.com/slicknode/graphql-query-complexity">https://github.com/slicknode/graphql-query-complexity</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

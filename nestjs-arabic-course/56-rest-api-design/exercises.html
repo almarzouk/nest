@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — صحح العقد</h2>
+<p>راجع هذه الردود واقترح التصحيح:</p>
+<ol>
+<li><code>GET /getAllBooks</code> → 200 و <code>[{...}]</code></li>
+<li><code>GET /books?author=غير-موجود</code> → 404</li>
+<li><code>POST /books</code> أنشأ صفًا → 200 و <code>{ id }</code></li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>GET /books</code>. 2. 200 و <code>{ &quot;data&quot;: [], &quot;nextCursor&quot;: null }</code>. 3. 201 مع الجسم الذي يحتوي <code>id</code>.</li>
+</ol>
+</details>
+
+<h2>تمرين متوسط — مفتاح وجسم</h2>
+<p>عميل أرسل <code>Idempotency-Key: K</code> فخُزّن 201 لكتاب <code>b1</code>. أعاد K مع عنوان مختلف ثم أعاد K مع العنوان الأصلي. ما الردان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الثاني 409 <code>idempotency_conflict</code> ولا يُنشأ صف. الثالث، إن طابق المعنى المخزن، يعيد 201 و <code>b1</code> كما في المحاولة الأولى. إن اعتبرتم أي اختلاف لاحق تلويثًا للمفتاح، فالثابت في العقد: الجسم المختلف لا يُنفَّذ، والجسم المطابق يعيد المخزن.</p>
+</details>
+
+<h2>تمرين متقدم — وثيقة v2</h2>
+<p>اكتب خمسة أسطر عقد لـ v2 إذا تغيّر <code>price</code> فقط، بحيث لا ينجرف الترتيب ولا شكل الخطأ ولا رمز القائمة الفارغة.</p>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>المسار <code>/v2/books</code> (أو نفس المسار مع الترويسة المتفق عليها).</li>
+<li><code>price</code> كائن <code>{ amount, currency }</code>.</li>
+<li><code>GET</code> القائمة 200 مع <code>{ data, nextCursor }</code> وحتى عند الفراغ.</li>
+<li><code>POST</code> 201 مع <code>Idempotency-Key</code> ونطاق المفتاح يتضمن النسخة.</li>
+<li>الأخطاء <code>{ statusCode, code, message }</code> و <code>book_not_found</code> عند غياب الفرد.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

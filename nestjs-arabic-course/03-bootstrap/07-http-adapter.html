@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HTTP Adapter</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-http-adapter.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>HTTP Adapter</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة الطبقة التي تترجم مسارات Nest إلى Express أو Fastify أثناء <code>create</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>لو سجل كل Controller نداء <code>app.get</code> بنفسه، لصارت الخدمات تعرف Express. المحوّل يبقي التسجيل في Nest ويمرره إلى المنصة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>HTTP Adapter جسر. Nest تقول &quot;اربط <code>GET /</code> بهذه الدالة&quot;، والمحوّل ينفذ ذلك على المنصة الحالية.</p>
+<h2>التعريف التقني</h2>
+<p>فصل Performance: الاستقلال عن الإطار يتم عبر adapter يمرر middleware والمعالجات إلى تنفيذ المكتبة. الافتراضي <code>@nestjs/platform-express</code>. Fastify عبر <code>FastifyAdapter</code> من <code>@nestjs/platform-fastify</code>. سؤال التوثيق HTTP adapter يشرح الوصول إلى الخادم الخام عندما تحتاجه مكتبة خارجية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Controller / @Get
+      |
+      v
+HTTP Adapter
+      |
+      +-- Express app.get(...)
+      +-- أو Fastify
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+</code></pre>
+<p>لا ترى المحوّل لأنه الافتراضي. هو موجود داخل <code>create</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>عدم تمرير وسيط ثانٍ يعني Express.</li>
+<li>مسارات الزينة تُترجم أثناء البناء لا عند كل طلب كإعادة تسجيل.</li>
+<li><code>listen</code> على كائن Nest يستدعي استماع المنصة عبر المحوّل.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع يمشي المحوّل على المتحكمات المسجّلة ويسجل كل طريقة ومسار. Middleware الذي تعرفه Nest يُربط على مكدس المنصة. لذلك فهم <code>next</code> في Express ما زال يفيد على المنصة الافتراضية. Guard و Pipe ليسا طبقات Express تعيد كتابتها؛ هما محطات Nest تُستدعى من الغلاف الذي سجله المحوّل حول المعالج.</p>
+<p>الوصول إلى Express التحتي أداة حافة. استخدمها لتركيب مكتبة لا تعرف Nest، لا لقراءة رؤوس داخل Service.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة تقيس الطلبات وتتوقع تطبيق Express: تُركَّب مرة بعد <code>create</code> عبر واجهة المنصة، ثم تعمل لكل الطلبات. الخدمة تبقى بلا <code>import express</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استيراد <code>express</code> داخل Service.</li>
+<li>افتراض أن وصفة <code>app.use</code> من مقال Express تعمل حرفيًا على Fastify.</li>
+<li>إنشاء تطبيق Express ثانٍ.</li>
+</ul>
+<h2>متى تلمس المحوّل؟</h2>
+<p>عند مكتبة منصة، أو عند اختبار يحتاج <code>getHttpServer</code>، أو عند اختيار Fastify عن قياس لا عن تقليد.</p>
+<h2>متى تتركه؟</h2>
+<p>في كل مسار عمل عادي. Controller يعيد قيمة ويكفي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المنصة</th>
+<th>كيف تُختار في create</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Express</td>
+<td>الافتراضي بلا وسيط</td>
+</tr>
+<tr>
+<td>Fastify</td>
+<td><code>new FastifyAdapter()</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما المنصة إن لم تمرر محوّلًا؟</p>
+<details><summary>الحل</summary>
+
+<p>Express.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى تُسجل مسارات <code>@Get</code> على Express: عند الإقلاع أم عند الطلب؟</p>
+<details><summary>الحل</summary>
+
+<p>عند الإقلاع أثناء <code>create</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا إبقاء Service جاهلة باسم المنصة يحقق وعد platform-agnostic؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن تبديل المحوّل يغيّر HTTP من غير إعادة كتابة القاعدة. إن استوردت الخدمة أنواع Express صارت جزءًا من المنصة لا من المجال.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يترجم المحوّل؟</li>
+<li>أين يركب Fastify؟</li>
+<li>لماذا لا يُستورد Express في الخدمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المحوّل يربط مسارات Nest بمنصة HTTP أثناء البناء. الافتراضي Express. عملك اليومي لا ينادي المحوّل.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>listen</code> يفتح المنفذ على هذه المنصة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Performance (Fastify): <a href="https://docs.nestjs.com/http/performance">https://docs.nestjs.com/http/performance</a></li>
+<li>NestJS — HTTP adapter: <a href="https://docs.nestjs.com/faq/http-adapter">https://docs.nestjs.com/faq/http-adapter</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>الاستراتيجية على مسار ISBN في رف. الخدمة لا تعرف الوضع، والفلتر لا يعيد البحث في القاعدة.</p>
+<h2>المثال 1 — الأصناف</h2>
+<pre><code class="language-ts">export class BookNotFound extends Error {
+  constructor(readonly bookId: string) {
+    super(`missing ${bookId}`);
+  }
+}
+
+export class IsbnTaken extends Error {
+  constructor(readonly isbn: string) {
+    super(`taken ${isbn}`);
+  }
+}
+</code></pre>
+<h2>المثال 2 — الخدمة ترمي فقط</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+import { BookNotFound, IsbnTaken } from &#39;./books.errors.js&#39;;
+
+@Injectable()
+export class IsbnService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async assign(tenantId: string, bookId: string, isbn: string) {
+    const book = await this.prisma.book.findFirst({ where: { id: bookId, tenantId } });
+    if (!book) throw new BookNotFound(bookId);
+    try {
+      return await this.prisma.book.update({ where: { id: bookId }, data: { isbn } });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw new IsbnTaken(isbn);
+      throw error;
+    }
+  }
+}
+
+function isUniqueViolation(error: unknown) {
+  return typeof error === &#39;object&#39; &amp;&amp; error !== null &amp;&amp; &#39;code&#39; in error &amp;&amp; error.code === &#39;P2002&#39;;
+}
+</code></pre>
+<p>انتهاك التفرد يصبح <code>IsbnTaken</code>. أي خطأ Prisma آخر يُعاد رميه ليصل إلى الفلتر الختامي كغير متوقع. لا يوجد <code>InternalServerErrorException</code> هنا.</p>
+<h2>المثال 3 — الحد</h2>
+<p>المتحكم:</p>
+<pre><code class="language-ts">@Post(&#39;:id/isbn&#39;)
+assign(@Param(&#39;id&#39;) id: string, @Body() body: { isbn: string }, @Tenant() tenantId: string) {
+  return this.isbn.assign(tenantId, id, body.isbn);
+}
+</code></pre>
+<p>الفلتر يكتب 404 لـ <code>BookNotFound</code> و 409 لـ <code>IsbnTaken</code>. اختبار يطلب ISBN مكررًا ويتوقع 409. اختبار ثانٍ يقطع قاعدة البيانات الوهمية بخطأ عام ويتوقع 500 وجسمًا بلا <code>P1001</code>. اختبار ثالث يطلب كتابًا بصلاحية حارس ترمي <code>ForbiddenException</code> ويتوقع 403 لا 500.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التسلسل الرسمي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-official-sequence.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التسلسل الرسمي</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت ترتيب Nest كما في توثيق Request lifecycle، من دخول الطلب حتى الاستجابة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تلخيص «Middleware ثم الباقي» يضيع داخل المرحلة: أين يقف <code>app.use</code> مقابل Middleware الوحدة، وأين ينعكس Interceptor، ومن أي طرف تبدأ Exception Filters. هذا الدرس هو القائمة. الدروس التالية تشرح محطة واحدة من غير إعادة اختراع التسلسل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>طريق النجاح: Middleware، Guards، Interceptors قبل المعالج، Pipes، Controller، Service، Interceptors بعد المعالج، ثم الاستجابة. Exception Filters ليست خطوة على كل طلب. تعمل عندما يبقى استثناء غير ممسوك، وتُفحص من المسار إلى Controller ثم العام.</p>
+<h2>التعريف التقني</h2>
+<p>القائمة كما في التوثيق:</p>
+<ol>
+<li>الطلب الوارد.</li>
+<li>Middleware.<ul>
+<li>2.1 العام المربوط بـ <code>app.use()</code>.</li>
+<li>2.2 المربوط بالوحدات، ويُطابق المسار. وحدات <code>@Global()</code> أولًا، ثم Module الجذر، ثم الوحدات الأخرى حسب بعدها عن الجذر في رسم الاستيراد.</li>
+</ul>
+</li>
+<li>Guards: العام، ثم Controller، ثم المسار. داخل المستوى ترتيب الربط.</li>
+<li>Interceptors قبل Controller: العام، ثم Controller، ثم المسار. طريق الاستجابة ينعكس لأن العائد <code>Observable</code> يُحسم أول داخل آخر خارج.</li>
+<li>Pipes: العام، ثم Controller، ثم المسار، ثم Pipes معامل المسار. المعاملات تُعالَج من الأخير إلى الأول، وهذا يسري على مستويات Controller والمسار أيضًا. التفصيل في درس Pipes.</li>
+<li>معالج Controller.</li>
+<li>Service إن وُجدت.</li>
+<li>Interceptors بعد الطلب: المسار، ثم Controller، ثم العام.</li>
+<li>Exception Filters: المسار، ثم Controller، ثم العام. أول من يمسك يوقف الباقي.</li>
+<li>استجابة الخادم.</li>
+</ol>
+<p>استثناء Middleware يصل إلى طبقة الاستثناءات، ولا ينطبق إلا Exception Filter العام، لأن المسار لم يُختر بعد.</p>
+<p>مرشح يعمل فقط لاستثناء غير ممسوك. <code>try/catch</code> لديك لا يطلقه. عند أول استثناء غير ممسوك تُتخطى بقية دورة النجاح وينتقل الطلب إلى المرشحات، مع إمكانية قراءة الخطأ في <code>catchError</code> على Interceptor كما في الدرس الخاص به.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نجاح:
+  MW -&gt; Guard -&gt; Interceptor دخول -&gt; Pipe
+    -&gt; Controller -&gt; Service
+    -&gt; Interceptor خروج -&gt; استجابة
+
+استثناء غير ممسوك:
+  بقية النجاح تُتخطى
+  Filter مسار -&gt; Controller -&gt; عام
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">app.use(requestId)
+@Module عامة: tenantMark
+AppModule: accessLog
+LoansModule: loansLog
+
+ثم Guard عام، ثم Guard على LoansController، ثم Guard على PATCH
+ثم Interceptor عام دخولًا
+ثم Pipe عام، ثم Pipe المسار، ثم Pipe المعامل
+ثم update()
+ثم LoansService.update
+ثم Interceptor المسار خروجًا ثم العام
+ثم الاستجابة
+</code></pre>
+<p>هذا ترتيب مستويات لا تنفيذ أصناف حقيقية. كتابة الأصناف تبدأ من فصل Middleware.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>requestId</code> قبل أي Middleware وحدة لأنه <code>app.use</code>.</li>
+<li><code>tenantMark</code> قبل <code>accessLog</code> لأن <code>@Global()</code> يسبق الجذر.</li>
+<li><code>loansLog</code> بعد الجذر لأن الوحدة أبعد في رسم الاستيراد.</li>
+<li>خروج Interceptor يعكس دخولها: ما دخل أولًا يخرج آخرًا.</li>
+<li>لا سطر Filter في طريق النجاح. أضف رميًا من <code>update</code> فيظهر المستوى 9.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تربط المحطات عند الإقلاع حسب مكان التسجيل: عام، أو صنف Controller، أو دالة المسار، أو <code>app.use</code>، أو ربط Module. الطلب عند وصوله يمشي القائمة. اختيار المعالج يتم قبل Guards في دورة Nest بمعنى أن المسار قد حُدد عندما تبدأ Guards؛ Middleware هي ما قبل ذلك الاختيار. لذلك مرشح المسار غير متاح لاستثناء Middleware.</p>
+<p>لا تعكس هذه القائمة في كود التطبيق. إن احتجت سلوكًا مختلفًا، انقل الكود إلى المحطة التي تطابق الحاجة، كما في الدرس السابق.</p>
+<h2>مثال عملي</h2>
+<p><code>PATCH /loans/9</code> ينجح: الرمز 200 إن لم تغيّره، والجسم من قيمة <code>LoansService</code> بعد Interceptors الخروج. <code>POST</code> على مسار آخر يستخدم 201 في طبقة الاستجابة، وذلك بعد سلسلة النجاح لا داخل Guard.</p>
+<p><code>PATCH</code> يرمي من الخدمة: Interceptor يستطيع رؤية الخطأ في <code>catchError</code>. إن بقي الخطأ، يُفحص مرشح المسار ثم مرشح Controller ثم العام. مرشح المسار إن ردّ استجابة، فالعام لا يرى الاستثناء نفسه. التوثيق يقول إن الاستثناء لا يُمرَّر من مرشح إلى مرشح، والاشتراك يتم بالوراثة بين المرشحات لا بالتسلسل.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إدراج Filter كخطوة 8 على كل طلب</td>
+<td>المرشح لا يعمل عند النجاح</td>
+</tr>
+<tr>
+<td>عكس Guards لتبدأ من المسار</td>
+<td>التوثيق يبدأ من العام</td>
+</tr>
+<tr>
+<td>جعل خروج Interceptor كدخولها</td>
+<td><code>Observable</code> يعكس الطريق</td>
+</tr>
+<tr>
+<td>توقع مرشح مسار لاستثناء <code>app.use</code></td>
+<td>المرشح العام فقط</td>
+</tr>
+<tr>
+<td>ترتيب وحدات Middleware حسب اسم الملف</td>
+<td><code>@Global()</code> ثم الجذر ثم البعد عن الجذر</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>كورقة ترجع إليها عندما تسأل «لماذا لم يعمل هذا الصنف». طابق مكان ربطه مع رقم المرحلة قبل أن تغيّر القاعدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنِ سلسلة بديلة داخل Service تعيد Guards ثم Pipes يدويًا. الإطار يمشي هذه القائمة مرة واحدة لكل طلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاتجاه</th>
+<th>المراحل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من العام إلى المسار</td>
+<td>Middleware العام ثم الوحدة، Guards، Interceptors الدخول، Pipes حتى المسار</td>
+</tr>
+<tr>
+<td>من المسار إلى العام</td>
+<td>Interceptors الخروج، Exception Filters</td>
+</tr>
+<tr>
+<td>لا يعمل عند النجاح</td>
+<td>Exception Filters</td>
+</tr>
+<tr>
+<td>العام فقط عند استثناء Middleware</td>
+<td>Exception Filters</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما ترتيب Guards الثلاثة؟</p>
+<details><summary>الحل</summary>
+
+<p>العام، ثم Controller، ثم المسار.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يأتي <code>@Global()</code> في Middleware قبل Middleware مسجّلة على <code>AppModule</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>بعد <code>app.use</code> تشغّل Nest مربوطة الوحدات هكذا: وحدات <code>@Global()</code> أولًا، ثم الجذر، ثم البقية حسب البعد عن الجذر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلب نجح من غير استثناء. أي بند من 9 و 8 يعمل، وأيهما ساكن؟</p>
+<details><summary>الحل</summary>
+
+<p>البند 8 يعمل: Interceptors بعد المعالج من المسار إلى العام، ثم الاستجابة. البند 9 ساكن لأن المرشحات لاستثناء غير ممسوك فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يسبق Guards؟</li>
+<li>ما اتجاه Interceptors بعد المعالج؟</li>
+<li>من يرى استثناء Middleware؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التسلسل الرسمي ثابت: Middleware، Guards، Interceptors دخولًا، Pipes، المعالج، Service، Interceptors خروجًا، ثم الاستجابة. المرشحات من المسار إلى العام عند الاستثناء غير الممسوك، وعامّة فقط إن رمى Middleware.</p>
+<h2>ماذا بعد؟</h2>
+<p>المرحلة 2 بالتفصيل: مرحلة Middleware.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

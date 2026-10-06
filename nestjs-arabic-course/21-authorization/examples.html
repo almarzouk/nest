@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>التفويض على مقالات المكتبة بعد <code>@nestjs/authentication</code>. CASL غير مثبّت.</p>
+<h2>مثال 1 — سياسة</h2>
+<pre><code class="language-ts">@Policy()
+export class PostPolicy {
+  create(user: PublicUser | null) {
+    return !!user?.roles.includes(&quot;editor&quot;);
+  }
+
+  update(user: PublicUser | null, post: { authorId: number }) {
+    return !!user &amp;&amp; user.id === post.authorId;
+  }
+
+  read(user: PublicUser | null, post: { published: boolean; authorId: number }) {
+    if (post.published) return true;
+    return !!user &amp;&amp; user.id === post.authorId;
+  }
+}
+</code></pre>
+<p><code>true</code> فقط عند السماح. المسودة يراها صاحبها. المنشور يراه الجميع بمن فيهم الضيف إن كان المسار اختياري المصادقة.</p>
+<h2>مثال 2 — إنشاء على الحارس وتعديل في الخدمة</h2>
+<p><code>POST /posts</code> عليه <code>@Can(PostPolicy, &quot;create&quot;)</code>. القارئ يأخذ <code>403</code>. <code>PATCH /posts/:id</code> يحمّل الصف، <code>404</code> إن غاب، ثم <code>authorize(PostPolicy, &quot;update&quot;, user, post)</code> ثم تحديث العنوان.</p>
+<h2>مثال 3 — ترتيب الإقلاع</h2>
+<p><code>AuthenticationModule</code> ثم <code>AuthorizationModule.forRoot()</code> في <code>AppModule</code>. <code>PostPolicy</code> ضمن <code>providers</code> في <code>PostsModule</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>@Can</code> على <code>update</code>.</li>
+<li>الدور لا يأتي من جسم التسجيل ولا من claim قديم.</li>
+<li>اختبار <code>new PostPolicy().update(...)</code> بلا قاعدة.</li>
+<li>لا حارس CASL موازٍ.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

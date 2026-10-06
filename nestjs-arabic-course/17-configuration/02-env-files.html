@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ملفات .env</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-env-files.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ملفات .env</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل المكتبة محليًا بملف مفاتيح، من غير رفع الأسرار، ومن غير الخلط بين ملف التطوير وبيئة الإنتاج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تصدير عشر متغيرات في الطرفية قبل كل <code>npm run start:dev</code> ينكسر حين تنسى واحدًا. وضع القيم في <code>src/config.ts</code> يعيدها إلى Git. ملف <code>.env</code> وسط بين الاثنين: المفاتيح في المشروع، والقيم السرية على جهازك فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>.env</code> قائمة <code>KEY=value</code> يقرأها dotenv عند الإقلاع. <code>.env.example</code> يُرفع وفيه أسماء المفاتيح من غير أسرار. <code>.gitignore</code> يمنع <code>.env</code>. على الإنتاج تضبط المنصة المتغيرات نفسها، والملف المحلي لا يُنسخ إلى الخادم.</p>
+<h2>التعريف التقني</h2>
+<p><code>@nestjs/config</code> يستخدم dotenv. <code>ConfigModule.forRoot()</code> يبحث عن <code>.env</code> في مجلد تشغيل العملية، غالبًا جذر المشروع، ثم يدمج المفاتيح مع <code>process.env</code>. إن وُجد المفتاح في الاثنين، قيمة التشغيل تربح. <code>override: true</code> يعكس ذلك فيجعل ملف <code>.env</code> يربح.</p>
+<p><code>envFilePath</code> يبدّل المسار أو يمرّر مصفوفة. أول ملف يحتوي المفتاح يربح. <code>ignoreEnvFile: true</code> يتجاهل الملف ويقرأ بيئة التشغيل فقط، وهذا مناسب للإنتاج حين لا تريد ملفًا على القرص.</p>
+<p>تعارض الأسماء يتبع قواعد dotenv. التوسعة <code>${APP_URL}</code> تحتاج <code>expandVariables: true</code>، والحزمة تستخدم dotenv-expand داخليًا.</p>
+<p>CLI يستطيع تحميل الملف قبل إقلاع Nest نفسه:</p>
+<pre><code class="language-bash">nest start --env-file .env
+</code></pre>
+<p>هذا يمرّر الملف إلى علم Node <code>--env-file</code>، فيصبح المتغير متاحًا حتى قبل تحميل <code>ConfigModule</code>، مثل خيار يُمرَّر إلى <code>NestFactory.create</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">.env.example   -&gt; Git        PORT=
+                               DATABASE_URL=
+.env           -&gt; جهازك فقط  PORT=3000
+                               DATABASE_URL=postgresql://...
+الإنتاج        -&gt; لوحة المنصة بلا ملف في الصورة إن أمكن
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text"># .env.example
+PORT=3000
+DATABASE_URL=
+LIBRARY_NAME=neighborhood-library
+</code></pre>
+<pre><code class="language-text"># .gitignore
+.env
+.env.local
+.env.*.local
+</code></pre>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { ConfigModule } from &quot;@nestjs/config&quot;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      envFilePath: [&quot;.env.local&quot;, &quot;.env&quot;],
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>.env.local</code> يسبق <code>.env</code>، فقيمة جهازك الشخصية تغلب القيمة المشتركة للتطوير. <code>LIBRARY_NAME</code> ليس سرًا ويمكن أن يبقى في المثال. <code>DATABASE_URL</code> في المثال فارغ عمدًا: من ينسخ الملف يضع عنوانه هو.</p>
+<p>لا تكتب كلمة مرور حقيقية في أي ملف يُراجع في Git، بما في ذلك تعليقات الدروس والمستودع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>forRoot()</code> يحلّل الملف أثناء تسجيل الوحدة، ويدمج الناتج في بنية خاصة يقرأها <code>ConfigService</code> لاحقًا. المفاتيح التي لم تُذكر في الملف تبقى آتية من بيئة العملية: <code>PATH</code> و <code>HOME</code> وغيرهما.</p>
+<p>إن غاب الملف ولم يُضبط <code>ignoreEnvFile</code>، الإقلاع لا يتوقف لهذا السبب وحده. النقص يظهر حين تطلب الخدمة مفتاحًا غير موجود. درس التحقق يجعل النقص يفشل الإقلاع.</p>
+<h2>مثال عملي</h2>
+<p>مطوّر جديد ينسخ <code>.env.example</code> إلى <code>.env</code>، يملأ <code>DATABASE_URL</code> لقاعدة PostgreSQL محلية، ويشغّل <code>npm run start:dev</code>. زميله يملك ملفًا مختلفًا على جهازه. خادم الإنتاج لا يحتوي أيًا من الملفين: المنصة تضبط <code>PORT</code> و <code>DATABASE_URL</code>، ويمكن للتطبيق أن يمرّر <code>ignoreEnvFile: true</code> هناك حتى لا يلتقط ملفًا نُسي داخل الصورة.</p>
+<p>قيمة مثل <code>SUPPORT_EMAIL=desk@${LIBRARY_DOMAIN}</code> تعمل بعد <code>expandVariables: true</code>. من غير الخيار تبقى السلسلة حرفية وفيها <code>${...}</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>رفع <code>.env</code> بعد <code>git add .</code> لأن الاستثناء نُسي.</li>
+<li>وضع سر الإنتاج داخل <code>.env.example</code> «ليعمل بسرعة».</li>
+<li>الاعتماد على ترتيب المصفوفة من غير تجربته: الأول يربح، لا الأخير.</li>
+<li>افتراض أن ملف <code>.env</code> يُحمَّل في اختبار Jest تلقائيًا كما في <code>nest start</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لتطوير محلي واختبارات على جهازك، مع مثال بالمفاتيح فقط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كمخزن أسرار الإنتاج داخل صورة Docker أو المستودع. المنصة أو مدير أسرار يحقن البيئة عند التشغيل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>.env</code></th>
+<th><code>.env.example</code></th>
+<th>بيئة الإنتاج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قيم حقيقية محلية</td>
+<td>أسماء، وقيم غير سرية</td>
+<td>قيم حقيقية خارج Git</td>
+</tr>
+<tr>
+<td>في <code>.gitignore</code></td>
+<td>يُراجع في Git</td>
+<td>غالبًا بلا ملف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تضع في <code>.env.example</code> لمفتاح <code>JWT_SECRET</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اسم المفتاح وقيمة فارغة أو وصفًا، مثل <code>JWT_SECRET=</code>. السر الحقيقي يبقى في <code>.env</code> المحلي أو في مدير الأسرار.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>PORT</code> موجود في <code>.env</code> بالقيمة <code>3000</code> وفي الصدفة بالقيمة <code>4000</code>. ماذا يقرأ <code>ConfigModule.forRoot()</code> افتراضيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>4000</code>. بيئة التشغيل تربح. <code>override: true</code> يجعل ملف <code>.env</code> يربح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا قد تحتاج <code>nest start --env-file .env</code> حتى بعد تسجيل <code>ConfigModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعض القراءات تحدث قبل تهيئة الوحدة، مثل خيار يُمرَّر إلى <code>NestFactory.create</code>. علم CLI يحمّل الملف إلى <code>process.env</code> قبل إقلاع التطبيق. بعد الإقلاع تبقى قراءة الخدمات عبر <code>ConfigService</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي ملف يُرفع، وأي ملف يبقى على الجهاز؟</li>
+<li>من يربح عند تعارض المفتاح بين الصدفة و <code>.env</code>؟</li>
+<li>ماذا يفعل <code>ignoreEnvFile</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ملف <code>.env</code> أداة تطوير. المثال يوثّق المفاتيح، والاستثناء يمنع الأسرار، والإنتاج يحقن البيئة من خارج المستودع.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-config-module.html">ConfigModule</a> يسجّل هذا التحميل كوحدة Nest ويقرّر إن كانت عامة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

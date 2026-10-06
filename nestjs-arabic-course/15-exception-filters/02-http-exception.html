@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HttpException</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-http-exception.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>HttpException</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رمي <code>HttpException</code> بجسم ورمز واضحين، مع سبب داخلي لا يُرسل إلى العميل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>Error</code> العادي يصبح <code>500</code> ويخفي أن الطلب ممنوع أو أن التذكرة غير موجودة. العميل لا يستطيع أن يفرّق عطل الخادم عن رفض مفهوم.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>new HttpException(response, status)</code> يبني استثناء تعرفه الطبقة المدمجة. <code>response</code> نص أو كائن. <code>status</code> رمز HTTP من تعداد <code>HttpStatus</code>. وسيط ثالث اختياري <code>options.cause</code> للسجل لا للجسم.</p>
+<h2>التعريف التقني</h2>
+<p>الصنف من <code>@nestjs/common</code>. المثال الأساسي في الصفحة:</p>
+<pre><code class="language-ts">throw new HttpException(&#39;Forbidden&#39;, HttpStatus.FORBIDDEN);
+</code></pre>
+<p>الجسم الناتج:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 403,
+  &quot;message&quot;: &quot;Forbidden&quot;
+}
+</code></pre>
+<p>النص في الوسيط الأول يستبدل <code>message</code>. الكائن يستبدل الجسم كله كما تسلسله Nest. الصفحة تضرب مثالًا:</p>
+<pre><code class="language-ts">throw new HttpException(
+  { status: HttpStatus.FORBIDDEN, error: &#39;Desk closed&#39; },
+  HttpStatus.FORBIDDEN,
+  { cause: error },
+);
+</code></pre>
+<p>فيصبح الرد:</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: 403,
+  &quot;error&quot;: &quot;Desk closed&quot;
+}
+</code></pre>
+<p>لاحظ أن مفاتيح الكائن هي ما يخرج. <code>statusCode</code> الافتراضي لا يُضاف تلقائيًا حين تمرر كائنًا. اختر شكلًا واحدًا للمشروع.</p>
+<p><code>cause</code> لا يُسلسَل إلى العميل. يفيد من يسجّل الاستثناء الأصلي، مثل فشل قاعدة ترجمته إلى رمز مفهوم.</p>
+<p><code>getStatus()</code> و <code>getResponse()</code> على النسخة للفلتر المخصص لاحقًا.</p>
+<p>الرمز من <code>HttpStatus</code> لا من رقم سحري، كما تطلب الصفحة. <code>HttpStatus.NOT_FOUND</code> أوضح من <code>404</code> في المراجعة، والرقم نفسه على السلك.</p>
+<p>هذا الصنف وفئاته <code>IntrinsicException</code>. الفلتر المدمج لا يطبعها كعطل غير متوقع. إن أردت سجلًا لكل <code>404</code> فاكتبه في فلتر أو مسجّل مقصود، لا تنتظر الطرفية الافتراضية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نص + رمز     → { statusCode, message }
+كائن + رمز   → الكائن كما هو
+cause        → للتشخيص، ليس في JSON
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { HttpException, HttpStatus } from &#39;@nestjs/common&#39;;
+
+export function missingTicket(id: string): HttpException {
+  return new HttpException(`Ticket ${id} was not found`, HttpStatus.NOT_FOUND);
+}
+</code></pre>
+<pre><code class="language-ts">@Get(&#39;:id&#39;)
+find(@Param(&#39;id&#39;, ParseIntPipe) id: number): never {
+  throw missingTicket(String(id));
+}
+</code></pre>
+<p>العميل يرى <code>404</code> والنص الذي كتبته. <code>ParseIntPipe</code> إن فشل يرمي <code>BadRequestException</code> قبل الدالة، وهو فرع آخر.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الدالة المساعدة توحّد النص حتى لا يكتب كل مسار جملة مختلفة.</li>
+<li><code>HttpStatus.NOT_FOUND</code> هو <code>404</code>.</li>
+<li>لا <code>try/catch</code> حول الرمي في المتحكم. التصعيد مقصود.</li>
+<li><code>id</code> في النص مقبول لتذكرة. لا تضع استعلام SQL ولا مسار ملف في <code>message</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الرمي يخرج من الدالة إلى منطقة الاستثناءات. الفلتر المدمج يرى <code>HttpException</code>، يقرأ الحالة من الوسيط الثاني، ويبني الجسم من النص أو من الكائن. لا يقرأ <code>cause</code>. الاتصال يُغلق بجسم JSON ورمز الحالة.</p>
+<p>إن كان على المسار فلتر <code>@Catch(HttpException)</code> فذلك الفلتر أولى من العام، حسب ترتيب الدرس الأخير. من غير فلتر مخصص يكفي المدمج.</p>
+<p>رمي <code>HttpException</code> من الحارس أو من الأنبوب يستخدم الطريق نفسه لأن المسار مختار. من Middleware يصل إلى الفلتر العام المدمج أو إلى فلتر عام سجّلته، لا إلى فلتر الدالة.</p>
+<h2>مثال عملي</h2>
+<p><code>TicketsService</code> لا تجد الصف فترمي <code>missingTicket</code>. الاختبار يتوقع <code>404</code> و <code>message</code> فيها المعرف. اختبار آخر يمرر <code>cause: queryError</code> ويتوقع أن الجسم JSON بلا المكدس وبلا اسم الجدول. السجل في الاختبار يقرأ <code>exception.cause</code> إن كتبت فلترًا لاحقًا. حتى ذلك الحين <code>cause</code> جاهز ولا يغيّر العميل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير كائن فيه <code>stack</code>.</li>
+<li>رمز <code>200</code> داخل <code>HttpException</code>. الاستثناء للخطأ لا للنجاح.</li>
+<li>التقاطه في المتحكم وإرجاع <code>{ message }</code> مع رمز نجاح افتراضي <code>200</code> أو <code>201</code>.</li>
+<li>رقم حالة من سلسلة قادمة من العميل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين لا توجد فئة جاهزة تطابق المعنى، أو حين تحتاج جسمًا بمفاتيح خاصة بكم مع رمز صحيح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لغياب تذكرة إن كانت <code>NotFoundException</code> تكفي بالرسالة الافتراضية أو برسالة نصية. الفئات الجاهزة الدرس التالي. ولا لنجاح بطيء. النجاح <code>return</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>البناء</th>
+<th>الجسم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>HttpException(&#39;Forbidden&#39;, 403)</code></td>
+<td><code>statusCode</code> و <code>message</code></td>
+</tr>
+<tr>
+<td><code>HttpException({ error }, 403)</code></td>
+<td>المفاتيح التي وضعتها</td>
+</tr>
+<tr>
+<td><code>Error(&#39;Forbidden&#39;)</code></td>
+<td><code>500</code> عام</td>
+</tr>
+<tr>
+<td><code>cause</code></td>
+<td>غير ظاهر للعميل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الوسيطان المطلوبان لبناء <code>HttpException</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جسم الرد، نص أو كائن، ورمز الحالة. <code>cause</code> اختياري في وسيط ثالث.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد يختفي <code>statusCode</code> من JSON حين تمرر كائنًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكائن يستبدل الجسم كله. إن لم تضع <code>statusCode</code> داخل الكائن فلن يُضاف تلقائيًا كما في مسار النص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فشل استعلام يجب أن يصبح <code>404</code> للعميل مع بقاء الخطأ الأصلي للسجل. ماذا تضع في البناء، وما الذي تتأكد أنه ليس في الرد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>new HttpException(&#39;Ticket was not found&#39;, HttpStatus.NOT_FOUND, { cause: error })</code>. الرد بلا <code>cause</code> وبلا <code>stack</code>. السجل يقرأ <code>cause</code> من الاستثناء في الفلتر أو في مكان التسجيل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>كيف يغيّر النص الجسم الافتراضي؟</li>
+<li>أين يعيش <code>cause</code>؟</li>
+<li>لماذا لا يُطبع الاستثناء كعطل غير متوقع في الفلتر المدمج؟</li>
+<li>ماذا يرى العميل عند <code>Error</code> العادي بدل هذا الصنف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>HttpException</code> يربط رمزًا بجسم نصي أو كائن. <code>cause</code> تشخيص داخلي. العميل يرى ما وضعته في الوسيط الأول، لا مكدس الخطأ الأصلي.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي فئات جاهزة: <code>BadRequestException</code> و <code>UnauthorizedException</code> و <code>ForbiddenException</code> و <code>NotFoundException</code> و <code>ConflictException</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

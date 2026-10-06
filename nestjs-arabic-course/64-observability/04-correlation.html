@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ربط السجلات بالطلب</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-correlation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ربط السجلات بالطلب</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع معرّف واحد على كل سطر يكتبه طلب رف، حتى تجدوا النشر وPrisma والخطأ في الفلتر معًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خمسة أسطر <code>published</code> في نفس الثانية من مكتبات مختلفة. لا تعرفون أيها انتهى بـ 500. الأثر له <code>traceId</code> والسجل لا يحمله. الدعم يطلب من الموظف «وقت الخطأ» فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>في بداية الطلب خذوا <code>X-Request-Id</code> إن كان شكلًا آمنًا أو ولّدوا معرّفًا، واحفظوه في سياق يتبع <code>async</code>. كل <code>Logger</code> يضيفه. إن وُجد <code>traceId</code> من OpenTelemetry أو من Observe فأضيفوه أيضًا. أعيدوا المعرّف في ترويسة الرد وفي جسم 500 إن كان عقدكم يسمح بحقل <code>requestId</code> من غير stack.</p>
+<h2>التعريف التقني</h2>
+<p><code>AsyncLocalStorage</code> (أو السياق الذي يبقيه Observe) يعيش مع الطلب. المعترض أو الوسيط يفتح <code>run</code> قبل الحارس. لا تثقوا بمعرّف خام فيه أسطر جديدة حتى لا يُحقن السجل. صيغة قصيرة مثل UUID. على Fastify و Express اقرأوا الترويسة من المحول لا تفترضوا <code>req.headers</code> فقط إن لففتم الطلب. المهام في الطابور تولّد معرّفًا أو تكمل معرّف الرسالة، لأن لا HTTP هناك. لا تضعوا المعرّف مكان <code>tenantId</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">X-Request-Id أو UUID
+→ سياق الطلب
+→ كل السجلات + ترويسة الرد
+traceId بجانبه إن وُجد أثر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { AsyncLocalStorage } from &#39;node:async_hooks&#39;;
+import { randomUUID } from &#39;node:crypto&#39;;
+
+export const requestStorage = new AsyncLocalStorage&lt;{ requestId: string }&gt;();
+
+export function beginRequest(header: string | undefined) {
+  const requestId = header &amp;&amp; /^[A-Za-z0-9-]{8,64}$/.test(header) ? header : randomUUID();
+  return requestId;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>النمط يرفض المسافات والأسطر.</li>
+<li>الغياب يولّد UUID حتى لا تبقى سجلات بلا مفتاح.</li>
+<li>الدالة لا تفتح السياق؛ من يستدعيها يمرر الناتج إلى <code>run</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الوسيط يقرأ الترويسة ويستدعي <code>requestStorage.run</code>.</li>
+<li>الخدمة تسجّل <code>{ requestId: requestStorage.getStore()?.requestId }</code>.</li>
+<li>فلتر 500 يضيف نفس المعرّف إلى السجل وإلى الجسم <code>{ code: &#39;internal_error&#39;, requestId }</code> إن وثّقتم الحقل.</li>
+<li>الرد يضع <code>X-Request-Id</code> حتى يرسله الموظف للدعم.</li>
+<li>نداء صادر إلى الإشعارات يعيد الترويسة حتى تكمل السلسلة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from &#39;@nestjs/common&#39;;
+import { requestStorage, beginRequest } from &#39;./request-id.js&#39;;
+
+@Injectable()
+export class RequestIdInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler) {
+    const http = context.switchToHttp();
+    const req = http.getRequest&lt;{ headers: Record&lt;string, string&gt; }&gt;();
+    const res = http.getResponse&lt;{ setHeader: (k: string, v: string) =&gt; void }&gt;();
+    const requestId = beginRequest(req.headers[&#39;x-request-id&#39;]);
+    res.setHeader(&#39;X-Request-Id&#39;, requestId);
+    return requestStorage.run({ requestId }, () =&gt; next.handle());
+  }
+}
+</code></pre>
+<p><code>run</code> حول <code>next.handle()</code> يبقي المعرّف عبر <code>await</code> في الخدمة. <code>enterWith</code> خارج هذا الغلاف قد يسرّب المعرّف بين الطلبات؛ فضّلوا <code>run</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>معرّف على singleton في حقل صنف فيتبدل تحت التزامن.</li>
+<li>أخذ المعرّف من الجسم.</li>
+<li>جسم 500 فيه stack بالإضافة إلى المعرّف.</li>
+<li>مهمة الطابور تبحث عن ترويسة HTTP فلا تجد سياقًا وتسجّل <code>undefined</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل طلب API وعلى كل مهمة تكتب سجلًا. أعيدوه للعميل في الرد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا به <code>traceId</code> إن كان الأثر يعمل؛ اجمعوهما. ولا تستخدموا معرّف الطلب مفتاح تكرار للدفع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>يربط</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>requestId</code></td>
+<td>أسطر هذا الطلب في السجل</td>
+</tr>
+<tr>
+<td><code>traceId</code></td>
+<td>spans الأثر</td>
+</tr>
+<tr>
+<td><code>event.id</code></td>
+<td>تكرار ويب هوك</td>
+</tr>
+<tr>
+<td><code>tenantId</code></td>
+<td>عزل البيانات لا السجل فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يُقبل أي نص في <code>X-Request-Id</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يُحقن السجل بأسطر أو رموز تحرف الجمع. النمط المحدود أو UUID جديد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>run</code> حول <code>next.handle()</code> لا حقل على الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخدمة singleton وتخدم طلبات متداخلة. الحقل يُكتب من طلب ويُقرأ من آخر. المخزن يتبع السلسلة async لكل طلب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عامل الطابور بلا ترويسة. ماذا تضعون في السجل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>معرّف المهمة أو <code>event.id</code> من الحمولة، وتفتحون <code>requestStorage.run</code> في بداية المعالج. لا تتركوا السطور بلا مفتاح ولا ترثوا سياق آخر طلب HTTP.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يأتي المعرّف؟</li>
+<li>أين يُعاد للعميل؟</li>
+<li>لماذا ليس حقلًا على خدمة singleton؟</li>
+<li>ما الفرق بينه وبين <code>traceId</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>معرّف طلب آمن في سياق async، على كل سطر وفي ترويسة الرد، وبجانب <code>traceId</code> إن وُجد أثر. الطابور له معرّفه. المعرّف لا يعزل المستأجرين ولا يكرر الدفع.</p>
+<h2>ماذا بعد؟</h2>
+<p>الإشارات جاهزة لمشروع يجمعها. الفصل التالي يبني رف SaaS على مراحل في دروس، من النطاق حتى Docker والاختبارات، لا كمستودع كود يُسلَّم هنا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/application/logger">https://docs.nestjs.com/application/logger</a></li>
+<li>NestJS — Observability: <a href="https://docs.nestjs.com/observability/overview">https://docs.nestjs.com/observability/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

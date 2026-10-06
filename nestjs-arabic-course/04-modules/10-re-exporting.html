@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>إعادة تصدير Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-re-exporting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>إعادة تصدير Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمرر واجهة وحدة عبر وحدة أخرى: تضعها في <code>imports</code> و <code>exports</code> معًا، فيكفي المستهلك أن يستورد الجسر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>OrdersModule</code> تحتاج <code>BooksModule</code> و <code>UsersModule</code> و <code>AuditModule</code>. كل ميزة تكرر الثلاث. أو تريد إخفاء أن &quot;النواة&quot; مكوّنة من عدة وحدات حتى يبقى استيراد المستهلك سطرًا واحدًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>إعادة التصدير ليست نسخ مزوّدات. هي قول: من يستوردني يستورد هؤلاء أيضًا.</p>
+<h2>التعريف التقني</h2>
+<p>توثيق Modules: أي وحدة تُعاد تصديرها تُذكر في <code>imports</code> وفي <code>exports</code>. الوحدة التي تستورد الجسر تصل إلى ما صدّرته الوحدة الداخلية، وتشارك النسخ.</p>
+<p>لا تستدعِ <code>forRoot()</code> مرة ثانية عند إعادة التصدير. إن كانت الوحدة ديناميكية، من يستورد الجسر يستورد الصنف الذي أعيد تصديره، والإعداد تم عند الاستدعاء الأول. تفاصيل <code>forRoot</code> في الدرس التالي وفي فصل Dynamic Modules.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CoreModule
+  imports: [AuditModule, LoggerModule]
+  exports: [AuditModule, LoggerModule]
+
+OrdersModule
+  imports: [CoreModule]
+  وترى AuditService و LoggerService إن كانا مصدَّرين من وحدتيهما
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  imports: [AuditModule, LoggerModule],
+  exports: [AuditModule, LoggerModule],
+})
+export class CoreModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [CoreModule],
+  controllers: [OrdersController],
+  providers: [OrdersService],
+})
+export class OrdersModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>CoreModule</code> لا تعرّف <code>AuditService</code>. هي تستورد الوحدة التي تعرّفه وتعيد تصدير تلك الوحدة. <code>OrdersModule</code> تذكر <code>CoreModule</code> فقط.</p>
+<p>إن نسيت <code>exports</code> وبقي <code>imports</code>، فالنواة تستخدم المزوّدات داخليًا ولا تمررها. الطلبات لا ترى <code>AuditService</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest يوسّع سلسلة <code>imports</code>. مصدَّرات الوحدة المعاد تصديرها تُدمَج في سياق من استورد الجسر. التسجيل الأصلي يبقى مكانه، لذلك النسخة هي نسخة الوحدة المالكة لا نسخة جديدة في <code>CoreModule</code>.</p>
+<p>وضع الصنف نفسه في <code>exports</code> يعمل أيضًا إن كان مرئيًا في سياق الجسر. إعادة تصدير الوحدة أوسع: تمرر كل ما تصدّره تلك الوحدة الآن وما قد تصدّره لاحقًا ضمن عقدها.</p>
+<h2>مثال عملي</h2>
+<p>طبقة <code>CommerceCoreModule</code> تجمع <code>BooksModule</code> و <code>InventoryModule</code> بعد أن صار تبادلهما ثابتًا. واجهة المتجر تستورد <code>CommerceCoreModule</code>. عند إضافة تصدير جديد داخل المخزون، الجسر يمرره من غير تعديل كل واجهة، لأن المعاد تصديره هو الوحدة لا قائمة صنف مجمّدة باليد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع الوحدة في <code>exports</code> من غير <code>imports</code>، فلا تملك النواة الوصول أصلًا.</li>
+<li>إعادة تصدير كل وحدات التطبيق من <code>AppModule</code> بلا حاجة، فيضيع معنى الجسر.</li>
+<li>استدعاء <code>ConfigModule.forRoot()</code> داخل الجسر ومرة أخرى داخل الميزة.</li>
+<li>ظن أن إعادة التصدير تنسخ المزوّدات إلى <code>providers</code> الجسر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما مجموعة وحدات تُستهلك معًا باسم واحد، أو عندما مكتبة داخلية تريد واجهة <code>CoreModule</code> تخفي الترتيب الداخلي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما مستهلك واحد يحتاج وحدة واحدة. يستوردها مباشرة. الجسر لتجميع حافة متكررة، لا لاختصار سطر يتيم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>تصدير مزوّد</th>
+<th>إعادة تصدير وحدة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ماذا يُكتب في <code>exports</code></td>
+<td>الصنف أو الرمز</td>
+<td>صنف الوحدة</td>
+</tr>
+<tr>
+<td>ماذا يصل للمستهلك</td>
+<td>ذلك المزوّد</td>
+<td>مصدَّرات تلك الوحدة</td>
+</tr>
+<tr>
+<td>من يملك التسجيل</td>
+<td>الوحدة الحالية أو المستورَدة</td>
+<td>الوحدة الأصلية</td>
+</tr>
+</tbody></table>
+<p>مقابل <code>@Global()</code>: إعادة التصدير تبقي الاستيراد ظاهرًا عند حافة الجسر. العالمي يخفي الاستيراد في كل مكان.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما المفتاحان اللذان يذكران <code>AuditModule</code> داخل <code>CoreModule</code> حتى تراها <code>OrdersModule</code> عبر استيراد النواة فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>imports</code> و <code>exports</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>AuditModule</code> تصدّر <code>AuditService</code> ولا تصدّر <code>AuditRepository</code>. <code>CoreModule</code> تعيد تصدير <code>AuditModule</code>. هل تحقن <code>OrdersService</code> المستودع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. إعادة التصدير تمرر واجهة <code>AuditModule</code> كما هي. المستودع غير مصدَّر فيبقى مغلّفًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>ConfigModule.forRoot({ isGlobal: true })</code> استُدعي في <code>AppModule</code>. وحدة <code>CoreModule</code> تريد إتاحة الإعداد لميزات تستورد النواة في تطبيق آخر لا يضع <code>forRoot</code>. ماذا تعيد تصديره، وماذا لا تستدعي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في التطبيق الذي أعدّ الإعداد، من يريد التمرير يعيد تصدير <code>ConfigModule</code> من غير <code>forRoot()</code> ثانٍ. استدعاء <code>forRoot</code> يبقى في مكان التكوين الواحد. في تطبيق لم يستدعِ <code>forRoot</code> أصلًا، إعادة التصدير لا تنشئ الإعداد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا تُذكر الوحدة في <code>imports</code> و <code>exports</code> معًا؟</li>
+<li>هل إعادة التصدير تنشئ تسجيلًا جديدًا للمزوّد؟</li>
+<li>متى يكون استيراد الوحدة مباشرة أوضح من الجسر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>إعادة التصدير تمرر واجهة وحدة عبر وحدة جسر. المستهلك يستورد الجسر ويصل إلى المصدَّرات الأصلية نفسها. الإعداد الديناميكي لا يُعاد استدعاؤه عند التمرير.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفتح الباب فقط: بعض الوحدات لا تكفي بياناتها الساكنة لأنها تحتاج خيارات عند الإقلاع. هذا مدخل Dynamic Modules، والتفصيل في فصل لاحق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/modules">Modules</a></li>
+<li><a href="https://docs.nestjs.com/fundamentals/dynamic-modules">Dynamic modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

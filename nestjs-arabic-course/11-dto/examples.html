@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة عقود لنادٍ للقراءة. كل مثال حد واحد: دخل، خرج، أو مخطط لم يُفحص بعد على المسار.</p>
+<h2>مثال 1 — عقد تسجيل</h2>
+<pre><code class="language-ts">import { IsEmail, IsString, MinLength } from &#39;class-validator&#39;;
+
+export class CreateMemberDto {
+  @IsString()
+  @MinLength(3)
+  fullName: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
+}
+</code></pre>
+<p><code>POST /members</code> يأخذ هذا الصنف. <code>password</code> مسموح هنا فقط. لا <code>id</code> ولا <code>joinedAt</code>.</p>
+<h2>مثال 2 — عقد رد منفصل</h2>
+<pre><code class="language-ts">export class MemberResponseDto {
+  id: string;
+  fullName: string;
+  email: string;
+  joinedAt: string;
+}
+
+export function toMemberResponse(member: {
+  id: string;
+  fullName: string;
+  email: string;
+  joinedAt: string;
+  passwordHash: string;
+}): MemberResponseDto {
+  return {
+    id: member.id,
+    fullName: member.fullName,
+    email: member.email,
+    joinedAt: member.joinedAt,
+  };
+}
+</code></pre>
+<p><code>passwordHash</code> موجود على الكيان وغائب عن الدالة. اختبار JSON يتأكد أن المفتاح غير موجود في الناتج.</p>
+<h2>مثال 3 — مخطط دعوة بلا ربط</h2>
+<pre><code class="language-ts">import { z } from &#39;zod&#39;;
+
+export const inviteSchema = z.object({
+  email: z.email(),
+  desk: z.number().int().positive(),
+});
+
+export type InviteInput = z.infer&lt;typeof inviteSchema&gt;;
+</code></pre>
+<p>هذا مصدر حقيقة لمسار دعوة لاحق. لا <code>@IsEmail</code> بجانبه. الربط <code>@Body({ schema: inviteSchema })</code> و <code>StandardSchemaValidationPipe</code> يبقيان في فصل التحقق. <code>ValidationPipe</code> وحده لن يقرأ <code>inviteSchema</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>كل مسار عام له صنف دخل أو مخطط واحد، لا الاثنان.</li>
+<li>دالة الرد لا تنشر <code>password</code> ولا <code>passwordHash</code>.</li>
+<li>استيراد <code>CreateMemberDto</code> في المتحكم استيراد قيمة.</li>
+<li><code>UpdateMemberDto</code> إن وُجد يُشتق بـ <code>PartialType(CreateMemberDto)</code> من غير نسخ الحقول.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Server-Sent Events</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-server-sent-events.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Server-Sent Events</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>دفع حالة تصدير أو معالجة غلاف إلى محرّر رف عبر <code>@Sse()</code> ودفق <code>text/event-stream</code>، وإغلاق الموارد حين يقطع المتصفح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المحرر يستعلم كل ثانية عن <code>GET /projects/:id</code>. أو اتصال يُغلق والـ <code>setInterval</code> يبقى. أو إعداد جلسة قاعدة أثناء <code>Promise</code> والعميل انصرف قبل الاشتراك فيُسرَّب المؤشر.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Sse()</code> من <code>@nestjs/common</code> يعيد <code>Observable&lt;MessageEvent&gt;</code> أو وعدًا به. المتصفح يستخدم <code>EventSource</code>. الحقول: <code>data</code> و <code>id</code> و <code>type</code> (يُرسل كحقل <code>event</code>) و <code>retry</code> و <code>comment</code>. <code>data</code> الكائن يُسلسل JSON. بلا <code>id</code> تضع Nest معرفًا متزايدًا. قطع العميل يلغي الاشتراك. <code>finalize</code> للتنظيف. <code>@SseSignal()</code> يعطي <code>AbortSignal</code> لعمر الاستجابة، بما فيه الانقطاع أثناء الإعداد.</p>
+<h2>التعريف التقني</h2>
+<p>المسار يجب أن يعيد Observable. مثال الصفحة:</p>
+<pre><code class="language-ts">@Sse(&#39;events&#39;)
+events(): Observable&lt;MessageEvent&gt; {
+  return interval(1000).pipe(
+    map(() =&gt; ({ data: { hello: &#39;world&#39; } })),
+  );
+}
+</code></pre>
+<p><code>interval</code> و <code>map</code> و <code>finalize</code> و <code>EMPTY</code> من <code>rxjs</code>. <code>MessageEvent</code> و <code>Sse</code> و <code>SseSignal</code> من <code>@nestjs/common</code>. الواجهة تسمح <code>data?: string | object</code>. تعليق <code>comment</code> سطر تبقيه المواصفة حيًا ويتجاهله <code>EventSource</code>. عند الإغلاق تستدعي Nest إلغاء الاشتراك. إن كان المعالج <code>async</code> وانقطع العميل قبل أن يُحَل الوعد، لا تُنشأ اشتراكًا في Observable المتأخر. افحصوا <code>signal.aborted</code> خلال الإعداد، أغلقوا المورد، وأعيدوا <code>EMPTY</code>. الإشارة تُجهض أيضًا عند اكتمال الدفق أو خطئه، فاجعلوا التنظيف قابلًا للتكرار. <code>@SseSignal()</code> على غير مسار <code>@Sse</code> يكون <code>undefined</code>. يعمل على Express و Fastify.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">EventSource → GET يبقى مفتوحًا
+كل next → كتلة تنتهي بسطرين فارغين
+قطع أو اكتمال → إلغاء الاشتراك والإشارة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { MessageEvent, Sse } from &#39;@nestjs/common&#39;;
+import { finalize, interval, map, type Observable } from &#39;rxjs&#39;;
+
+@Sse(&#39;projects/:id/activity&#39;)
+activity(): Observable&lt;MessageEvent&gt; {
+  return interval(2000).pipe(
+    map(() =&gt; ({ type: &#39;activity&#39;, data: { status: &#39;processing&#39; } })),
+    finalize(() =&gt; this.releases.release()),
+  );
+}
+</code></pre>
+<p>العميل:</p>
+<pre><code class="language-js">const source = new EventSource(&#39;/projects/prj_season/activity&#39;);
+source.addEventListener(&#39;activity&#39;, (event) =&gt; {
+  console.log(JSON.parse(event.data));
+});
+</code></pre>
+<p>بلا <code>type</code> يصل الحدث باسم <code>message</code> و <code>onmessage</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>المسار ما زال يمر بالحارس. <code>EventSource</code> في المتصفح يرسل ملفات تعريف الارتباط على نفس الأصل، لا ترويسة <code>Authorization</code> حرة. إن كانت رف تعتمد حاملًا فضعوا تصميم الجلسة أو وكيلًا قبل فتح الدفق.</li>
+<li>الجسم لا يفعّل اشتراكًا. الحدث حالة قراءة.</li>
+<li><code>finalize</code> يغلق مؤشرًا أو اشتراك قاعدة عند أي إنهاء.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Nest يكتب <code>Content-Type: text/event-stream</code> ويبقي الاستجابة.</li>
+<li>كل <code>next</code> يصبح كتلة حقول وتنتهي بسطر فارغ إضافي.</li>
+<li><code>event</code> في المواصفة هو <code>type</code> في الكائن.</li>
+<li><code>unsubscribe</code> عند <code>close()</code> من العميل يوقف <code>interval</code>.</li>
+<li>مع <code>@SseSignal()</code> يمكن تمرير <code>signal</code> إلى <code>fetch</code> أعلى حتى يُلغى الطلب إن انتهى الدفق لأي سبب. مستمع <code>abort</code> قد يعمل مع دالة التنظيف في Observable؛ اجعلوا الإغلاق مرة واحدة كافيًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>بعد طلب غلاف، الواجهة تفتح الدفق حتى يصل <code>{ data: { cover: &#39;ready&#39;, projectId } }</code> ثم تكمل الـ Observable. المعرف في الحمولة يُطابق مشروع المنظمة التي أثبتها الحارس عند فتح الاتصال. لا تثقوا بـ <code>projectId</code> داخل حدث لاحق يأتي من عميل. الخادم هو من يكتب الأحداث. إن انقطع المتصفح أثناء فتح جلسة نموذج، <code>@SseSignal</code> يرى <code>aborted</code> قبل إرجاع Observable وتُغلق الجلسة ثم <code>return EMPTY</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرجاع مصفوفة أو كائنًا عاديًا من المعالج.</li>
+<li>مؤقت بلا <code>finalize</code> أو بلا تنظيف الاشتراك.</li>
+<li>اعتبار SSE بديلًا عن ويب هوك Stripe. الدفع يحتاج توقيعًا وإعادة محاولة لا تبويب متصفح.</li>
+<li>فتح الدفق بلا حارس ثم تصفية المنظمة في الحدث فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تحديث أحادي الاتجاه من الخادم إلى تبويب مفتوح: تقدم تصدير، جاهزية غلاف، سجل نشاط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حوار ثنائي الاتجاه؛ ذلك قناة WebSocket. وتكامل مزوّد خارجي؛ ذلك ويب هوك. وطلب ينتهي بجسم واحد؛ مسار REST عادي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>الاتجاه</th>
+<th>من يغلق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>REST</td>
+<td>طلب واحد</td>
+<td>نهاية الاستجابة</td>
+</tr>
+<tr>
+<td><code>@Sse</code></td>
+<td>خادم → متصفح</td>
+<td>العميل أو اكتمال Observable</td>
+</tr>
+<tr>
+<td>ويب هوك</td>
+<td>مزوّد → API</td>
+<td>رد 2xx ثم إعادة عند الفشل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد معالج <code>@Sse</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Observable&lt;MessageEvent&gt;</code> أو <code>Promise</code> يُحَل إلى واحد. غيره لا يطابق عقد الدفق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى تفحصون <code>signal.aborted</code> أثناء الإعداد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعد عمل غير متزامن وقبل إرجاع Observable. إن انقطع العميل في هذه الفجوة لا يُشترَك في الدفق ولا تعمل دالة تنظيفه. أغلقوا المورد وأعيدوا <code>EMPTY</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يكفي SSE لتفعيل خطة رف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التبويب قد يُغلق والحدث غير موقّع من Stripe. التفعيل يبقى على الويب هوك ذي التوقيع. الدفق يعرض حالة已知ها الخادم بعد ذلك.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين <code>@Sse</code> و <code>MessageEvent</code>؟</li>
+<li>ما حقل <code>type</code> على السلك؟</li>
+<li>ماذا يفعل <code>finalize</code>؟</li>
+<li>أين <code>@SseSignal</code> معرّف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Sse</code> يبقي استجابة رف مفتوحة ويدفع <code>MessageEvent</code>. القطع يلغي الاشتراك. الإشارة تغلق ما خُصص أثناء الإعداد. الدفق عرض حالة لا إثبات دفع.</p>
+<h2>ماذا بعد؟</h2>
+<p>إن صار جزء من رف دالة تُشغَّل عند الطلب في سحابة بلا عملية دائمة، الدرس التالي Serverless.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Server-Sent Events: <a href="https://docs.nestjs.com/http/server-sent-events">https://docs.nestjs.com/http/server-sent-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Retry</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-retry.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Retry</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تصميم إعادة المحاولة لوارد المزود ولصادر رف بحيث التعطل المؤقت يُستأنف، والفشل الدائم يتوقف، والأثر لا يتكرر رغم تكرار الطلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>شبكة انقطعت بعد ما حدّث رف الاشتراك وقبل ما وصل 200 إلى Stripe، فأعاد المزود الحدث. أو شريك المخزون أعاد 500 فأعاد عامل رف الإرسال كل ثانية بلا سقف حتى حُظر العنوان. أو أعدتم فورًا على 400 لأن التوقيع خاطئ فلا أمل في المحاولة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>أعيدوا عندما يكون الفشل مؤقتًا: مهلة، 429، 500. لا تعيدوا على 400 توقيع أو جسم مرفوض. باعدوا بين المحاولات (backoff) وتوقفوا بعد حد. الوارد: ردوا 2xx فقط بعد حفظ دائم لمعرّف الحدث حتى تكون إعادة المزود آمنة. الصادر: نفس معرّف الحدث في كل المحاولات.</p>
+<h2>التعريف التقني</h2>
+<p>المزود يملك جدول إعادة الوارد؛ أنتم تملكون جدول الصادر (<code>attempts</code>, <code>nextAttemptAt</code>). التصنيف: أخطاء الشبكة و 408 و 429 و 5xx مؤقتة. 4xx غير 429 نهائي. حد مثل 8 محاولات ثم <code>failed</code> يظهر في واجهة المكتبة. لا حلقة <code>while</code> داخل طلب الموظف. صفحة Webhooks تتوقع أن الطرفين يتفقان على إعادة الإرسال؛ مفتاح التكرار في الدرس التالي هو الذي يجعل الإعادة صحيحة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مؤقت → حاول لاحقًا بمعرّف نفسه
+نهائي → قف وسجّل
+2xx → قف نجاحًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function nextDelayMs(attempt: number) {
+  const base = 1_000 * 2 ** Math.min(attempt, 6);
+  return Math.min(base, 60_000);
+}
+
+export function shouldRetry(status: number | null) {
+  if (status === null) return true;
+  if (status === 429 || status &gt;= 500) return true;
+  return false;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>status === null</code> انقطاع بلا رد، مؤقت.</li>
+<li>400 لا يُعاد. أصلحوا التوقيع أو العنوان.</li>
+<li>السقف 60 ثانية يمنع التباعد اللانهائي بين المحاولات داخل الحد العددي.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العامل يرسل الصادر.</li>
+<li>إن كان <code>shouldRetry</code> و <code>attempts</code> تحت الحد، يكتب <code>nextAttemptAt</code>.</li>
+<li>عامل لاحق يلتقط الصف عندما يحين الوقت. حمولة الحدث نفسها.</li>
+<li>للوارد، المزود يقرر إعادة الإرسال إن لم ير 2xx. أنتم تخزّنون <code>event.id</code> قبل الرد.</li>
+<li>بعد الحد، الصف <code>failed</code> ولا يُلمس الكتالوج المنشور.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function classifyInbound(stored: boolean) {
+  if (!stored) return 500;
+  return 200;
+}
+</code></pre>
+<p>إن فشل INSERT قبل الالتزام، أرجعوا 500 حتى يعيد المزود. إن نجح الحفظ، أرجعوا 200 حتى لو كانت المهمة التالية (بريد) ما زالت في الطابور. إعادة المزود ستجد المعرّف مخزنًا ولن تكرر تحديث الاشتراك، وهذا يحتاج درس التكرار. إرجاع 200 قبل الحفظ يفقد الحدث.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>200 ثم الحفظ فيفشل الحفظ ولا إعادة.</li>
+<li>إعادة 400 توقيع كل دقيقة.</li>
+<li>محاولات صادرة بلا تباعد فتشبه هجومًا على الشريك.</li>
+<li>محاولة جديدة بمعرّف حدث جديد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على التسليم الصادر دائمًا، وعلى الوارد بالاتفاق مع جدول المزود عبر رموزكم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعيدوا طلب القارئ <code>POST /books</code> بهذا الجدول؛ هناك <code>Idempotency-Key</code>. ولا تعيدوا إلى ما لا نهاية عنوانًا أعطى 404.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوضع</th>
+<th>وارد عندكم</th>
+<th>صادر منكم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>لم يُحفظ</td>
+<td>500 ليعيد المزود</td>
+<td>حاول لاحقًا</td>
+</tr>
+<tr>
+<td>حُفظ</td>
+<td>200</td>
+<td>أرسل 2xx من الشريك ينهي</td>
+</tr>
+<tr>
+<td>400 توقيع</td>
+<td>لا أثر</td>
+<td>لا تعيدوا نفس التوقيع المكسور</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>الشريك أعاد 503. هل تعيدون فورًا عشر مرات في نفس الدورة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. صنّفوه مؤقتًا، زادوا <code>attempts</code>، وحددوا <code>nextAttemptAt</code> عبر <code>nextDelayMs</code>. نفس <code>event.id</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا 200 قبل INSERT خطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المزود لن يعيد. إن سقطت العملية قبل الحفظ ضاع تحديث الاشتراك. احفظوا ثم أرجعوا 200.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بعد 8 محاولات ما زال الشريك 500. ماذا يرى مدير المكتبة، وماذا لا يتغير في الكتاب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صف التسليم <code>failed</code> يمكن عرضه في إعدادات الويب هوك. الكتاب يبقى منشورًا. إعادة التفعيل زر يجدول محاولة جديدة بنفس معرّف الحدث لا نشرًا ثانيًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي الرموز تُعاد وأيها تتوقف؟</li>
+<li>متى تردون 200 للوارد؟</li>
+<li>لماذا التباعد؟</li>
+<li>هل الإعادة تغيّر معرّف الحدث؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>أعيدوا الفشل المؤقت بتباعد وحد، وتوقفوا عند الرفض النهائي. الوارد: الحفظ ثم 200. الصادر: نفس الحدث حتى 2xx أو حتى <code>failed</code>. الإعادة بلا منع تكرار لا تكفي وحدها.</p>
+<h2>ماذا بعد؟</h2>
+<p>الإعادة ستصل مرتين. الدرس التالي يجعل المعالجة مرة واحدة لكل معرّف حدث.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Webhooks: <a href="https://docs.nestjs.com/http/webhooks">https://docs.nestjs.com/http/webhooks</a></li>
+<li>MDN — 429: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/429">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/429</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

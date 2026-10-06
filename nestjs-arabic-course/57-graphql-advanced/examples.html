@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>استعلام شاشة كتاب في رف، ثم ما يحيط به من غير خلط الأدوات في ديكور واحد.</p>
+<h2>المثال 1 — الحقل والمجمّع</h2>
+<pre><code class="language-ts">@ResolveField()
+author(@Parent() book: { authorId: string }) {
+  return this.authorLoader.loader.load(book.authorId);
+}
+</code></pre>
+<p><code>authorLoader</code> نطاقه الطلب، و <code>batch</code> تعيد الصفوف بترتيب المفاتيح وبقيد المستأجر. اختبار القائمة يعد رحلة مؤلف واحدة لا N.</p>
+<h2>المثال 2 — رفض قبل الخدمة</h2>
+<p>شغّل قاعدتين على المستند الذي تعرفه الواجهة:</p>
+<ul>
+<li>عمق يسمح بـ <code>book → reviews → user</code> ويرفض إعادة الدخول إلى <code>books</code> ست مرات.</li>
+<li>تعقيد يضرب <code>limit</code> في تكلفة الأبناء عبر <code>graphql-query-complexity</code> وإضافة <code>@Plugin()</code> كما في صفحة Complexity.</li>
+</ul>
+<p>ثم قائمة مغلقة: تجزئة <code>query Shelf { books { title } }</code> مسجّلة من البناء، وتجزئة عشوائية ترجع <code>Persisted query not found</code> ولا تصل إلى Prisma.</p>
+<h2>المثال 3 — مفتاح الاتحاد فقط</h2>
+<pre><code class="language-graphql">type Book @key(fields: &quot;id&quot;) {
+  id: ID!
+  title: String!
+}
+</code></pre>
+<p><code>resolveReference</code> في الكتالوج تستدعي <code>findById</code>. حقل <code>reviews</code> يبقى في خدمة المراجعات. البوابة خارج هذا الملف. لا تضع <code>@ResolveField</code> للمراجعات داخل الكتالوج نسخةً ثانية من البيانات.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — اختر النوع</h2>
+<p>جوال لا يضيف ترويسات، والشريك يطلب إبقاء المسار، وموقع يفتح الروابط في المتصفح. أي نوع يناسب الجوال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>URI. الجوال يرى <code>/v1/books</code>. الشريك الذي يتحكم في <code>Accept</code> يمكنه Media Type في عملية أخرى أو اتفاق واحد للعملية كلها. العملية الواحدة تختار نوعًا واحدًا من <code>enableVersioning</code> في هذه الدورة.</p>
+</details>
+
+<h2>تمرين متوسط — 404 بعد التفعيل</h2>
+<p>أمس عمل <code>GET /books</code>. اليوم بعد <code>enableVersioning({ type: VersioningType.URI })</code> صار 404 والمتحكم موجود بلا خاصية <code>version</code>. ما السطران الممكنان للإصلاح، وما أثر كل منهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>defaultVersion: &#39;1&#39;</code> يجعل المسار بلا مقطع يتصرف كنسخة 1، والعناوين الجديدة <code>/v1/books</code>. أو ضع <code>version: &#39;1&#39;</code> على المتحكم فيصبح العنوان <code>/v1/books</code> فقط، ويبقى <code>/books</code> نفسه 404. <code>VERSION_NEUTRAL</code> يبقي <code>/books</code> بلا رقم إن كان هذا ما يريده الموازن لا عقد الكتب.</p>
+</details>
+
+<h2>تمرين متقدم — كاش</h2>
+<p>رف فعّلت Header Versioning أمام CDN. عميل v2 استلم <code>{ price: 2500 }</code>. ما الناقص في مفتاح التخزين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الترويسة <code>X-Api-Version</code> ليست في المفتاح، فاستجابة v1 على <code>/books/b1</code> أُعيدت لطلب v2. أضف الترويسة إلى المفتاح أو أرسل <code>Vary</code> المناسب. في Media Type الناقص هو <code>Accept</code>. في URI العنوان مختلف أصلًا (<code>/v1</code> و <code>/v2</code>) فلا يحدث هذا الخلط على نفس المفتاح.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

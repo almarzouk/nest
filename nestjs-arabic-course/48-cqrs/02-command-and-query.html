@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Command و Query</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-command-and-query.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Command و Query</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل كائن الأمر الذي يغيّر الحالة عن كائن الاستعلام الذي يقرأ، كما تعرّفهما وصفة <code>@nestjs/cqrs</code>، من غير خلطهما بدالة خدمة واحدة بالاسم فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خدمة <code>place</code> التي ترجع أيضًا لوحة إحصاء تجعل معالج الكتابة يعرف شكل القراءة. الأمر مهمة («أبطل التنين»، «ألغِ الطلب») لا حقول CRUD عامة. الاستعلام سؤال («أعطني البطل») لا يغيّر الحالة. الفصل يسمح لاحقًا بمعالج ونموذج لكل جانب. الكائنان وحدهما، بلا معالج، لا يكفيان لتشغيل Nest. هذا الدرس يسمي الحمولة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الأمر صنف يحمل مدخلات التغيير. توسيع <code>Command&lt;Result&gt;</code> من <code>@nestjs/cqrs</code> اختياري ويثبت نوع ناتج <code>CommandBus.execute</code>. الاستعلام صنف يوسع <code>Query&lt;Result&gt;</code> بنفس الفكرة. لا منطق داخل الكائن سوى البيانات. المعالج في الدرس التالي ينفذ. المتحكم أو الخدمة تبني الكائن وتمرره للحافلة عندما تصل إليها، أو تستدعي المعالج في الاختبار.</p>
+<h2>التعريف التقني</h2>
+<p>من الوصفة:</p>
+<pre><code class="language-ts">import { Command } from &#39;@nestjs/cqrs&#39;;
+
+export class KillDragonCommand extends Command&lt;{ actionId: string }&gt; {
+  constructor(
+    public readonly heroId: string,
+    public readonly dragonId: string,
+  ) {
+    super();
+  }
+}
+</code></pre>
+<p>توسيع <code>Command</code> يحدد أن <code>execute</code> على الحافلة يُستنتج كـ <code>Promise&lt;{ actionId: string }&gt;</code>. بلا التوسيع يبقى الأمر صالحًا ويفقد الاستنتاج.</p>
+<pre><code class="language-ts">import { Query } from &#39;@nestjs/cqrs&#39;;
+
+export class GetHeroQuery extends Query&lt;Hero&gt; {
+  constructor(public readonly id: string) {
+    super();
+  }
+}
+</code></pre>
+<p>الأمر بلغة مهمة: <code>CancelOrderCommand</code> فيه <code>orderId</code> و <code>reason</code>، لا <code>UpdateOrderDto</code> بكل الأعمدة القابلة للكتابة. الاستعلام <code>GetInvoiceViewQuery</code> يعيد شكل اللوحة لا كيان الكتابة.</p>
+<p>لا تضع <code>prisma</code> داخل الأمر. لا تضع فحص الحارس داخل الاستعلام. الحارس بقي على المسار. الأمر يفترض فاعلًا مسموحًا له وصلت هويته في الحقول (<code>requestedBy</code>).</p>
+<p>القراءة لا تُنفذ عبر <code>Command</code> حتى لو كانت <code>SELECT</code> ثقيلًا. الكتابة لا تُنفذ عبر <code>Query</code> حتى لو أرجعت الكيان الجديد. إن أرجع الأمر <code>actionId</code> فتلك نتيجة المهمة لا نموذج القراءة الكامل. اجلب اللوحة باستعلام بعدها إن لزم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CancelOrderCommand  -&gt; سيغيّر حالة
+GetInvoiceViewQuery -&gt; سيقرأ نموذجًا
+الكائن بيانات
+المعالج سلوك
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class CancelOrderCommand extends Command&lt;void&gt; {
+  constructor(public readonly orderId: string) {
+    super();
+  }
+}
+</code></pre>
+<pre><code class="language-ts">export class GetOrderQuery extends Query&lt;{ id: string; status: string }&gt; {
+  constructor(public readonly orderId: string) {
+    super();
+  }
+}
+</code></pre>
+<p>المتحكم لاحقًا يرسل الأول على <code>CommandBus</code> والثاني على <code>QueryBus</code>. اليوم يكفي أن الملفين لا يستوردان بعضهما.</p>
+<h2>شرح المثال</h2>
+<p><code>void</code> يعني أن نتيجة الأمر لا تحمل لوحة. الواجهة بعد الإلغاء تستعلم إن احتاجت الشكل الجديد. هذا يمنع معالج الإلغاء من معرفة أعمدة العرض. إن كان المسار يجب أن يرجع الجسم فورًا ونموذج القراءة هو كيان الكتابة نفسه، فدالة الخدمة في درس CRUD أصدق من أمرين متلازمين دائمًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>new CancelOrderCommand(id)</code> كائن عادي.</li>
+<li>لا شيء يُحفظ عند البناء.</li>
+<li>الحافلة لاحقًا تطابق الصنف إلى معالج.</li>
+<li>نوع <code>Command&lt;void&gt;</code> يوثق الناتج للمستدعي.</li>
+<li>الاستعلام لا يُمرر إلى <code>CommandBus</code>. لكل حافلة نوع.</li>
+<li>الكائنات رخيصة. الكلفة في المعالجات والنماذج المزدوجة لا في <code>class</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>IssueInvoiceCommand</code> يحمل <code>orderId</code> لا جسم الفاتورة كاملًا من العميل. المعالج يحسب الضريبة. <code>GetInvoicePdfQuery</code> يقرأ نموذجًا مولَّدًا. العميل لا يرسل الضريبة في الأمر. هذا فرق المهمة عن DTO الذي يعكس الجدول. أبقِ DTO على المتحكم وحوّله إلى أمر بعد التحقق، حتى لا يصبح الأمر شكل HTTP.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>أمر اسمه <code>UpdateEverythingCommand</code> بكل الحقول.</li>
+<li>استعلام يحفظ «آخر مشاهدة» فيخالف القراءة.</li>
+<li>منطق <code>cancel</code> داخل الصنف الأمر.</li>
+<li>توسيع <code>Command</code> ثم إرجاع شكل مختلف من المعالج عن المعامل النوعي.</li>
+<li>مسار CRUD بسيط صار أمرًا واستعلامًا بلا اختلاف نموذج.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما قررت فصل المعالجات: مهمة كتابة واضحة وسؤال قراءة واضح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل <code>BooksService.create</code> التي ما زالت خط الأساس. لا تعِد تسمية الدالة <code>command</code> في تعليق وتبقِ التدفق نفسه بلا حافلة إلا للتوثيق الشخصي. إما CRUD أو أصناف الحزمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Command</th>
+<th>Query</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الأثر</td>
+<td>يغيّر حالة</td>
+<td>يقرأ</td>
+</tr>
+<tr>
+<td>المثال الرسمي</td>
+<td><code>KillDragonCommand</code></td>
+<td><code>GetHeroQuery</code></td>
+</tr>
+<tr>
+<td>النوع الاختياري</td>
+<td><code>Command&lt;Result&gt;</code></td>
+<td><code>Query&lt;Result&gt;</code></td>
+</tr>
+<tr>
+<td>الحافلة</td>
+<td><code>CommandBus</code></td>
+<td><code>QueryBus</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحمل <code>KillDragonCommand</code> من التوثيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>heroId</code> و <code>dragonId</code>، ويمتد <code>Command</code> بنوع الناتج مثل <code>{ actionId: string }</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا ترجع لوحة الإحصاء من أمر الإصدار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يعرف معالج الكتابة شكل القراءة. الاستعلام يجلب اللوحة من نموذجها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تُبقي <code>CreateBookDto</code> على المتحكم بدل جعل الأمر هو جسم HTTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الجسم عقد HTTP قد يحوي حقولًا للعرض أو للتحقق. الأمر مهمة بعد Pipe: الحقول التي يحتاجها المعالج فقط، مثل معرف الطلب لا عمود الضريبة المحسوب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل توسيع <code>Command</code> إجباري؟</li>
+<li>أي حافلة لأي صنف؟</li>
+<li>ماذا يبقى خارج صنف الأمر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأمر حمولة مهمة تغيّر الحالة، والاستعلام حمولة سؤال. النوع الاختياري يوثق الناتج. السلوك في المعالج لا في الكائن، والفصل بلا اختلاف نموذج لا يستحق الصنفين.</p>
+<h2>ماذا بعد؟</h2>
+<p>Handlers: من ينفذ الأمر والاستعلام وأين يُسجَّل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CQRS: <a href="https://docs.nestjs.com/recipes/cqrs">https://docs.nestjs.com/recipes/cqrs</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

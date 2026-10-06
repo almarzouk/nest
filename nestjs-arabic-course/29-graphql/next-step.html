@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>المخطط صار عقد قراءة وكتابة على <code>/graphql</code>، والاشتراك قناة GraphQL تحديدًا. الفصل <code>30-websockets</code> يفتح مقبسًا لا يمر على حقول SDL: بوابة Nest تتلقى أحداثًا بأسماء أنت تختارها.</p>
+<h2>ماذا يبقى هنا</h2>
+<ul>
+<li>Code-first مع <code>autoSchemaFile</code> و <code>sortSchema</code> و <code>ApolloDriver</code>.</li>
+<li>GraphiQL خارج الإنتاج، بلا <code>playground</code> ككتابة جديدة.</li>
+<li>المحلل في <code>providers</code> ويستدعي الخدمة.</li>
+<li><code>context</code> لكل طلب للحارس ولأي DataLoader لاحق.</li>
+<li>N+1 مسمّاة، والعمق في <code>57-graphql-advanced</code>.</li>
+<li>الاشتراك بمفتاح <code>graphql-ws</code> بعد استعلام الحالة الحالية.</li>
+<li>رفع الملفات لم ينتقل إلى المخطط.</li>
+</ul>
+<h2>ماذا ستفرّق هناك</h2>
+<p><code>@WebSocketGateway</code> صنف مزوّد مثل المحلل، لكن الرسالة <code>@SubscribeMessage</code> ليست حقل <code>Subscription</code>. Socket.IO هو الافتراض. خطافات الاتصال، والمصادقة على المصافحة، والحراس والأنابيب تعمل على البوابة بشكل مختلف عن HTTP.</p>
+<p>لا تبنِ دردشة المتجر داخل <code>PubSub</code> الخاص بـ GraphQL إن كان العميل لا يتحدث GraphQL أصلًا.</p>
+<p>افتح <a href="../30-websockets/README.html"><code>30-websockets</code></a>.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

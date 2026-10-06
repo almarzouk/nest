@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Filters و Pipes و Guards على WebSocket</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-filters-pipes-guards.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Filters و Pipes و Guards على WebSocket</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تطبيق أنبوب على جسم الرسالة، وحارس على حدث واحد، ومرشح يحوّل الفشل إلى خطأ مقبس لا إلى صفحة HTTP.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>join</code> يستقبل <code>bookId</code> من العميل. من غير أنبوب يصل <code>{}</code> أو رقم وتُبنى غرفة باسم <code>undefined</code>. الحارس على الاتصال أثبت الهوية، لا شكل الرسالة. وإن رميت <code>BadRequestException</code> فقد لا يراها عميل Socket.IO كما يراها <code>fetch</code>، لأن لا رمز حالة HTTP على الإطار.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ValidationPipe</code> على <code>@MessageBody()</code> يفحص DTO. <code>@UseGuards</code> على الدالة يمنع الحدث. الاستثناء الخاص بالقناة <code>WsException</code>. مرشح <code>@Catch(WsException)</code> يرسل الحمولة إلى العميل. أبقِ الحفظ على HTTP. هنا الشكل والإذن على الرسالة فقط.</p>
+<h2>التعريف التقني</h2>
+<p>DTO بـ <code>class-validator</code> كما في بقية الدورة:</p>
+<pre><code class="language-ts">import { IsString, Length } from &#39;class-validator&#39;;
+
+export class JoinBookDto {
+  @IsString()
+  @Length(1, 64)
+  bookId: string;
+}
+</code></pre>
+<pre><code class="language-ts">import { UsePipes, ValidationPipe } from &#39;@nestjs/common&#39;;
+import { MessageBody, SubscribeMessage, WsException } from &#39;@nestjs/websockets&#39;;
+
+@SubscribeMessage(&#39;join&#39;)
+@UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+join(@MessageBody() body: JoinBookDto) {
+  return { joined: body.bookId };
+}
+</code></pre>
+<p><code>whitelist</code> يسقط الحقول الزائدة حتى لا يمر <code>userId</code> داخل الجسم إلى منطق الغرفة.</p>
+<p>حارس حدث، بعد أن وضع الاتصال <code>userId</code>:</p>
+<pre><code class="language-ts">@Injectable()
+export class WsUserGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const client = context.switchToWs().getClient&lt;{ data: { userId?: string } }&gt;();
+    if (!client.data.userId) {
+      throw new WsException(&#39;unauthenticated&#39;);
+    }
+    return true;
+  }
+}
+</code></pre>
+<p>مرشح يلتقط <code>WsException</code> ويرسل حدث خطأ. ابنِ من <code>BaseWsExceptionFilter</code> إن أردت السلوك الافتراضي ثم عدّل الحمولة. الحد الأدنى أن العميل يرى <code>{ status: &#39;error&#39;, message }</code> على الإقرار أو على حدث تعرفه الواجهة، لا HTML.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">رسالة join
+  Guard  هل في data.userId؟
+  Pipe   هل JoinBookDto صالح؟
+  الدالة
+  WsException -&gt; مرشح -&gt; العميل
+</code></pre>
+<p>ترتيب Nest المعتاد: الحارس ثم الأنبوب ثم الدالة، والمرشح حولها.</p>
+<h2>أبسط مثال</h2>
+<p>رفض حقل زائد:</p>
+<pre><code class="language-json">{ &quot;bookId&quot;: &quot;42&quot;, &quot;userId&quot;: &quot;attacker&quot; }
+</code></pre>
+<p>مع <code>forbidNonWhitelisted: true</code> يفشل الأنبوب. الغرفة لا تُبنى، والهوية تبقى ما كتبه <code>handleConnection</code> في <code>client.data</code>.</p>
+<h2>شرح المثال</h2>
+<p>الأنبوب نفسه الذي يحمي <code>POST</code> يحمي جسم المقبس إن ركّبته على الرسالة. الفرق قناة الخطأ: <code>WsException</code> تُترجم في مرشح على البوابة، و <code>BadRequestException</code> وحدها قد تُسجَّل ولا تصل كإقرار.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند وصول الحدث تبني Nest سياق <code>ws</code>. <code>switchToWs().getClient()</code> المقبس و <code>getData()</code> الجسم. الحارس الذي يعيد <code>false</code> يمنع الدالة. الذي يرمي <code>WsException</code> يذهب إلى المرشح. <code>ValidationPipe</code> ينشئ نسخة من <code>JoinBookDto</code> ويشغّل المدققات. الفشل استثناء قبل <code>client.join</code>. الإرجاع الناجح إقرار للمرسل فقط. على المقبس الجسم هو الرسالة، لا <code>request.query</code>.</p>
+<h2>مثال عملي</h2>
+<p>جسم بلا <code>bookId</code> يفشل في المرشح. اتصال بلا <code>data.userId</code> يُقطع من الخطاف. رفض المسودة <code>{ joined: null }</code> من الدالة. ثلاث قنوات أوضح من رمز HTTP غير موجود هنا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتماد على <code>ValidationPipe</code> العالمي لـ HTTP دون وضعه على الرسالة.</li>
+<li><code>throw new BadRequestException</code> وتوقع JSON المعتاد في المتصفح.</li>
+<li>حارس يقرأ <code>switchToHttp()</code> داخل البوابة.</li>
+<li>تمرير الجسم كاملًا إلى <code>client.join</code> قبل الأنبوب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل <code>@SubscribeMessage</code> يقبل كائنًا من العميل، خصوصًا <code>join</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بديلًا عن فحص الرمز في <code>handleConnection</code>. الأنبوب لا يعمل إن لم تُرسل رسالة. ولا بديلًا عن <code>ParseFilePipe</code> على الرفع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>على HTTP</th>
+<th>على البوابة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الأنبوب</td>
+<td><code>@Body()</code></td>
+<td><code>@MessageBody()</code></td>
+</tr>
+<tr>
+<td>الحارس</td>
+<td><code>switchToHttp</code></td>
+<td><code>switchToWs</code></td>
+</tr>
+<tr>
+<td>خطأ العميل</td>
+<td><code>HttpException</code></td>
+<td><code>WsException</code> ومرشح</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استثناء يليق برسالة المقبس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>WsException</code> من <code>@nestjs/websockets</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يفعل <code>forbidNonWhitelisted</code> على <code>join</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يرفض الجسم الذي يحمل حقولًا خارج <code>JoinBookDto</code>، مثل <code>userId</code> يحاول العميل تثبيته.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يبقى <code>handleConnection</code> لازمًا مع وجود <code>WsUserGuard</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحارس يعمل عند الرسالة. الاتصال الصامت يسبقها. الخطاف يقطع من بلا رمز قبل الاستماع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُركَّب <code>ValidationPipe</code> للرسالة؟</li>
+<li>كيف يصل الحارس إلى المقبس؟</li>
+<li>لماذا الإرجاع الناجح ليس بثًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأنبوب يشكّل <code>join</code>، والحارس يقرأ مقبس <code>ws</code>، و <code>WsException</code> يخرج من مرشح تفهمه الواجهة. الهوية المبكرة تبقى في خطاف الاتصال.</p>
+<h2>ماذا بعد؟</h2>
+<p>RxJS الذي ستحتاجه المعترضات وعميل HTTP: <code>Observable</code> قبل أن نستدعي خدمة خارجية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — Pipes: <a href="https://docs.nestjs.com/pipes">https://docs.nestjs.com/pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

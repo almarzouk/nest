@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>استضافة SPA</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-spa-hosting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>استضافة SPA</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تقديم بناء واجهة صفحة واحدة من Nest، مع إبقاء مسارات الـ API على رموزها الحقيقية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>واجهة React أو Vue تطلب <code>/books/42</code> في المتصفح حتى يعيد الموجّه على العميل رسم الصفحة. الخادم إن لم يجد متحكمًا بهذا الشكل يُرجع عادة <code>404</code>. إن جعلت <code>ServeStaticModule</code> يلتقط كل مسار ويرسل <code>index.html</code>، اشتغل الموجّه. وإن التقط أيضًا <code>/api/books/404-no-such-id</code> أعاد HTML برمز <code>200</code>، فانكسر العميل الذي يتوقع JSON ورمز غياب.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>renderPath</code> الافتراضي بدل يستوعب كل المسارات حتى يصل <code>index.html</code> لمسارات الواجهة. قيّد هذا البدل: بادئة للواجهة، أو <code>exclude</code> لبادئة الـ API على Express. على Fastify لا يوجد <code>exclude</code>. استخدم <code>renderPath</code> تعبيرًا منتظمًا. وتحقق بطلب API غائب أن الجسم ليس HTML.</p>
+<h2>التعريف التقني</h2>
+<p><code>renderPath</code> مسار رسم التطبيق الثابت، ويُضم إلى <code>serveRoot</code>. الافتراض على Express <code>{*any}</code> وعلى Fastify <code>*</code>. أي مسار غير مستثنى يمكن أن يُرسل له <code>index.html</code> إن كان <code>index</code> مفعّلًا و <code>fallthrough</code> يسمح بالسقوط إلى ملف الفهرس.</p>
+<p>مثال Nest لواجهة مع API:</p>
+<pre><code class="language-ts">ServeStaticModule.forRoot({
+  rootPath: join(__dirname, &#39;..&#39;, &#39;client&#39;),
+  exclude: [&#39;/api/{*path}&#39;],
+  serveStaticOptions: { fallthrough: false },
+});
+</code></pre>
+<p><code>fallthrough: false</code> في المثال الرسمي يمنع الطبقة من تمرير ما لم تجده. مع استضافة SPA غالبًا تريد العكس لمسارات الواجهة: غياب الملف يعني <code>index.html</code> لا <code>404</code>. اجمع هذا مع استثناء <code>/api</code> حتى غياب JSON يبقى من Nest لا من ملف الفهرس.</p>
+<p><code>useGlobalPrefix: false</code> هو الافتراض. إن ناديت <code>setGlobalPrefix(&#39;api&#39;)</code> ثم فعّلت <code>useGlobalPrefix</code>، قد تُخدم الواجهة تحت <code>/api</code> أيضًا. اتركه <code>false</code> عندما تكون البادئة العامة للـ API فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">/api/*     متحكمات، والغياب 404 JSON
+/*         أصل إن وُجد، وإلا index.html للواجهة
+</code></pre>
+<p>الترتيب قرار إعداد، لا أملًا في أن «المتحكم يفوز دائمًا».</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ServeStaticModule } from &#39;@nestjs/serve-static&#39;;
+import { join } from &#39;node:path&#39;;
+import { BooksModule } from &#39;./books/books.module.js&#39;;
+
+@Module({
+  imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), &#39;client&#39;, &#39;dist&#39;),
+      exclude: [&#39;/api/{*path}&#39;],
+    }),
+    BooksModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>ومسار الواجهة <code>GET /books/42</code> يعيد <code>index.html</code>. مسار <code>GET /api/books/42</code> يذهب إلى المتحكم لأن الاستثناء يطابق <code>/api/...</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>client/dist</code> ناتج بناء الواجهة وفيه <code>index.html</code> وملفات مجزّأة بأسماء فيها تجزئة. تلك الملفات أصول حقيقية تُخزَّن مؤقتًا طويلًا. <code>index.html</code> وحده يتغير مع كل نشر حتى يشير إلى الأسماء الجديدة، فتخزينه المؤقت قصير. الاستثناء يحمي شجرة <code>/api</code> كلها، بما فيها مسار لم تكتبه بعد. من غير الاستثناء، مسار API خاطئ قد يعيد الصفحة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الوسيط يرى الطلب قبل إكمال السلسلة أو ضمنها حسب تركيب Nest. إن طابق <code>exclude</code> يتخطى الخدمة الثابتة. وإلا يبحث عن ملف. إن لم يوجد ملف وطبقة SPA معدّة للفهرس، يُرسل <code>index.html</code> مع <code>200</code>. عميل <code>fetch</code> الذي فحص <code>response.ok</code> فقط يعتبر الغياب نجاحًا ثم يفشل عند <code>response.json()</code> لأن الجسم HTML. اختبار هذا المسار أوضح من قراءة الإعداد مرتين.</p>
+<p>على Fastify استبدل الاستثناء بقيد الرسم، لأن الحزمة تصرّح أن <code>exclude</code> غير مدعوم هناك:</p>
+<pre><code class="language-ts">renderPath: /^(?!\/api).*/,
+</code></pre>
+<p>راجع التعبير مع مساراتك الفعلية. خطأ في النظر الأمامي يعيد فتح الثغرة أو يخفي الواجهة.</p>
+<h2>مثال عملي</h2>
+<p>قائمة تحقق بعد ربط البناء:</p>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>الرد المتوقع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET /</code></td>
+<td><code>index.html</code></td>
+</tr>
+<tr>
+<td><code>GET /books/42</code></td>
+<td><code>index.html</code> حتى بلا كتاب 42، لأن الموجّه على العميل</td>
+</tr>
+<tr>
+<td><code>GET /api/books/42</code></td>
+<td>JSON أو <code>404</code> JSON</td>
+</tr>
+<tr>
+<td><code>GET /api/missing</code></td>
+<td><code>404</code> من Nest، الجسم ليس <code>&lt;!doctype html&gt;</code></td>
+</tr>
+<tr>
+<td><code>GET /assets/index-abc123.js</code></td>
+<td>الملف المجزّأ</td>
+</tr>
+</tbody></table>
+<p>إن فشل الصف الأخير فـ <code>rootPath</code> لا يشير إلى <code>dist</code>. إن فشل صف <code>/api/missing</code> فالاستثناء لا يطابق صيغة البدل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>exclude: [&#39;/api*&#39;]</code> على إصدار يستعمل <code>{*name}</code>.</li>
+<li>الحكم على الـ API من المتصفح الذي يعرض HTML ولا يظهر رمز <code>404</code>.</li>
+<li>تخزين <code>index.html</code> لسنة، فيبقى العميل على حزم قديمة.</li>
+<li>تقديم SPA من Nest في الإنتاج وقد وضعت CDN أصلًا. عندها الخادم يكرر الدور ويكشف إعداد البدل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تنشر الواجهة والـ API من عملية Node واحدة، والموجّه على العميل يحتاج <code>index.html</code> لكل مسار شاشة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يخدم Nginx أو CDN الملفات وNest تستقبل <code>/api</code> فقط. البدل هناك إعداد الخادم الأمامي. ولا تستخدم البدل إن لم تكن هناك واجهة، لأنه يخفي المسارات الناقصة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطلب غير الموجود</th>
+<th>بلا SPA</th>
+<th>مع بدل بلا استثناء</th>
+<th>مع استثناء <code>/api</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/books/42</code></td>
+<td><code>404</code></td>
+<td><code>index.html</code></td>
+<td><code>index.html</code></td>
+</tr>
+<tr>
+<td><code>/api/nope</code></td>
+<td><code>404</code> JSON</td>
+<td><code>index.html</code> و <code>200</code></td>
+<td><code>404</code> JSON</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا تعيد الواجهة <code>index.html</code> لمسار <code>/books/42</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن رسم الشاشة يحدث في المتصفح. الخادم يسلّم تطبيق الواجهة لأي مسار شاشة، والبيانات تأتي من <code>/api</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما علامة أن استثناء API فشل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>GET /api/missing</code> يعيد <code>200</code> وجسم HTML بدل <code>404</code> من Nest.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>exclude</code> لا يكفي خطة Fastify؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحزمة لا تدعم <code>exclude</code> على Fastify. القيد يكون <code>renderPath</code> بتعبير منتظم يستثني بادئة الـ API.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الافتراض الخطير لـ <code>renderPath</code>؟</li>
+<li>أين يجلس بناء الواجهة مقابل مجلد الأغلفة؟</li>
+<li>ماذا تفحص غير صفحة البداية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>SPA من Nest تعني <code>index.html</code> لمسارات الشاشات، واستثناءً صريحًا لبادئة الـ API حتى يبقى الغياب JSON.</p>
+<h2>ماذا بعد؟</h2>
+<p>GraphQL من الصفر، ثم كيف يولّد Nest المخطط من الأصناف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><code>@nestjs/serve-static</code>: <a href="https://github.com/nestjs/serve-static">https://github.com/nestjs/serve-static</a></li>
+<li>مثال الاستثناء: <a href="https://github.com/nestjs/nest/blob/master/sample/24-serve-static/src/app.module.ts">https://github.com/nestjs/nest/blob/master/sample/24-serve-static/src/app.module.ts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

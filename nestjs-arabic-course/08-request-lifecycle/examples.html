@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة طلبات على إعارة. كل مثال يتبع التسلسل الرسمي من غير إعادة ترتيب المراحل. الأصناف أسماء مواضع؛ بناؤها في الفصول التالية.</p>
+<h2>مثال 1 — <code>GET /loans</code> ينجح</h2>
+<pre><code class="language-text">app.use(requestId)
+AuditModule @Global() -&gt; stamp
+AppModule -&gt; accessLog
+LoansModule -&gt; loansMark
+
+APP_GUARD LibraryOpenGuard
+@UseGuards(MemberGuard) على LoansController
+
+APP_INTERCEPTOR TimingInterceptor   دخول
+@UseInterceptors(AuditInterceptor) على الصنف   دخول
+
+لا Pipe على GET
+
+LoansController.list -&gt; LoansService.openList
+
+خروج: AuditInterceptor ثم TimingInterceptor
+استجابة 200 JSON
+</code></pre>
+<p><code>requestId</code> قبل <code>stamp</code> لأن <code>app.use</code> قبل وحدات <code>@Global()</code>. <code>LibraryOpenGuard</code> قبل <code>MemberGuard</code>. <code>TimingInterceptor</code> يدخل قبل <code>AuditInterceptor</code> ويخرج بعده. لا سطر Exception Filter لأن <code>openList</code> أعادت قائمة.</p>
+<h2>مثال 2 — <code>PATCH /loans/9</code> يرفضه الحارس</h2>
+<pre><code class="language-text">Middleware كما في المثال 1، لأن المنع لم يبدأ بعد
+LibraryOpenGuard ينجح
+MemberGuard يعيد false
+
+لا RouteSpecificPipe
+لا ParseIntPipe على :id
+لا LoansService.update
+</code></pre>
+<p>Nest ترمي استثناء الرفض. الفحص: مرشح على <code>PATCH</code> إن وُجد، ثم مرشح <code>LoansController</code>، ثم <code>APP_FILTER</code>. أول إمساك يكتب الاستجابة ويمنع المرشح التالي من رؤية الاستثناء نفسه. Pipe لم تعمل لأن موضعها بعد Guards.</p>
+<h2>مثال 3 — جسم مقبول ثم رمي من الخدمة، ومسار CSV منفصل</h2>
+<p><code>PATCH</code> يصل إلى الخدمة بعد الأنابيب:</p>
+<pre><code class="language-text">GeneralValidationPipe على آخر معامل ثم ما قبله
+RouteSpecificPipe الجولة نفسها
+ParseIntPipe على :id
+update() -&gt; LoansService.update ترمي
+</code></pre>
+<p><code>catchError</code> في <code>TimingInterceptor</code> إن رجع قيمة، فالمرشح لا يعمل وتكمل الأغلفة الأوسع كنجاح. إن أعاد الرمي: <code>LoanPatchFilter</code> ثم مرشح الصنف ثم العام.</p>
+<p>مسار آخر <code>GET /loans/export.csv</code> يستخدم <code>@Res()</code> من غير <code>passthrough</code> وينادي <code>res.send</code>. الحارس والـ Middleware ما زالا قبل الدالة. بعد <code>send</code> لا تسلسل JSON ولا خروج Interceptor على قيمة <code>return</code>.</p>
+<pre><code class="language-ts">import { Controller, Get, Res, UseGuards } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+import { MemberGuard } from &#39;./member.guard.js&#39;;
+
+@UseGuards(MemberGuard)
+@Controller(&#39;loans&#39;)
+export class LoanExportController {
+  constructor(private readonly loans: LoansService) {}
+
+  @Get(&#39;export.csv&#39;)
+  exportCsv(@Res() res: Response) {
+    res.type(&#39;text/csv&#39;);
+    res.send(this.loans.csv());
+  }
+}
+</code></pre>
+<p><code>export.csv</code> مسار ثابت. ضعه قبل أي <code>@Get(&#39;:id&#39;)</code> على Express الافتراضي حتى لا يلتقطه المعامل، كما في فصل Controllers.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>@Global()</code> قبل الجذر في Middleware، و <code>app.use</code> قبلهما.</li>
+<li>خروج Interceptor عكس الدخول.</li>
+<li>المرشحات فقط عند استثناء غير ممسوك، ومن الدالة صعودًا.</li>
+<li>استثناء Middleware للمرشح العام فقط.</li>
+<li><code>@Res()</code> بلا <code>passthrough</code> يكتب الرد خارج التسلسل القياسي.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

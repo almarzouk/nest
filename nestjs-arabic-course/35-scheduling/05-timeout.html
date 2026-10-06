@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Timeout</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-timeout.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Timeout</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل دالة مرة واحدة بعد تأخير من إقلاع العملية، وتمييز هذه الزينة عن مهلة HTTP ومهلة RxJS.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعض التهيئة تحب أن تتأخر حتى تفتح Redis أو حتى ينتهي <code>onModuleInit</code> الثقيل: طباعة جاهزية العامل، أو إدراج مهمة تعويضية مرة عند البدء. <code>setTimeout</code> داخل الباني يعمل قبل اكتمال الحقن أحيانًا ويصعب إيقافه في الاختبار. <code>@Timeout</code> من <code>@nestjs/schedule</code> مؤقت مرة واحدة مرتبط بالمزوّد.</p>
+<p>ليست هذه مهلة <code>lookup</code> ولا <code>timeout()</code> في <code>pipe</code>. إن استعملتها لقطع ناشر ISBN فلن تُستدعى لكل طلب، بل مرة بعد الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Timeout(5_000)</code> يستدعي الدالة بعد 5 ثوانٍ من جدولة المزود، ثم لا يعيد. للنبضة المتكررة استخدم <code>@Interval</code>. للتقويم <code>@Cron</code>. الرقم بالميلي ثانية.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable, OnApplicationBootstrap } from &#39;@nestjs/common&#39;;
+import { Timeout } from &#39;@nestjs/schedule&#39;;
+
+@Injectable()
+export class StartupPingService {
+  @Timeout(5_000)
+  async pingCovers() {
+    const counts = await this.covers.getJobCounts(&#39;waiting&#39;, &#39;failed&#39;);
+    this.logger.log(`covers waiting=${counts.waiting} failed=${counts.failed}`);
+  }
+}
+</code></pre>
+<p>الاسم الاختياري <code>@Timeout(&#39;covers-ping&#39;, 5_000)</code> إن أردت إلغاءه من <code>SchedulerRegistry</code>.</p>
+<p>لا تضع في هذه الدالة إرسال بريد ترحيبي لكل المستخدمين. كل إقلاع، وكل نسخة، ستشغّلها مرة. القياس في السجل آمن نسبيًا. الأثر الخارجي يحتاج <code>jobId</code> أو خروجًا إن كانت العلامة موجودة.</p>
+<p>إن احتجت «بعد أن تكتمل تهيئة الوحدات» لا «بعد 5 ثوانٍ أملًا»، فخطاف <code>OnApplicationBootstrap</code> أدق من رقم سحري. <code>@Timeout</code> عندما يكون التأخير نفسه هو القرار، مثل إمهال Redis 5 ثوانٍ في التطوير.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الإقلاع
+  5s
+    pingCovers مرة
+      لا تكرار
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Timeout(5_000)
+logReady() {
+  this.logger.log(&#39;cover worker process is up&#39;);
+}
+</code></pre>
+<p>الدالة بلا <code>await</code> طويلة. إن كانت تقرأ Redis، اجعلها <code>async</code> والتقط فشل الاتصال حتى لا يظهر رفض صامت بعد خمس ثوانٍ من كل نشر.</p>
+<h2>شرح المثال</h2>
+<p>خمس ثوانٍ تكفي في تمرين محلي ليظهر السطر بعد رسالة Nest الجاهزة. في الإنتاج السجل نفسه مفيد مرة لكل عملية، أي سطر لكل نسخة. لا ترفع مستوى الإنذار إن كان <code>waiting</code> صفرًا. الإنذار شرط من درس <code>@Interval</code> حيث يتكرر القياس.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المكتبة تسجل مؤقتًا واحدًا. عند النار تُستدعى الدالة ويُزال المؤقت. إعادة تشغيل العملية تعيد الدورة. لا تعويض إن قُتلت العملية في الثواني الخمس الأولى: العمل لم يحصل، والمرة التالية بعد الإقلاع التالي فقط. هذا مقبول لسطر سجل وغير مقبول لتسوية دفع.</p>
+<p><code>SchedulerRegistry</code> يتيح حذف المؤقت بالاسم في الاختبار بعد إنشاء الوحدة حتى لا يشتغل أثناء الإغلاق. إن لم تسمِّ المؤقت، تتبّعه أصعب. للاختبار الأفضل استخراج الجسم إلى <code>logReady()</code> ونقل الزينة، ثم استدعاء الدالة بلا انتظار.</p>
+<h2>مثال عملي</h2>
+<p>تعويض نافذة فشل <code>add</code> مرة عند البدء، مع طابور:</p>
+<pre><code class="language-ts">@Timeout(5_000)
+async requeueOnBoot() {
+  const stuck = await this.books.pendingOlderThan(60_000);
+  for (const book of stuck) {
+    await this.producer.enqueueResize({ bookId: book.id, coverKey: book.coverKey });
+  }
+}
+</code></pre>
+<p>مع <code>@Interval</code> الدوري قد يكفي أحدهما. الاثنان معًا يكرران الفكرة. اختر تعويض الإقلاع إن كانت النسخ تُنشر كثيرًا والصفوف تعلق، أو النبضة الدورية إن بقيت العملية أسابيع. <code>jobId</code> في المنتج يمنع التضاعف إن جمعتهما بالخطأ فترة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>خلط الزينة مع مهلة Axios على <code>HttpModule</code>.</li>
+<li><code>@Timeout(5)</code> أي 5 ميلي ثانية.</li>
+<li>عمل له أثر مالي عند كل إقلاع.</li>
+<li>توقع التكرار. لن يتكرر حتى إقلاع جديد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لأثر مرة بعد البدء: سجل جاهزية، أو التقاط عالقين بعد الإقلاع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمهلة طلب، أو لتأخير <code>POST</code> خمس ثوانٍ قبل الرد. ذلك <code>await</code> في الطلب أو مهمة متأخرة في BullMQ إن كان التأخير لكل كتاب لا لكل عملية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاسم</th>
+<th>الحزمة</th>
+<th>كم مرة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Timeout(5_000)</code></td>
+<td><code>@nestjs/schedule</code></td>
+<td>مرة بعد الإقلاع</td>
+</tr>
+<tr>
+<td><code>@Interval</code></td>
+<td><code>@nestjs/schedule</code></td>
+<td>كل مدة</td>
+</tr>
+<tr>
+<td><code>timeout</code> في RxJS أو Axios</td>
+<td><code>rxjs</code> / Axios</td>
+<td>لكل تيار أو طلب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>كم مرة يعمل <code>@Timeout(5_000)</code> لكل إقلاع عملية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مرة واحدة، بعد 5 ثوانٍ.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا سجل الجاهزية أسلم من بريد عند الإقلاع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل نشر وكل نسخة تشغّل الدالة. السجل يتكرر بلا ضرر على المستخدم. البريد أثر خارجي يتضاعف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تفضّل <code>OnApplicationBootstrap</code> على <code>@Timeout</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يجب أن تعمل الدالة بعد تهيئة الوحدات لا بعد رقم ثابت قد يسبق اتصال Redis أو يتأخر بلا سبب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وحدة الرقم؟</li>
+<li>هل الزينة تقطع <code>lookup</code> البطيء؟</li>
+<li>ماذا يحدث للمؤقت عند إعادة التشغيل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Timeout</code> من <code>@nestjs/schedule</code> نبضة واحدة بعد الإقلاع. لا تخلطها بمهلة الطلب. الأثر الخارجي عند البدء يحتاج مفتاح تكرار أو يُستبدل بخطاف تهيئة.</p>
+<h2>ماذا بعد؟</h2>
+<p>إعلان داخل العملية أن شيئًا حدث، من غير أن يستدعي المعلن كل المستمعين بالاسم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Task scheduling: <a href="https://docs.nestjs.com/techniques/task-scheduling">https://docs.nestjs.com/techniques/task-scheduling</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

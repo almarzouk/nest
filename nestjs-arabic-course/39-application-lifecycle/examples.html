@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>مثال 1 — Prisma يفتح في الأوراق ويغلق في الإيقاف</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise&lt;void&gt; {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<p><code>PrismaModule</code> يصدّر الخدمة وتستورده الميزات. لأنه أعمق من الجذر، <code>$connect</code> يُنتظر قبل أن تكمل الوحدات الأعلى <code>onModuleInit</code>. في الإيقاف تمشي الوحدات الأعلى أولًا، ثم تصل الورقة إلى <code>$disconnect</code>.</p>
+<h2>مثال 2 — بوابة دفع تتصل بعد اكتمال الرسم</h2>
+<pre><code class="language-ts">import { Inject, Injectable, OnApplicationBootstrap, OnModuleDestroy } from &#39;@nestjs/common&#39;;
+import { ClientProxy } from &#39;@nestjs/microservices&#39;;
+
+@Injectable()
+export class PaymentsBus implements OnApplicationBootstrap, OnModuleDestroy {
+  constructor(@Inject(&#39;PAYMENTS&#39;) private readonly client: ClientProxy) {}
+
+  async onApplicationBootstrap(): Promise&lt;void&gt; {
+    await this.client.connect();
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.client.close();
+  }
+}
+</code></pre>
+<p><code>connect</code> يحجز <code>listen</code> حتى يقوم الناقل. <code>close</code> في أول خطاف إيقاف يحرر العميل قبل خطوات قطع HTTP. إن كان الدفع اختياريًا، لا تترك الرفض يوقف المتجر كله.</p>
+<h2>مثال 3 — علم إفراغ ثم سجل بعد قطع المقابس</h2>
+<pre><code class="language-ts">import {
+  BeforeApplicationShutdown,
+  Injectable,
+  Logger,
+  OnApplicationShutdown,
+} from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class ShutdownTrace
+  implements BeforeApplicationShutdown, OnApplicationShutdown
+{
+  private readonly logger = new Logger(ShutdownTrace.name);
+
+  beforeApplicationShutdown(signal?: string): void {
+    this.logger.log(`drain ${signal ?? &#39;close&#39;}`);
+  }
+
+  onApplicationShutdown(signal?: string): void {
+    this.logger.log(`sockets closed ${signal ?? &#39;close&#39;}`);
+  }
+}
+</code></pre>
+<p>السطر الأول قبل إغلاق الاتصالات، والثاني بعده. كلاهما يحتاج مسار إنهاء حقيقي.</p>
+<h2>مثال 4 — الإقلاع الذي يسمع الإشارة</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p>على Linux، <code>SIGTERM</code> يدخل السلسلة. اختبار ينادي <code>app.close()</code> يمر بالخطافات حتى لو حذفت سطر التفعيل، لأن النداء الصريح مسار مستقل.</p>
+<h2>مثال 5 — مؤقت يُمسح مع الإيقاف</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BillingClock implements OnModuleInit, OnModuleDestroy {
+  private timer?: NodeJS.Timeout;
+
+  onModuleInit(): void {
+    this.timer = setInterval(() =&gt; this.tick(), 60_000);
+  }
+
+  onModuleDestroy(): void {
+    if (this.timer) clearInterval(this.timer);
+  }
+
+  private tick(): void {
+    return;
+  }
+}
+</code></pre>
+<p><code>onModuleInit</code> هنا متزامن. الإطار ينتظره أيضًا. <code>clearInterval</code> يمنع بقاء العملية بعد <code>app.close()</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>فشل <code>$connect</code> يمنع فتح المنفذ.</li>
+<li>Ctrl+C يطبع <code>drain</code> ثم <code>sockets closed</code> بعد التفعيل.</li>
+<li>خدمة <code>Scope.REQUEST</code> لا تطبع أي خطاف تطبيق.</li>
+<li><code>setInterval</code> من غير <code>clearInterval</code> يبقي العملية بعد <code>close</code>.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

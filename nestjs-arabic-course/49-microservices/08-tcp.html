@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TCP</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-tcp.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>TCP</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل نقل TCP المدمج: عملية تستمع ومنفذ يتصل، بلا RabbitMQ أو Kafka، مع حدوده عندما تتعدد النسخ.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تريد رسالة بين عمليتين على شبكة تثق بها من غير تشغيل وسيط. <code>Transport.TCP</code> هو افتراض التوثيق. يكفي للتعلم ولتقسيم عمليتين داخل شبكة خاصة. لا يعطيك طابورًا دائمًا ولا مجموعة مستهلكين. إن سقط المستمع ضاعت الرسالة التي لم تُعالج. لا تبدأ به كناقل إنتاج متعدد النسخ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المستمع <code>createMicroservice</code> مع <code>Transport.TCP</code> و <code>options.host</code> و <code>options.port</code>. العميل <code>ClientsModule</code> بنفس المنفذ والمضيف. النمط و <code>ClientProxy</code> كما سبق. العنوان داخل Compose اسم الخدمة. على الجهاز <code>127.0.0.1</code>.</p>
+<h2>التعريف التقني</h2>
+<p>المستمع:</p>
+<pre><code class="language-ts">const app = await NestFactory.createMicroservice&lt;MicroserviceOptions&gt;(AppModule, {
+  transport: Transport.TCP,
+  options: { host: &#39;0.0.0.0&#39;, port: 3001 },
+});
+await app.listen();
+</code></pre>
+<p><code>0.0.0.0</code> يقبل الاتصال من خارج الحاوية. العميل يشير إلى اسم يمكن حله والمنفذ <code>3001</code>.</p>
+<p>خيارات يذكرها التوثيق للـ TCP تشمل <code>retryAttempts</code> و <code>retryDelay</code> ومهلة الرسالة الناقصة <code>incompleteMessageTimeout</code> وحدود الحجم. لا تحفظها قبل أن تقرأ الصفحة عند تغيير الافتراض. الافتراض كافٍ للدرس.</p>
+<p>TLS عبر <code>tlsOptions</code> عندما تعبر الرسالة شبكة لا تثق بها. داخل شبكة خاصة معزولة قد تعتمد على سياسة المنصة، ولا تفتح المنفذ على الإنترنت العام.</p>
+<p>TCP نقطة إلى مستمع. نسختان من الفوترة لا تتقاسمان العمل تلقائيًا كما يفعل طابور. ستصل الرسالة إلى العنوان الذي ضبطته، غالبًا نسخة واحدة خلف اسم، أو توازن بسيط لا يعرف أنماط Nest. للتوسع الأفقي انتقل إلى Redis أو NATS أو RabbitMQ أو Kafka.</p>
+<p>من 12.1.1 مستمعو العميل <code>on()</code> يبقون حتى <code>close()</code>.</p>
+<p>أغلق التطبيق بـ <code>enableShutdownHooks</code> حتى يُغلق المقبس مع <code>SIGTERM</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل -&gt; TCP host:port -&gt; مستمع واحد
+لا وسيط يخزن الرسالة
+نسختان؟ العنوان يحدد واحدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>المستمع على <code>3001</code> والمعالج <code>sum</code>. عميل على عملية HTTP يرسل <code>send({ cmd: &#39;sum&#39; }, [1, 2])</code>. الناتج <code>3</code>. أوقف المستمع وأعد <code>send</code>: يفشل الطلب. لا رسالة تنتظر في طابور.</p>
+<h2>شرح المثال</h2>
+<p>الفشل ظاهر فورًا. هذا مناسب لحساب داخلي يجب أن يكون حيًا. غير مناسب لإشعار «أُلغي الطلب» يجب ألا يضيع إن أُعيد تشغيل المستمع. ذلك حدث على ناقل يخزن.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المستمع يفتح مقبسًا.</li>
+<li>العميل يتصل عند <code>connect</code> أو أول إرسال.</li>
+<li>الإطار يسلسل النمط والحمولة على الاتصال.</li>
+<li>في الطلب-الرد ينتظر الجواب على نفس الأسلوب الذي يبنيه النقل.</li>
+<li>انقطاع المقبس يفشل الـ Observable.</li>
+<li>لا إعادة توزيع على نسخة ثانية إلا إذا وضعت موازنًا أمام عنوان واحد، وهو خارج Nest.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>في التطوير: الفوترة <code>host: 0.0.0.0</code> والمنفذ <code>3001</code>، والكتالوج <code>BILLING_HOST=127.0.0.1</code>. في Compose: <code>BILLING_HOST=billing</code> وخدمة <code>billing</code> في الملف نفسه. لا تضع <code>localhost</code> في متغير الصورة. عندما تصبح الفوترة نسختين، استبدل TCP بناقل فيه طابور قبل أن تظن أن الموازن يفهم <code>@MessagePattern</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>localhost</code> داخل الحاوية.</li>
+<li>فتح <code>3001</code> على الإنترنت بلا TLS وحد شبكة.</li>
+<li>توقع بقاء الرسائل بعد إعادة التشغيل.</li>
+<li>نسختان بلا خطة عن أيهما يستلم.</li>
+<li>استعمال TCP لكل حدث تحليل لأنه «أبسط» ثم ضياع الإشعارات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عمليتان، شبكة خاصة، طلب-رد يجب أن يفشل فورًا إن غاب المستمع، وتعلم أو تقسيم مبكر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عمل يجب أن يُخزن، أو عدة مستهلكين، أو حدث عالي الحجم. اختر وسيطًا من الدروس التالية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>TCP</th>
+<th>وسيط لاحق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عملية إضافية</td>
+<td>لا</td>
+<td>Redis أو الوسيط</td>
+</tr>
+<tr>
+<td>التخزين</td>
+<td>لا</td>
+<td>حسب الناقل</td>
+</tr>
+<tr>
+<td>التوسع</td>
+<td>عنوان واحد</td>
+<td>مجموعات وطوابير</td>
+</tr>
+<tr>
+<td>التعقيد</td>
+<td>منخفض</td>
+<td>تشغيل ومراقبة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما النقل إن حذفت <code>transport</code> من خيارات كثيرة في الأمثلة الرسمية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>TCP هو الافتراضي في مدخل التوثيق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفشل <code>send</code> فور إيقاف المستمع بدل أن ينتظر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا وسيط يخزن الرسالة. الاتصال انقطع فرفض الـ Observable.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا تغيّر في العنوان بين جهازك و Compose من غير تغيير الكود؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>BILLING_HOST</code> من <code>127.0.0.1</code> إلى اسم الخدمة <code>billing</code>، والمستمع على <code>0.0.0.0</code> داخل الحاوية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا لا يوفّره TCP؟</li>
+<li>أي عنوان داخل شبكة Compose؟</li>
+<li>متى TLS؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>TCP نقل مباشر بلا وسيط، مناسب لطلب-رد بين عمليتين في شبكة خاصة. لا تعتمد عليه لطابور ولا لتعدد مستهلكين، واستعمل اسم الخدمة بين الحاويات.</p>
+<h2>ماذا بعد؟</h2>
+<p>Redis: نشر واشتراك بسيط بين النسخ عبر وسيط تعرفه من التخزين المؤقت.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+<li>NestJS — Redis transporter: <a href="https://docs.nestjs.com/microservices/redis">https://docs.nestjs.com/microservices/redis</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

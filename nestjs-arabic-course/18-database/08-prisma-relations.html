@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prisma: Relations</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-prisma-relations.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Prisma: Relations</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط <code>Book</code> بعضو المكتبة الذي يستعيره عبر مفتاح أجنبي في المخطط، وتحميل العلاقة في الاستعلام نفسه عند الحاجة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تخزين اسم العضو كنص داخل صف الكتاب يكرّر الاسم ويكسره حين يصحّح العضو بريده. حلقة <code>for</code> تستعلم عن العضو لكل كتاب تصنع عشرات الرحلات إلى القاعدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>العلاقة في Prisma حقل على النموذجين: الكتاب يشير إلى <code>memberId</code>، والعضو لديه قائمة <code>books</code>. العمود الحقيقي هو المفتاح الأجنبي في جدول الكتب. <code>include</code> أو <code>select</code> يحمّل الطرف الآخر في الاستعلام الذي تطلبه، لا في كل قراءة تلقائيًا.</p>
+<h2>التعريف التقني</h2>
+<p>الشكل الذي تستخدمه صفحة Nest بين <code>User</code> و <code>Post</code> ينطبق هنا على <code>Member</code> و <code>Book</code>:</p>
+<pre><code class="language-prisma">model Member {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  books Book[]
+}
+
+model Book {
+  id        Int     @id @default(autoincrement())
+  title     String
+  published Boolean @default(false)
+  member    Member? @relation(fields: [memberId], references: [id])
+  memberId  Int?
+}
+</code></pre>
+<p><code>Book[]</code> طرف المجموعة. <code>Member?</code> طرف اختياري: كتاب على الرف بلا مستعير. <code>fields</code> و <code>references</code> تعرّفان المفتاح الأجنبي.</p>
+<p>بعد تعديل المخطط: ترحيل ثم <code>prisma generate</code>.</p>
+<p>قراءة مع الطرف الآخر:</p>
+<pre><code class="language-ts">this.prisma.book.findUnique({
+  where: { id },
+  include: { member: true },
+});
+</code></pre>
+<p>كتابة متداخلة تنشئ العضو مع الكتاب في معاملة تلقائية، كما تذكر صفحة Nest عن nested writes. للدورة، أنشئ العضو أولًا ثم مرّر <code>memberId</code> حتى يبقى كل أثر صريحًا، إلا حين يكون الإنشاءان قرارًا واحدًا.</p>
+<p><code>onDelete</code> في <code>@relation</code> يحدّد ماذا يحدث لكتب العضو عند حذف العضو. الافتراضي في المثال الرسمي لـ Nest على علاقة اختيارية قد يظهر <code>ON DELETE SET NULL</code> في SQL المولَّد. اختر السلوك عمدًا: منع الحذف، أو فصل الكتب، لا مفاجأة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">members.id  &lt;- books.memberId
+Book.member     علاقة للعميل
+include.member  تحميل في هذا الاستعلام فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;../prisma/prisma.service.js&quot;;
+
+@Injectable()
+export class LoansService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  loan(bookId: number, memberId: number) {
+    return this.prisma.book.update({
+      where: { id: bookId },
+      data: { memberId },
+      include: { member: { select: { id: true, email: true } } },
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>data</code> يغيّر المفتاح الأجنبي فقط. <code>select</code> على العضو يعيد المعرّف والبريد، لا كل الأعمدة إن أضفت لاحقًا <code>passwordHash</code>. الكتاب غير الموجود يجعل <code>update</code> يفشل. عضو غير موجود يكسر قيد المفتاح الأجنبي. حوّل الخطأين إلى <code>404</code> مفهوم عند حدود HTTP.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Prisma يولّد <code>UPDATE</code> ثم استعلامًا أو ضمًا لتحميل <code>member</code> حسب ما يطلبه <code>include</code>. من غير <code>include</code>، الكائن العائد فيه <code>memberId</code> ولا فيه كائن العضو. هذا متعمَّد حتى لا تُجلب الشجرة في كل مرة.</p>
+<p>N+1: <code>findMany</code> بلا <code>include</code> ثم <code>prisma.member.findUnique</code> داخل <code>for</code> بعدد الكتب. الحل <code>include</code> على القائمة، أو <code>where: { id: { in: ids } }</code> بعدد استعلامات ثابت.</p>
+<h2>مثال عملي</h2>
+<p>رف المكتبة: <code>findMany</code> للكتب المنشورة مع <code>member</code> عبر <code>select</code> ضيق. تقرير «كتب بلا مستعير» يستخدم <code>where: { memberId: null }</code> من غير تحميل علاقة. حذف عضو ما زال عنده كتب يفشل إن ضبطت القيد على المنع، فتعرض الخدمة رسالة تطلب إعادة الكتب أولًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تكرار اسم العضو في عمود نصي على الكتاب.</li>
+<li><code>include</code> لكل الحقول الحساسة.</li>
+<li>حلقة استعلام لكل صف.</li>
+<li>نسيان الترحيل بعد إضافة <code>memberId</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين لكيان مالك حقيقي في جدول آخر، مثل المستعير أو مؤلف لاحق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقيمة صغيرة لا تتغير ولا تُستعلم وحدها، مثل رمز لغة من حرفين يمكن أن يبقى عمودًا بسيطًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>عمود نصي منسوخ</th>
+<th>مفتاح أجنبي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ينحرف عند التعديل</td>
+<td>يشير إلى صف واحد</td>
+</tr>
+<tr>
+<td>بلا قيد وجود</td>
+<td>PostgreSQL يرفض معرّفًا مجهولًا</td>
+</tr>
+<tr>
+<td>لا <code>include</code></td>
+<td>تحميل عند الطلب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي عمود في الجدول يمثّل العلاقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>memberId</code> في <code>books</code>. الحقل <code>member</code> وجه العميل لتلك العلاقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>select</code> على البريد أفضل من <code>include: { member: true }</code> إن كان للعضو حقل سرّي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>include</code> الكامل يجلب كل الأعمدة القابلة للقراءة على النموذج، ومنها السر إن وُجد. <code>select</code> يسمّي ما يخرج نحو الخدمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عشرون كتابًا، ولكل واحد استعلام عضو. أعد الكتابة باستعلام قائمة واحد.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>findMany({ include: { member: { select: { id: true, email: true } } } })</code> أو ما يعادل ضمًا واحدًا. لا تستدعِ <code>findUnique</code> داخل الحلقة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني <code>Member?</code> على الكتاب؟</li>
+<li>متى تُحمَّل العلاقة؟</li>
+<li>ماذا يمنع المفتاح الأجنبي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>العلاقة عمود مفتاح أجنبي في المخطط، وتحميل صريح في الاستعلام، وحقول ضيقة حتى لا تخرج بيانات العضو كلها.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./09-prisma-transactions.html">Prisma: Transactions</a> يجمع إعارة الكتاب وخصم النسخة في أثر واحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>Prisma — Relations: <a href="https://www.prisma.io/docs/orm/prisma-schema/data-model/relations">https://www.prisma.io/docs/orm/prisma-schema/data-model/relations</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

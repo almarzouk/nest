@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تدفق CRUD البسيط</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-crud-flow.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تدفق CRUD البسيط</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت التدفق الذي يكفي معظم وحدات Nest قبل CQRS: متحكم يفوض، خدمة تحمل القاعدة، مستودع أو عميل يحفظ، وكيان يحمل القيم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فتح <code>@nestjs/cqrs</code> لمسار <code>POST /books</code> يضيف أمرًا ومعالجًا وحافلة بينما القراءة والكتابة تستعملان الجدول نفسه. توثيق الوصفة يبدأ من هذا التدفق ويصفه كافيًا للتطبيقات الصغيرة والمتوسطة. الدرس يثبّته كخط أساس حتى يكون الانتقال لاحقًا إجابة عن ألم، لا قالبًا.</p>
+<h2>الفكرة ببساطة</h2>
+<ol>
+<li>المتحكم يستقبل HTTP ويفوض.</li>
+<li>الخدمة تطبق قاعدة العمل.</li>
+<li>الخدمة تستعمل مستودعًا أو <code>PrismaService</code> للحفظ والقراءة.</li>
+<li>الكيان أو DTO وعاء للقيم. إن وُجد جذر ففيه دوال قليلة، لا معالجات أوامر.</li>
+</ol>
+<p>نفس الخدمة تخدم <code>GET</code> و <code>POST</code> ما دام الشكل واحدًا. لا فاصل قسري بين ملف قراءة وملف كتابة.</p>
+<h2>التعريف التقني</h2>
+<p>الوصفة الرسمية تلخص التدفق هكذا: طبقة المتحكمات، ثم الخدمات حيث أغلب المنطق، ثم مستودعات أو DAO، ثم كيانات بحقول. Nest يوفّر لهذا <code>@Controller</code> و <code>@Injectable</code> وحقن المستودع الذي بنيته.</p>
+<pre><code class="language-ts">@Controller(&#39;books&#39;)
+export class BooksController {
+  constructor(private readonly books: BooksService) {}
+
+  @Post()
+  create(@Body() dto: CreateBookDto) {
+    return this.books.create(dto);
+  }
+
+  @Get(&#39;:id&#39;)
+  findOne(@Param(&#39;id&#39;) id: string) {
+    return this.books.findOne(id);
+  }
+}
+</code></pre>
+<p><code>create</code> و <code>findOne</code> على الخدمة نفسها مقبولان هنا. تقسيمهما مبدأ عزل واجهات عندما يختلف المستهلك، لا لأن اختصار CQRS يطلب ملفين.</p>
+<p>لا <code>CommandBus</code> في هذا المسار. النداء دالة على مزود تعرفه الوحدة. الفشل استثناء تترجمه الحافة. الاختبار <code>inMemory</code> أو مزيف خدمة كما في الفصل السابق.</p>
+<p>عندما ينفصل شكل قائمة المتجر عن شكل كتابة الكتاب (مجاميع، بحث، جدول قراءة) تصبح الخدمة مكانًا ضيقًا. ذلك شرط الدرسين الأخيرين في فصل CQRS، لا شرط هذا الملف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">HTTP -&gt; BooksController -&gt; BooksService -&gt; OrdersRepository أو Prisma
+                      \-&gt; نفس الخدمة للقراءة
+</code></pre>
+<p>سهم واحد داخل الوحدة. لا حافلات.</p>
+<h2>أبسط مثال</h2>
+<p>مقطعا المتحكم. الخدمة:</p>
+<pre><code class="language-ts">@Injectable()
+export class BooksService {
+  constructor(@Inject(BOOKS) private readonly books: BooksRepository) {}
+
+  create(dto: CreateBookDto) {
+    return this.books.save(new Book(dto.title, dto.priceMinor));
+  }
+
+  findOne(id: string) {
+    return this.books.findById(id);
+  }
+}
+</code></pre>
+<p>إن كان <code>Book</code> بلا سلوك، فـ DTO إلى <code>prisma.book.create</code> داخل الخدمة ما زال هذا التدفق. لا تصطنع كيانًا فارغًا لأجل الرسم.</p>
+<h2>شرح المثال</h2>
+<p>المتحكم لا يعرف الرمز <code>BOOKS</code>. الخدمة مكان القاعدة («السعر غير سالب» إن وُجدت). المستودع مكان الترجمة. إضافة <code>GET</code> لا تحتاج صنف <code>GetBookQuery</code>. أضف دالة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب يدخل المتحكم بعد Pipe و Guard.</li>
+<li>الخدمة تُستدعى مباشرة على النسخة Singleton.</li>
+<li>المستودع ينفذ القراءة أو الكتابة.</li>
+<li>الناتج يرجع على نفس المكدس، لا عبر حافلة.</li>
+<li>لا معالجات تُكتشف ولا أحداث تُنشر إلا إذا استدعيت ناقلًا أنت.</li>
+<li>تتبع الخطأ من المتحكم إلى الدالة أسهل من تتبع أمر إلى معالج مسجّل بالاسم.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>وحدة فواتير بهذا التدفق حتى تظهر لوحة تحتاج جدول <code>invoice_view</code> مختلفًا عن جدول الكتابة. عندها اقرأ من استعلام مخصص داخل نفس العملية أولًا، قبل حزمة CQRS. الفصل التالي يسمي الأمر والاستعلام عندما تختار الحزمة. اليوم <code>BillingService.issue</code> و <code>BillingService.get</code> كافيان.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>معالج أمر لكل مسار من اليوم الأول.</li>
+<li>كيان بكل حقول الجدول بلا دالة.</li>
+<li>مستودع عام لأن التدفق «يجب أن يكون طبقيًا».</li>
+<li>نقل القراءة إلى خدمة ثانية بلا اختلاف نموذج.</li>
+<li>اعتبار هذا التدفق مضادًا للاختبار. المزيف على المستودع يكفيه.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الوحدة التي تقرأ وتكتب النموذج نفسه، وفريق يستطيع تتبع الدالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تصبح الكتابة أحداثًا كثيرة والقراءة نموذجًا آخر مُحدَّثًا منها، أو عندما يتعدد الكتّاب على نفس القواعد بمعالجات مستقلة تختبرونها وحدها. ذلك باب CQRS لا عيب في CRUD.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>CRUD هنا</th>
+<th>CQRS لاحقًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الدخول</td>
+<td>دالة خدمة</td>
+<td>أمر أو استعلام على حافلة</td>
+</tr>
+<tr>
+<td>القراءة والكتابة</td>
+<td>خدمة واحدة غالبًا</td>
+<td>نماذج مفصولة</td>
+</tr>
+<tr>
+<td>الملفات لكل مسار</td>
+<td>قليلة</td>
+<td>معالج لكل واحد</td>
+</tr>
+<tr>
+<td>الحزمة</td>
+<td>لا <code>@nestjs/cqrs</code></td>
+<td><code>CqrsModule.forRoot()</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يستدعي المستودع في هذا التدفق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخدمة، لا المتحكم ولا <code>CommandBus</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>GET</code> و <code>POST</code> على <code>BooksService</code> ليسا خرقًا تلقائيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن النموذج واحد وسبب التغيير ما زال «سلوك الكتاب». التقسيم يأتي عند اختلاف الشكل أو المستهلك لا من اسم CQRS.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لوحة البحث تحتاج أعمدة مجمّعة والكتابة تبقى جدولًا مطبّعًا. ماذا تغيّر قبل إضافة الحزمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استعلام قراءة داخل الوحدة أو قارئ DTO منفصل عن <code>save</code>. راقب التكرار. إن صار تحديث نموذج القراءة عبئًا مستقلًا، انتقل إلى أحداث وأوامر كما في بقية الفصل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الطبقات الأربع التي يذكرها مدخل الوصفة؟</li>
+<li>ماذا لا تضعه في المتحكم؟</li>
+<li>ما إشارة بقاء CRUD؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>CRUD في Nest متحكم وخدمة وتخزين وكيان أو DTO، على نداء مباشر. أبقِه خط الأساس حتى يختلف نموذج القراءة أو تنفجر الآثار بعد الكتابة.</p>
+<h2>ماذا بعد؟</h2>
+<p>Command و Query: كيف تسمي الكتابة والقراءة عندما تختار الفصل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CQRS: <a href="https://docs.nestjs.com/recipes/cqrs">https://docs.nestjs.com/recipes/cqrs</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Controller</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-controller-decorator.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Controller</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة <code>@Controller</code> كإعلان بادئة للمجموعة، ومعرفة شكل الوسيط النصي وشكل الكائن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تكرار <code>/invoices</code> في كل دالة يفرق المسارات عند إعادة التسمية. بادئة واحدة على الصنف تبقي المجموعة معًا، وتقصير كل Decorator على الدالة إلى الجزء المتبقي.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Controller(&#39;invoices&#39;)</code> يلزم Nest بإنشاء Controller ويمنحه بادئة. المسار الكامل هو البادئة ثم المسار المكتوب على دالة الطريقة.</p>
+<h2>التعريف التقني</h2>
+<p>الوسيطة اختيارية. <code>@Controller()</code> بلا نص يضع الدوال على جذر التطبيق، ما لم تُضف بادئة عامة بـ <code>setGlobalPrefix</code>.</p>
+<p>الشكل النصي يساوي <code>path</code> داخل الكائن:</p>
+<pre><code class="language-ts">@Controller(&#39;invoices&#39;)
+@Controller({ path: &#39;invoices&#39; })
+</code></pre>
+<p>الكائن يقبل أيضًا <code>host</code> حتى يطابق اسم المضيف. Fastify لا يدعم المسارات الفرعية المتداخلة التي يحتاجها host routing؛ مع <code>host</code> استخدم محول Express الافتراضي.</p>
+<p>رمز في المضيف يُقرأ بـ <code>@HostParam()</code>:</p>
+<pre><code class="language-ts">@Controller({ host: &#39;:tenant.example.com&#39;, path: &#39;invoices&#39; })
+</code></pre>
+<p>خيار <code>scope</code> على الكائن يغيّر عمر النسخة. شرح Scope في فصل Providers. اتركه فارغًا هنا حتى تبقى النسخة Singleton.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Controller(&#39;invoices&#39;) + @Get(&#39;overdue&#39;)
+  = GET /invoices/overdue
+
+@Controller(&#39;invoices&#39;) + @Post()
+  = POST /invoices
+</code></pre>
+<p>البادئة تجميع، وهي تقلل تكرار النص. هي جزء من عنوان المورد.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Post } from &#39;@nestjs/common&#39;;
+import { InvoicesService } from &#39;./invoices.service.js&#39;;
+
+@Controller(&#39;invoices&#39;)
+export class InvoicesController {
+  constructor(private readonly invoices: InvoicesService) {}
+
+  @Get(&#39;overdue&#39;)
+  overdue() {
+    return this.invoices.findOverdue();
+  }
+
+  @Post()
+  open() {
+    return this.invoices.openDraft();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>overdue</code> نص إضافي يُضاف بعد البادئة، فيصبح <code>GET /invoices/overdue</code>.</li>
+<li><code>@Post()</code> بلا نص يعني <code>POST /invoices</code>، أي مورد المجموعة نفسها.</li>
+<li>الصنف ما زال يحتاج تسجيلًا في <code>controllers</code>. الـ Decorator يصف المسار بعد أن تُنشأ النسخة.</li>
+<li>الدالتان تعيدان قيمة الخدمة. رمز POST الافتراضي 201، ويُفصَّل مع <code>@HttpCode</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تخزن <code>path</code> في Metadata الصنف. عند بناء الخريطة تدمج بادئة Controller مع مسار كل طريقة. اسم المضيف، إن وُجد، قيد إضافي قبل مطابقة المسار: طلب <code>api.example.com</code> لا يدخل Controller مشروطًا بـ <code>admin.example.com</code>.</p>
+<p><code>@HostParam(&#39;tenant&#39;)</code> يقرأ الجزء الملتقط من المضيف، بالطريقة التي يقرأ بها <code>@Param</code> جزءًا من المسار. درس Route Params يبقى لمسار URL.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, HostParam } from &#39;@nestjs/common&#39;;
+
+@Controller({ host: &#39;:tenant.example.com&#39;, path: &#39;invoices&#39; })
+export class TenantInvoicesController {
+  @Get(&#39;open&#39;)
+  open(@HostParam(&#39;tenant&#39;) tenant: string) {
+    return { tenant, view: &#39;open-invoices&#39; };
+  }
+}
+</code></pre>
+<p>طلب <code>GET https://north.example.com/invoices/open</code> يملأ <code>tenant</code> بالقيمة <code>north</code>. بادئة التطبيق العامة تُضاف قبل <code>invoices</code> إن استدعيت <code>app.setGlobalPrefix(&#39;api&#39;)</code>، فيصبح المسار <code>/api/invoices/open</code> على المضيف نفسه.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كتابة <code>/invoices</code> داخل كل <code>@Get</code> ونسيان البادئة على الصنف</td>
+<td>التكرار يتفرع عند تغيير الاسم</td>
+</tr>
+<tr>
+<td>بادئة <code>invoices</code> على الصنف ومسار <code>invoices/overdue</code> على الدالة</td>
+<td>المسار يتضاعف إلى <code>/invoices/invoices/overdue</code></td>
+</tr>
+<tr>
+<td><code>host</code> مخصص مع Fastify</td>
+<td>التوثيق يطلب Express لهذا الخيار</td>
+</tr>
+<tr>
+<td>صنف بلا <code>@Controller()</code> داخل <code>controllers</code></td>
+<td>لا بادئة ولا خريطة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>على كل صنف يمثل مجموعة REST واحدة. النص القصير هو الشكل المعتاد. الكائن عندما تحتاج <code>host</code> مع <code>path</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتصفية <code>?status=overdue</code>. ذلك Query Param على دالة <code>@Get()</code>. البادئة تثبت جزء المسار الثابت للمجموعة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوسيط</th>
+<th>متى يظهر في العنوان</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>&#39;invoices&#39;</code></td>
+<td>بادئة مسار لكل دوال الصنف</td>
+</tr>
+<tr>
+<td><code>{ path, host }</code></td>
+<td>البادئة زائد قيد اسم المضيف</td>
+</tr>
+<tr>
+<td>نص داخل <code>@Get(&#39;overdue&#39;)</code></td>
+<td>قطعة تُلحَق بالبادئة لتلك الدالة فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما مسار <code>@Controller(&#39;invoices&#39;)</code> مع <code>@Get(&#39;overdue&#39;)</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>GET /invoices/overdue</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين <code>@Controller(&#39;invoices&#39;)</code> و <code>@Controller({ path: &#39;invoices&#39; })</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>البادئة واحدة. شكل الكائن هو الذي يسمح بإضافة <code>host</code> أو <code>scope</code> في الوسيط نفسه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>@Get(&#39;invoices/overdue&#39;)</code> مع بادئة <code>invoices</code> ينتج مسارًا غير الذي قصده الفريق؟</p>
+<details><summary>الحل</summary>
+
+<p>الدمج يلصق الاثنين. الناتج <code>/invoices/invoices/overdue</code>. القطعة على الدالة هي ما بعد البادئة: <code>@Get(&#39;overdue&#39;)</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تفعل وسيطة <code>@Controller</code> النصية؟</li>
+<li>متى يُستخدم شكل الكائن؟</li>
+<li>من أين يُقرأ رمز المضيف الديناميكي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Controller</code> يثبت بادئة المجموعة ويمكن أن يقيد المضيف. مسار الدالة يُلحَق بهذه البادئة، والصنف يبقى مسجّلًا في Module.</p>
+<h2>ماذا بعد؟</h2>
+<p>كيف تُركَّب القطعة وتُحسم التعارضات: Routing.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers (Routing): <a href="https://docs.nestjs.com/controllers#routing">https://docs.nestjs.com/controllers#routing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

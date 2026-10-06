@@ -1,0 +1,890 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>الفهرس الكامل — من الصفر إلى المقابلة</title>
+<style>
+  :root { --bg:#f6f4f1; --ink:#1c1916; --muted:#7d776f; --line:#e7e1d8; --accent:#7c3f36; --soft:#f3ebe7; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin:0; font-family:"IBM Plex Sans Arabic","Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; -webkit-font-smoothing:antialiased; }
+  a { color:var(--accent); }
+  header, main { width:min(1080px, calc(100% - 40px)); margin:0 auto; }
+  header { padding:72px 0 8px; }
+  h1 { font-size:52px; line-height:1.25; margin:0 0 12px; font-weight:650; }
+  h2 { font-size:28px; margin:0 0 18px; font-weight:650; }
+  p { margin:0 0 10px; }
+  .muted { color:var(--muted); }
+  nav { position:sticky; top:0; z-index:5; background:rgba(246,244,241,.9); border-bottom:1px solid var(--line); backdrop-filter:blur(16px); }
+  nav ul { width:min(1080px, calc(100% - 40px)); margin:0 auto; padding:14px 0 4px; list-style:none; display:flex; gap:22px; flex-wrap:wrap; }
+  nav a { text-decoration:none; color:var(--ink); border:0; padding:6px 0; background:transparent; transition:color 180ms ease; }
+  nav a:hover { color:var(--accent); }
+  section { padding:42px 0; scroll-margin-top:120px; }
+  .path { display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+  .step { background:transparent; border:0; border-inline-start:1px solid var(--line); padding:28px 22px 26px; text-decoration:none; color:inherit; display:block; min-height:0; transition:background 180ms ease; }
+  .step:first-child { border-inline-start:0; }
+  .step:hover { background:rgba(255,252,248,.7); }
+  .step b { display:block; color:var(--muted); font-size:13px; font-weight:500; }
+  .step strong { display:block; font-size:30px; margin:8px 0 6px; font-weight:650; }
+  .step .door-stat { display:block; margin-top:16px; color:var(--accent); font-size:13px; font-variant-numeric:tabular-nums; text-align:right; }
+  .tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0 18px; }
+  input, button { font:inherit; border:0; background:transparent; color:var(--ink); padding:8px 12px; }
+  input { flex:1; min-width:220px; border-bottom:1px solid var(--line); border-radius:0; padding:10px 0; }
+  input:focus { outline:none; border-bottom-color:var(--accent); }
+  button { cursor:pointer; border-radius:999px; color:var(--muted); transition:background 180ms ease, color 180ms ease; }
+  button:hover { color:var(--ink); }
+  button.on { background:var(--ink); color:#f6f4f1; }
+  .refs { display:flex; flex-wrap:wrap; gap:8px 18px; }
+  .refs a { background:transparent; border:0; text-decoration:none; color:var(--ink); padding:4px 0; border-bottom:1px solid transparent; }
+  .refs a:hover { border-bottom-color:var(--accent); color:var(--accent); }
+  details.block { background:transparent; border:0; border-bottom:1px solid var(--line); margin:0; padding:14px 0; }
+  summary { cursor:pointer; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
+  summary b { font-size:18px; font-weight:650; }
+  summary em, summary span { color:var(--muted); font-style:normal; font-size:13px; }
+  ol { margin:10px 0 4px; padding:0 18px 0 0; }
+  ol a { text-decoration:none; color:var(--ink); }
+  ol a:hover { color:var(--accent); }
+  ol li { margin:4px 0; }
+  ol span { color:var(--muted); font-variant-numeric:tabular-nums; margin-left:8px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:0 28px; }
+  a.proj { display:grid; grid-template-columns:52px 1fr; gap:2px 12px; background:transparent; border:0; border-bottom:1px solid var(--line); text-decoration:none; color:inherit; padding:16px 0; transition:color 180ms ease; }
+  a.proj:hover { color:var(--accent); }
+  a.proj b { color:var(--muted); grid-row:span 2; align-self:center; font-size:15px; font-weight:500; }
+  a.proj em { color:var(--muted); font-style:normal; font-size:13px; }
+  .hide { display:none !important; }
+  .cards { display:grid; grid-template-columns:repeat(3,1fr); gap:28px; }
+  .card { background:transparent; border:0; border-top:1px solid var(--line); padding:18px 0 0; }
+  #index-progress { width:min(1080px, calc(100% - 40px)); margin:0 auto; padding:4px 0 14px; color:var(--ink); }
+  .ip-top { display:flex; align-items:center; gap:16px; }
+  #ip-label { font-variant-numeric:tabular-nums; font-size:13px; color:var(--muted); white-space:nowrap; }
+  .ip-track { flex:1; height:2px; background:var(--line); }
+  .ip-track > span { display:block; height:100%; width:0; background:var(--accent); transition:width 720ms cubic-bezier(.22,1,.36,1); }
+  nav a.ip-resume { margin:0; background:var(--ink); color:#f6f4f1; border-radius:999px; padding:8px 16px; font-weight:650; white-space:nowrap; }
+  nav a.ip-resume:hover { color:#f6f4f1; background:#2c2824; }
+  #index-progress button { padding:8px 0; color:var(--muted); }
+  a.is-done { background:transparent; }
+  ol a.is-done { color:var(--muted); }
+  ol a.is-done span::after { content:" · تم"; color:var(--accent); font-weight:650; }
+  @media (max-width:800px) {
+    h1 { font-size:36px; }
+    header { padding-top:40px; }
+    .path, .cards { grid-template-columns:1fr; }
+    .step { border-inline-start:0; border-top:1px solid var(--line); }
+    .step:first-child { border-top:0; }
+    .ip-top { flex-wrap:wrap; }
+    .ip-track { flex:1 1 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .ip-track > span, .step, nav a, button { transition: none; }
+  }
+</style>
+</head>
+<body data-learn="index">
+<header>
+  <p class="muted">فهرس واحد. الترتيب: الدورة من الصفر، ثم المشاريع، ثم المقابلة.</p>
+  <h1>من أول درس حتى مقابلة العمل</h1>
+  <p>69 فصلًا، 722 درسًا، 50 مشروعًا. كل رابط يفتح صفحة HTML، وملف Markdown الأصلي يبقى بجانب الصفحة.</p>
+</header>
+<nav>
+  <ul>
+    <li><a href="#start">البداية</a></li>
+    <li><a href="#refs">المراجع</a></li>
+    <li><a href="#course">الدورة</a></li>
+    <li><a href="#projects">المشاريع</a></li>
+    <li><a href="#interview">المقابلة</a></li>
+  </ul>
+  <div id="index-progress"></div>
+</nav>
+<main>
+<section id="start">
+  <h2>ثلاثة أبواب بالترتيب</h2>
+  <div class="path">
+    <a class="step" href="nestjs-arabic-course/00-introduction/01-what-is-backend.html">
+      <b>أولًا</b>
+      <strong>من الصفر</strong>
+      ما هو Backend، قبل أي Decorator.
+    </a>
+    <a class="step" href="50-backend-projects/01-echo-api/README.html">
+      <b>ثانيًا</b>
+      <strong>المشاريع</strong>
+      ابنِ صدى الطلب بعد أن تفهم المسار.
+    </a>
+    <a class="step" href="interview-emvion/index.html">
+      <b>ثالثًا</b>
+      <strong>المقابلة</strong>
+      emvion و venabo بعد أن يشتد العود.
+    </a>
+  </div>
+</section>
+
+<section id="refs">
+  <h2>مراجع تفتحها عند الحاجة</h2>
+  <div class="refs">
+    <a href="nestjs-arabic-course/README.html">مدخل الدورة</a>
+    <a href="nestjs-arabic-course/ROADMAP.html">خريطة الفصول</a>
+    <a href="nestjs-arabic-course/PROGRESS.html">التقدم</a>
+    <a href="nestjs-arabic-course/GLOSSARY.html">القاموس</a>
+    <a href="nestjs-arabic-course/CHEATSHEET.html">مرجع سريع</a>
+    <a href="nestjs-arabic-course/COMMON-MISTAKES.html">أخطاء شائعة</a>
+    <a href="nestjs-arabic-course/INTERVIEW-QUESTIONS.html">أسئلة مراجعة</a>
+    <a href="nestjs-arabic-course/best-practice.html">أفضل الممارسات</a>
+    <a href="full-guide.html">الرسوم التوضيحية</a>
+    <a href="50-backend-projects/README.html">دليل المشاريع</a>
+    <a href="50-backend-projects/PROGRESS.html">تقدم المشاريع</a>
+  </div>
+</section>
+
+<section id="course">
+  <h2>الدورة من الفصل 00</h2>
+  <p class="muted">افتح الفصل. الدروس داخله مرتبة. ابحث بالاسم إن عدت إلى موضوع بعينه.</p>
+  <div class="tools">
+    <input id="q" type="search" placeholder="ابحث في فصل أو درس أو مشروع" />
+    <button type="button" data-filter="all" class="on">الكل</button>
+    <button type="button" data-filter="من الصفر">من الصفر</button>
+    <button type="button" data-filter="الصندوق">الصندوق</button>
+    <button type="button" data-filter="دورة الطلب">دورة الطلب</button>
+    <button type="button" data-filter="بناء المنتج">المنتج</button>
+    <button type="button" data-filter="قنوات واختبار">القنوات</button>
+    <button type="button" data-filter="عمق وتشغيل">العمق</button>
+    <button type="button" data-filter="إنتاج">الإنتاج</button>
+    <button type="button" data-filter="تكملة">التكملة</button>
+  </div>
+  <details class="block" data-kind="course" data-phase="من الصفر" open>
+      <summary><b>00 — المقدمة: قبل NestJS</b><em>من الصفر</em><span>19 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/00-introduction/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/00-introduction/01-what-is-backend.html"><span>01</span> ما هو Backend</a></li><li><a href="nestjs-arabic-course/00-introduction/02-client-and-server.html"><span>02</span> Client و Server</a></li><li><a href="nestjs-arabic-course/00-introduction/03-request-and-response.html"><span>03</span> Request و Response</a></li><li><a href="nestjs-arabic-course/00-introduction/04-http.html"><span>04</span> HTTP</a></li><li><a href="nestjs-arabic-course/00-introduction/05-rest.html"><span>05</span> REST</a></li><li><a href="nestjs-arabic-course/00-introduction/06-json.html"><span>06</span> JSON</a></li><li><a href="nestjs-arabic-course/00-introduction/07-api-and-rest-api.html"><span>07</span> API و REST API</a></li><li><a href="nestjs-arabic-course/00-introduction/08-nodejs.html"><span>08</span> Node.js</a></li><li><a href="nestjs-arabic-course/00-introduction/09-library-vs-framework.html"><span>09</span> Library مقابل Framework</a></li><li><a href="nestjs-arabic-course/00-introduction/10-what-is-express.html"><span>10</span> ما هو Express</a></li><li><a href="nestjs-arabic-course/00-introduction/11-how-express-works.html"><span>11</span> كيف يعمل Express</a></li><li><a href="nestjs-arabic-course/00-introduction/12-large-express-projects.html"><span>12</span> مشاكل المشاريع الكبيرة في Express</a></li><li><a href="nestjs-arabic-course/00-introduction/13-why-nestjs-exists.html"><span>13</span> لماذا أُنشئت NestJS</a></li><li><a href="nestjs-arabic-course/00-introduction/14-nestjs-on-express-and-fastify.html"><span>14</span> NestJS فوق Express و Fastify</a></li><li><a href="nestjs-arabic-course/00-introduction/15-why-nestjs-resembles-angular.html"><span>15</span> لماذا تشبه NestJS إطار Angular</a></li><li><a href="nestjs-arabic-course/00-introduction/16-nestjs-architecture-overview.html"><span>16</span> Architecture الخاصة بـ NestJS</a></li><li><a href="nestjs-arabic-course/00-introduction/examples.html"><span>17</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/00-introduction/exercises.html"><span>18</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/00-introduction/next-step.html"><span>19</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="من الصفر" >
+      <summary><b>01 — TypeScript الضروري لـ NestJS</b><em>من الصفر</em><span>18 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/01-typescript-for-nestjs/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/01-why-typescript.html"><span>01</span> لماذا TypeScript مع NestJS</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/02-types-and-inference.html"><span>02</span> Types و Inference</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/03-interfaces.html"><span>03</span> Interfaces</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/04-type-aliases-and-unions.html"><span>04</span> Type Aliases و Union Types</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/05-optional-and-readonly.html"><span>05</span> Optional و Readonly</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/06-enums.html"><span>06</span> Enums</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/07-classes-and-constructors.html"><span>07</span> Classes و Constructor</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/08-access-modifiers.html"><span>08</span> Access Modifiers</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/09-parameter-properties.html"><span>09</span> Parameter Properties</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/10-inheritance.html"><span>10</span> Inheritance</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/11-abstract-classes.html"><span>11</span> Abstract Classes</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/12-generics.html"><span>12</span> Generics</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/13-promises-and-async-await.html"><span>13</span> Promises و async/await</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/14-decorators.html"><span>14</span> Decorators</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/15-metadata-and-reflection.html"><span>15</span> Metadata و Reflection</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/examples.html"><span>16</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/exercises.html"><span>17</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/01-typescript-for-nestjs/next-step.html"><span>18</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="الصندوق" >
+      <summary><b>02 — التثبيت وهيكل المشروع</b><em>الصندوق</em><span>13 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/02-project-setup/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/02-project-setup/01-nodejs-requirements.html"><span>01</span> متطلبات Node.js</a></li><li><a href="nestjs-arabic-course/02-project-setup/02-package-managers.html"><span>02</span> npm و pnpm و yarn و bun</a></li><li><a href="nestjs-arabic-course/02-project-setup/03-nest-cli.html"><span>03</span> Nest CLI</a></li><li><a href="nestjs-arabic-course/02-project-setup/04-creating-a-project.html"><span>04</span> nest new</a></li><li><a href="nestjs-arabic-course/02-project-setup/05-esm-and-commonjs.html"><span>05</span> ESM و CommonJS</a></li><li><a href="nestjs-arabic-course/02-project-setup/06-project-files.html"><span>06</span> ملفات src</a></li><li><a href="nestjs-arabic-course/02-project-setup/07-development-and-watch.html"><span>07</span> التطوير ووضع المراقبة</a></li><li><a href="nestjs-arabic-course/02-project-setup/08-build-and-production.html"><span>08</span> البناء والإنتاج</a></li><li><a href="nestjs-arabic-course/02-project-setup/09-lint-and-format.html"><span>09</span> oxlint و Prettier</a></li><li><a href="nestjs-arabic-course/02-project-setup/10-swc-preview.html"><span>10</span> لمحة عن SWC</a></li><li><a href="nestjs-arabic-course/02-project-setup/examples.html"><span>11</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/02-project-setup/exercises.html"><span>12</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/02-project-setup/next-step.html"><span>13</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="الصندوق" >
+      <summary><b>03 — تشغيل التطبيق</b><em>الصندوق</em><span>12 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/03-bootstrap/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/03-bootstrap/01-bootstrap-function.html"><span>01</span> دالة bootstrap</a></li><li><a href="nestjs-arabic-course/03-bootstrap/02-nest-factory.html"><span>02</span> NestFactory</a></li><li><a href="nestjs-arabic-course/03-bootstrap/03-root-module.html"><span>03</span> Root Module</a></li><li><a href="nestjs-arabic-course/03-bootstrap/04-application-context.html"><span>04</span> Application Context</a></li><li><a href="nestjs-arabic-course/03-bootstrap/05-ioc-container-intro.html"><span>05</span> IoC Container</a></li><li><a href="nestjs-arabic-course/03-bootstrap/06-dependency-graph-intro.html"><span>06</span> Dependency Graph</a></li><li><a href="nestjs-arabic-course/03-bootstrap/07-http-adapter.html"><span>07</span> HTTP Adapter</a></li><li><a href="nestjs-arabic-course/03-bootstrap/08-listen-and-port.html"><span>08</span> listen والمنفذ</a></li><li><a href="nestjs-arabic-course/03-bootstrap/09-abort-on-error.html"><span>09</span> abortOnError</a></li><li><a href="nestjs-arabic-course/03-bootstrap/examples.html"><span>10</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/03-bootstrap/exercises.html"><span>11</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/03-bootstrap/next-step.html"><span>12</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="الصندوق" >
+      <summary><b>04 — Modules</b><em>الصندوق</em><span>14 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/04-modules/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/04-modules/01-what-is-a-module.html"><span>01</span> ما هو Module</a></li><li><a href="nestjs-arabic-course/04-modules/02-module-decorator.html"><span>02</span> @Module</a></li><li><a href="nestjs-arabic-course/04-modules/03-app-module.html"><span>03</span> AppModule</a></li><li><a href="nestjs-arabic-course/04-modules/04-module-metadata.html"><span>04</span> providers و controllers و imports و exports</a></li><li><a href="nestjs-arabic-course/04-modules/05-feature-modules.html"><span>05</span> Feature Modules</a></li><li><a href="nestjs-arabic-course/04-modules/06-imports-and-exports.html"><span>06</span> Imports و Exports</a></li><li><a href="nestjs-arabic-course/04-modules/07-shared-modules.html"><span>07</span> Shared Modules</a></li><li><a href="nestjs-arabic-course/04-modules/08-encapsulation.html"><span>08</span> Encapsulation و Module Boundaries</a></li><li><a href="nestjs-arabic-course/04-modules/09-global-modules.html"><span>09</span> Global Modules</a></li><li><a href="nestjs-arabic-course/04-modules/10-re-exporting.html"><span>10</span> إعادة تصدير Module</a></li><li><a href="nestjs-arabic-course/04-modules/11-dynamic-modules-intro.html"><span>11</span> مقدمة Dynamic Modules</a></li><li><a href="nestjs-arabic-course/04-modules/examples.html"><span>12</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/04-modules/exercises.html"><span>13</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/04-modules/next-step.html"><span>14</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="الصندوق" >
+      <summary><b>05 — Controllers</b><em>الصندوق</em><span>15 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/05-controllers/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/05-controllers/01-what-is-a-controller.html"><span>01</span> ما هو Controller</a></li><li><a href="nestjs-arabic-course/05-controllers/02-controller-decorator.html"><span>02</span> @Controller</a></li><li><a href="nestjs-arabic-course/05-controllers/03-routing.html"><span>03</span> Routing</a></li><li><a href="nestjs-arabic-course/05-controllers/04-http-methods.html"><span>04</span> @Get و @Post و @Put و @Patch و @Delete</a></li><li><a href="nestjs-arabic-course/05-controllers/05-route-params.html"><span>05</span> Route Params</a></li><li><a href="nestjs-arabic-course/05-controllers/06-query-params.html"><span>06</span> Query Params</a></li><li><a href="nestjs-arabic-course/05-controllers/07-body.html"><span>07</span> Body</a></li><li><a href="nestjs-arabic-course/05-controllers/08-headers.html"><span>08</span> Headers</a></li><li><a href="nestjs-arabic-course/05-controllers/09-status-and-redirects.html"><span>09</span> Status Codes و Redirects</a></li><li><a href="nestjs-arabic-course/05-controllers/10-request-object.html"><span>10</span> Request Object</a></li><li><a href="nestjs-arabic-course/05-controllers/11-response-object.html"><span>11</span> Response Object و Library-specific Mode</a></li><li><a href="nestjs-arabic-course/05-controllers/12-standard-response-handling.html"><span>12</span> Standard Nest Response Handling</a></li><li><a href="nestjs-arabic-course/05-controllers/examples.html"><span>13</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/05-controllers/exercises.html"><span>14</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/05-controllers/next-step.html"><span>15</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="الصندوق" >
+      <summary><b>06 — Providers و Services</b><em>الصندوق</em><span>14 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/06-providers/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/06-providers/01-what-is-a-provider.html"><span>01</span> ما هو Provider</a></li><li><a href="nestjs-arabic-course/06-providers/02-services.html"><span>02</span> Service</a></li><li><a href="nestjs-arabic-course/06-providers/03-injectable.html"><span>03</span> @Injectable</a></li><li><a href="nestjs-arabic-course/06-providers/04-registration.html"><span>04</span> Registration داخل Module</a></li><li><a href="nestjs-arabic-course/06-providers/05-injection.html"><span>05</span> Injection</a></li><li><a href="nestjs-arabic-course/06-providers/06-scope-preview.html"><span>06</span> Scope: نظرة أولى</a></li><li><a href="nestjs-arabic-course/06-providers/07-class-providers.html"><span>07</span> Class Providers</a></li><li><a href="nestjs-arabic-course/06-providers/08-value-providers.html"><span>08</span> Value Providers</a></li><li><a href="nestjs-arabic-course/06-providers/09-factory-providers.html"><span>09</span> Factory Providers</a></li><li><a href="nestjs-arabic-course/06-providers/10-existing-providers.html"><span>10</span> Existing Providers</a></li><li><a href="nestjs-arabic-course/06-providers/11-injection-tokens.html"><span>11</span> Injection Tokens</a></li><li><a href="nestjs-arabic-course/06-providers/examples.html"><span>12</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/06-providers/exercises.html"><span>13</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/06-providers/next-step.html"><span>14</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="الصندوق" >
+      <summary><b>07 — Dependency Injection</b><em>الصندوق</em><span>14 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/07-dependency-injection/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/07-dependency-injection/01-the-problem-with-new.html"><span>01</span> مشكلة new</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/02-what-is-di.html"><span>02</span> ما هي DI</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/03-ioc.html"><span>03</span> IoC</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/04-dependency-inversion.html"><span>04</span> Dependency Inversion</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/05-container.html"><span>05</span> Container</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/06-registration-and-resolution.html"><span>06</span> Registration و Resolution</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/07-constructor-injection.html"><span>07</span> Constructor Injection</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/08-tokens.html"><span>08</span> Tokens</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/09-singleton-lifecycle.html"><span>09</span> Singleton Lifecycle</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/10-dependency-graph.html"><span>10</span> Dependency Graph</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/11-how-nest-resolves.html"><span>11</span> كيف تحل NestJS الاعتمادية داخليًا</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/examples.html"><span>12</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/exercises.html"><span>13</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/07-dependency-injection/next-step.html"><span>14</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>08 — Request Lifecycle</b><em>دورة الطلب</em><span>14 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/08-request-lifecycle/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/08-request-lifecycle/01-why-order-matters.html"><span>01</span> لماذا الترتيب مهم</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/02-official-sequence.html"><span>02</span> التسلسل الرسمي</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/03-middleware-stage.html"><span>03</span> مرحلة Middleware</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/04-guards-stage.html"><span>04</span> مرحلة Guards</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/05-interceptors-before.html"><span>05</span> Interceptors قبل Controller</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/06-pipes-stage.html"><span>06</span> مرحلة Pipes</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/07-controller-and-service.html"><span>07</span> Controller و Service</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/08-interceptors-after.html"><span>08</span> Interceptors بعد Controller</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/09-exception-filters-stage.html"><span>09</span> مرحلة Exception Filters</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/10-binding-levels.html"><span>10</span> Global و Controller و Route</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/11-when-the-rest-is-skipped.html"><span>11</span> متى يُتخطى باقي المسار</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/examples.html"><span>12</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/exercises.html"><span>13</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/08-request-lifecycle/next-step.html"><span>14</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>09 — Middleware</b><em>دورة الطلب</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/09-middleware/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/09-middleware/01-what-is-middleware.html"><span>01</span> ما هو Middleware</a></li><li><a href="nestjs-arabic-course/09-middleware/02-express-comparison.html"><span>02</span> مقارنته بـ Express Middleware</a></li><li><a href="nestjs-arabic-course/09-middleware/03-functional-middleware.html"><span>03</span> Functional Middleware</a></li><li><a href="nestjs-arabic-course/09-middleware/04-class-middleware.html"><span>04</span> Class Middleware و NestMiddleware</a></li><li><a href="nestjs-arabic-course/09-middleware/05-configure-and-consumer.html"><span>05</span> configure و MiddlewareConsumer</a></li><li><a href="nestjs-arabic-course/09-middleware/06-for-routes-and-exclude.html"><span>06</span> forRoutes و exclude</a></li><li><a href="nestjs-arabic-course/09-middleware/07-execution-order.html"><span>07</span> ترتيب التنفيذ</a></li><li><a href="nestjs-arabic-course/09-middleware/08-when-to-use-it.html"><span>08</span> متى نستخدمه ومتى لا</a></li><li><a href="nestjs-arabic-course/09-middleware/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/09-middleware/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/09-middleware/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>10 — Pipes</b><em>دورة الطلب</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/10-pipes/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/10-pipes/01-what-is-a-pipe.html"><span>01</span> ما هو Pipe</a></li><li><a href="nestjs-arabic-course/10-pipes/02-transformation-and-validation.html"><span>02</span> Transformation و Validation</a></li><li><a href="nestjs-arabic-course/10-pipes/03-built-in-pipes.html"><span>03</span> Built-in Pipes</a></li><li><a href="nestjs-arabic-course/10-pipes/04-parse-pipes.html"><span>04</span> ParseIntPipe و ParseBoolPipe و ParseUUIDPipe و ParseArrayPipe</a></li><li><a href="nestjs-arabic-course/10-pipes/05-validation-pipe-intro.html"><span>05</span> مقدمة ValidationPipe</a></li><li><a href="nestjs-arabic-course/10-pipes/06-custom-pipes.html"><span>06</span> Custom Pipes</a></li><li><a href="nestjs-arabic-course/10-pipes/07-binding-scopes.html"><span>07</span> ربط Pipe على Parameter و Route و Controller و Global</a></li><li><a href="nestjs-arabic-course/10-pipes/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/10-pipes/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/10-pipes/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>11 — DTO</b><em>دورة الطلب</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/11-dto/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/11-dto/01-why-dto.html"><span>01</span> لماذا DTO</a></li><li><a href="nestjs-arabic-course/11-dto/02-dto-vs-interface.html"><span>02</span> DTO مقابل Interface</a></li><li><a href="nestjs-arabic-course/11-dto/03-runtime-vs-compile-time.html"><span>03</span> Runtime مقابل Compile-time</a></li><li><a href="nestjs-arabic-course/11-dto/04-classes-as-contracts.html"><span>04</span> Classes كعقد بيانات</a></li><li><a href="nestjs-arabic-course/11-dto/05-input-and-output-dto.html"><span>05</span> Input DTO و Output DTO</a></li><li><a href="nestjs-arabic-course/11-dto/06-class-validator.html"><span>06</span> class-validator</a></li><li><a href="nestjs-arabic-course/11-dto/07-class-transformer.html"><span>07</span> class-transformer</a></li><li><a href="nestjs-arabic-course/11-dto/08-schema-objects-preview.html"><span>08</span> لمحة: Schema Objects و Standard Schema</a></li><li><a href="nestjs-arabic-course/11-dto/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/11-dto/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/11-dto/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>12 — Validation</b><em>دورة الطلب</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/12-validation/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/12-validation/01-why-validate.html"><span>01</span> لماذا نتحقق من الدخل</a></li><li><a href="nestjs-arabic-course/12-validation/02-validation-pipe.html"><span>02</span> ValidationPipe</a></li><li><a href="nestjs-arabic-course/12-validation/03-whitelist-and-forbid.html"><span>03</span> whitelist و forbidNonWhitelisted</a></li><li><a href="nestjs-arabic-course/12-validation/04-transform-options.html"><span>04</span> transform و transformOptions</a></li><li><a href="nestjs-arabic-course/12-validation/05-validation-errors.html"><span>05</span> شكل أخطاء التحقق</a></li><li><a href="nestjs-arabic-course/12-validation/06-nested-validation.html"><span>06</span> Nested Validation</a></li><li><a href="nestjs-arabic-course/12-validation/07-standard-schema-validation-pipe.html"><span>07</span> StandardSchemaValidationPipe</a></li><li><a href="nestjs-arabic-course/12-validation/08-classes-and-schemas-together.html"><span>08</span> استخدام الأسلوبين معًا</a></li><li><a href="nestjs-arabic-course/12-validation/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/12-validation/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/12-validation/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>13 — Guards</b><em>دورة الطلب</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/13-guards/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/13-guards/01-what-is-a-guard.html"><span>01</span> ما هو Guard</a></li><li><a href="nestjs-arabic-course/13-guards/02-can-activate.html"><span>02</span> CanActivate</a></li><li><a href="nestjs-arabic-course/13-guards/03-execution-context.html"><span>03</span> ExecutionContext</a></li><li><a href="nestjs-arabic-course/13-guards/04-authentication-vs-authorization.html"><span>04</span> Authentication و Authorization</a></li><li><a href="nestjs-arabic-course/13-guards/05-binding-levels.html"><span>05</span> Global و Controller و Route</a></li><li><a href="nestjs-arabic-course/13-guards/06-order.html"><span>06</span> ترتيب Guards</a></li><li><a href="nestjs-arabic-course/13-guards/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/13-guards/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/13-guards/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>14 — Interceptors</b><em>دورة الطلب</em><span>13 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/14-interceptors/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/14-interceptors/01-rxjs-minimum.html"><span>01</span> الحد الأدنى من RxJS قبل Interceptors</a></li><li><a href="nestjs-arabic-course/14-interceptors/02-what-is-an-interceptor.html"><span>02</span> ما هو Interceptor</a></li><li><a href="nestjs-arabic-course/14-interceptors/03-nest-interceptor.html"><span>03</span> NestInterceptor</a></li><li><a href="nestjs-arabic-course/14-interceptors/04-next-handle.html"><span>04</span> next.handle</a></li><li><a href="nestjs-arabic-course/14-interceptors/05-before-and-after.html"><span>05</span> قبل التنفيذ وبعده</a></li><li><a href="nestjs-arabic-course/14-interceptors/06-logging.html"><span>06</span> Logging</a></li><li><a href="nestjs-arabic-course/14-interceptors/07-response-mapping.html"><span>07</span> تحويل شكل الاستجابة</a></li><li><a href="nestjs-arabic-course/14-interceptors/08-timeout.html"><span>08</span> Timeout</a></li><li><a href="nestjs-arabic-course/14-interceptors/09-cache.html"><span>09</span> Cache</a></li><li><a href="nestjs-arabic-course/14-interceptors/10-binding-and-observable-order.html"><span>10</span> مستويات الربط وترتيب Observables</a></li><li><a href="nestjs-arabic-course/14-interceptors/examples.html"><span>11</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/14-interceptors/exercises.html"><span>12</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/14-interceptors/next-step.html"><span>13</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>15 — Exception Filters</b><em>دورة الطلب</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/15-exception-filters/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/15-exception-filters/01-exceptions.html"><span>01</span> Exceptions</a></li><li><a href="nestjs-arabic-course/15-exception-filters/02-http-exception.html"><span>02</span> HttpException</a></li><li><a href="nestjs-arabic-course/15-exception-filters/03-built-in-http-exceptions.html"><span>03</span> Built-in HTTP Exceptions</a></li><li><a href="nestjs-arabic-course/15-exception-filters/04-custom-exceptions.html"><span>04</span> Custom Exceptions</a></li><li><a href="nestjs-arabic-course/15-exception-filters/05-exception-filters.html"><span>05</span> Exception Filters</a></li><li><a href="nestjs-arabic-course/15-exception-filters/06-catch-decorator.html"><span>06</span> @Catch</a></li><li><a href="nestjs-arabic-course/15-exception-filters/07-global-filters.html"><span>07</span> Global Filters</a></li><li><a href="nestjs-arabic-course/15-exception-filters/08-filter-resolution-order.html"><span>08</span> ترتيب اختيار Filter</a></li><li><a href="nestjs-arabic-course/15-exception-filters/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/15-exception-filters/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/15-exception-filters/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="دورة الطلب" >
+      <summary><b>16 — Custom Decorators</b><em>دورة الطلب</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/16-custom-decorators/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/16-custom-decorators/01-why-custom-decorators.html"><span>01</span> لماذا Decorators مخصصة</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/02-create-param-decorator.html"><span>02</span> createParamDecorator</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/03-set-metadata.html"><span>03</span> SetMetadata</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/04-reflector.html"><span>04</span> Reflector</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/05-current-user.html"><span>05</span> @CurrentUser</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/06-roles.html"><span>06</span> @Roles</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/07-public.html"><span>07</span> @Public</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/16-custom-decorators/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>17 — Configuration</b><em>بناء المنتج</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/17-configuration/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/17-configuration/01-why-configuration.html"><span>01</span> لماذا Configuration</a></li><li><a href="nestjs-arabic-course/17-configuration/02-env-files.html"><span>02</span> ملفات .env</a></li><li><a href="nestjs-arabic-course/17-configuration/03-config-module.html"><span>03</span> ConfigModule</a></li><li><a href="nestjs-arabic-course/17-configuration/04-config-service.html"><span>04</span> ConfigService</a></li><li><a href="nestjs-arabic-course/17-configuration/05-validation.html"><span>05</span> التحقق من الإعدادات</a></li><li><a href="nestjs-arabic-course/17-configuration/06-namespaced-config.html"><span>06</span> Namespaced Config</a></li><li><a href="nestjs-arabic-course/17-configuration/07-typed-config.html"><span>07</span> Typed Config</a></li><li><a href="nestjs-arabic-course/17-configuration/08-for-root-async-preview.html"><span>08</span> forRootAsync: أول استخدام حقيقي</a></li><li><a href="nestjs-arabic-course/17-configuration/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/17-configuration/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/17-configuration/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>18 — Database</b><em>بناء المنتج</em><span>16 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/18-database/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/18-database/01-without-an-orm.html"><span>01</span> قاعدة البيانات قبل أي ORM</a></li><li><a href="nestjs-arabic-course/18-database/02-postgresql.html"><span>02</span> PostgreSQL</a></li><li><a href="nestjs-arabic-course/18-database/03-what-is-an-orm.html"><span>03</span> ما هو ORM</a></li><li><a href="nestjs-arabic-course/18-database/04-prisma-connection.html"><span>04</span> Prisma: الاتصال</a></li><li><a href="nestjs-arabic-course/18-database/05-prisma-schema.html"><span>05</span> Prisma: Schema</a></li><li><a href="nestjs-arabic-course/18-database/06-prisma-migrations.html"><span>06</span> Prisma: Migrations</a></li><li><a href="nestjs-arabic-course/18-database/07-prisma-crud.html"><span>07</span> Prisma: CRUD</a></li><li><a href="nestjs-arabic-course/18-database/08-prisma-relations.html"><span>08</span> Prisma: Relations</a></li><li><a href="nestjs-arabic-course/18-database/09-prisma-transactions.html"><span>09</span> Prisma: Transactions</a></li><li><a href="nestjs-arabic-course/18-database/10-prisma-in-a-module.html"><span>10</span> وضع Prisma داخل Module</a></li><li><a href="nestjs-arabic-course/18-database/11-typeorm.html"><span>11</span> TypeORM كما في التوثيق الرسمي</a></li><li><a href="nestjs-arabic-course/18-database/12-drizzle.html"><span>12</span> Drizzle و @nestjs/drizzle</a></li><li><a href="nestjs-arabic-course/18-database/13-choosing-a-data-tool.html"><span>13</span> متى تختار Prisma أو TypeORM أو Drizzle</a></li><li><a href="nestjs-arabic-course/18-database/examples.html"><span>14</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/18-database/exercises.html"><span>15</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/18-database/next-step.html"><span>16</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>19 — مشروع REST API</b><em>بناء المنتج</em><span>13 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/19-rest-api-project/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/19-rest-api-project/01-project-boundaries.html"><span>01</span> حدود المشروع</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/02-users-module.html"><span>02</span> Users</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/03-posts-module.html"><span>03</span> Posts</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/04-comments-module.html"><span>04</span> Comments</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/05-dto-and-validation.html"><span>05</span> DTO و Validation</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/06-error-handling.html"><span>06</span> Error Handling</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/07-pagination.html"><span>07</span> Pagination</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/08-filtering.html"><span>08</span> Filtering</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/09-sorting.html"><span>09</span> Sorting</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/10-walking-a-request.html"><span>10</span> تتبع Request كامل</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/examples.html"><span>11</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/exercises.html"><span>12</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/19-rest-api-project/next-step.html"><span>13</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>20 — Authentication</b><em>بناء المنتج</em><span>15 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/20-authentication/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/20-authentication/01-authentication-vs-authorization.html"><span>01</span> Authentication مقابل Authorization</a></li><li><a href="nestjs-arabic-course/20-authentication/02-password-hashing.html"><span>02</span> Password Hashing</a></li><li><a href="nestjs-arabic-course/20-authentication/03-sessions-and-tokens.html"><span>03</span> Sessions و Access Token و Refresh Token</a></li><li><a href="nestjs-arabic-course/20-authentication/04-register-and-login.html"><span>04</span> Register و Login كمفاهيم</a></li><li><a href="nestjs-arabic-course/20-authentication/05-nestjs-authentication.html"><span>05</span> @nestjs/authentication</a></li><li><a href="nestjs-arabic-course/20-authentication/06-current-user.html"><span>06</span> قراءة المستخدم الحالي</a></li><li><a href="nestjs-arabic-course/20-authentication/07-bearer-and-refresh-tokens.html"><span>07</span> Bearer Tokens و Refresh Tokens</a></li><li><a href="nestjs-arabic-course/20-authentication/08-passport-overview.html"><span>08</span> Passport و @nestjs/passport</a></li><li><a href="nestjs-arabic-course/20-authentication/09-local-strategy.html"><span>09</span> Local Strategy</a></li><li><a href="nestjs-arabic-course/20-authentication/10-jwt-strategy.html"><span>10</span> JWT Strategy</a></li><li><a href="nestjs-arabic-course/20-authentication/11-auth-guard.html"><span>11</span> AuthGuard</a></li><li><a href="nestjs-arabic-course/20-authentication/12-which-approach.html"><span>12</span> متى الحزمة الرسمية ومتى Passport</a></li><li><a href="nestjs-arabic-course/20-authentication/examples.html"><span>13</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/20-authentication/exercises.html"><span>14</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/20-authentication/next-step.html"><span>15</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>21 — Authorization</b><em>بناء المنتج</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/21-authorization/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/21-authorization/01-roles.html"><span>01</span> Roles</a></li><li><a href="nestjs-arabic-course/21-authorization/02-rbac.html"><span>02</span> RBAC</a></li><li><a href="nestjs-arabic-course/21-authorization/03-permissions-and-claims.html"><span>03</span> Permissions و Claims</a></li><li><a href="nestjs-arabic-course/21-authorization/04-policy-based.html"><span>04</span> Policy-based Authorization</a></li><li><a href="nestjs-arabic-course/21-authorization/05-nestjs-authorization.html"><span>05</span> @nestjs/authorization</a></li><li><a href="nestjs-arabic-course/21-authorization/06-casl.html"><span>06</span> CASL ومتى يناسب</a></li><li><a href="nestjs-arabic-course/21-authorization/07-guards-versus-policies.html"><span>07</span> Guard مقابل Policy</a></li><li><a href="nestjs-arabic-course/21-authorization/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/21-authorization/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/21-authorization/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>22 — Cookies و Sessions</b><em>بناء المنتج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/22-cookies-and-sessions/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/22-cookies-and-sessions/01-what-is-a-cookie.html"><span>01</span> ما هو Cookie</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/02-httponly-secure-samesite.html"><span>02</span> HttpOnly و Secure و SameSite</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/03-sessions.html"><span>03</span> Session</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/04-jwt-vs-session.html"><span>04</span> JWT مقابل Session</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/05-nestjs-cookies.html"><span>05</span> Cookies في NestJS</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/06-nestjs-session.html"><span>06</span> Session في NestJS</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/22-cookies-and-sessions/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>23 — CORS و Security</b><em>بناء المنتج</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/23-cors-and-security/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/23-cors-and-security/01-cors.html"><span>01</span> CORS</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/02-security-headers-and-helmet.html"><span>02</span> Security Headers و Helmet</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/03-rate-limiting.html"><span>03</span> Rate Limiting و @nestjs/throttler</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/04-csrf.html"><span>04</span> CSRF</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/05-xss.html"><span>05</span> XSS</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/06-sql-injection.html"><span>06</span> SQL Injection</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/07-validation-as-security.html"><span>07</span> Validation كطبقة أمن</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/08-encryption-and-hashing.html"><span>08</span> Encryption و Hashing</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/23-cors-and-security/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>24 — توثيق الـ API</b><em>بناء المنتج</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/24-api-documentation/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/24-api-documentation/01-openapi.html"><span>01</span> OpenAPI</a></li><li><a href="nestjs-arabic-course/24-api-documentation/02-swagger-module.html"><span>02</span> SwaggerModule</a></li><li><a href="nestjs-arabic-course/24-api-documentation/03-operation-decorators.html"><span>03</span> Decorators الخاصة بالعمليات</a></li><li><a href="nestjs-arabic-course/24-api-documentation/04-dto-documentation.html"><span>04</span> توثيق DTO</a></li><li><a href="nestjs-arabic-course/24-api-documentation/05-auth-in-swagger.html"><span>05</span> توثيق Auth</a></li><li><a href="nestjs-arabic-course/24-api-documentation/06-examples-and-responses.html"><span>06</span> Examples و Response Types</a></li><li><a href="nestjs-arabic-course/24-api-documentation/07-cli-plugin.html"><span>07</span> CLI Plugin</a></li><li><a href="nestjs-arabic-course/24-api-documentation/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/24-api-documentation/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/24-api-documentation/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>25 — Serialization</b><em>بناء المنتج</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/25-serialization/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/25-serialization/01-why-serialization.html"><span>01</span> لماذا Serialization</a></li><li><a href="nestjs-arabic-course/25-serialization/02-class-serializer-interceptor.html"><span>02</span> ClassSerializerInterceptor</a></li><li><a href="nestjs-arabic-course/25-serialization/03-exclude-and-expose.html"><span>03</span> Exclude و Expose</a></li><li><a href="nestjs-arabic-course/25-serialization/04-response-dtos.html"><span>04</span> Response DTOs</a></li><li><a href="nestjs-arabic-course/25-serialization/05-what-must-never-leak.html"><span>05</span> ما لا يجوز أن يخرج</a></li><li><a href="nestjs-arabic-course/25-serialization/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/25-serialization/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/25-serialization/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>26 — Pagination و Filtering و Sorting</b><em>بناء المنتج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/26-pagination-filtering-sorting/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/01-why-lists-need-a-contract.html"><span>01</span> لماذا تحتاج القوائم عقدًا</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/02-pagination.html"><span>02</span> Pagination</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/03-filtering.html"><span>03</span> Filtering</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/04-sorting.html"><span>04</span> Sorting</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/05-a-reusable-pattern.html"><span>05</span> نمط قابل لإعادة الاستخدام</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/06-database-consequences.html"><span>06</span> أثر النمط على الاستعلام</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/26-pagination-filtering-sorting/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>27 — File Upload</b><em>بناء المنتج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/27-file-upload/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/27-file-upload/01-multipart.html"><span>01</span> Multipart</a></li><li><a href="nestjs-arabic-course/27-file-upload/02-multer.html"><span>02</span> Multer</a></li><li><a href="nestjs-arabic-course/27-file-upload/03-file-interceptor.html"><span>03</span> FileInterceptor</a></li><li><a href="nestjs-arabic-course/27-file-upload/04-single-and-multiple.html"><span>04</span> ملف واحد وملفات متعددة</a></li><li><a href="nestjs-arabic-course/27-file-upload/05-validation.html"><span>05</span> الحجم و MIME Type</a></li><li><a href="nestjs-arabic-course/27-file-upload/06-streaming.html"><span>06</span> إرسال الملفات إلى العميل</a></li><li><a href="nestjs-arabic-course/27-file-upload/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/27-file-upload/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/27-file-upload/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="بناء المنتج" >
+      <summary><b>28 — Static Files</b><em>بناء المنتج</em><span>6 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/28-static-files/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/28-static-files/01-static-vs-api.html"><span>01</span> ملف ثابت مقابل API</a></li><li><a href="nestjs-arabic-course/28-static-files/02-serve-static-module.html"><span>02</span> ServeStaticModule</a></li><li><a href="nestjs-arabic-course/28-static-files/03-spa-hosting.html"><span>03</span> استضافة SPA</a></li><li><a href="nestjs-arabic-course/28-static-files/examples.html"><span>04</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/28-static-files/exercises.html"><span>05</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/28-static-files/next-step.html"><span>06</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>29 — GraphQL</b><em>قنوات واختبار</em><span>16 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/29-graphql/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/29-graphql/01-what-is-graphql.html"><span>01</span> ما هو GraphQL</a></li><li><a href="nestjs-arabic-course/29-graphql/02-rest-vs-graphql.html"><span>02</span> REST مقابل GraphQL</a></li><li><a href="nestjs-arabic-course/29-graphql/03-schema-query-mutation.html"><span>03</span> Schema و Query و Mutation</a></li><li><a href="nestjs-arabic-course/29-graphql/04-types-and-scalars.html"><span>04</span> Object Types و Input Types و Scalars و Enums</a></li><li><a href="nestjs-arabic-course/29-graphql/05-nestjs-graphql-setup.html"><span>05</span> @nestjs/graphql</a></li><li><a href="nestjs-arabic-course/29-graphql/06-code-first.html"><span>06</span> Code First</a></li><li><a href="nestjs-arabic-course/29-graphql/07-schema-first.html"><span>07</span> Schema First</a></li><li><a href="nestjs-arabic-course/29-graphql/08-resolvers.html"><span>08</span> @Resolver و @Query و @Mutation و @Args</a></li><li><a href="nestjs-arabic-course/29-graphql/09-object-and-input-types.html"><span>09</span> @ObjectType و @Field و @InputType</a></li><li><a href="nestjs-arabic-course/29-graphql/10-relations.html"><span>10</span> Relations</a></li><li><a href="nestjs-arabic-course/29-graphql/11-auth-guards-context.html"><span>11</span> Authentication و Guards و Context</a></li><li><a href="nestjs-arabic-course/29-graphql/12-dataloader-and-n-plus-one.html"><span>12</span> DataLoader و مشكلة N+1</a></li><li><a href="nestjs-arabic-course/29-graphql/13-subscriptions.html"><span>13</span> Subscriptions</a></li><li><a href="nestjs-arabic-course/29-graphql/examples.html"><span>14</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/29-graphql/exercises.html"><span>15</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/29-graphql/next-step.html"><span>16</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>30 — WebSockets</b><em>قنوات واختبار</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/30-websockets/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/30-websockets/01-what-is-a-websocket.html"><span>01</span> ما هو WebSocket</a></li><li><a href="nestjs-arabic-course/30-websockets/02-gateway.html"><span>02</span> Gateway</a></li><li><a href="nestjs-arabic-course/30-websockets/03-websocket-gateway.html"><span>03</span> @WebSocketGateway</a></li><li><a href="nestjs-arabic-course/30-websockets/04-subscribe-message.html"><span>04</span> @SubscribeMessage</a></li><li><a href="nestjs-arabic-course/30-websockets/05-socket-io.html"><span>05</span> Socket.IO</a></li><li><a href="nestjs-arabic-course/30-websockets/06-lifecycle-hooks.html"><span>06</span> Lifecycle Hooks</a></li><li><a href="nestjs-arabic-course/30-websockets/07-authentication.html"><span>07</span> Authentication</a></li><li><a href="nestjs-arabic-course/30-websockets/08-filters-pipes-guards.html"><span>08</span> Filters و Pipes و Guards على WebSocket</a></li><li><a href="nestjs-arabic-course/30-websockets/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/30-websockets/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/30-websockets/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>31 — RxJS في NestJS</b><em>قنوات واختبار</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/31-rxjs/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/31-rxjs/01-why-rxjs-appears.html"><span>01</span> لماذا تظهر RxJS داخل Nest</a></li><li><a href="nestjs-arabic-course/31-rxjs/02-observable.html"><span>02</span> Observable</a></li><li><a href="nestjs-arabic-course/31-rxjs/03-pipe.html"><span>03</span> pipe</a></li><li><a href="nestjs-arabic-course/31-rxjs/04-map-and-tap.html"><span>04</span> map و tap</a></li><li><a href="nestjs-arabic-course/31-rxjs/05-catch-error.html"><span>05</span> catchError</a></li><li><a href="nestjs-arabic-course/31-rxjs/06-timeout.html"><span>06</span> timeout</a></li><li><a href="nestjs-arabic-course/31-rxjs/07-what-you-can-skip.html"><span>07</span> ما لا تحتاج حفظه الآن</a></li><li><a href="nestjs-arabic-course/31-rxjs/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/31-rxjs/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/31-rxjs/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>32 — HTTP Client</b><em>قنوات واختبار</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/32-http-client/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/32-http-client/01-when-the-server-is-a-client.html"><span>01</span> عندما يصبح الخادم Client</a></li><li><a href="nestjs-arabic-course/32-http-client/02-http-module.html"><span>02</span> HttpModule</a></li><li><a href="nestjs-arabic-course/32-http-client/03-http-service.html"><span>03</span> HttpService</a></li><li><a href="nestjs-arabic-course/32-http-client/04-errors-and-timeouts.html"><span>04</span> الأخطاء والمهل</a></li><li><a href="nestjs-arabic-course/32-http-client/05-configuration.html"><span>05</span> إعداد العميل</a></li><li><a href="nestjs-arabic-course/32-http-client/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/32-http-client/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/32-http-client/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>33 — Caching</b><em>قنوات واختبار</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/33-caching/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/33-caching/01-what-is-a-cache.html"><span>01</span> ما هو Cache</a></li><li><a href="nestjs-arabic-course/33-caching/02-cache-module.html"><span>02</span> CacheModule</a></li><li><a href="nestjs-arabic-course/33-caching/03-cache-manager.html"><span>03</span> cache-manager</a></li><li><a href="nestjs-arabic-course/33-caching/04-ttl.html"><span>04</span> TTL</a></li><li><a href="nestjs-arabic-course/33-caching/05-redis.html"><span>05</span> Redis</a></li><li><a href="nestjs-arabic-course/33-caching/06-what-not-to-cache.html"><span>06</span> ما لا يُخزَّن في Cache</a></li><li><a href="nestjs-arabic-course/33-caching/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/33-caching/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/33-caching/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>34 — Queues</b><em>قنوات واختبار</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/34-queues/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/34-queues/01-why-queues.html"><span>01</span> لماذا Queue</a></li><li><a href="nestjs-arabic-course/34-queues/02-redis-again.html"><span>02</span> دور Redis</a></li><li><a href="nestjs-arabic-course/34-queues/03-bullmq.html"><span>03</span> BullMQ و @nestjs/bullmq</a></li><li><a href="nestjs-arabic-course/34-queues/04-producers.html"><span>04</span> Producers</a></li><li><a href="nestjs-arabic-course/34-queues/05-consumers.html"><span>05</span> Consumers</a></li><li><a href="nestjs-arabic-course/34-queues/06-retries-and-failures.html"><span>06</span> Retries و Failed Jobs</a></li><li><a href="nestjs-arabic-course/34-queues/07-bull-maintenance-mode.html"><span>07</span> Bull في وضع الصيانة</a></li><li><a href="nestjs-arabic-course/34-queues/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/34-queues/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/34-queues/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>35 — Scheduling</b><em>قنوات واختبار</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/35-scheduling/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/35-scheduling/01-scheduling-vs-queues.html"><span>01</span> Scheduling مقابل Queues</a></li><li><a href="nestjs-arabic-course/35-scheduling/02-schedule-module.html"><span>02</span> @nestjs/schedule</a></li><li><a href="nestjs-arabic-course/35-scheduling/03-cron.html"><span>03</span> Cron</a></li><li><a href="nestjs-arabic-course/35-scheduling/04-interval.html"><span>04</span> Interval</a></li><li><a href="nestjs-arabic-course/35-scheduling/05-timeout.html"><span>05</span> Timeout</a></li><li><a href="nestjs-arabic-course/35-scheduling/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/35-scheduling/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/35-scheduling/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>36 — Events</b><em>قنوات واختبار</em><span>7 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/36-events/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/36-events/01-why-events.html"><span>01</span> لماذا Events</a></li><li><a href="nestjs-arabic-course/36-events/02-event-emitter.html"><span>02</span> EventEmitter و @nestjs/event-emitter</a></li><li><a href="nestjs-arabic-course/36-events/03-loose-coupling.html"><span>03</span> Loose Coupling</a></li><li><a href="nestjs-arabic-course/36-events/04-what-events-are-not.html"><span>04</span> ما الذي لا تحلّه Events داخل العملية</a></li><li><a href="nestjs-arabic-course/36-events/examples.html"><span>05</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/36-events/exercises.html"><span>06</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/36-events/next-step.html"><span>07</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>37 — Logging</b><em>قنوات واختبار</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/37-logging/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/37-logging/01-nest-logger.html"><span>01</span> Nest Logger</a></li><li><a href="nestjs-arabic-course/37-logging/02-custom-logger.html"><span>02</span> Custom Logger</a></li><li><a href="nestjs-arabic-course/37-logging/03-structured-logging.html"><span>03</span> Structured Logging</a></li><li><a href="nestjs-arabic-course/37-logging/04-request-logging.html"><span>04</span> Request Logging</a></li><li><a href="nestjs-arabic-course/37-logging/05-correlation-ids.html"><span>05</span> Correlation IDs</a></li><li><a href="nestjs-arabic-course/37-logging/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/37-logging/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/37-logging/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="قنوات واختبار" >
+      <summary><b>38 — Testing</b><em>قنوات واختبار</em><span>14 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/38-testing/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/38-testing/01-why-testing-changes-design.html"><span>01</span> لماذا يغيّر الاختبار شكل التصميم</a></li><li><a href="nestjs-arabic-course/38-testing/02-unit-testing.html"><span>02</span> Unit Testing</a></li><li><a href="nestjs-arabic-course/38-testing/03-integration-testing.html"><span>03</span> Integration Testing</a></li><li><a href="nestjs-arabic-course/38-testing/04-e2e-testing.html"><span>04</span> E2E Testing</a></li><li><a href="nestjs-arabic-course/38-testing/05-jest-and-vitest.html"><span>05</span> Jest و Vitest</a></li><li><a href="nestjs-arabic-course/38-testing/06-testing-module.html"><span>06</span> TestingModule</a></li><li><a href="nestjs-arabic-course/38-testing/07-mocking-providers.html"><span>07</span> Mocking Providers</a></li><li><a href="nestjs-arabic-course/38-testing/08-testing-services.html"><span>08</span> اختبار Services</a></li><li><a href="nestjs-arabic-course/38-testing/09-testing-controllers.html"><span>09</span> اختبار Controllers</a></li><li><a href="nestjs-arabic-course/38-testing/10-supertest.html"><span>10</span> Supertest</a></li><li><a href="nestjs-arabic-course/38-testing/11-database-testing.html"><span>11</span> اختبار قاعدة البيانات</a></li><li><a href="nestjs-arabic-course/38-testing/examples.html"><span>12</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/38-testing/exercises.html"><span>13</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/38-testing/next-step.html"><span>14</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>39 — Application Lifecycle</b><em>عمق وتشغيل</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/39-application-lifecycle/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/39-application-lifecycle/01-lifecycle-map.html"><span>01</span> خريطة دورة الحياة</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/02-on-module-init.html"><span>02</span> OnModuleInit</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/03-on-application-bootstrap.html"><span>03</span> OnApplicationBootstrap</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/04-on-module-destroy.html"><span>04</span> OnModuleDestroy</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/05-before-application-shutdown.html"><span>05</span> BeforeApplicationShutdown</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/06-on-application-shutdown.html"><span>06</span> OnApplicationShutdown</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/07-enable-shutdown-hooks.html"><span>07</span> تفعيل Shutdown Hooks</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/39-application-lifecycle/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>40 — Injection Scopes</b><em>عمق وتشغيل</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/40-injection-scopes/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/40-injection-scopes/01-default-scope.html"><span>01</span> DEFAULT</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/02-request-scope.html"><span>02</span> REQUEST</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/03-transient-scope.html"><span>03</span> TRANSIENT</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/04-performance-cost.html"><span>04</span> الأثر على الأداء</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/05-durable-providers.html"><span>05</span> متى تبقى على Singleton</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/40-injection-scopes/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>41 — Circular Dependencies</b><em>عمق وتشغيل</em><span>7 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/41-circular-dependencies/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/41-circular-dependencies/01-how-cycles-happen.html"><span>01</span> كيف تحدث الدورة</a></li><li><a href="nestjs-arabic-course/41-circular-dependencies/02-design-smell.html"><span>02</span> متى تكون مشكلة تصميم</a></li><li><a href="nestjs-arabic-course/41-circular-dependencies/03-forward-ref.html"><span>03</span> forwardRef</a></li><li><a href="nestjs-arabic-course/41-circular-dependencies/04-redrawing-modules.html"><span>04</span> إعادة رسم حدود الـ Modules</a></li><li><a href="nestjs-arabic-course/41-circular-dependencies/examples.html"><span>05</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/41-circular-dependencies/exercises.html"><span>06</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/41-circular-dependencies/next-step.html"><span>07</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>42 — Dynamic Modules</b><em>عمق وتشغيل</em><span>12 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/42-dynamic-modules/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/42-dynamic-modules/01-static-vs-dynamic.html"><span>01</span> Module ثابت مقابل Dynamic Module</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/02-for-root.html"><span>02</span> forRoot</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/03-for-root-async.html"><span>03</span> forRootAsync</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/04-register.html"><span>04</span> register</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/05-register-async.html"><span>05</span> registerAsync</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/06-configurable-module-builder.html"><span>06</span> ConfigurableModuleBuilder</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/07-module-ref.html"><span>07</span> ModuleRef</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/08-lazy-loading.html"><span>08</span> Lazy-loading Modules</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/09-async-providers.html"><span>09</span> Asynchronous Providers</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/examples.html"><span>10</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/exercises.html"><span>11</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/42-dynamic-modules/next-step.html"><span>12</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>43 — Discovery و Metadata</b><em>عمق وتشغيل</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/43-discovery-and-metadata/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/43-discovery-and-metadata/01-reflection-again.html"><span>01</span> Reflection مرة أخرى</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/02-reflector.html"><span>02</span> Reflector</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/03-metadata.html"><span>03</span> Metadata</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/04-discovery-service.html"><span>04</span> DiscoveryService</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/05-execution-context-deep.html"><span>05</span> ExecutionContext بعمق</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/43-discovery-and-metadata/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>44 — Custom Providers المتقدمة</b><em>عمق وتشغيل</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/44-advanced-custom-providers/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/44-advanced-custom-providers/01-use-class.html"><span>01</span> useClass</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/02-use-value.html"><span>02</span> useValue</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/03-use-factory.html"><span>03</span> useFactory</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/04-use-existing.html"><span>04</span> useExisting</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/05-tokens-and-symbols.html"><span>05</span> Tokens و Symbols</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/06-async-factories.html"><span>06</span> Async Factories</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/44-advanced-custom-providers/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>45 — Architecture</b><em>عمق وتشغيل</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/45-architecture/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/45-architecture/01-layered-architecture.html"><span>01</span> Layered Architecture</a></li><li><a href="nestjs-arabic-course/45-architecture/02-modular-architecture.html"><span>02</span> Modular Architecture</a></li><li><a href="nestjs-arabic-course/45-architecture/03-clean-architecture.html"><span>03</span> Clean Architecture</a></li><li><a href="nestjs-arabic-course/45-architecture/04-hexagonal-architecture.html"><span>04</span> Hexagonal Architecture</a></li><li><a href="nestjs-arabic-course/45-architecture/05-ddd-basics.html"><span>05</span> أساسيات DDD</a></li><li><a href="nestjs-arabic-course/45-architecture/06-what-to-skip.html"><span>06</span> ما لا تستورده إلى مشروع صغير</a></li><li><a href="nestjs-arabic-course/45-architecture/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/45-architecture/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/45-architecture/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>46 — SOLID داخل NestJS</b><em>عمق وتشغيل</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/46-solid/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/46-solid/01-single-responsibility.html"><span>01</span> Single Responsibility</a></li><li><a href="nestjs-arabic-course/46-solid/02-open-closed.html"><span>02</span> Open/Closed</a></li><li><a href="nestjs-arabic-course/46-solid/03-liskov-substitution.html"><span>03</span> Liskov Substitution</a></li><li><a href="nestjs-arabic-course/46-solid/04-interface-segregation.html"><span>04</span> Interface Segregation</a></li><li><a href="nestjs-arabic-course/46-solid/05-dependency-inversion.html"><span>05</span> Dependency Inversion</a></li><li><a href="nestjs-arabic-course/46-solid/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/46-solid/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/46-solid/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>47 — Repository Pattern</b><em>عمق وتشغيل</em><span>7 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/47-repository-pattern/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/47-repository-pattern/01-the-pattern.html"><span>01</span> النمط</a></li><li><a href="nestjs-arabic-course/47-repository-pattern/02-orm-repository.html"><span>02</span> ORM Repository</a></li><li><a href="nestjs-arabic-course/47-repository-pattern/03-domain-repository.html"><span>03</span> Domain Repository</a></li><li><a href="nestjs-arabic-course/47-repository-pattern/04-abstraction-and-tests.html"><span>04</span> التجريد والاختبار</a></li><li><a href="nestjs-arabic-course/47-repository-pattern/examples.html"><span>05</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/47-repository-pattern/exercises.html"><span>06</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/47-repository-pattern/next-step.html"><span>07</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>48 — CQRS</b><em>عمق وتشغيل</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/48-cqrs/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/48-cqrs/01-crud-flow.html"><span>01</span> تدفق CRUD البسيط</a></li><li><a href="nestjs-arabic-course/48-cqrs/02-command-and-query.html"><span>02</span> Command و Query</a></li><li><a href="nestjs-arabic-course/48-cqrs/03-handlers.html"><span>03</span> Handlers</a></li><li><a href="nestjs-arabic-course/48-cqrs/04-events-and-buses.html"><span>04</span> Event و EventBus و CommandBus و QueryBus</a></li><li><a href="nestjs-arabic-course/48-cqrs/05-when-it-pays.html"><span>05</span> متى يفيد CQRS</a></li><li><a href="nestjs-arabic-course/48-cqrs/06-when-it-is-too-much.html"><span>06</span> متى يكون Overengineering</a></li><li><a href="nestjs-arabic-course/48-cqrs/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/48-cqrs/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/48-cqrs/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>49 — Microservices</b><em>عمق وتشغيل</em><span>16 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/49-microservices/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/49-microservices/01-monolith.html"><span>01</span> Monolith</a></li><li><a href="nestjs-arabic-course/49-microservices/02-modular-monolith.html"><span>02</span> Modular Monolith</a></li><li><a href="nestjs-arabic-course/49-microservices/03-microservices.html"><span>03</span> Microservices</a></li><li><a href="nestjs-arabic-course/49-microservices/04-communication.html"><span>04</span> أساليب التواصل</a></li><li><a href="nestjs-arabic-course/49-microservices/05-platform-agnosticism.html"><span>05</span> Platform Agnosticism</a></li><li><a href="nestjs-arabic-course/49-microservices/06-message-and-event-patterns.html"><span>06</span> @MessagePattern و @EventPattern</a></li><li><a href="nestjs-arabic-course/49-microservices/07-client-proxy.html"><span>07</span> ClientProxy</a></li><li><a href="nestjs-arabic-course/49-microservices/08-tcp.html"><span>08</span> TCP</a></li><li><a href="nestjs-arabic-course/49-microservices/09-redis.html"><span>09</span> Redis</a></li><li><a href="nestjs-arabic-course/49-microservices/10-rabbitmq.html"><span>10</span> RabbitMQ</a></li><li><a href="nestjs-arabic-course/49-microservices/11-kafka.html"><span>11</span> Kafka</a></li><li><a href="nestjs-arabic-course/49-microservices/12-nats.html"><span>12</span> NATS</a></li><li><a href="nestjs-arabic-course/49-microservices/13-grpc-and-others.html"><span>13</span> gRPC و MQTT ونواقل أخرى</a></li><li><a href="nestjs-arabic-course/49-microservices/examples.html"><span>14</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/49-microservices/exercises.html"><span>15</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/49-microservices/next-step.html"><span>16</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>50 — Docker</b><em>عمق وتشغيل</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/50-docker/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/50-docker/01-why-docker.html"><span>01</span> لماذا Docker</a></li><li><a href="nestjs-arabic-course/50-docker/02-dockerfile.html"><span>02</span> Dockerfile</a></li><li><a href="nestjs-arabic-course/50-docker/03-multi-stage-build.html"><span>03</span> Multi-stage Build</a></li><li><a href="nestjs-arabic-course/50-docker/04-docker-compose.html"><span>04</span> docker-compose</a></li><li><a href="nestjs-arabic-course/50-docker/05-nestjs-postgres-redis.html"><span>05</span> NestJS و PostgreSQL و Redis</a></li><li><a href="nestjs-arabic-course/50-docker/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/50-docker/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/50-docker/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>51 — Production</b><em>عمق وتشغيل</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/51-production/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/51-production/01-build.html"><span>01</span> Build</a></li><li><a href="nestjs-arabic-course/51-production/02-environment.html"><span>02</span> Environment Variables</a></li><li><a href="nestjs-arabic-course/51-production/03-logging.html"><span>03</span> Logging في الإنتاج</a></li><li><a href="nestjs-arabic-course/51-production/04-graceful-shutdown.html"><span>04</span> Graceful Shutdown</a></li><li><a href="nestjs-arabic-course/51-production/05-compression.html"><span>05</span> Compression</a></li><li><a href="nestjs-arabic-course/51-production/06-security-checklist.html"><span>06</span> قائمة الأمن</a></li><li><a href="nestjs-arabic-course/51-production/07-reverse-proxy-and-nginx.html"><span>07</span> Reverse Proxy و Nginx</a></li><li><a href="nestjs-arabic-course/51-production/08-process-model.html"><span>08</span> نموذج العملية</a></li><li><a href="nestjs-arabic-course/51-production/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/51-production/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/51-production/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="عمق وتشغيل" >
+      <summary><b>52 — Health Checks</b><em>عمق وتشغيل</em><span>6 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/52-health-checks/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/52-health-checks/01-liveness-and-readiness.html"><span>01</span> Liveness و Readiness</a></li><li><a href="nestjs-arabic-course/52-health-checks/02-terminus.html"><span>02</span> @nestjs/terminus</a></li><li><a href="nestjs-arabic-course/52-health-checks/03-database-and-redis-indicators.html"><span>03</span> مؤشرات قاعدة البيانات و Redis</a></li><li><a href="nestjs-arabic-course/52-health-checks/examples.html"><span>04</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/52-health-checks/exercises.html"><span>05</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/52-health-checks/next-step.html"><span>06</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>53 — Performance</b><em>إنتاج</em><span>10 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/53-performance/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/53-performance/01-event-loop.html"><span>01</span> Event Loop وما يسدّه</a></li><li><a href="nestjs-arabic-course/53-performance/02-request-scope-cost.html"><span>02</span> كلفة Request Scope</a></li><li><a href="nestjs-arabic-course/53-performance/03-database-and-indexes.html"><span>03</span> قاعدة البيانات والفهارس</a></li><li><a href="nestjs-arabic-course/53-performance/04-caching.html"><span>04</span> Caching كقرار أداء</a></li><li><a href="nestjs-arabic-course/53-performance/05-compression.html"><span>05</span> Compression</a></li><li><a href="nestjs-arabic-course/53-performance/06-cluster-and-processes.html"><span>06</span> Cluster ونموذج العمليات</a></li><li><a href="nestjs-arabic-course/53-performance/07-fastify-when-it-matters.html"><span>07</span> متى يهم Fastify</a></li><li><a href="nestjs-arabic-course/53-performance/examples.html"><span>08</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/53-performance/exercises.html"><span>09</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/53-performance/next-step.html"><span>10</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>54 — معالجة أخطاء متقدمة</b><em>إنتاج</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/54-advanced-error-handling/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/54-advanced-error-handling/01-error-categories.html"><span>01</span> أنواع الأخطاء</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/02-domain-errors.html"><span>02</span> أخطاء النطاق</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/03-mapping-to-http.html"><span>03</span> تحويلها إلى HTTP</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/04-unexpected-errors.html"><span>04</span> الأخطاء غير المتوقعة</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/05-a-single-strategy.html"><span>05</span> استراتيجية واحدة</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/54-advanced-error-handling/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>55 — API Versioning</b><em>إنتاج</em><span>7 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/55-api-versioning/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/55-api-versioning/01-why-version.html"><span>01</span> لماذا الإصدارات</a></li><li><a href="nestjs-arabic-course/55-api-versioning/02-uri-versioning.html"><span>02</span> URI Versioning</a></li><li><a href="nestjs-arabic-course/55-api-versioning/03-header-versioning.html"><span>03</span> Header Versioning</a></li><li><a href="nestjs-arabic-course/55-api-versioning/04-media-type-versioning.html"><span>04</span> Media Type Versioning</a></li><li><a href="nestjs-arabic-course/55-api-versioning/examples.html"><span>05</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/55-api-versioning/exercises.html"><span>06</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/55-api-versioning/next-step.html"><span>07</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>56 — تصميم REST API</b><em>إنتاج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/56-rest-api-design/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/56-rest-api-design/01-resource-naming.html"><span>01</span> تسمية الموارد</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/02-status-codes.html"><span>02</span> Status Codes</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/03-idempotency.html"><span>03</span> Idempotency</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/04-pagination-filtering-sorting.html"><span>04</span> Pagination و Filtering و Sorting كعقد</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/05-error-shape.html"><span>05</span> شكل الخطأ</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/06-versioning-in-the-design.html"><span>06</span> الإصدار داخل التصميم</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/56-rest-api-design/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>57 — GraphQL المتقدم</b><em>إنتاج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/57-graphql-advanced/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/57-graphql-advanced/01-dataloader-again.html"><span>01</span> DataLoader مرة أخرى</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/02-n-plus-one.html"><span>02</span> N+1</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/03-complexity.html"><span>03</span> Complexity</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/04-depth-limiting.html"><span>04</span> Depth Limiting</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/05-persisted-queries.html"><span>05</span> Persisted Queries</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/06-federation.html"><span>06</span> أساسيات Federation</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/57-graphql-advanced/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>58 — Authentication المتقدم</b><em>إنتاج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/58-advanced-authentication/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/58-advanced-authentication/01-oauth2.html"><span>01</span> OAuth 2.0</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/02-openid-connect.html"><span>02</span> OpenID Connect</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/03-social-login.html"><span>03</span> Social Login</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/04-google.html"><span>04</span> Google</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/05-token-rotation.html"><span>05</span> Token Rotation</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/06-token-revocation.html"><span>06</span> Token Revocation</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/58-advanced-authentication/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>59 — Multi-tenancy</b><em>إنتاج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/59-multi-tenancy/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/59-multi-tenancy/01-what-is-a-tenant.html"><span>01</span> ما هو Tenant</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/02-shared-schema.html"><span>02</span> Single DB / Shared Schema</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/03-schema-per-tenant.html"><span>03</span> Single DB / Schema per Tenant</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/04-database-per-tenant.html"><span>04</span> Database per Tenant</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/05-tenant-resolution.html"><span>05</span> Tenant Resolution</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/06-nestjs-shape.html"><span>06</span> شكل ذلك داخل NestJS</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/59-multi-tenancy/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>60 — معمارية Backend لـ SaaS</b><em>إنتاج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/60-saas-backend-architecture/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/60-saas-backend-architecture/01-users-and-organizations.html"><span>01</span> User و Organization</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/02-membership-and-roles.html"><span>02</span> Membership و Roles و Permissions</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/03-subscription-and-billing.html"><span>03</span> Subscription و Billing</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/04-audit-logs.html"><span>04</span> Audit Logs</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/05-notifications.html"><span>05</span> Notifications</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/06-jobs-and-webhooks.html"><span>06</span> Background Jobs و Webhooks</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/60-saas-backend-architecture/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>61 — Webhooks</b><em>إنتاج</em><span>9 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/61-webhooks/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/61-webhooks/01-inbound.html"><span>01</span> Inbound Webhooks</a></li><li><a href="nestjs-arabic-course/61-webhooks/02-outbound.html"><span>02</span> Outbound Webhooks</a></li><li><a href="nestjs-arabic-course/61-webhooks/03-signature-verification.html"><span>03</span> التحقق من التوقيع</a></li><li><a href="nestjs-arabic-course/61-webhooks/04-raw-body.html"><span>04</span> Raw Body</a></li><li><a href="nestjs-arabic-course/61-webhooks/05-retry.html"><span>05</span> Retry</a></li><li><a href="nestjs-arabic-course/61-webhooks/06-idempotency.html"><span>06</span> Idempotency</a></li><li><a href="nestjs-arabic-course/61-webhooks/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/61-webhooks/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/61-webhooks/next-step.html"><span>09</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>62 — معمارية تكامل Stripe</b><em>إنتاج</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/62-stripe-architecture/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/62-stripe-architecture/01-service-boundaries.html"><span>01</span> حدود الخدمة</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/02-checkout.html"><span>02</span> Checkout</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/03-subscriptions.html"><span>03</span> Subscriptions</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/04-webhooks.html"><span>04</span> Webhook</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/05-idempotency.html"><span>05</span> Idempotency</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/62-stripe-architecture/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>63 — Event-Driven Architecture</b><em>إنتاج</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/63-event-driven-architecture/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/63-event-driven-architecture/01-domain-events.html"><span>01</span> Domain Events</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/02-integration-events.html"><span>02</span> Integration Events</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/03-event-bus.html"><span>03</span> Event Bus</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/04-eventual-consistency.html"><span>04</span> Eventual Consistency</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/05-outbox-preview.html"><span>05</span> لمحة عن Transactional Outbox</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/63-event-driven-architecture/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>64 — Observability</b><em>إنتاج</em><span>7 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/64-observability/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/64-observability/01-logs-metrics-traces.html"><span>01</span> Logs و Metrics و Traces</a></li><li><a href="nestjs-arabic-course/64-observability/02-opentelemetry.html"><span>02</span> أساسيات OpenTelemetry</a></li><li><a href="nestjs-arabic-course/64-observability/03-nestjs-observe.html"><span>03</span> NestJS Observe و @nestjs/observe</a></li><li><a href="nestjs-arabic-course/64-observability/04-correlation.html"><span>04</span> ربط السجلات بالطلب</a></li><li><a href="nestjs-arabic-course/64-observability/examples.html"><span>05</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/64-observability/exercises.html"><span>06</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/64-observability/next-step.html"><span>07</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="إنتاج" >
+      <summary><b>65 — المشروع الإنتاجي النهائي</b><em>إنتاج</em><span>17 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/65-final-production-project/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/65-final-production-project/01-scope.html"><span>01</span> نطاق المشروع</a></li><li><a href="nestjs-arabic-course/65-final-production-project/02-foundations.html"><span>02</span> الأساسات: الإعداد وقاعدة البيانات</a></li><li><a href="nestjs-arabic-course/65-final-production-project/03-auth.html"><span>03</span> Auth</a></li><li><a href="nestjs-arabic-course/65-final-production-project/04-users-and-organizations.html"><span>04</span> Users و Organizations</a></li><li><a href="nestjs-arabic-course/65-final-production-project/05-projects.html"><span>05</span> Projects</a></li><li><a href="nestjs-arabic-course/65-final-production-project/06-subscriptions-and-payments.html"><span>06</span> Subscriptions و Payments</a></li><li><a href="nestjs-arabic-course/65-final-production-project/07-notifications.html"><span>07</span> Notifications</a></li><li><a href="nestjs-arabic-course/65-final-production-project/08-audit-logs.html"><span>08</span> Audit Logs</a></li><li><a href="nestjs-arabic-course/65-final-production-project/09-jobs.html"><span>09</span> Jobs</a></li><li><a href="nestjs-arabic-course/65-final-production-project/10-webhooks.html"><span>10</span> Webhooks</a></li><li><a href="nestjs-arabic-course/65-final-production-project/11-admin.html"><span>11</span> Admin</a></li><li><a href="nestjs-arabic-course/65-final-production-project/12-graphql-surface.html"><span>12</span> سطح GraphQL</a></li><li><a href="nestjs-arabic-course/65-final-production-project/13-swagger.html"><span>13</span> Swagger</a></li><li><a href="nestjs-arabic-course/65-final-production-project/14-docker-and-tests.html"><span>14</span> Docker و Tests</a></li><li><a href="nestjs-arabic-course/65-final-production-project/examples.html"><span>15</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/65-final-production-project/exercises.html"><span>16</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/65-final-production-project/next-step.html"><span>17</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="تكملة" >
+      <summary><b>66 — Reliability</b><em>تكملة</em><span>8 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/66-reliability/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/66-reliability/01-resilience.html"><span>01</span> Resilience</a></li><li><a href="nestjs-arabic-course/66-reliability/02-idempotency-keys.html"><span>02</span> Idempotency Keys</a></li><li><a href="nestjs-arabic-course/66-reliability/03-transactional-outbox.html"><span>03</span> Transactional Outbox</a></li><li><a href="nestjs-arabic-course/66-reliability/04-durable-workflows.html"><span>04</span> Durable Workflows</a></li><li><a href="nestjs-arabic-course/66-reliability/05-distributed-locks.html"><span>05</span> Distributed Locks</a></li><li><a href="nestjs-arabic-course/66-reliability/examples.html"><span>06</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/66-reliability/exercises.html"><span>07</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/66-reliability/next-step.html"><span>08</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="تكملة" >
+      <summary><b>67 — CLI و Devtools و Standalone</b><em>تكملة</em><span>11 دروس</span></summary>
+      <p></p>
+      <p><a href="nestjs-arabic-course/67-cli-devtools-standalone/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/01-cli-usage.html"><span>01</span> أوامر Nest CLI</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/02-workspaces-and-libraries.html"><span>02</span> Workspaces و Libraries</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/03-swc.html"><span>03</span> SWC</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/04-repl.html"><span>04</span> REPL</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/05-hot-reload.html"><span>05</span> Hot Reload</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/06-devtools.html"><span>06</span> Nest Devtools</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/07-standalone-apps.html"><span>07</span> Standalone Apps</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/08-nest-commander.html"><span>08</span> nest-commander</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/examples.html"><span>09</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/exercises.html"><span>10</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/67-cli-devtools-standalone/next-step.html"><span>11</span> التمهيد للفصل التالي</a></li></ol>
+    </details>
+<details class="block" data-kind="course" data-phase="تكملة" >
+      <summary><b>68 — ميزات منصة اختيارية</b><em>تكملة</em><span>9 دروس</span></summary>
+      <p>كل درس مكتوب يختم بروابط الصفحات التي اعتُمد عليها. ابدأ دائمًا من [docs.nestjs.com](https://docs.nestjs.com/). فهرس الفصول بصيغة مناسبة للقراءة الآلية موجود عند [docs.nestjs.com/llms.txt](https://docs.nestjs.com/llms.txt).</p>
+      <p><a href="nestjs-arabic-course/68-optional-platform-features/README.html">صفحة الفصل</a></p>
+      <ol><li><a href="nestjs-arabic-course/68-optional-platform-features/01-i18n.html"><span>01</span> Internationalization</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/02-mail.html"><span>02</span> Mail</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/03-file-storage.html"><span>03</span> File Storage</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/04-server-sent-events.html"><span>04</span> Server-Sent Events</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/05-serverless.html"><span>05</span> Serverless</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/06-hybrid-apps.html"><span>06</span> Hybrid Applications</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/examples.html"><span>07</span> أمثلة عملية</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/exercises.html"><span>08</span> تمارين الفصل</a></li><li><a href="nestjs-arabic-course/68-optional-platform-features/next-step.html"><span>09</span> نهاية المسار</a></li></ol>
+    </details>
+</section>
+
+<section id="projects">
+  <h2>المشاريع بعد فهم المسار</h2>
+  <p class="muted">لا تبدأ بالمشروع 30 قبل أن يعمل 01. كل بطاقة تفتح دليل البناء.</p>
+  <div class="tools" id="levels">
+    <button type="button" data-level="all" class="on">كل المستويات</button>
+    <button type="button" data-level="مبتدئ">مبتدئ</button>
+    <button type="button" data-level="متوسط">متوسط</button>
+    <button type="button" data-level="متقدم">متقدم</button>
+    <button type="button" data-level="إنتاج">إنتاج</button>
+  </div>
+  <div class="grid" id="proj"><a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/01-echo-api/README.html">
+      <b>01</b>
+      <span>صدى الطلب</span>
+      <em>مبتدئ · أول Controller</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/02-notes-memory/README.html">
+      <b>02</b>
+      <span>ملاحظات في الذاكرة</span>
+      <em>مبتدئ · CRUD بلا قاعدة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/03-task-board/README.html">
+      <b>03</b>
+      <span>لوحة مهام</span>
+      <em>مبتدئ · حالة مسموحة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/04-quote-jar/README.html">
+      <b>04</b>
+      <span>برطمان اقتباسات</span>
+      <em>مبتدئ · قراءة عشوائية</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/05-visit-counter/README.html">
+      <b>05</b>
+      <span>عداد الزيارات</span>
+      <em>مبتدئ · مورد واحد</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/06-address-book/README.html">
+      <b>06</b>
+      <span>دفتر عناوين</span>
+      <em>مبتدئ · تفرد وتعارض</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/07-study-cards/README.html">
+      <b>07</b>
+      <span>بطاقات دراسة</span>
+      <em>مبتدئ · موعد الاستحقاق</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/08-link-shortener/README.html">
+      <b>08</b>
+      <span>مختصر روابط</span>
+      <em>مبتدئ · تحويل 302</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/09-expense-ledger/README.html">
+      <b>09</b>
+      <span>دفتر مصروفات</span>
+      <em>مبتدئ · أرقام صحيحة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="مبتدئ" href="50-backend-projects/10-habit-tracker/README.html">
+      <b>10</b>
+      <span>متتبع عادات</span>
+      <em>مبتدئ · قيد يومي</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/11-article-blog/README.html">
+      <b>11</b>
+      <span>مقالات بتحقق</span>
+      <em>متوسط · DTO و ValidationPipe</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/12-article-comments/README.html">
+      <b>12</b>
+      <span>تعليقات المقال</span>
+      <em>متوسط · مورد فرعي</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/13-tag-catalog/README.html">
+      <b>13</b>
+      <span>وسوم المقالات</span>
+      <em>متوسط · علاقة متعدد لمتعدد</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/14-library-catalog/README.html">
+      <b>14</b>
+      <span>فهرس كتب ومؤلفين</span>
+      <em>متوسط · وحدتان</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/15-recipe-box/README.html">
+      <b>15</b>
+      <span>صندوق وصفات</span>
+      <em>متوسط · تحجيم الكميات</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/16-poll-booth/README.html">
+      <b>16</b>
+      <span>غرفة تصويت</span>
+      <em>متوسط · صوت واحد</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/17-room-booking/README.html">
+      <b>17</b>
+      <span>حجز غرف</span>
+      <em>متوسط · تعارض الوقت</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/18-support-desk/README.html">
+      <b>18</b>
+      <span>مكتب تذاكر</span>
+      <em>متوسط · آلة حالات</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/19-product-catalog/README.html">
+      <b>19</b>
+      <span>كتالوج بمنتجات مرقمة</span>
+      <em>متوسط · ترقيم وتصفية وفرز</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/20-shopping-cart/README.html">
+      <b>20</b>
+      <span>سلة لا تثق بالسعر</span>
+      <em>متوسط · حساب على الخادم</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/21-accounts/README.html">
+      <b>21</b>
+      <span>حسابات وتجزئة</span>
+      <em>متوسط · تسجيل ودخول</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/22-profile/README.html">
+      <b>22</b>
+      <span>الملف الحالي</span>
+      <em>متوسط · المستخدم الحالي</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/23-editorial-roles/README.html">
+      <b>23</b>
+      <span>أدوار التحرير</span>
+      <em>متوسط · تفويض بسيط</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/24-cover-upload/README.html">
+      <b>24</b>
+      <span>غلاف المقال</span>
+      <em>متوسط · رفع ملف</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/25-partner-api-keys/README.html">
+      <b>25</b>
+      <span>مفاتيح الشركاء</span>
+      <em>متوسط · مفتاح API</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/26-login-shield/README.html">
+      <b>26</b>
+      <span>درع الدخول</span>
+      <em>متوسط · حد المعدل</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/27-catalog-cache/README.html">
+      <b>27</b>
+      <span>كتالوج مخزّن مؤقتًا</span>
+      <em>متوسط · TTL وإبطال</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/28-mail-queue/README.html">
+      <b>28</b>
+      <span>طابور رسائل الترحيب</span>
+      <em>متوسط · BullMQ</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/29-domain-events/README.html">
+      <b>29</b>
+      <span>حدث نشر المقال</span>
+      <em>متوسط · EventEmitter</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متوسط" href="50-backend-projects/30-audit-trail/README.html">
+      <b>30</b>
+      <span>سجل تدقيق</span>
+      <em>متوسط · من غيّر ماذا</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/31-shop-tenants/README.html">
+      <b>31</b>
+      <span>ملاحظات لكل متجر</span>
+      <em>متقدم · مستأجر من ترويسة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/32-notes-versioning/README.html">
+      <b>32</b>
+      <span>إصداران للملاحظات</span>
+      <em>متقدم · إصدار URI</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/33-public-docs/README.html">
+      <b>33</b>
+      <span>توثيق الكتالوج</span>
+      <em>متقدم · OpenAPI</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/34-tested-tasks/README.html">
+      <b>34</b>
+      <span>مهام مُختبرة</span>
+      <em>متقدم · وحدة ورحلة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/35-ops-health/README.html">
+      <b>35</b>
+      <span>صحة وإيقاف</span>
+      <em>متقدم · live و ready</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/36-order-stock/README.html">
+      <b>36</b>
+      <span>طلب يخصم المخزون</span>
+      <em>متقدم · معاملة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/37-checkout-idempotency/README.html">
+      <b>37</b>
+      <span>دفع وهمي بلا تكرار</span>
+      <em>متقدم · Idempotency-Key</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/38-outbound-webhooks/README.html">
+      <b>38</b>
+      <span>ويب هوك صادر</span>
+      <em>متقدم · توقيع وإعادة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/39-inbound-webhooks/README.html">
+      <b>39</b>
+      <span>ويب هوك وارد</span>
+      <em>متقدم · الجسم الخام</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/40-order-live/README.html">
+      <b>40</b>
+      <span>حالة الطلب لحظة بلحظة</span>
+      <em>متقدم · WebSocket</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/41-book-search/README.html">
+      <b>41</b>
+      <span>بحث الكتب</span>
+      <em>متقدم · استعلام وفهرس</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/42-sales-report/README.html">
+      <b>42</b>
+      <span>تقرير مبيعات</span>
+      <em>متقدم · قراءة منفصلة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="متقدم" href="50-backend-projects/43-tenant-pool/README.html">
+      <b>43</b>
+      <span>عزل المستأجر في كل استعلام</span>
+      <em>متقدم · عمود tenant</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/44-organizations/README.html">
+      <b>44</b>
+      <span>منظمات ودعوات</span>
+      <em>إنتاج · عضوية</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/45-subscriptions/README.html">
+      <b>45</b>
+      <span>خطط واشتراك</span>
+      <em>إنتاج · الحالة من الحدث</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/46-outbox-publisher/README.html">
+      <b>46</b>
+      <span>صندوق صادر</span>
+      <em>إنتاج · كتابة مزدوجة آمنة</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/47-delivery-dispatch/README.html">
+      <b>47</b>
+      <span>توزيع التوصيل</span>
+      <em>إنتاج · رسالتان بين وحدتين</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/48-request-trace/README.html">
+      <b>48</b>
+      <span>أثر الطلب</span>
+      <em>إنتاج · معرّف ارتباط</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/49-library-graphql/README.html">
+      <b>49</b>
+      <span>فهرس GraphQL</span>
+      <em>إنتاج · مخطط وN+1</em>
+    </a>
+<a class="proj" data-kind="project" data-level="إنتاج" href="50-backend-projects/50-library-platform/README.html">
+      <b>50</b>
+      <span>منصة المكتبة للإنتاج</span>
+      <em>إنتاج · صورة و Compose</em>
+    </a></div>
+</section>
+
+<section id="interview">
+  <h2>المقابلة بعد المادة</h2>
+  <div class="cards">
+    <article class="card">
+      <h2>تدريب emvion</h2>
+      <p>38 سؤالًا على NestJS و Symfony و React و PostgreSQL. الجواب يُخفى حتى تقوله.</p>
+      <p><a href="interview-emvion/index.html">افتح التدريب التفاعلي</a></p>
+    </article>
+    <article class="card">
+      <h2>كيف تدخل</h2>
+      <p>المنتج venabo لتسجيل الوقت والأداء في Rheine. قدّم المحور الذي بنيته، وكن صريحًا عن الباقي.</p>
+      <p><a href="interview-emvion/README.html">شرح ملف التدريب</a></p>
+    </article>
+    <article class="card">
+      <h2>قبل المقابلة بيوم</h2>
+      <p>راجع أفضل الممارسات، ثم أسئلة المراجعة، ثم تدريب emvion على محور NestJS.</p>
+      <p><a href="nestjs-arabic-course/best-practice.html">المقارنة</a> · <a href="nestjs-arabic-course/INTERVIEW-QUESTIONS.html">الأسئلة</a></p>
+    </article>
+  </div>
+</section>
+</main>
+<script>
+const q = document.getElementById("q");
+let phase = "all";
+function apply() {
+  const term = q.value.trim();
+  document.querySelectorAll("[data-kind=course]").forEach((block) => {
+    const text = block.innerText;
+    const phaseOk = phase === "all" || block.dataset.phase === phase;
+    const hit = !term || text.includes(term);
+    block.classList.toggle("hide", !(phaseOk && hit));
+    if (term && hit) block.open = true;
+  });
+  document.querySelectorAll("[data-kind=project]").forEach((card) => {
+    const hit = !term || card.innerText.includes(term);
+    card.classList.toggle("hide", !hit);
+  });
+}
+q.addEventListener("input", apply);
+document.querySelectorAll("[data-filter]").forEach((button) => {
+  button.onclick = () => {
+    phase = button.dataset.filter;
+    document.querySelectorAll("[data-filter]").forEach((el) => el.classList.toggle("on", el === button));
+    apply();
+  };
+});
+document.querySelectorAll("[data-level]").forEach((button) => {
+  button.onclick = () => {
+    const level = button.dataset.level;
+    document.querySelectorAll("[data-level]").forEach((el) => el.classList.toggle("on", el === button));
+    document.querySelectorAll("[data-kind=project]").forEach((card) => {
+      card.classList.toggle("hide", level !== "all" && card.dataset.level !== level);
+    });
+  };
+});
+</script>
+<script src="assets/learn.js"></script>
+</body>
+</html>

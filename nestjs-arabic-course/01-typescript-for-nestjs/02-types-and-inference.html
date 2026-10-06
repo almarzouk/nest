@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Types و Inference</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-types-and-inference.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Types و Inference</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة الأنواع التي ستظهر في خدمات Nest، ومعرفة متى يكتبها المترجم عنك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إذا كتبت نوعًا على كل ثابت صغير، الملف يغرق. إذا لم تكتب نوعًا على حدود الدالة، قارئ الخدمة لا يعرف ماذا يدخل وماذا يخرج، والمترجم يتراخى عند أول <code>any</code> صامت.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اكتب النوع على حدود الدوال والكائنات العامة. دع المترجم يستنتج النوع داخل الدالة عندما تكون القيمة ظاهرة.</p>
+<h2>التعريف التقني</h2>
+<p>التعليق النوعي (type annotation) تكتبه أنت: <code>const port: number = 3000</code>. الاستنتاج (inference) يحسبه المترجم من القيمة: <code>const port = 3000</code> يصبح <code>number</code>. الأنواع الأساسية هنا: <code>string</code> و <code>number</code> و <code>boolean</code> و <code>null</code> و <code>undefined</code> و <code>bigint</code> و <code>symbol</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حدود عامة:  اكتب النوع     create(input: NewBook): Book
+داخل الدالة: دع الاستنتاج   const label = input.title
+قيمة من الشبكة: لا تستنتج معنى   unknown ثم فحص
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const title = &#39;Refactoring&#39;;
+const price = 40;
+const published = true;
+
+function label(name: string, amount: number): string {
+  return `${name}: ${amount}`;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>title</code> استُنتج <code>string</code> من القيمة.</li>
+<li><code>price</code> استُنتج <code>number</code>. كتابة <code>: number</code> هنا تكرار.</li>
+<li><code>label</code> حدودها مكتوبة لأن من يناديها من ملف آخر يجب أن يرى العقد من غير قراءة الجسم.</li>
+<li>ناتج القالب استُنتج <code>string</code>، ويوافق نوع الإرجاع المكتوب.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المترجم يسير من القيمة إلى النوع في الاستنتاج، ومن النوع إلى الاستخدام في الفحص. عند <code>strictNullChecks</code>، <code>string</code> لا يقبل <code>null</code>. هذا يمنع إعادة &quot;كتاب أو لا شيء&quot; بصمت. إن غاب الكتاب فالنوع الصادق <code>Book | null</code>، وستكتبه عندما نصل إلى الاتحاد.</p>
+<p><code>any</code> يطفئ الفحص على تلك القيمة. <code>unknown</code> يقول &quot;لا أعرف&quot; ويجبرك على الفحص قبل الاستخدام. جسم الطلب مكان <code>unknown</code>، لا <code>any</code>.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">function discount(price: number, rate: number): number {
+  return price * (1 - rate);
+}
+
+const next = discount(40, 0.1);
+</code></pre>
+<p><code>next</code> يُستنتج <code>number</code>. لا تكتب <code>: number</code> عليه إلا إذا أردت أن يصرخ المترجم عندما تغيّر الدالة وترجع نصًا بالخطأ. كتابة النوع على الثابت المستنتج من دالة موثوقة قرار توثيق، لا ضرورة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>const books: any[] = []</code> ثم دفع أي شيء. استخدم نوع العنصر عندما تعرفه.</li>
+<li>كتابة الأنواع على كل سطر داخل دالة قصيرة حتى يختفي الكود.</li>
+<li>استنتاج نوع من <code>JSON.parse</code> والظن أنه <code>Book</code>. الناتج واسع، غالبًا <code>any</code>. ضيّقه بفحص.</li>
+</ul>
+<h2>متى نكتب النوع؟</h2>
+<p>على معاملات الدوال العامة، وقيم الإرجاع غير البديهية، وحقول الكائنات التي تعبر الملفات، وقيم <code>unknown</code> القادمة من الخارج.</p>
+<h2>متى نترك الاستنتاج؟</h2>
+<p>للثوابت المحلية ذات القيمة الظاهرة، ولناتج نداء دالته معلنة النوع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>annotation</th>
+<th>inference</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يقرر</td>
+<td>أنت</td>
+<td>المترجم من القيمة</td>
+</tr>
+<tr>
+<td>مكانه الطبيعي</td>
+<td>الحدود</td>
+<td>الداخل</td>
+</tr>
+<tr>
+<td>يفشل فيه طلب HTTP</td>
+<td>نعم، لأنه ليس قيمة في الكود</td>
+<td>نعم للسبب نفسه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما نوع <code>const ok = books.length &gt; 0</code> إذا كانت <code>books</code> مصفوفة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>boolean</code>، لأن المقارنة تنتج قيمة منطقية والمترجم يستنتجها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>function find(id: string)</code> أوضح من ترك المعامل بلا نوع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بلا نوع يصبح المعامل <code>any</code> في الإعدادات المتساهلة، أو يخطئ في <code>strict</code> حسب السياق. الحدود المكتوبة تمنع نداء <code>find(2)</code> إذا كان المعرّف نصًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>دالة تقرأ <code>process.env.PORT</code>. لماذا نوع الناتج ليس <code>number</code> حتى لو كتبت في الملف <code>.env</code> الرقم 3000؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>متغيرات البيئة نصوص أو <code>undefined</code> من وجهة Node. المترجم لا يفتح <code>.env</code> ليحولها. التحويل إلى عدد قرار وقت تشغيل، مثل <code>Number(process.env.PORT)</code>، مع التعامل مع الغياب. فصل الإعداد سيثبت هذا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تكتب النوع، وأين تترك الاستنتاج؟</li>
+<li>ما فرق <code>any</code> عن <code>unknown</code> بالنسبة لجسم طلب؟</li>
+<li>هل الاستنتاج يحمي JSON القادم من العميل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأنواع على الحدود، والاستنتاج داخل الدالة. ما يأتي من خارج العملية يبدأ <code>unknown</code> حتى يُفحص.</p>
+<h2>ماذا بعد؟</h2>
+<p>أشكال الكائنات تتكرر. Interface اسم لهذا الشكل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Everyday types: <a href="https://www.typescriptlang.org/docs/handbook/2/everyday-types.html">https://www.typescriptlang.org/docs/handbook/2/everyday-types.html</a></li>
+<li>TypeScript — Type inference: <a href="https://www.typescriptlang.org/docs/handbook/type-inference.html">https://www.typescriptlang.org/docs/handbook/type-inference.html</a></li>
+<li>NestJS — First steps (<code>strict</code> في القالب): <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

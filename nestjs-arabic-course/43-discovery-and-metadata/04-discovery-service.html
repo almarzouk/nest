@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DiscoveryService</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-discovery-service.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>DiscoveryService</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>العثور وقت التشغيل على المزودات والمتحكمات المسجّلة، وتصفيتها بمزخرف، لبناء سلوك إضافي من غير قائمة يدوية تتأخر عن الكود.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس يعرف أهدافه لأنها على المسار. مهمة إقلاع تريد كل الخدمات المعلّمة بـ <code>@FeatureFlag(&#39;experimental&#39;)</code> حتى تسجلها في لوحة. كتابة أسمائها في مصفوفة تنسى الصنف الجديد. <code>DiscoveryService</code> من <code>@nestjs/core</code> يعدد ما سجله الإطار، و <code>DiscoveryModule</code> يجعل الخدمة قابلة للحقن.</p>
+<h2>الفكرة ببساطة</h2>
+<p>استورد <code>DiscoveryModule</code>. احقن <code>DiscoveryService</code>. <code>getProviders()</code> و <code>getControllers()</code> تعيدان أغلفة <code>InstanceWrapper</code> فيها النسخة والرمز و <code>metatype</code>. صفِّ بالغلاف الذي يقرأ مزخرفًا صنعته بـ <code>DiscoveryService.createDecorator()</code>. مرر <code>metadataKey</code> ليجلب المعلَّمين فقط، أو <code>include</code> ليحصر المسح بوحدات.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DiscoveryModule } from &#39;@nestjs/core&#39;;
+import { FlagScanner } from &#39;./flag.scanner.js&#39;;
+
+@Module({
+  imports: [DiscoveryModule],
+  providers: [FlagScanner],
+})
+export class FlagsModule {}
+</code></pre>
+<p>المزخرف:</p>
+<pre><code class="language-ts">import { DiscoveryService } from &#39;@nestjs/core&#39;;
+
+export const FeatureFlag = DiscoveryService.createDecorator();
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { FeatureFlag } from &#39;./feature-flag.decorator.js&#39;;
+
+@Injectable()
+@FeatureFlag(&#39;experimental&#39;)
+export class BetaExportService {}
+</code></pre>
+<p>المسح:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { DiscoveryService } from &#39;@nestjs/core&#39;;
+import { FeatureFlag } from &#39;./feature-flag.decorator.js&#39;;
+
+@Injectable()
+export class FlagScanner implements OnModuleInit {
+  constructor(private readonly discovery: DiscoveryService) {}
+
+  onModuleInit(): void {
+    const tagged = this.discovery.getProviders({
+      metadataKey: FeatureFlag.KEY,
+    });
+    for (const wrapper of tagged) {
+      const flag = this.discovery.getMetadataByDecorator(FeatureFlag, wrapper);
+      void flag;
+      void wrapper.metatype;
+    }
+  }
+}
+</code></pre>
+<p><code>getMetadataByDecorator(decorator, wrapper)</code> يقرأ قيمة الصنف. لقراءة دالة مرر اسمها وسيطًا ثالثًا. <code>include: [BillingModule]</code> يضيّق المسح.</p>
+<p><code>getProviders()</code> بلا خيار يعيد الجميع، بمن فيهم الداخليون. صفِّ قبل أن تنادي دوالًا على <code>instance</code>. قد يكون <code>instance</code> غير جاهز لبعض الأغلفة؛ تحقق قبل النداء.</p>
+<p>هذا ليس بديل <code>Reflector</code> داخل الطلب. الحارس يعرف الدالة من <code>ExecutionContext</code> ولا يحتاج مسح التطبيق. الاكتشاف لمهمة ترى الكل: إضافات، تسجيل، فحص إقلاع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">DiscoveryModule
+  -&gt; getProviders({ metadataKey })
+  -&gt; أغلفة معلّمة
+  -&gt; اقرأ القيمة وتصرف مرة عند الإقلاع
+</code></pre>
+<p>المتحكمات لها <code>getControllers</code> بالشكل نفسه.</p>
+<h2>أبسط مثال</h2>
+<p><code>FlagScanner</code> أعلاه. بعد الإقلاع تحتوي <code>tagged</code> على <code>BetaExportService</code> إن كانت مسجّلة في وحدة مستوردة في الرسم. مزود غير مسجّل في أي <code>providers</code> لن يظهر ولو لصقت المزخرف على الملف.</p>
+<h2>شرح المثال</h2>
+<p><code>createDecorator</code> يسجل الصنف عند استعمال المزخرف، لذلك <code>metadataKey: FeatureFlag.KEY</code> يكفي بدل تصفية الكل يدويًا. القيمة <code>&#39;experimental&#39;</code> تُقرأ بالمساعد. ضع الماسح في <code>onModuleInit</code> لا في كل طلب. المسح المتكرر لكل <code>GET</code> يعيد عمل الإقلاع على المسار الساخن.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>DiscoveryModule</code> يصدّر الخدمة.</li>
+<li>عند التهيئة يستطيع الماسح رؤية الأغلفة المسجّلة حتى تلك اللحظة. ضعه حيث اكتمل استيراد الوحدات التي تهمك، أو امسح في <code>onApplicationBootstrap</code> إن احتجت الرسم كاملًا.</li>
+<li><code>metadataKey</code> يحد النتائج بمن لصق المزخرف.</li>
+<li><code>wrapper.metatype</code> الصنف، و <code>wrapper.instance</code> النسخة إن بُنيت.</li>
+<li><code>include</code> يقص الوحدات.</li>
+<li>وحدة كسولة لم تُحمَّل بعد ليست في القائمة حتى <code>load</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تسجيل مقاييس: <code>@Measured()</code> على دوال خدمة عبر المزخرف، ثم في <code>onApplicationBootstrap</code> تمشي الأغلفة وتقرأ metadata الدالة بالوسيط الثالث لتعرف أسماء العمليات. لا تستدعِ الدالة أثناء المسح. خزّن الأسماء في مسجّل <code>DEFAULT</code>. مسار الطلب يزيد العداد في المعترض عبر <code>Reflector</code> على <code>getHandler()</code>، والاكتشاف هنا فقط لبناء الفهرس مرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>DiscoveryModule</code> في <code>imports</code>.</li>
+<li>مسح في كل طلب.</li>
+<li>توقع ظهور صنف غير مسجّل كمزود.</li>
+<li>نداء <code>instance</code> وهو فارغ على غلاف لم يُبنَ.</li>
+<li>استعمال الاكتشاف بدل حارس لقراءة <code>@Public()</code> على المسار الحالي. السياق يكفي.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>فهرسة ما لُصق عند الإقلاع: أعلام، مستمعون، عمليات قياس.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قرار مسار واحد. <code>Reflector</code> مع <code>ExecutionContext</code> أوضح وأرخص.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>متى</th>
+<th>المدخل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Reflector</code></td>
+<td>أثناء الطلب على هدف تعرفه</td>
+<td><code>getHandler</code> / <code>getClass</code></td>
+</tr>
+<tr>
+<td><code>DiscoveryService</code></td>
+<td>مسح المسجّلين</td>
+<td><code>getProviders</code> / <code>getControllers</code></td>
+</tr>
+<tr>
+<td>قائمة يدوية</td>
+<td>عندما الأسماء عقد خارجي ثابت</td>
+<td>مصفوفة تحدّثها أنت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي وحدة تستوردها قبل حقن <code>DiscoveryService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>DiscoveryModule</code> من <code>@nestjs/core</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يضيف <code>metadataKey: FeatureFlag.KEY</code> على <code>getProviders()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يحصر النتائج في الأصناف التي لصق عليها المزخرف المولَّد من <code>DiscoveryService.createDecorator</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا قد تنقل المسح من <code>onModuleInit</code> إلى <code>onApplicationBootstrap</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الثاني بعد تهيئة كل الوحدات. ماسح في ورقة قد لا يرى مزودًا في وحدة تُهيأ أقرب إلى الجذر إن اعتمدت على ترتيب لم يكتمل بعد في حدود مسحك.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحمل <code>InstanceWrapper</code> الذي يهمك؟</li>
+<li>كيف تقرأ metadata على دالة لا على الصنف؟</li>
+<li>لماذا المسح ليس مكان <code>@Public()</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>DiscoveryService</code> يعدد المسجّل ويصفّي بمزخرف الاكتشاف. استورده عبر <code>DiscoveryModule</code>، وافهرس عند الإقلاع، واترك قرار الطلب لـ <code>Reflector</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>ExecutionContext</code> بعمق: نوع القناة وكيف تصل إلى الطلب أو رسالة RPC أو عميل المقبس.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Discovery service: <a href="https://docs.nestjs.com/fundamentals/discovery-service">https://docs.nestjs.com/fundamentals/discovery-service</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

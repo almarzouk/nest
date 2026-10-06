@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Build</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-build.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Build</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنتاج مجلد <code>dist</code> من TypeScript وتشغيله بـ <code>node</code>، وهو ما تشغّله الصورة والعملية في الإنتاج لا وضع المراقبة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>start:dev</code> يبقي المترجم والمراقب ويعيد التشغيل عند الحفظ. على الخادم لا يوجد حفظ، والعملية الزائدة تستهلك ذاكرة وتخفي خطأ التجميع حتى الطلب. البناء خطوة منفصلة تفشل CI قبل النشر إن كان النوع خاطئًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>npm run build</code> يشغّل <code>nest build</code> الذي يستعمل <code>tsc</code> حسب <code>nest-cli.json</code> و <code>tsconfig.build.json</code>. الناتج <code>dist/main.js</code>. التشغيل <code>node dist/main.js</code> أو سكربت <code>start:prod</code>. لا تشغّل <code>ts-node</code> في الإنتاج.</p>
+<h2>التعريف التقني</h2>
+<p>في قالب Nest:</p>
+<pre><code class="language-text">npm run build
+node dist/main.js
+</code></pre>
+<p><code>package.json</code> النموذجي:</p>
+<pre><code class="language-json">{
+  &quot;scripts&quot;: {
+    &quot;build&quot;: &quot;nest build&quot;,
+    &quot;start:prod&quot;: &quot;node dist/main.js&quot;
+  }
+}
+</code></pre>
+<p><code>tsconfig.build.json</code> يستبعد الاختبارات حتى لا تُترجم إلى <code>dist</code>. المسارات في المخرجات تحترم إعداد الوحدة. هذه الدورة تستعمل استيراد ESM بامتداد <code>.js</code> في المصدر، والمخرج يجب أن يطابق ما تشغّله Node. إن كان المشروع <code>commonjs</code> فالمخرج <code>require</code>. لا تخلط شكل الاستيراد في <code>dist</code> مع شكل تشغيلك.</p>
+<p>Prisma: <code>prisma generate</code> قبل البناء حتى توجد الأنواع. <code>migrate deploy</code> ليس جزءًا من <code>nest build</code>.</p>
+<p>المصدر والخرائط: خريطة المصدر تساعد السجلات وقد تكشف البنية. لا تنشر <code>src</code> إن اكتفيت بـ <code>dist</code>. لا تنشر <code>.env</code>.</p>
+<p>CI يشغّل <code>npm ci</code> ثم <code>npm run build</code> ثم الاختبارات ثم يبني الصورة من الناتج أو يبني داخل Docker كما سبق. فشل <code>build</code> يوقف الخط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">src/*.ts -&gt; nest build -&gt; dist/*.js -&gt; node dist/main.js
+start:dev يبقى على جهازك
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">npm ci
+npx prisma generate
+npm run build
+node dist/main.js
+</code></pre>
+<p>على جهاز الإنتاج أو في مرحلة Docker. المتغير <code>PORT</code> من البيئة. إن خرج الأمر فورًا فاقرأ الخطأ في الطرفية قبل أن تعيد <code>start:dev</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>npm ci</code> من القفل يعطي نفس الشجرة التي بناها CI. <code>generate</code> يكتب العميل. <code>build</code> يكتب <code>dist</code>. <code>node</code> يشغّل الملف الذي صار نقطة الدخول. راقب أن <code>main</code> في التشغيل هو <code>dist/main.js</code> لا <code>src/main.ts</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>nest build</code> يقرأ الإعداد ويشغّل المترجم.</li>
+<li>ملفات الاختبار المستبعدة لا تظهر في <code>dist</code>.</li>
+<li>Node يحمّل <code>dist/main.js</code> ويشغّل <code>bootstrap</code>.</li>
+<li>لا مراقب ملفات ولا إعادة تشغيل عند استثناء غير ممسوك إلا إذا أضفت مدير عملية.</li>
+<li>تغيير TypeScript بلا بناء يترك الخادم على النسخة القديمة.</li>
+<li>الصورة التي نسخت <code>dist</code> فقط تشغّل هذه الخطوة الأخيرة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>أضف في CI:</p>
+<pre><code class="language-text">npm ci
+npm run build
+npm test
+</code></pre>
+<p>ثم ابنِ الصورة التي تعيد البناء داخلها أو تنسخ <code>dist</code> من العامل. لا تعتمد على مجلد <code>dist</code> مرفوع في Git. الناتج يُولد. أضف <code>dist</code> إلى <code>.gitignore</code> إن لم يكن كذلك، واستثنه من صورة التطوير فقط عبر البناء داخل Docker.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>start:dev</code> في وحدة systemd أو في <code>CMD</code>.</li>
+<li>نسيان <code>prisma generate</code> في CI النظيف.</li>
+<li>تشغيل <code>dist</code> قديم بعد سحب المصدر.</li>
+<li>رفع <code>node_modules</code> من جهازك إلى الخادم.</li>
+<li>استيراد <code>.ts</code> في المخرج.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل نشر وكل صورة إنتاج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>أثناء تحرير الدرس على الجهاز حيث المراقبة أسرع. لا تبنِ لكل حفظ يدويًا إن كان <code>start:dev</code> يعمل محليًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأمر</th>
+<th>المترجم</th>
+<th>يعيد التشغيل</th>
+<th>الإنتاج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>start:dev</code></td>
+<td>نعم</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>build</code> ثم <code>node dist/main.js</code></td>
+<td>وقت البناء</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>start:debug</code></td>
+<td>نعم</td>
+<td>مع مفتش</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الملف الذي تشغّله Node بعد البناء الناجح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>dist/main.js</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفشل CI النظيف إن نسيت <code>prisma generate</code> قبل <code>build</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الأنواع والعميل غير موجودين في شجرة نظيفة، والتجميع يستوردهما.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يُرفع <code>dist</code> في Git بدل خطوة البناء؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الناتج يُولد من المصدر والقفل. رفعه يفرّق عن المصدر ويخفي أن البناء لم يعد قابلًا للتكرار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي سكربت يكتب <code>dist</code>؟</li>
+<li>ماذا يُستبعد من بناء الإنتاج عادة؟</li>
+<li>أين تبقى <code>start:dev</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإنتاج <code>npm run build</code> ثم <code>node dist/main.js</code>. البناء يفشل قبل النشر إن تعطل النوع، والمراقبة تبقى على جهاز التطوير.</p>
+<h2>ماذا بعد؟</h2>
+<p>Environment Variables: من أين تُقرأ الأسرار بعد أن صار التشغيل بلا ملف تطوير.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CLI و البناء: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

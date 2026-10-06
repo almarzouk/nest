@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>إعادة رسم حدود الـ Modules</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-redrawing-modules.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>إعادة رسم حدود الـ Modules</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فك الدورة بإعادة رسم من يملك ماذا: ورقة تُستورد، أو مزود ثالث، أو حدث، أو <code>ModuleRef</code> على طرف واحد يتأخر عن الـ <code>constructor</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>forwardRef</code> على وحدتين كبيرتين يجعل كل تصدير جديد جزءًا من الحلقة. إعادة الرسم ترجع الاستيراد إلى سهم واحد. التوثيق نفسه يضع <code>ModuleRef</code> بديلًا لإعادة هيكلة أحد الطرفين حتى لا يحقن الآخر وقت البناء.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اجمع الدالة التي يحتاجها الطرفان في وحدة صغيرة يستورداها ولا تستوردهما. أو اجعل الكتابة في وحدة والأثر في مستمع. أو احقن طرفًا واحدًا وأجل الطرف الآخر إلى <code>moduleRef.get</code> داخل الدالة بعد الإقلاع. اختر أصغر تغيير يحذف سهمًا من الـ <code>constructor</code> أو من <code>imports</code>.</p>
+<h2>التعريف التقني</h2>
+<p>وحدة ثالثة:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { MoneyService } from &#39;./money.service.js&#39;;
+
+@Module({
+  providers: [MoneyService],
+  exports: [MoneyService],
+})
+export class MoneyModule {}
+</code></pre>
+<p><code>OrdersModule</code> و <code>BillingModule</code> تضعان <code>MoneyModule</code> في <code>imports</code> ولا تتبادلان الاستيراد.</p>
+<p><code>ModuleRef</code> من <code>@nestjs/core</code> على الطرف الذي يمكنه الانتظار:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { ModuleRef } from &#39;@nestjs/core&#39;;
+import { OrdersService } from &#39;../orders/orders.service.js&#39;;
+
+@Injectable()
+export class BillingService implements OnModuleInit {
+  private orders!: OrdersService;
+
+  constructor(private readonly moduleRef: ModuleRef) {}
+
+  onModuleInit(): void {
+    this.orders = this.moduleRef.get(OrdersService, { strict: false });
+  }
+}
+</code></pre>
+<p><code>get</code> يعيد Singleton مسجّلًا. <code>{ strict: false }</code> يبحث خارج الوحدة الحالية. هذا لا يسترجع مزود <code>REQUEST</code> أو <code>TRANSIENT</code>؛ تلك لها <code>resolve</code> كما في فصل <code>ModuleRef</code>. إن بقيت دورة <code>imports</code> فالغلاف ما زال لازمًا على الوحدات حتى لو تأخر الحقن. الهدف من إعادة الرسم حذف تلك الدورة أيضًا، لا الإبقاء عليها مع <code>get</code>.</p>
+<p>الحدث داخل العملية: بعد <code>open</code> تنشر الفوترة شيئًا تسمعه الطلبات، إن كان عندك ناقل أحداث من فصل سابق. السهم العائد ليس حقنًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قبل: Orders &lt;-&gt; Billing
+بعد أحد هذه الرسوم:
+  Orders -&gt; Money &lt;- Billing
+  Orders -&gt; Billing   والعودة حدث
+  Orders -&gt; Billing   والفوترة تقرأ الطلب عبر get بعد الإقلاع
+</code></pre>
+<p>الرسم الأول أوضح في المراجعة. الثالث مقبول عندما تكون الاستدعاءات نادرة وبعد التهيئة.</p>
+<h2>أبسط مثال</h2>
+<p>انقل <code>formatMinor(amount)</code> من الخدمتين إلى <code>MoneyService</code> في <code>MoneyModule</code>. احذف استيراد كل ميزة للأخرى. الإقلاع يعمل بلا <code>forwardRef</code>. اختبار الوحدة يحقن <code>MoneyService</code> الحقيقية أو بديلًا صغيرًا.</p>
+<h2>شرح المثال</h2>
+<p>الدورة كانت على دالة لا تعرف الطلبات ولا الفواتير. وضعها في ورقة يجعل السهمين ينزلان إلى الوحدة الصغيرة ولا يصعد أحدهما إلى الآخر. التصدير لازم لأن المستهلك خارج الوحدة. لا تجعل <code>MoneyModule</code> عامة إلا إذا كان ذلك قرار فصل الوحدات العامة، لا هروبًا من كتابة <code>imports</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تحذف سهم <code>imports</code> المتبادل فيصبح الرسم شجرة.</li>
+<li>الحاوية تبني <code>MoneyService</code> قبل من يحقنها.</li>
+<li>لا مصنع مؤجل ولا ترتيب بناء غامض بين الطلبات والفوترة.</li>
+<li>إن استخدمت <code>ModuleRef.get</code> في <code>onModuleInit</code>، فالاستدعاء بعد حل الوحدة، والنسخة Singleton جاهزة.</li>
+<li><code>get</code> على مزود طلب يرمي أو لا يعيد شجرة الطلب. لا تستخدمه بديلًا عن تمرير <code>userId</code>.</li>
+<li>الحدث يمر بعد انتهاء الدالة التي نشرته، فلا تعتمد عليه لناتج تحتاجه في نفس <code>return</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>دفع فاتورة يحدّث طلبًا. <code>PaymentsModule</code> يستورد <code>BillingModule</code> فقط. <code>BillingService.markPaid</code> تحفظ الفاتورة وترجع. <code>OrdersListener</code> في <code>OrdersModule</code> مشترك في حدث داخلي <code>invoice.paid</code> ويحدّث حالة الطلب. <code>OrdersModule</code> لا يُستورد من الفوترة. إن احتجت حالة الطلب داخل معاملة الدفع نفسها، لا تنتظر الحدث: مرر دالة أو استعمل معاملة في خدمة تطبيق واحدة أعلى الاثنين، وهذا حد أوضح من دورة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وحدة ثالثة تصدّر الخدمتين الأصليتين فتعيد الدورة من الباب الخلفي.</li>
+<li><code>ModuleRef.get</code> داخل <code>constructor</code> قبل اكتمال التسجيل.</li>
+<li><code>strict: true</code> الافتراضي يفشل لأن الرمز مسجّل في وحدة أخرى.</li>
+<li>حدث لناتج مطلوب في نفس الطلب فيصبح السلوك سباقًا.</li>
+<li>إبقاء <code>forwardRef</code> «احتياطًا» بعد أن صار الرسم شجرة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما استطعت حذف سهم. الورقة المشتركة أرخص من الغلاف. <code>ModuleRef</code> عندما طرف واحد فقط يتأخر نداؤه إلى ما بعد الإقلاع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تدمج الميزتين في <code>AppModule</code> لتختفي الرسالة. ولا تستعمل <code>get</code> لكل الاعتماديات فتفقد فحص الإقلاع الذي يعطيك إياه الحقن.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الإصلاح</th>
+<th>يحذف دورة المزود</th>
+<th>يحذف دورة الوحدة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وسيط أو ورقة مشتركة</td>
+<td>نعم</td>
+<td>نعم إن زال الاستيراد المتبادل</td>
+</tr>
+<tr>
+<td>حدث بعد الحفظ</td>
+<td>نعم</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>ModuleRef</code> على طرف</td>
+<td>يؤخر طرفًا</td>
+<td>لا، إن بقي <code>imports</code> دائريًا</td>
+</tr>
+<tr>
+<td><code>forwardRef</code></td>
+<td>يُبقي الدورة ويعمل الإقلاع</td>
+<td>يُبقيها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تستورد الوحدتان بعد استخراج <code>MoneyModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>MoneyModule</code> فقط، كل واحدة في اتجاه واحد نحو الورقة، بلا استيراد متبادل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>get</code> في <code>onModuleInit</code> لا في <code>constructor</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن التسجيل يكتمل مع تهيئة الوحدة. <code>onModuleInit</code> بعد حل الاعتماديات. النداء داخل <code>constructor</code> قد يسبق وجود الطرف الآخر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ناتج <code>markPaid</code> يجب أن يرجع حالة الطلب في نفس الاستجابة. لماذا الحدث وحده لا يكفي، وما الرسم البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحدث يصل بعد النشر وقد بعد الرد. اجعل خدمة تطبيق واحدة تنسق الفاتورة والطلب داخل النداء وترجع الحالة، أو مرر البيانات وسيطًا. الدورة ليست مطلوبة إن كان المنسق أعلى الطرفين ويستوردهما.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما أصغر وحدة ثالثة نافعة؟</li>
+<li>متى <code>strict: false</code>؟</li>
+<li>ماذا يبقى <code>forwardRef</code> يفعل ولا يفعله إعادة الرسم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ارسم سهمًا واحدًا نحو ورقة أو نحو منسق أعلى. أخر طرفًا بـ <code>ModuleRef</code> إن لزم، واحذف <code>forwardRef</code> عندما تختفي الدورة فعلًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع برميلًا ودورة وحدات وورقة مشتركة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Circular dependency: <a href="https://docs.nestjs.com/fundamentals/circular-dependency">https://docs.nestjs.com/fundamentals/circular-dependency</a></li>
+<li>NestJS — Module reference: <a href="https://docs.nestjs.com/fundamentals/module-ref">https://docs.nestjs.com/fundamentals/module-ref</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

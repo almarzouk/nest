@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Encapsulation و Module Boundaries</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-encapsulation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Encapsulation و Module Boundaries</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ترى الوحدة جدارًا: المزوّد خاص بها حتى تذكره في <code>exports</code>، واستيراد الملف في TypeScript لا يفتح الجدار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>في مشروع Express كان أي ملف يستورد أي خدمة. صار تغيير شكل التخزين يمس عشرين مسارًا لأن الجميع عرف التفاصيل. Nest تجعل الوصول قرارًا ظاهرًا في بيانات الوحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>داخل الوحدة ترى مزوّداتها. خارجها لا ترى إلا ما صُدّر. <code>imports</code> هو الباب، لا مسار الملف.</p>
+<h2>التعريف التقني</h2>
+<p>توثيق Modules يسمّي هذا التغليف: المزوّدات مغلّفة داخل الوحدة. لا تُشارك مع بقية التطبيق إلا إذا أُدرجت في <code>exports</code>. الوحدة المستورِدة تصل إلى المصدَّر وتشارك نسخته. المزوّد غير المصدَّر غير مرئي للمستورد حتى لو كان الصنف <code>export</code> في TypeScript.</p>
+<p>إعادة تصدير وحدة بوضعها في <code>imports</code> و <code>exports</code> يمرّر واجهتها، وهو توسيع للحد لا كسره.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">داخل BooksModule: BooksService مرئي
+خارجها: لا، ما لم يوجد exports
+OrdersModule
+  imports BooksModule -&gt; ترى المصدَّر فقط
+  import { BooksService } from &quot;../books/books.service.js&quot;
+    هذا سطر TypeScript، والحاوية تقرر وحدها
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  providers: [BooksService, PriceTable],
+  exports: [BooksService],
+  controllers: [BooksController],
+})
+export class BooksModule {}
+</code></pre>
+<p><code>BooksController</code> في الوحدة نفسها يحقن <code>BooksService</code> و <code>PriceTable</code>. وحدة الطلبات، بعد استيراد <code>BooksModule</code>، تحقن <code>BooksService</code> فقط. <code>PriceTable</code> تبقى تفصيل تسعير داخلي.</p>
+<h2>شرح المثال</h2>
+<p><code>providers</code> قائمة التسجيل الداخلي. <code>exports</code> الواجهة. غياب <code>PriceTable</code> من <code>exports</code> يعني أن الطلب لا يستطيع سؤال جدول الأسعار الخام. يسأل <code>BooksService</code> التي تعرف كيف تستخدم الجدول.</p>
+<p>هذا هو حد الميزة: الخارج يرى عملية &quot;هل السعر معروف؟&quot;، لا شكل الجدول.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>حاوية Nest تبني سياق كل وحدة من مزوّداتها زائد المصدَّر من الوحدات في <code>imports</code>. رمز غير موجود في هذا السياق لا يُحل عند الإقلاع أو عند أول إنشاء، وتظهر رسالة أن الاعتمادية غير متاحة في سياق الوحدة.</p>
+<p><code>import</code> في أعلى الملف يحمّل الصنف للنوع ولـ <code>new</code> إن استدعيته أنت. <code>new PriceTable()</code> داخل الطلبات يتخطى الحاوية: نسخة خارج التسجيل، بلا حقن، وبلا مشاركة singleton. الحد إذن سلوك الحاوية، لا كلمة <code>export</code> في اللغة.</p>
+<h2>مثال عملي</h2>
+<p><code>UsersModule</code> تصدّر <code>UsersService.findById</code> عبر الصنف المصدَّر. <code>PasswordHasher</code> يبقى في <code>providers</code> بلا <code>exports</code>. حتى لو استورد مطوّر الملف، الحاوية ترفض حقنه في <code>OrdersModule</code>. تغيير خوارزمية التجزئة يبقى داخل المستخدمين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتقاد أن <code>export class</code> يكفي لمشاركته بين الوحدات.</li>
+<li>حقن مزوّد غير مصدَّر ثم &quot;إصلاح&quot; ذلك بجعله <code>@Global()</code> بدل إضافته إلى <code>exports</code> إن كان جزءًا من الواجهة فعلًا.</li>
+<li>استدعاء <code>new</code> داخل خدمة أخرى للالتفاف على الحد.</li>
+<li>تصدير كل المزوّدات دائمًا، فيصبح <code>exports</code> نسخة من <code>providers</code> بلا واجهة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>دائمًا. كل وحدة لها داخل وخارج. صدّر العملية التي تحتاجها ميزة أخرى، وأبقِ المساعدين داخليًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تلغِ الحد بجعل الوحدات كلها عالمية حتى &quot;يرتاح&quot; الحقن. الاستثناء الضيق في الدرس التالي، وهو استثناء لا قاعدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوصول</th>
+<th>TypeScript <code>export</code></th>
+<th>Nest <code>exports</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يراه</td>
+<td>أي ملف يستورد المسار</td>
+<td>الوحدات التي تستورد الوحدة المالكة</td>
+</tr>
+<tr>
+<td>من ينشئ النسخة</td>
+<td>أنت إن كتبت <code>new</code></td>
+<td>الحاوية حسب التسجيل</td>
+</tr>
+<tr>
+<td>تغيير التفصيل الداخلي</td>
+<td>يصل لكل مستورد للملف</td>
+<td>يبقى خلف الخدمة المصدَّرة</td>
+</tr>
+</tbody></table>
+<p>مقابل Shared Module: التغليف هو القاعدة. الوحدة المشتركة فقط تختار أن تكون واجهتها واسعة بما يكفي لأكثر من مستورد.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>BooksModule</code> فيها <code>BooksService</code> و <code>IsbnParser</code>. المتحكم في الوحدة نفسها يحقن الاثنين. هل يلزم <code>exports</code> حتى يعمل المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. المتحكم مزوّد داخل الوحدة فيرى مزوّداتها. <code>exports</code> للوحدات الأخرى.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>OrdersService</code> يستورد نوع <code>IsbnParser</code> من ملف الكتب ويكتبه في البنّاء. <code>OrdersModule</code> تستورد <code>BooksModule</code>، و <code>IsbnParser</code> غير موجود في <code>exports</code>. ماذا تتوقع عند الإقلاع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحاوية لا تجد <code>IsbnParser</code> في سياق <code>OrdersModule</code>. سطر الاستيراد في TypeScript لا يضيف تسجيلًا ولا يفتح التغليف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ارسم حدًا لوحدة فواتير: ما العملية الواحدة التي تصدّرها لوحدة الطلبات، وما تفصيلين يبقيان داخلها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تصدّر خدمة مثل <code>InvoicesService</code> بعملية &quot;أصدر فاتورة لهذا الطلب&quot;. يبقى داخلها بنّاء رقم الفاتورة وقالب الضريبة، في <code>providers</code> بلا <code>exports</code>. الطلبات لا تحقن القالب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين تصدير الصنف في TypeScript وتصديره في <code>@Module</code>؟</li>
+<li>من يرى مزوّدًا غير مذكور في <code>exports</code>؟</li>
+<li>لماذا <code>new</code> داخل خدمة أخرى يضعف الحد الذي صنعته الوحدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوحدة تغلف مزوّداتها. <code>exports</code> هي الواجهة، و <code>imports</code> هي طريقة عبورها. الملف القابل للاستيراد في اللغة لا يعني أن الحاوية ستحقنه.</p>
+<h2>ماذا بعد؟</h2>
+<p>أحيانًا تتكرر <code>imports</code> للوحدة نفسها في كل مكان. الدرس التالي يشرح <code>@Global()</code> ومتى يكون هذا التكرار أوضح من جعل الوحدة عالمية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/modules">Modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

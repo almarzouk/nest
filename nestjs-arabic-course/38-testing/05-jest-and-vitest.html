@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jest و Vitest</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-jest-and-vitest.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Jest و Vitest</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار مشغّل الاختبار الذي يطابق قالب المشروع: Vitest لقالب ESM من <code>nest new</code>، و Jest لقالب CommonJS.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>jest.fn</code> في مشروع يشغّل Vitest يفشل لأن الاسم غير معرّف، أو العكس. صفحة Nest للاختبار تشرح <code>TestingModule</code> وهي واحدة. المشغّل الذي ينفّذ الملف يعتمد على القالب. خلط الإعدادين يعطي أخطاء تحويل TypeScript وهمية تبدو كأخطاء Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ESM الحديث مع <code>nest new</code> الافتراضي يستخدم Vitest. قالب CommonJS يستخدم Jest. <code>expect</code> و <code>describe</code> و <code>it</code> متشابهان. الفرق في الاستيراد وفي اسم دالة الوهم وفي ملف الإعداد. لا تثبت المشغّلين معًا على التطبيق نفسه.</p>
+<h2>التعريف التقني</h2>
+<p>من سلوك القوالب الحالية:</p>
+<table>
+<thead>
+<tr>
+<th>القالب</th>
+<th>المشغّل</th>
+<th>الوهم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>nest new</code> على ESM</td>
+<td>Vitest</td>
+<td><code>vi.fn()</code> بعد <code>import { vi } from &#39;vitest&#39;</code></td>
+</tr>
+<tr>
+<td>قالب CommonJS</td>
+<td>Jest</td>
+<td><code>jest.fn()</code> والدوال عامة غالبًا</td>
+</tr>
+</tbody></table>
+<p>Vitest:</p>
+<pre><code class="language-ts">import { beforeEach, describe, expect, it, vi } from &#39;vitest&#39;;
+
+describe(&#39;BooksService&#39;, () =&gt; {
+  it(&#39;announces publish&#39;, async () =&gt; {
+    const emitAsync = vi.fn(async () =&gt; []);
+    const service = new BooksService(prisma, { emitAsync } as never);
+    await service.publish(&#39;42&#39;);
+    expect(emitAsync).toHaveBeenCalledWith(bookPublished, { bookId: &#39;42&#39; });
+  });
+});
+</code></pre>
+<p>Jest على القالب الآخر:</p>
+<pre><code class="language-ts">describe(&#39;BooksService&#39;, () =&gt; {
+  it(&#39;announces publish&#39;, async () =&gt; {
+    const emitAsync = jest.fn(async () =&gt; []);
+    expect(emitAsync).toHaveBeenCalled();
+  });
+});
+</code></pre>
+<p>لا تنسخ كتلة Jest إلى مشروع Vitest. إن كان الدرس يعرض السلوك، فالوهم يُكتب بأداة القالب الذي أنشأته.</p>
+<p><code>TestingModule</code> من <code>@nestjs/testing</code> يعمل مع الاثنين. لا يوجد <code>TestingModule</code> خاص بـ Vitest.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قالب ESM -&gt; vitest
+قالب CommonJS -&gt; jest
+@nestjs/testing -&gt; نفسه
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>أمر التشغيل من سكربت الحزمة، لا من ذاكرة المقال:</p>
+<pre><code class="language-text">npm test
+</code></pre>
+<p>السكربت في قالب ESM يستدعي Vitest، وفي قالب CommonJS يستدعي Jest. إن فشل الأمر لأن <code>jest</code> غير موجود، فأنت على القالب الأول. لا تثبت Jest «لإصلاح» الرسالة قبل أن تقرأ <code>package.json</code>.</p>
+<h2>شرح المثال</h2>
+<p>تثبيت المشغّل الثاني يخلق ملفين إعداد وسلوكين للاستيراد <code>.js</code>. الدورة تستعمل ESM في الأمثلة، فالأمثلة التي تحتاج وهمًا تكتب <code>vi</code> عندما يكون المشغّل ظاهرًا. الدروس التي تركز على Nest تعرض <code>expect</code> فقط حيث لا يهم اسم الوهم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المشغّل يحوّل TypeScript ويشغّل الملفات المطابقة لنمط <code>*.spec.ts</code>. زينة Nest تحتاج بيانات وصفية للتصميم. قوالب Nest تضبط التحويل لذلك. إن استبدلت الإعداد بقالب Vite فارغ، قد يصبح الحقن <code>undefined</code> لأن المعاملات بلا نوع وقت التشغيل. عندها أصلح إعداد القالب الرسمي لا تكتب <code>@Inject()</code> على كل باني كحل دائم.</p>
+<p>العزل: كل ملف عملية أو بيئة حسب المشغّل. لا تعتمد على متغير عُيّن في ملف آخر.</p>
+<h2>مثال عملي</h2>
+<p>مشروع الدورة ESM:</p>
+<pre><code class="language-ts">import { vi } from &#39;vitest&#39;;
+
+const covers = { enqueueResize: vi.fn(async () =&gt; undefined) };
+</code></pre>
+<p>مشروع قديم CommonJS في المستودع نفسه لا تخلطه. إن نقلت ملفًا بينهما، بدّل <code>vi.fn</code> و <code>jest.fn</code> مع الإعداد لا السطر فقط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>jest.fn</code> في قالب Vitest.</li>
+<li>تثبيت Jest و Vitest معًا بلا سبب.</li>
+<li>افتراض أن فشل الحقن خطأ <code>TestingModule</code> بينما التحويل أسقط الأنواع.</li>
+<li>تشغيل <code>npm test</code> من مجلد ليس جذر القالب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>Vitest مع ما يولّده <code>nest new</code> على ESM اليوم. Jest إن أنشأت القالب CommonJS أو ورثت مشروعًا عليه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبدّل المشغّل في منتصف الفصل لتجربة مقال. <code>Test.createTestingModule</code> هو موضوع الدرس التالي على المشغّل الذي عندك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Vitest</th>
+<th>Jest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قالب Nest الحالي ESM</td>
+<td>الافتراضي</td>
+<td>لا تفرضه</td>
+</tr>
+<tr>
+<td>قالب CommonJS</td>
+<td>ليس افتراضه</td>
+<td>الافتراضي</td>
+</tr>
+<tr>
+<td>الوهم</td>
+<td><code>vi.fn</code></td>
+<td><code>jest.fn</code></td>
+</tr>
+<tr>
+<td>وحدة الاختبار Nest</td>
+<td><code>@nestjs/testing</code></td>
+<td><code>@nestjs/testing</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مشغّل مع <code>nest new</code> على ESM؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Vitest.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تفعل إن نُسخ <code>jest.fn</code> إلى مشروع Vitest؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استبدله بـ <code>vi.fn</code> مع استيراد <code>vi</code> من <code>vitest</code>. لا تثبت Jest بجانب القالب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا قد يفشل حقن الباني بعد تغيير إعداد التحويل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن Nest تقرأ أنواع المعاملات من البيانات الوصفية. إعداد يتجاهلها يجعل الاعتماد <code>undefined</code>. أرجع إعداد قالب Nest لا زينة <code>@Inject</code> على كل معامل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة اختبار Nest مشتركة؟</li>
+<li>أي قالب يبقي Jest؟</li>
+<li>أي أمر تشغّل من الجذر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المشغّل يتبع القالب: Vitest لـ ESM و Jest لـ CommonJS. <code>expect</code> متشابه و <code>TestingModule</code> واحد. لا تثبت الاثنين معًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>بناء حاوية اختبار بـ <code>Test.createTestingModule</code> واستخراج الصنف منها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

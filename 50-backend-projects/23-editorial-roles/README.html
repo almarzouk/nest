@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>23 — أدوار التحرير</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>23 — أدوار التحرير</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new editorial-roles</code></p>
+<h2>ماذا تبني</h2>
+<p>قارئ يرى المنشور. محرر يعدّل مقالاته. مدير يحذف أي مقال. القرار في سياسة لا في if مبعثرة داخل كل مسار.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>الهوية من المشروع السابق لا تكفي. هنا المنع 403 بعد أن عُرف الشخص.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>401 مقابل 403</li>
+<li>دور على المستخدم</li>
+<li>سياسة can</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>CASL</li>
+<li>صلاحيات لكل حقل</li>
+<li>دعوات</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الملف الحالي والمقالات. يمكن تبسيط المقال إلى عنوان وحالة.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/21-authorization/README.html">21-authorization</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>من غير رمز 401.</li>
+<li>قارئ يحاول الحذف 403 لا 404 حتى لا نخلط الغياب بالمنع. إن كان المقال لغيره والمدير فقط يحذف، فالمحرر على مقال غيره 403.</li>
+<li>المدير يمر. المحرر يحذف مقاله فقط.</li>
+<li>الدور لا يُقبل من الجسم عند التعديل. تغيير الدور مسار مدير منفصل.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/articles</code></td>
+<td>200</td>
+<td>المنشور للجميع بعد الرمز، أو قرر أن القراءة عامة ووثّق ذلك</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/articles/:id</code></td>
+<td>204</td>
+<td>حسب السياسة</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/users/:id/role</code></td>
+<td>200</td>
+<td>للمدير فقط</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new editorial-roles</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>اكتب ArticlePolicy.canDelete(user, article).</li>
+<li>الحارس يثبت الهوية. السياسة تثبت الإذن. لا تخلطهما في دالة واحدة طويلة.</li>
+<li>ازرع ثلاثة مستخدمين في الذاكرة للاختبار اليدوي.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/articles/article.policy.ts
+src/users/roles.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">canDelete(user: { id: string; role: string }, article: { authorId: string }) {
+  if (user.role === &quot;admin&quot;) return true;
+  if (user.role === &quot;editor&quot; &amp;&amp; article.authorId === user.id) return true;
+  return false;
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>403 لمن لا يحمل رمزًا.</li>
+<li>إخفاء مقال الغير بـ 404 كسياسة عامة من غير توثيق. هنا العقد 403.</li>
+<li>قبول role داخل PATCH المقال.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>القارئ 403 على الحذف.</li>
+<li>المحرر يحذف مقاله ويفشل على غيره.</li>
+<li>المدير يحذف الاثنين.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>انقل السياسة إلى شكل أقرب لـ @nestjs/authorization إن أنهيت ذلك الفصل.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 23» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../22-profile/README.html">22. الملف الحالي</a></li>
+<li>التالي: <a href="../24-cover-upload/README.html">24. غلاف المقال</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>map و tap</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-map-and-tap.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>map و tap</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التفريق بين تحويل الرد وبين أثر جانبي مثل قياس الزمن، حتى لا يغيّر السجل شكل JSON.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معترض الغلاف الذي كتبناه يستعمل <code>map</code> لأن الجسم يجب أن يتغير. تسجيل «استغرق 12ms» إذا وُضع في <code>map</code> قد يستبدل الرد بالرقم. <code>tap</code> يشغّل دالة ولا يمس القيمة التي تكمل إلى الخطوة التالية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>map(fn)</code> يصدر <code>fn(value)</code> بدل القيمة. <code>tap(fn)</code> يصدر القيمة نفسها بعد استدعاء <code>fn</code>. استعمل <code>tap</code> للزمن والسجل، و <code>map</code> لشكل العقد.</p>
+<h2>التعريف التقني</h2>
+<p>من <code>rxjs</code>:</p>
+<pre><code class="language-ts">import { map, tap } from &#39;rxjs&#39;;
+
+source.pipe(
+  tap((value) =&gt; console.log(value)),
+  map((value) =&gt; ({ data: value })),
+);
+</code></pre>
+<p><code>tap</code> يقبل كائن ملاحظ أيضًا: <code>{ next, error, complete }</code> إن أردت أثرًا عند الفشل من غير التقاطه. <code>tap</code> لا يبتلع الخطأ. هو ينظر ثم يعيد إصداره.</p>
+<p><code>map</code> الذي يرمي ينقل التيار إلى حالة خطأ. لا تضع <code>try/catch</code> فارغًا داخل <code>map</code> وتُرجع <code>undefined</code> فيصبح الرد <code>{&quot;data&quot;: null}</code> صامتًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قيمة المتحكم
+  tap  سجّل الزمن، مرّر القيمة
+  map  غيّر شكل العقد
+  JSON
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, NestInterceptor, ExecutionContext, CallHandler } from &#39;@nestjs/common&#39;;
+import { map, Observable, tap } from &#39;rxjs&#39;;
+
+@Injectable()
+export class CatalogInterceptor implements NestInterceptor {
+  intercept(_context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const started = Date.now();
+    return next.handle().pipe(
+      tap(() =&gt; console.log(`catalog ${Date.now() - started}ms`)),
+      map((data) =&gt; ({ data })),
+    );
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>started</code> يُلتقط عند بناء السلسلة، أي عند دخول الطلب، قبل أن يشترك الإطار. عند وصول القيمة يحسب <code>tap</code> الفرق ويطبعه، ثم <code>map</code> يغلّف الجسم. لو انعكس الترتيب، الغلاف لا يغيّر الزمن كثيرًا هنا، لكن <code>tap</code> بعد <code>map</code> كان سيطبع الشكل المغلف. ضع القياس حيث تريد أن ترى القيمة: قبل التحويل لترى جسم المتحكم.</p>
+<p><code>console.log</code> مؤقت. الفصل 37 يستبدله بـ <code>Logger</code>. لا تسجّل <code>data</code> كاملة إن كانت تحمل بريدًا أو رمزًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المشترك يستلم خرج آخر معامل. <code>tap</code> يعيد إصدار نفس المرجع. إن غيّرت خصائص الكائن داخل <code>tap</code> فأنت تغيّر الجسم رغم أن المعامل «لا يحوّل». مرّر الكائن للقراءة فقط. <code>map</code> يجب أن يعيد كائنًا جديدًا <code>{ data }</code> لا أن يعدل الدخل ثم يعيده، حتى يبقى شكل المتحكم سليمًا إن وصل إلى معترض آخر.</p>
+<h2>مثال عملي</h2>
+<p>إخفاء حقل قبل العميل، وهذا تحويل فيبقى <code>map</code>:</p>
+<pre><code class="language-ts">map((book: { id: string; title: string; costPrice?: number }) =&gt; ({
+  id: book.id,
+  title: book.title,
+})),
+</code></pre>
+<p><code>costPrice</code> يسقط من العقد. الأفضل أصلًا ألا يخرج من <code>@ObjectType</code> أو من DTO. إن وصل من خدمة قديمة، <code>map</code> آخر خط دفاع على مسار REST لا مكان لإخفاء المجال كله.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرجاع رقم من <code>tap</code> وانتظار أن يصبح الرد.</li>
+<li>طباعة جسم فيه <code>Authorization</code> أو جلسة.</li>
+<li>تعديل الكائن داخل <code>tap</code>.</li>
+<li><code>map</code> يغلّف <code>StreamableFile</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>tap</code> لزمن أو عدّاد. <code>map</code> لشكل رد متفق عليه على المسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخفِ <code>costPrice</code> في المعترض إن كان DTO أصلًا لا يتضمنه. ولا تستخدم <code>map</code> لالتقاط الأخطاء. ذلك <code>catchError</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المعامل</th>
+<th>القيمة التالية</th>
+<th>مناسب لمتجر الكتب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tap</code></td>
+<td>نفسها</td>
+<td>زمن الكتالوج</td>
+</tr>
+<tr>
+<td><code>map</code></td>
+<td>ناتج الدالة</td>
+<td><code>{ data }</code> أو إسقاط حقل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي معامل يطبع الزمن ويبقي JSON المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>tap</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُؤخذ <code>Date.now()</code> قبل <code>pipe</code> لا داخله فقط عند الطباعة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن بداية القياس لحظة دخول <code>intercept</code>، قبل تنفيذ المتحكم عند الاشتراك. داخل <code>tap</code> الوقت هو لحظة وصول القيمة، وتحتاج البداية من الإغلاق الخارجي.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>tap</code> عدّل <code>book.title</code>. ماذا يصل العميل ولماذا هذا خلل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يصل العنوان المعدّل لأن <code>tap</code> يمرر المرجع نفسه. الأثر الجانبي غيّر كائن المجال. اقرأ فقط، وحوّل في <code>map</code> بكائن جديد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما خرج <code>map</code> مقارنة بدخله؟</li>
+<li>هل <code>tap</code> يوقف الخطأ؟</li>
+<li>أي حقل لا يُسجَّل مع الزمن؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>map</code> للعقد و <code>tap</code> للملاحظة. لا تغيّر الكائن الذي يمر عبر <code>tap</code>، ولا تسجّل الأسرار مع الزمن.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>catchError</code>: ماذا يحدث عندما يرمي المتحكم أو يفشل التيار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>RxJS — <code>map</code>: <a href="https://rxjs.dev/api/index/function/map">https://rxjs.dev/api/index/function/map</a></li>
+<li>RxJS — <code>tap</code>: <a href="https://rxjs.dev/api/index/function/tap">https://rxjs.dev/api/index/function/tap</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

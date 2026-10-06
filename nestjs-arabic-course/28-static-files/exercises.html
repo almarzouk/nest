@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب على متجر يخدم JSON تحت <code>/api</code> وواجهة مبنية في <code>client/dist</code>.</p>
+<h2>سهل</h2>
+<ol>
+<li>أي خيار يحدد مجلد القرص، وأي خيار يحدد بادئة العنوان؟</li>
+<li>هل غلاف الكتاب الخاص ملف ثابت؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>rootPath</code> المجلد، و <code>serveRoot</code> البادئة.</li>
+<li>لا. هو تنزيل بعد ترجمة معرف الكتاب إلى مفتاح، عبر <code>StreamableFile</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>اكتب كائن <code>forRoot</code> لواجهة على جذر الموقع و API تحت <code>/api</code>. اذكر طلبين تستخدمهما للتحقق.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">ServeStaticModule.forRoot({
+  rootPath: join(process.cwd(), &#39;client&#39;, &#39;dist&#39;),
+  exclude: [&#39;/api/{*path}&#39;],
+});
+</code></pre>
+<p><code>GET /</code> يعيد HTML. <code>GET /api/missing</code> يعيد <code>404</code> وجسمه ليس <code>index.html</code>. على Fastify استبدل <code>exclude</code> بـ <code>renderPath</code> منتظم.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>نشرت الواجهة على CDN و Nest تستقبل <code>/api</code> فقط، لكن <code>index.html</code> ما زال يُخدم من Nest وبـ <code>Cache-Control</code> لسنة على <code>index.html</code> وعلى الحزم. ماذا تكسر، وما الذي تحذفه من <code>AppModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Nest لم تعد مصدر الواجهة، فوجود <code>ServeStaticModule</code> يكرر الأصل ويبقي خطر البدل على مسارات API إن ضعف الاستثناء. احذف تسجيل الوحدة من عملية الـ API. تخزين <code>index.html</code> لسنة يعلّق المتصفح على أسماء حزم قديمة بعد النشر. الحزم المجزّأة هي التي تطيق عمرًا طويلًا، والفهرس يُعاد التحقق منه عند الـ CDN لا عند Nest.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

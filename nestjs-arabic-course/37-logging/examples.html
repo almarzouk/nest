@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة أسطر من مسار نشر واحد.</p>
+<h2>مثال 1 — المسجّل</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, { bufferLogs: true });
+app.useLogger(app.get(AppLogger));
+</code></pre>
+<p>سجّل <code>AppLogger</code> في الوحدة إن حقنته، أو <code>new AppLogger()</code> إن كان بلا اعتماد. <code>write</code> يخرج JSON فيه <code>level</code> و <code>time</code> و <code>context</code> و <code>message</code> و <code>requestId</code>.</p>
+<h2>مثال 2 — الطلب</h2>
+<pre><code class="language-ts">this.logger.log({
+  message: &#39;request&#39;,
+  method: &#39;POST&#39;,
+  path: &#39;/books/42/publish&#39;,
+  statusCode: 201,
+  durationMs: 36,
+  requestId: &#39;3c2f0a2e-7b1d-4e6a-9c11-0a0b0c0d0e0f&#39;,
+});
+</code></pre>
+<p>بلا <code>body</code> وبلا استعلام.</p>
+<h2>مثال 3 — العامل</h2>
+<pre><code class="language-ts">this.logger.error({
+  message: &#39;resize failed&#39;,
+  bookId: job.data.bookId,
+  requestId: job.data.requestId ?? null,
+});
+</code></pre>
+<p>الحمولة <code>{ bookId, coverKey, requestId }</code> من المنتج الذي قرأ <code>AsyncLocalStorage</code> داخل <code>run</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>x-request-id</code> فيه سطر جديد لا يُقبل.</li>
+<li><code>@Cron</code> يكتب <code>requestId: null</code>.</li>
+<li>فشل ISBN يسجّل <code>isbn</code> و <code>code</code> لا ترويسة المفتاح.</li>
+<li>المعترض لا يبدّل جسم <code>StreamableFile</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

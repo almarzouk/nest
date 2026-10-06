@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>قائمتان على المكتبة. الاستيراد ينتهي بـ <code>.js</code>. الفهارس بهجرة Prisma.</p>
+<h2>مثال 1 — لوحة المقالات</h2>
+<p><code>ListPostsQueryDto</code> يوسّع <code>PageQueryDto</code> ويضيف <code>sort</code> من <code>POST_SORTS</code> و <code>order</code>. الزائر نطاقه <code>{ published: true }</code>. <code>orderByPosts</code> ينهي فرز العنوان بـ <code>id</code>. <code>toSkipTake</code> و <code>pageOf</code> و <code>toPostResponse</code>. السقف <code>50</code>. الصفحة البعيدة الفارغة <code>200</code>. الفهرس <code>[published, id]</code> و <code>[authorId, id]</code>.</p>
+<h2>مثال 2 — خيط تعليقات</h2>
+<p><code>CommentCursorQueryDto</code> فيه <code>cursor</code> و <code>limit</code> بلا <code>page</code>. <code>findMany</code> على <code>postId</code> من المسار، <code>orderBy</code> على <code>id</code>، <code>cursor</code> مع <code>skip: 1</code>، و <code>take: limit + 1</code>. الناتج <code>{ items, nextCursor }</code>. الفهرس <code>[postId, id]</code>. لا <code>count</code> في هذا المسار.</p>
+<h2>مثال 3 — ما يُرفض</h2>
+<p><code>sort=passwordHash</code> يعطي <code>400</code>. <code>published=false</code> للزائر لا يكشف المسودات. <code>pageSize=51</code> يُرفض على اللوحة و <code>limit=51</code> يُرفض على الخيط. جسم العنصر بلا <code>passwordHash</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>المقالات والتعليقات لا تشتركان في صنف واحد يجمع <code>page</code> و <code>cursor</code>.</li>
+<li><code>count</code> و <code>findMany</code> يستقبلان <code>where</code> نفسه على اللوحة.</li>
+<li><code>EXPLAIN</code> لمسار الزائر يستخدم فهرس <code>published, id</code> على بيانات بحجم واقعي.</li>
+<li>الهجرة هي طريق الفهرس، بلا <code>synchronize: true</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

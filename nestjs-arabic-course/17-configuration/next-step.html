@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>الإعداد صار طبقة إقلاع: ملف محلي خارج Git، <code>ConfigModule.forRoot</code>، قراءة عبر <code>ConfigService</code>، ومخطط يرفض النقص قبل <code>listen</code>.</p>
+<p>أول قيمة ستخرج من هذه الطبقة إلى بقية الدورة هي <code>DATABASE_URL</code>. الفصل التالي لا يبدأ باختيار مكتبة. يبدأ بمعنى الاتصال والجدول والترحيل، ثم PostgreSQL، ثم ما يفعله ORM، ثم Prisma كمسار تطبيقي: <code>PrismaService</code> يقرأ العنوان من <code>ConfigService</code>، يتصل في <code>onModuleInit</code>، ويقطع في <code>onModuleDestroy</code>.</p>
+<p>TypeORM الذي ظهر في معاينة <code>forRootAsync</code> يبقى بديلًا موثّقًا. Drizzle عبر <code>@nestjs/drizzle</code> بديل موثّق آخر. لن نفتح ثلاث أدوات في المكتبة نفسها.</p>
+<p>افتح <a href="../18-database/README.html">قاعدة البيانات</a> وأنت قادر على تفسير لماذا عنوان القاعدة لا يُكتب داخل <code>BooksService</code>.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

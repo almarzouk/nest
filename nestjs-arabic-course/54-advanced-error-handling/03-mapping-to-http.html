@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تحويلها إلى HTTP</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-mapping-to-http.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تحويلها إلى HTTP</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ترجمة أصناف متجر رف إلى وضع HTTP وجسم مفهوم في فلتر واحد، من غير إعادة رمي <code>HttpException</code> كعطل 500.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>BookNotFound</code> يصل إلى العميل كـ 500 لأن لا أحد يترجمه. محاولة الإصلاح تلتقط كل شيء بما فيه <code>NotFoundException</code> التي رماها حارس أو Pipe ثم تلفها في <code>InternalServerErrorException</code>. الغياب الحقيقي يصبح عطلًا، ويضيع جسم Nest الأصلي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الفلتر على الحد يعرف الجدول: غياب 404، تعارض 409، قاعدة سعر 400، وغير ذلك يمر كما هو إن كان <code>HttpException</code>. الاستثناء المعروف لا يُعاد تغليفه.</p>
+<h2>التعريف التقني</h2>
+<p><code>@Catch(BookNotFound, IsbnTaken, InvalidShelfPrice)</code> يحدّد الأنواع. <code>ExceptionFilter</code> ينفّذ <code>catch(exception, host)</code>. <code>host.switchToHttp()</code> يعطي الاستجابة. <code>HttpException</code> التي يرميها الإطار (التحقق، <code>AuthGuard</code> من حزم Nest) تحمل <code>getStatus()</code> و <code>getResponse()</code>. الفلتر العالمي الذي يفعل <code>catch (e) { throw new InternalServerErrorException() }</code> أو يكتب 500 لكل ما يصل، يبتلع هذه الحالات. إن احتجت فلترًا عامًا، افحص <code>instanceof HttpException</code> وأعد <code>status</code> و <code>getResponse()</code> كما هما. لا تبنِ 500 جديدًا فوق 404.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BookNotFound        → 404
+IsbnTaken           → 409
+InvalidShelfPrice   → 400
+HttpException       → status الأصلي
+الباقي              → درس الأخطاء غير المتوقعة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type ArgumentsHost, Catch, type ExceptionFilter, HttpStatus } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { BookNotFound } from &#39;../books/books.errors.js&#39;;
+
+@Catch(BookNotFound)
+export class BookNotFoundFilter implements ExceptionFilter {
+  catch(exception: BookNotFound, host: ArgumentsHost) {
+    const res = host.switchToHttp().getResponse&lt;Response&gt;();
+    res.status(HttpStatus.NOT_FOUND).json({
+      statusCode: 404,
+      message: &#39;Book not found&#39;,
+      bookId: exception.bookId,
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الرسالة للعميل ثابتة ومفهومة. <code>bookId</code> من الصنف إن كان العقد يسمح بإظهاره لصاحب المستأجر.</li>
+<li>التسجيل يتم بـ <code>app.useGlobalFilters</code> في <code>main.ts</code> أو كمزوّد <code>APP_FILTER</code>.</li>
+<li>هذا الفلتر لا يرى <code>IsbnTaken</code>. إما توسّع <code>@Catch</code> أو تكتب فلتر مجال واحدًا بجدول، كما في المثال العملي.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الاستثناء يخرج من الخدمة.</li>
+<li>Nest يبحث عن فلتر يطابق النوع، من الأخص إلى الأعم.</li>
+<li>الفلتر يكتب الوضع والجسم وينهي الاستجابة.</li>
+<li>إن كان الاستثناء <code>HttpException</code> ولم يلتقطه فلترك، فلتر Nest المدمج يكتب وضعه. لا تضع فوقه فلترًا يعيد الكتابة إلى 500.</li>
+<li>ترتيب الفلاتر العامة مهم: فلتر المجال قبل الفلتر الذي يتعامل مع المجهول.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, HttpStatus } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { BookNotFound, InvalidShelfPrice, IsbnTaken } from &#39;../books/books.errors.js&#39;;
+
+@Catch(BookNotFound, IsbnTaken, InvalidShelfPrice)
+export class ShelfDomainFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost) {
+    const res = host.switchToHttp().getResponse&lt;Response&gt;();
+    if (exception instanceof HttpException) {
+      res.status(exception.getStatus()).json(exception.getResponse());
+      return;
+    }
+    const status = exception instanceof BookNotFound ? HttpStatus.NOT_FOUND
+      : exception instanceof IsbnTaken ? HttpStatus.CONFLICT
+      : HttpStatus.BAD_REQUEST;
+    res.status(status).json({ statusCode: status, error: exception.constructor.name });
+  }
+}
+</code></pre>
+<p>الفرع الأول دفاع إن وُسّع <code>@Catch</code> لاحقًا. النقطة التي يطلبها هذا الدرس: لا يوجد سطر يبني <code>InternalServerErrorException</code> من <code>HttpException</code>. جسم الخطأ هنا مختصر؛ شكل العقد الكامل يُفصَّل في فصل تصميم الـ API حتى لا نخلط الترجمة بالشكل العام.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>try/catch</code> في المتحكم حول كل استدعاء، ثم <code>throw new InternalServerErrorException(error)</code>.</li>
+<li>فلتر <code>@Catch()</code> فارغ (يلتقط الكل) يكتب 500 دائمًا.</li>
+<li>إرجاع تفاصيل Prisma داخل JSON «للتشخيص».</li>
+<li>ترجمة <code>IsbnTaken</code> إلى 404 حتى «لا يعرف الناس أن الرقم مستخدم». هذا يكذب على العميل الذي يستطيع التصحيح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تخرج أصناف المجال من الخدمة وتريد رمزًا واحدًا لكل صنف، مثبتًا باختبار e2e على المسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل الـ Service. ولا لتغيير رمز <code>ValidationPipe</code>. الأنبوب يكتب 400 قبل الخدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القادم</th>
+<th>الوضع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>BookNotFound</code></td>
+<td>404</td>
+</tr>
+<tr>
+<td><code>IsbnTaken</code> وتعارض الحالة</td>
+<td>409</td>
+</tr>
+<tr>
+<td><code>InvalidShelfPrice</code></td>
+<td>400</td>
+</tr>
+<tr>
+<td><code>HttpException</code> قائمة</td>
+<td><code>getStatus()</code> بلا تغليف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>التحقق فشل لأن <code>title</code> غائب. هل يمر على <code>ShelfDomainFilter</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا، إن كان الفلتر لا يلتقط <code>BadRequestException</code>. <code>ValidationPipe</code> يرمي <code>HttpException</code> ويكتبها فلتر Nest. تدخلك لتغليفها هو الذي يحوّلها إلى 500 بالخطأ.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الكود التالي في فلتر عام: <code>catch (e) { if (e instanceof HttpException) throw new InternalServerErrorException(e.message) }</code>. ما الرمز النهائي لكتاب غائب رماه <code>NotFoundException</code> من مكان آخر؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol start="500">
+<li>هذا هو الخطأ الممنوع. المطلوب إعادة <code>e.getStatus()</code> و <code>e.getResponse()</code>.</li>
+</ol>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يطلب <code>POST /books/:id/isbn</code> برقم مأخوذ ويتوقع 409 وجسمًا بلا SQL. أين تضع التوقع: وحدة الخدمة أم e2e؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>وحدة الخدمة تتوقع <code>IsbnTaken</code>. e2e على التطبيق مع الفلتر المسجّل يتوقع 409 والجسم. تقسيم الاختبار يمنع ترجمة «ناجحة» في الوحدة بينما المسار ما زال 500.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تُكتب الترجمة: خدمة أم فلتر؟</li>
+<li>ماذا تفعل حين يكون الاستثناء <code>HttpException</code> أصلًا؟</li>
+<li>أي رمز لـ <code>IsbnTaken</code>، وأي رمز لسعر سالب في المجال؟</li>
+<li>لماذا <code>@Catch()</code> الواسع أخطر من <code>@Catch(BookNotFound)</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>جدول صغير في فلتر الحد يحوّل أصناف رف إلى 404 و 409 و 400. <code>HttpException</code> تُعاد كتابتها بوضعها الأصلي. تغليفها في 500 يمحو معنى الغياب والتحقق.</p>
+<h2>ماذا بعد؟</h2>
+<p>تبقى الأخطاء التي لا تعرف اسمها: سقوط القاعدة والأخطاء البرمجية. الدرس التالي يقرر ماذا يرى العميل وماذا يُكتب في السجل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>MDN — 404: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/404">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/404</a></li>
+<li>MDN — 409: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/409</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

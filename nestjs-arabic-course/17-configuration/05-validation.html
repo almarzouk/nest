@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التحقق من الإعدادات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-validation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التحقق من الإعدادات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رفض إقلاع المكتبة إذا غاب مفتاح مطلوب أو جاء <code>PORT</code> بما لا يُحوَّل إلى منفذ صالح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>get</code> يصمت عن الغياب حتى أول طلب يستخدم المفتاح. التطبيق يسمع على منفذ ثم يسقط حين تُفتح أول إعارة لأن <code>DATABASE_URL</code> فارغ. أسوأ من ذلك أن <code>&quot;abc&quot;</code> يمر كنص ويصبح <code>NaN</code> بعد <code>Number</code>.</p>
+<p>التحقق عند <code>forRoot</code> يقلب الفشل إلى وقت الإقلاع، ويجمع كل الحقول الفاشلة في رسالة واحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تمرّر مخططًا يصف شكل البيئة. الحزمة تمرّر المتغيرات إلى المخطط قبل أن يكتمل الإقلاع. إن رمى المخطط، <code>NestFactory.create</code> لا يصل إلى <code>listen</code>. القيم التي يرجعها المخطط، بعد التحويل، هي ما يقدّمه <code>ConfigService</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>validationSchema</code> يقبل مخطط Standard Schema: Zod و Valibot و ArkType، و Joi بدءًا من الإصدار 18. التوثيق يفضّل مكتبة حديثة للمشاريع الجديدة. مثال Zod:</p>
+<pre><code class="language-ts">ConfigModule.forRoot({
+  validationSchema: z.object({
+    NODE_ENV: z.enum([&quot;development&quot;, &quot;production&quot;, &quot;test&quot;]).default(&quot;development&quot;),
+    PORT: z.coerce.number().default(3000),
+  }),
+});
+</code></pre>
+<p>متغيرات البيئة تصل نصوصًا، لذلك <code>z.coerce.number()</code> يحوّل <code>PORT</code>. مفتاح بلا <code>default</code> مطلوب، وغيابه يرمي أثناء الإقلاع. المفاتيح التي لا يعلنها المخطط تبقى متاحة عبر <code>ConfigService</code>. المفاتيح المجهولة مثل <code>PATH</code> لا تفشل التحقق افتراضيًا. كل حقل فاشل يُذكر، بصيغة <code>PATH: message</code>، وتُجمع الأسطر.</p>
+<p><code>validationOptions.libraryOptions</code> يمرّر خيارات المكتبة. لـ Joi تبقى الافتراضات التاريخية <code>allowUnknown: true</code> و <code>abortEarly: false</code> ما لم تغطّها.</p>
+<p>البديل دالة <code>validate</code> متزامنة: تستقبل <code>Record&lt;string, unknown&gt;</code> وترجع الكائن بعد التحويل. إن رمت، لا يُقلع التطبيق. صفحة الإعداد تعرض ذلك مع <code>plainToInstance</code> و <code>validateSync</code> من class-validator. لا تستخدم الدالة <code>async</code>.</p>
+<p><code>validatePredefined: false</code> يعطّل فحص متغيرات كانت في <code>process.env</code> قبل استيراد الوحدة.</p>
+<p>المخطط يفحص متغيرات البيئة، لا كائن <code>load</code> المخصص. فحص ملف YAML يتم داخل مصنعه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">.env + process.env
+        |
+   validationSchema
+        | فشل -&gt; استثناء، لا listen
+        | نجاح -&gt; قيم محوّلة
+   ConfigService.get(&quot;PORT&quot;)  // عدد إن أجبره Zod
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { ConfigModule } from &quot;@nestjs/config&quot;;
+import { z } from &quot;zod&quot;;
+
+const envSchema = z.object({
+  NODE_ENV: z.enum([&quot;development&quot;, &quot;production&quot;, &quot;test&quot;]).default(&quot;development&quot;),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  DATABASE_URL: z.string().min(1),
+});
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema: envSchema,
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>DATABASE_URL</code> بلا افتراضي: سلسلة فارغة أو غياب يوقف الإقلاع. <code>PORT</code> يُجبر إلى عدد ويُرفض خارج 1–65535، وغيابه يعني <code>3000</code> في التطوير. <code>NODE_ENV</code> مجموعة مغلقة حتى لا يمر <code>prod</code> بالخطأ ويختار مسار التطوير.</p>
+<p>لا تضع السر الحقيقي في المخطط. المخطط يصف الشكل فقط.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أثناء <code>forRoot</code> تُجمع البيئة ثم تُمرَّر إلى <code>~standard.validate</code> الخاص بالمخطط. الناتج المحوّل يحل محل القيم التي يخدمها <code>ConfigService</code> للمفاتيح المعلنة. لذلك <code>get(&quot;PORT&quot;)</code> بعد <code>z.coerce.number()</code> يمكن أن يكون عددًا، لا النص <code>&quot;3000&quot;</code>. هذا أثر المخطط، لا أثر الوسيط <code>get&lt;number&gt;</code> وحده.</p>
+<p>رسالة الفشل تسمي الحقول. اقرأها قبل أن تضيف <code>default</code> لإسكاتها. الافتراضي على سر يخفي إنتاجًا بلا سر.</p>
+<h2>مثال عملي</h2>
+<p>بيئة الاختبار تضبط <code>NODE_ENV=test</code> و <code>DATABASE_URL</code> لقاعدة <code>library_test</code>. إن نسي ملف CI المتغير الثاني، المهمة تفشل في ثوانٍ عند الإقلاع، لا بعد أول اختبار يكتب كتابًا. <code>PORT</code> في الاختبار قد يبقى على الافتراضي لأن الاختبار يستدعي <code>app.listen(0)</code> بنفسه ولا يستخدم إعداد المنفذ.</p>
+<p>دالة <code>validate</code> تناسب حين تريد رسالة عربية واحدة أو رفض شرط يعبر مفتاحين، مثل «<code>REDIS_URL</code> مطلوب حين <code>CACHE=redis</code>». ارمِ <code>Error</code> من الدالة. أبقِها متزامنة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>z.string()</code> على <code>PORT</code> ثم مفاجأة أن القيمة بقيت نصًا.</li>
+<li><code>default</code> على <code>DATABASE_URL</code> بعنوان تطوير فيصل إلى صورة الإنتاج.</li>
+<li>افتراض أن <code>validationSchema</code> يفحص كائن <code>configuration.ts</code> المتداخل. الفحص هناك داخل المصنع.</li>
+<li><code>validate</code> غير متزامن. الخيار يتوقع دالة متزامنة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل مفتاح يتوقف التطبيق إن غاب أو تشوّه: عنوان القاعدة، سر التوقيع، المنفذ، <code>NODE_ENV</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفحص جسم <code>POST /books</code>. ذلك <code>ValidationPipe</code> على DTO. مخطط البيئة يفحص ظرف الإقلاع فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>validationSchema</code></th>
+<th>دالة <code>validate</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Zod أو Joi 18 أو غيرهما من Standard Schema</td>
+<td>أي فحص متزامن تكتبه</td>
+</tr>
+<tr>
+<td>تحويلات المكتبة تصل إلى <code>ConfigService</code></td>
+<td>ترجع أنت الكائن النهائي</td>
+</tr>
+<tr>
+<td>خيارات المكتبة تحت <code>libraryOptions</code></td>
+<td>الرسالة التي ترميها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>PORT</code> في مخطط Zod يستخدم <code>z.coerce.number()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن البيئة تقدّم نصوصًا. <code>coerce</code> يحوّل <code>&quot;3000&quot;</code> إلى <code>3000</code> قبل فحص <code>int</code> والمدى.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>التطبيق يقلع و <code>ConfigService.get(&quot;DATABASE_URL&quot;)</code> يرجع <code>&quot;&quot;</code>. أين ثغرة المخطط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المفتاح إمّا غير موجود في <code>z.object</code>، أو مُعلن كـ <code>z.string()</code> بلا <code>min(1)</code>. السلسلة الفارغة ليست <code>undefined</code>، و <code>getOrThrow</code> لا يرفضها. أضف <code>min(1)</code> أو <code>.url()</code> بما يناسب شكل عنوانك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد رفض الإقلاع إذا كان <code>NODE_ENV=production</code> و <code>DATABASE_URL</code> يحتوي <code>localhost</code>. أي أداة تختار، المخطط أم <code>validate</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الشرط يعبر مفتاحين. دالة <code>validate</code> المتزامنة تقرأ الكائن وترمّي <code>Error</code> واضحة. يمكن التعبير عنه في Zod بـ <code>superRefine</code> أيضًا إن أبقيت كل شيء في المخطط. المهم أن الفشل يحدث داخل <code>forRoot</code> قبل <code>listen</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى يُرفض الإقلاع؟</li>
+<li>هل الوسم النوعي على <code>get</code> يغني عن المخطط؟</li>
+<li>ماذا يفحص <code>validationSchema</code>، البيئة أم ملف YAML؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المخطط جزء من <code>forRoot</code>. النقص والتحويل الخطأ يظهران قبل أول طلب، و <code>ConfigService</code> يقدّم القيم بعد إكراه النوع.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-namespaced-config.html">Namespaced Config</a> يجمع مفاتيح القاعدة في كائن واحد باسم <code>database</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

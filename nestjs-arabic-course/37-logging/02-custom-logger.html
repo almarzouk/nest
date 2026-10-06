@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Custom Logger</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-custom-logger.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Custom Logger</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمرير مسجّل من تنفيذك إلى Nest عبر <code>LoggerService</code> حتى تستخدمه الإطار وخدماتك بالشكل نفسه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>new Logger()</code> في الخدمات يكتب بتنسيق Nest، بينما أخطاء الإقلاع من الإطار تكتب بتنسيق آخر إن بدّلت المكتبة في مكان واحد فقط. المنصة التي تجمع السجلات تريد مخرجًا واحدًا. <code>app.useLogger</code> يوجّه الإطار إلى تنفيذك، و <code>Logger.overrideLogger</code> يوجّه استدعاءات <code>Logger</code> الثابتة أثناء الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنف يطبق <code>LoggerService</code>: <code>log</code> و <code>error</code> و <code>warn</code> و <code>debug</code> و <code>verbose</code>، و <code>fatal</code> إن كنت على إصدار يعرّفه. في <code>main.ts</code> أنشئ التطبيق بخيار <code>bufferLogs: true</code> ثم <code>useLogger</code> حتى لا تضيع أسطر ما قبل ربط المسجّل. التنفيذ في هذا الدرس يكتب سطرًا نصيًا واحدًا. JSON في الدرس التالي.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { LoggerService } from &#39;@nestjs/common&#39;;
+
+export class AppLogger implements LoggerService {
+  log(message: unknown, context?: string) {
+    this.write(&#39;log&#39;, message, context);
+  }
+
+  error(message: unknown, stack?: string, context?: string) {
+    this.write(&#39;error&#39;, message, context, stack);
+  }
+
+  warn(message: unknown, context?: string) {
+    this.write(&#39;warn&#39;, message, context);
+  }
+
+  debug(message: unknown, context?: string) {
+    this.write(&#39;debug&#39;, message, context);
+  }
+
+  verbose(message: unknown, context?: string) {
+    this.write(&#39;verbose&#39;, message, context);
+  }
+
+  fatal(message: unknown, context?: string) {
+    this.write(&#39;fatal&#39;, message, context);
+  }
+
+  private write(level: string, message: unknown, context?: string, stack?: string) {
+    const text = typeof message === &#39;string&#39; ? message : JSON.stringify(message);
+    process.stdout.write(`${level} ${context ?? &#39;-&#39;} ${text}${stack ? `\n${stack}` : &#39;&#39;}\n`);
+  }
+}
+</code></pre>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, { bufferLogs: true });
+app.useLogger(new AppLogger());
+await app.listen(3000);
+</code></pre>
+<p><code>bufferLogs</code> يحتفظ برسائل الإقلاع المبكرة ثم يفرغها في المسجّل بعد <code>useLogger</code>. من غيره تضيع رسائل أو تخرج بالتنسيق الافتراضي قبل الربط.</p>
+<p>الخدمات تبقى على <code>new Logger(BooksService.name)</code>. بعد الربط، تلك الاستدعاءات تصل إلى تنفيذك إن كان التعيين يشملها عبر <code>useLogger</code> كما في سلوك Nest الحالي. لا تنشئ <code>console.log</code> موازيًا داخل <code>write</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">bufferLogs
+  useLogger(AppLogger)
+    الإطار والخدمات -&gt; write
+      stdout
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تجاهل <code>debug</code> خارج التطوير داخل <code>write</code>:</p>
+<pre><code class="language-ts">if (level === &#39;debug&#39; &amp;&amp; process.env.NODE_ENV === &#39;production&#39;) return;
+</code></pre>
+<p>الشرط في مكان واحد. الخدمات تستمر في نداء <code>debug</code> بلا <code>if</code> حول كل سطر.</p>
+<h2>شرح المثال</h2>
+<p><code>error</code> في الواجهة يضع المكدس في الوسيط الثاني والسياق في الثالث، وهذا ترتيب <code>LoggerService</code> لا ترتيب <code>console.error</code>. تبديلهما يخفي اسم الصنف ويطبع المكدس كسياق. التزم التوقيع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>NestFactory</code> يخزن الرسائل عندما يكون <code>bufferLogs</code> مفعلًا. <code>useLogger</code> يستبدل المسجّل ويدفع المخزن. بعدها <code>Logger</code> الداخلي يستدعي طرائق صنفك. إن رمى <code>write</code>، قد يخفي الخطأ الأصلي الذي أردت تسجيله. اجعل الكتابة لا ترمي. فشل المجمع لاحقًا يجب ألا يسقط <code>POST</code>.</p>
+<p>لا تطلب Prisma من المسجّل عند كل سطر. المسجّل تحت الطلب، واستعلام داخله يضاعف الحمل ويولد سجلات عن السجل.</p>
+<h2>مثال عملي</h2>
+<p>اختبار يتأكد أن التحذير خرج بلا تشغيل الخادم كاملًا:</p>
+<pre><code class="language-ts">const lines: string[] = [];
+const logger = new AppLogger();
+logger.write = (level, message) =&gt; lines.push(`${level}:${String(message)}`);
+</code></pre>
+<p>إن بقي <code>write</code> خاصًا فاستخرج الدالة. لا تعتمد على قراءة الطرفية في الوحدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>useLogger</code> بعد <code>listen</code> فتخرج بداية الإقلاع بتنسيق مختلف.</li>
+<li>نسيان <code>fatal</code> أو <code>debug</code> فتسقط استدعاءات الإطار وقت التشغيل.</li>
+<li>رمي خطأ من <code>write</code>.</li>
+<li>تسجيل من داخل <code>write</code> عبر <code>Logger</code> فيدور النداء.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تجمع المنصة stdout وتريد تحكمًا في التنسيق لكل أسطر Nest لا لخدماتك فقط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمكتبة ثقيلة قبل أن ترى سطرًا ناقصًا في التنسيق الافتراضي. ابدأ بـ <code>Logger</code> ثم بدّل التنفيذ عندما يفرض الإنتاج شكلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الربط</th>
+<th>ماذا يوحّد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>new Logger</code> فقط</td>
+<td>خدماتك، وتنسيق Nest</td>
+</tr>
+<tr>
+<td><code>useLogger</code> + <code>bufferLogs</code></td>
+<td>الإطار وخدماتك بعد الإقلاع المبكر</td>
+</tr>
+<tr>
+<td><code>console</code> داخل الخدمة</td>
+<td>قناة ثالثة تتجنبها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي واجهة يطبقها <code>AppLogger</code>؟</p>
+<details>
+<summary>الحل</summary>
+`LoggerService` من `@nestjs/common`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>bufferLogs: true</code> قبل <code>useLogger</code>؟</p>
+<details>
+<summary>الحل</summary>
+حتى تُحفظ رسائل الإقلاع الأولى وتُطبع بالمسجّل الجديد لا بالتنسيق الافتراضي أو تُفقد.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يستعلم المسجّل القاعدة عند كل <code>log</code>؟</p>
+<details>
+<summary>الحل</summary>
+لأن السجل على مسار الطلب. الاستعلام يبطئ كل نداء وقد يولّد أخطاء تسجيل بلا نهاية.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب وسائط <code>error</code>؟</li>
+<li>ماذا لا يرمي <code>write</code>؟</li>
+<li>أي طرائق تبقيها حتى لا ينكسر الإطار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>LoggerService</code> تنفيذ واحد، و <code>useLogger</code> بعد <code>bufferLogs</code> يمرر إليه أسطر الإطار. الكتابة لا ترمي ولا تلمس القاعدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>السطر نفسه كـ JSON فيه حقول ثابتة تستطيع البحث عنها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/techniques/logger">https://docs.nestjs.com/techniques/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

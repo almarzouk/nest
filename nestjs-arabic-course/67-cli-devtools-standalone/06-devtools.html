@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nest Devtools</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-devtools.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Nest Devtools</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط رف المحلي بـ Nest Devtools لرؤية الوحدات والمسارات وخطأ الحقن، وإبقاء خادم الاستكشاف خارج الإنتاج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>«Cannot resolve dependency» على سلسلة طويلة بلا أن يوضح أي وحدة نقصها الاستيراد. أو مسار <code>POST /projects</code> لا يُظهر ترتيب الحارس والأنبوب. أو <code>DevtoolsModule</code> يعمل في الإنتاج فيفتح منفذ استكشاف.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>snapshot: true</code> في <code>NestFactory.create</code> يجمع وصف الرسم مرة عند الإقلاع. <code>DevtoolsModule.register({ http: process.env.NODE_ENV !== &#39;production&#39; })</code> يفتح خادمًا خفيفًا على المنفذ 8000 للوحة فقط في التطوير. الرسم يعرض الوحدات والصفوف والمسارات. فشل الإقلاع مع <code>abortOnError: false</code> يكتب <code>graph.json</code> عبر <code>PartialGraphHost</code> لتُسحب اللوحة في وضع المعاينة.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/devtools-integration</code>. في <code>main.ts</code>:</p>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, {
+  snapshot: true,
+});
+</code></pre>
+<p><code>http: false</code> لا يعرض شيئًا حتى لو بقي الاستيراد. المنفذ يُغيَّر بخيار <code>port</code>. كل وحدة تتصل بـ <code>InternalCoreModule</code> العام؛ إخفاء الوحدات العامة في الشريط ينظّف الصورة. Routes explorer يشمل HTTP و WebSocket و gRPC و GraphQL. Playground يطلب رمز sandbox تطبعه العملية عند الإقلاع. <code>SerializedGraph</code> من <code>@nestjs/core</code> يكتب لقطة بعد <code>listen</code> أو <code>init</code> بـ <code>writeFileSync</code>. الصفحة تطلب ألا يعمل <code>DevtoolsModule</code> في الإنتاج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إقلاع محلي + snapshot → رسم
+منفذ 8000 في التطوير فقط
+فشل حقن → graph.json جزئي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DevtoolsModule } from &#39;@nestjs/devtools-integration&#39;;
+
+@Module({
+  imports: [
+    DevtoolsModule.register({
+      http: process.env.NODE_ENV !== &#39;production&#39;,
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>ثم <code>npm run start:dev</code> وافتحوا لوحة Devtools. ابحثوا عن <code>ProjectsController</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الشرط على <code>NODE_ENV</code> يطفئ HTTP خارج التطوير.</li>
+<li>جمع اللقطة مرة عند الإقلاع. معالجة الطلب العادية لا تعيد بناء الرسم لكل نداء.</li>
+<li>Hide global modules يخفي حافة <code>InternalCoreModule</code> نحو كل الوحدات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>snapshot</code> يخزن وصف المزودات والمتحكمات أثناء البناء.</li>
+<li><code>DevtoolsModule</code> يخدم هذا الوصف على منفذه.</li>
+<li>Routes explorer يحل ترتيب الحراس والاعتراضات والأنابيب كما رُبطت، لا كما تتوقعون من قراءة الزخارف.</li>
+<li>عند فشل الحقن، <code>abortOnError: false</code> يكمل بما يكفي لكتابة الرسم الجزئي:</li>
+</ol>
+<pre><code class="language-ts">import { writeFileSync } from &#39;node:fs&#39;;
+import { PartialGraphHost } from &#39;@nestjs/core&#39;;
+
+bootstrap().catch((err) =&gt; {
+  writeFileSync(&#39;graph.json&#39;, PartialGraphHost.toString() ?? &#39;&#39;);
+  process.exit(1);
+});
+</code></pre>
+<ol start="5">
+<li>سحب <code>graph.json</code> في وضع Preview يبرز الوحدة التي ينقصها استيراد، مثل <code>DiagnosticsModule</code> في مثال الصفحة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>ProjectsService</code> يطلب <code>PlanPolicy</code> والوحدة لا تستورد <code>BillingModule</code>. الرسالة النصية تذكر الرمز الناقص. الرسم يظهر السلسلة حتى <code>ProjectsModule</code>. الإصلاح استيراد الوحدة التي تصدّر السياسة، لا <code>forwardRef</code> عشوائي. في Audit راقبوا مزودًا بنطاق طلب يمر عبر شجرة واسعة؛ ذلك يعود إلى كلفة النطاق في فصل الأداء. Playground على مسار إنشاء المشروع يستخدم رمز الجلسة المطبوع ولا يُترك مفتوحًا على قاعدة مشتركة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>http: true</code> دائمًا فيصل الاستكشاف إلى نشر عام.</li>
+<li>نسيان <code>snapshot: true</code> فتفرغ اللوحة.</li>
+<li><code>abortOnError</code> يبقى <code>true</code> فلا يُكتب <code>graph.json</code>.</li>
+<li>اعتبار اللوحة بديلًا عن اختبار عزل المستأجر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>محليًا لفهم الرسم، وتشخيص الحقن، ومراجعة مسار معقّد، وقياس زمن إنشاء الصفوف عند إقلاع بطيء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في صورة الإنتاج. ولا لتجاوز المصادقة على API الحقيقي؛ رمز Playground جلسة لوحة تطوير.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العرض</th>
+<th>ماذا يجيبه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الرسم</td>
+<td>من يستورد من</td>
+</tr>
+<tr>
+<td>Routes</td>
+<td>ترتيب الحارس والأنبوب على المسار</td>
+</tr>
+<tr>
+<td>Audit</td>
+<td>شكل معماري يستحق النظر</td>
+</tr>
+<tr>
+<td><code>graph.json</code></td>
+<td>إقلاع فشل قبل اكتمال الرسم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خياران يمنعان ظهور الاستكشاف في الإنتاج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>http</code> مربوط بشرط ليس إنتاجًا، وعدم تشغيل الوحدة هناك أصلًا. <code>snapshot</code> وحده يجمع وصفًا؛ الخادم هو <code>http</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>PartialGraphHost</code> مع <code>abortOnError: false</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإقلاع يموت قبل رسم كامل. <code>abortOnError: false</code> يتيح كتابة الجزء الذي بُني، واللوحة تظهر أين انقطع الحقن.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مسار <code>POST /projects</code> يعمل بلا حارس المنظمة في اللوحة بينما الزخرفة على المتحكم. ماذا تقرأون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Routes explorer يرتب ما رُبط فعلًا. قد يكون الحارس على وحدة غير مستوردة أو مغلوبًا بترتيب التسجيل. اللوحة تعرض السلسلة المحلولة لا نية الزخرفة فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة وأيهما من <code>@nestjs/core</code>؟</li>
+<li>ما المنفذ الافتراضي؟</li>
+<li>متى يُجمع الرسم؟</li>
+<li>أين لا يعمل <code>http</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Devtools يعرض رسم رف ومساراته حين يكون <code>snapshot</code> مفعلًا والخادم محصورًا بالتطوير. فشل الحقن يُشخَّص بـ <code>graph.json</code>. الإنتاج بلا هذا المنفذ.</p>
+<h2>ماذا بعد؟</h2>
+<p>مهمة تصدير بلا HTTP تستخدم سياق تطبيق مستقل. الدرس التالي Standalone.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Devtools: <a href="https://docs.nestjs.com/devtools/overview">https://docs.nestjs.com/devtools/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

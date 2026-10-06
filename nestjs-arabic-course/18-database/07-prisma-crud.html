@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prisma: CRUD</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-prisma-crud.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Prisma: CRUD</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ إنشاء كتاب وقراءته وتحديثه وحذفه من خدمة تحقن <code>PrismaService</code>، لا من المتحكم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استدعاء <code>prisma.book.create</code> داخل المسار يربط العقد بعميل القاعدة ويمنع استبدال العميل في اختبار وحدة. تمرير <code>@Body()</code> كاملًا إلى <code>data</code> يكتب أي حقل يرسله العميل إن طابق النوع، بما فيه حقول لم يقصدها العقد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>BooksService</code> دوال صريحة: <code>create</code> و <code>findOne</code> و <code>list</code> و <code>update</code> و <code>remove</code>. كل دالة تستقبل حقولًا سمّيتها. المتحكم، حين يظهر في فصل REST، يمرّر DTO لا الكائن الخام. هنا نثبت شكل الاستدعاء على Prisma.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Nest تعرض العمليات على النموذج: <code>findUnique</code> و <code>findMany</code> و <code>create</code> و <code>update</code> و <code>delete</code>. المعاملات أنواع مولَّدة مثل <code>Prisma.BookWhereUniqueInput</code> و <code>Prisma.BookCreateInput</code>.</p>
+<pre><code class="language-ts">return this.prisma.book.findUnique({ where: { id } });
+</code></pre>
+<p><code>findUnique</code> يرجع <code>null</code> إن غاب الصف. الخدمة أو المتحكم يحوّل <code>null</code> إلى <code>NotFoundException</code> حين يكون الغياب خطأ عقد، لا قيمة مقبولة.</p>
+<p><code>findMany</code> يقبل <code>where</code> و <code>orderBy</code> و <code>skip</code> و <code>take</code> و <code>cursor</code>. استخدمها للصفحة الأولى من القائمة. فصل لاحق يجعل الترقيم عقدًا قابلًا لإعادة الاستخدام.</p>
+<p><code>create({ data })</code> يدرج صفًا. <code>update({ where, data })</code> يعدّل صفًا موجودًا ويرمي إن غاب. <code>delete({ where })</code> يحذف صفًا موجودًا.</p>
+<p>القيد <code>@unique</code> على البريد يظهر كخطأ Prisma عند التكرار. حوّله إلى <code>ConflictException</code> عند حدود HTTP، لا تسرّب رمز المشغّل إلى العميل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksService.create({ title })
+        |
+ prisma.book.create({ data: { title } })
+        |
+ INSERT ... RETURNING
+        |
+ كائن Book
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;../prisma/prisma.service.js&quot;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  create(title: string) {
+    return this.prisma.book.create({
+      data: { title, published: false },
+    });
+  }
+
+  findById(id: number) {
+    return this.prisma.book.findUnique({ where: { id } });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الخدمة تفرض <code>published: false</code> عند الإنشاء. العميل لا يختار حالة النشر في هذا المسار حتى لو أرسل الحقل، لأن التوقيع يستقبل <code>title</code> فقط. هذا حد أوضح من نشر <code>body</code> كاملًا.</p>
+<p><code>findById</code> قد يرجع <code>null</code>. لا ترمه <code>404</code> داخل طبقة تُستخدم أيضًا من مهمة تقول «إن وُجد». اجعل دالة HTTP هي التي ترمي، أو دالة <code>requireById</code> منفصلة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>العميل يبني SQL بمعاملات ويرسله عبر <code>PrismaPg</code>. <code>create</code> يعيد الصف بعد <code>RETURNING</code>. الأنواع تُحذف وقت التشغيل، والفحص الحقيقي للعمود يتم في PostgreSQL: عنوان أطول من قيد أضفته في SQL يفشل حتى لو قبله TypeScript.</p>
+<p><code>update</code> بلا صف يطابق <code>where</code> يرفض الوعد بخطأ «record not found» من Prisma. امسكه إن كان العقد <code>404</code>.</p>
+<h2>مثال عملي</h2>
+<p>نشر الكتاب دالة <code>publish(id)</code> تستدعي <code>update</code> وتضع <code>published: true</code>، ولا تستقبل كائنًا جزئيًا من العميل. قائمة العناوين المنشورة:</p>
+<pre><code class="language-ts">return this.prisma.book.findMany({
+  where: { published: true },
+  orderBy: { id: &quot;asc&quot; },
+  take: 20,
+});
+</code></pre>
+<p><code>take: 20</code> حد مؤقت حتى فصل الترقيم. اختبار الوحدة يستبدل <code>PrismaService</code> بكائن <code>{ book: { create: vi.fn(), findUnique: vi.fn() } }</code> كما في صفحة Nest، فلا يُفتح اتصال.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>create({ data: body })</code> والجسم من نوع <code>any</code>.</li>
+<li>اعتبار <code>null</code> من <code>findUnique</code> استثناءً تلقائيًا.</li>
+<li><code>findMany</code> بلا <code>take</code> على جدول سيكبر.</li>
+<li>التقاط كل الأخطاء وإرجاع <code>500</code> عام فيختفي تعارض البريد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل كتابة وقراءة صف تتكرر في ميزة الكتب أو الأعضاء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستعلام يعبر جداول كثيرة بشرط معقّد مرة واحدة. يمكن إبقاؤه SQL مربوطًا داخل الخدمة نفسها إن كان أوضح، بعد أن تثبت المعاملات.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>في المتحكم</th>
+<th>في <code>BooksService</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>HTTP و Prisma معًا</td>
+<td>Prisma خلف دالة</td>
+</tr>
+<tr>
+<td>اختباره يحتاج طلبًا</td>
+<td>اختباره يستبدل الخدمة أو العميل</td>
+</tr>
+<tr>
+<td>الجسم قد يتسرب إلى <code>data</code></td>
+<td>الحقول مسمّاة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا ترجع <code>findUnique</code> إن لم يوجد الكتاب <code>4</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>null</code>. تحويل ذلك إلى <code>404</code> قرار طبقة أعلى أو دالة <code>require</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا ترفض الخدمة <code>data: body</code> حتى لو كان الجسم فيه <code>title</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الجسم قد يحمل <code>published</code> أو <code>id</code> أو حقلًا زائدًا. التوقيع الضيق يكتب الحقول التي سمّتها القاعدة فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار وحدة لا يجوز أن يتصل بـ PostgreSQL. كيف تسجّل <code>PrismaService</code> في <code>TestingModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ provide: PrismaService, useValue: { book: { findUnique: vi.fn() } } }</code> بجانب <code>BooksService</code>. الخطاف <code>onModuleInit</code> لا يعمل لأن النسخة الحقيقية غير مُنشأة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي دالة تدرج صفًا، وأي دالة ترجع <code>null</code> عند الغياب؟</li>
+<li>لماذا لا يُنشر جسم الطلب كما هو؟</li>
+<li>ماذا يحد <code>take</code> هنا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>CRUD يعيش في الخدمة عبر دوال العميل المولَّد، بحقول صريحة، و <code>null</code> يُعالَج بوعي، والاختبار يستبدل <code>PrismaService</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./08-prisma-relations.html">Prisma: Relations</a> يربط الكتاب بالعضو الذي استعاره.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

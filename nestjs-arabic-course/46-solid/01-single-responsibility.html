@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Single Responsibility</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-single-responsibility.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Single Responsibility</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حصر سبب تغيّر الصنف: المتحكم يتغير مع عقد HTTP، والخدمة مع قاعدة العمل، ومحول القاعدة مع الاستعلام، لا الثلاثة في ملف واحد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>OrdersController</code> الذي يتحقق من JWT ويحسب الضريبة ويكتب Prisma يتغير في كل سحب: الأمن، المحاسبة، والجدول. المراجعة صاخبة والاختبار يحتاج تطبيقًا كاملًا. مبدأ المسؤولية الواحدة يقول إن للمستدعي سببًا واحدًا للتعديل. في Nest السبب غالبًا طبقة أو وحدة، لا «دالة واحدة في الملف» بالمعنى الحرفي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اسأل: إن تغيّر شكل JSON، هل يجب أن يُفتح ملف الضريبة؟ إن نعم فالملف يخلط سببين. افصل المتحكم عن حساب الضريبة وعن <code>prisma.order.create</code>. يجوز أن تملك الخدمة عدة دوال لنفس القاعدة. الممنوع أن تملك سببين مستقلين للتعديل.</p>
+<h2>التعريف التقني</h2>
+<p>مسؤولية المتحكم: ترجمة HTTP إلى نداء وشكل الرد. Pipe للشكل، Guard للفاعل، Filter لشكل الخطأ.</p>
+<p>مسؤولية <code>OrdersService</code>: هل يُقبل هذا الطلب تجاريًا، وبأي تسلسل تنادي المنافذ.</p>
+<p>مسؤولية محول البيانات: كيف تُحفظ الصفوف.</p>
+<pre><code class="language-ts">@Controller(&#39;orders&#39;)
+export class OrdersController {
+  constructor(private readonly orders: OrdersService) {}
+
+  @Post()
+  create(@CurrentUserId() userId: string, @Body() dto: CreateOrderDto) {
+    return this.orders.place(userId, dto);
+  }
+}
+</code></pre>
+<p><code>place</code> لا يستقبل <code>Request</code>. حساب الضريبة إن كبر ينتقل إلى <code>TaxPolicy</code> يحقن في الخدمة. ذلك صنف ثانٍ بسبب تعديل مستقل (جدول الضرائب) لا بسبب كل تعديل على إنشاء الطلب.</p>
+<p>الوحدة <code>OrdersModule</code> مسؤولة عن سياق الطلب لا عن الكتالوج. ذلك حد SOLID على مستوى الـ Module، مكمل لمسؤولية الصنف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سبب HTTP        -&gt; Controller
+سبب قاعدة العمل -&gt; Service أو Policy
+سبب الجدول      -&gt; محول أو Prisma داخل طبقة البيانات
+</code></pre>
+<p>ثلاثة أسباب، ثلاثة أماكن.</p>
+<h2>أبسط مثال</h2>
+<p>انقل حساب <code>totalMinor</code> من المتحكم إلى <code>OrdersService.place</code>. المتحكم يمرر DTO و <code>userId</code>. إن تغيّر اسم حقل JSON تلمس DTO والمتحكم. إن تغيّرت قاعدة الشحن المجاني تلمس الخدمة فقط.</p>
+<h2>شرح المثال</h2>
+<p>قبل النقل كان اختبار الشحن المجاني يحتاج <code>supertest</code>. بعد النقل اختبار وحدة على <code>place</code> يمرر أرقامًا. المتحكم يبقى رقيقًا. لا تقص الخدمة إلى <code>ValidateService</code> و <code>CalculateService</code> و <code>SaveService</code> إن كانت الثلاثة تتغير معًا دائمًا. ذلك تقسيم ملفات لا مسؤوليات.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المسار يضرب المتحكم.</li>
+<li>الحارس غيّر الفاعل قبل الدالة، فتبقى مسؤولية الهوية خارج <code>place</code>.</li>
+<li><code>place</code> ينسق السياسة والحفظ.</li>
+<li>تغيير عمود يمس المحول إن عزلته، أو يمس آخر الدالة إن أبقيت Prisma في الخدمة مؤقتًا.</li>
+<li>ما دامت سياسة الحفظ تتغير مع القاعدة نفسها، إبقاؤهما في الخدمة مقبول في المشروع الصغير.</li>
+<li>عندما يتغير الحفظ وحدها (فهرس، جدول تاريخ) أخرج المحول.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>BillingController</code> كان يرسل بريدًا عبر SMTP بعد الحفظ. البريد سبب تغيير مستقل (مزود البريد). انقله إلى <code>ReceiptMailer</code> يُحقن في الخدمة أو إلى حدث بعد النجاح. المتحكم لا يعرف المضيف. الخدمة تنادي <code>mailer.send(invoiceId)</code> بعد الحفظ إن كان ذلك جزءًا من حالة الاستخدام، أو تنشر حدثًا إن كان البريد خارج السياق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>صنف لكل سطر.</li>
+<li>خدمة تعرف HTTP و SQL و SMTP.</li>
+<li>وحدة تصدّر كل شيء فتصير مسؤوليتها «المتجر».</li>
+<li>نقل الضريبة إلى Util عام بلا مالك.</li>
+<li>اعتبار DTO مسؤولية ثانية داخل المتحكم. شكل الجسم جزء من عقد المدخل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند كل صنف جديد وفي مراجعة السحب: ما سبب التعديل الوحيد؟</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفصل دالتين تتغيران دائمًا مع القصة نفسها. ولا تجعل المبدأ عذرًا لإخفاء Prisma في عشرة ملفات قبل وجود محول ثانٍ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>سبب التغيير</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Controller</td>
+<td>مسار وشكل HTTP</td>
+</tr>
+<tr>
+<td>Guard</td>
+<td>من يُسمح له</td>
+</tr>
+<tr>
+<td>Service</td>
+<td>قواعد السياق</td>
+</tr>
+<tr>
+<td>Mailer / Prisma</td>
+<td>تفصيل خارجي واحد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>place(userId, dto)</code> أصدق من <code>place(request)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن شكل HTTP ليس سبب تغيير قاعدة الطلب. المعرف والنص يكفيان الخدمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى تُخرج <code>TaxPolicy</code> من <code>OrdersService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تتغير جداول الضريبة في سحوبات لا تمس تسلسل إنشاء الطلب، أو عندما تحسبها ميزة أخرى.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ملف فيه خصم و <code>prisma</code> و <code>res.setHeader</code>. أي ثلاثة أماكن تفصلها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخصم في الخدمة أو سياسة، و <code>prisma</code> في طبقة بيانات، و <code>setHeader</code> في المتحكم أو المعترض. كل واحد سبب مراجعة مختلف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما سؤال المسؤولية الواحدة؟</li>
+<li>هل عدة دوال على خدمة واحدة مخالفة دائمًا؟</li>
+<li>أين يعيش SMTP؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>افصل أسباب التغيير: HTTP، السياسة، التفصيل الخارجي. أبقِ ما يتغير معًا في صنف واحد، واقطع عندما يستقل السبب.</p>
+<h2>ماذا بعد؟</h2>
+<p>Open/Closed: إضافة سلوك بمزود جديد من غير تعديل فرع المستدعي كل مرة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

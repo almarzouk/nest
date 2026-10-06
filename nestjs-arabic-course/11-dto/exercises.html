@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>عقود نادي القراءة. أجب ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>لماذا لا تُفحص <code>interface</code> بـ <code>ValidationPipe</code>؟</li>
+<li>أي حزمة تعرّف <code>@IsEmail()</code>؟</li>
+<li>أي دالة تبني نسخة صنف من كائن عادي؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>الواجهة تُمسح عند الترجمة ولا تترك زينة.</li>
+<li><code>class-validator</code>.</li>
+<li><code>plainToInstance</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم ثلاثة أسماء لعملية تسجيل عضو وقراءة عضوه:</p>
+<ul>
+<li>ما يرسله العميل عند الإنشاء، وفيه كلمة مرور.</li>
+<li>ما يُخزَّن، وفيه تجزئة.</li>
+<li>ما يرجع به <code>GET /members/:id</code>.</li>
+</ul>
+<p>اذكر حقلًا واحدًا يعيش في كل واحد فقط.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>CreateMemberDto</code>: <code>password</code> فقط هنا من بين الثلاثة المعروضة للعميل.</li>
+<li>كيان <code>Member</code>: <code>passwordHash</code> لا يخرج.</li>
+<li><code>MemberResponseDto</code>: <code>joinedAt</code> أو <code>id</code> يولّدهما الخادم ويظهران في الرد ويغيبان عن الإنشاء.</li>
+<li>لا تضع <code>passwordHash</code> على صنف الرد، ولا <code>password</code> على الكيان بعد التجزئة.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>المسار <code>POST /members</code> يعمل اليوم بـ <code>CreateMemberDto</code>. مسار جديد <code>POST /invites</code> سيُكتب بمخطط Zod. راجع الاقتراحات:</p>
+<ol>
+<li>حذف <code>class-validator</code> لأن التوثيق ذكر Zod.</li>
+<li>نسخ قاعدة البريد في الزينة وفي <code>inviteSchema</code> على <code>POST /members</code>.</li>
+<li>إبقاء التسجيل على الصنف، وكتابة <code>inviteSchema</code> للدعوات فقط، وتأجيل <code>schema</code> على <code>@Body</code> إلى فصل التحقق.</li>
+<li><code>import type { CreateMemberDto }</code> في المتحكم.</li>
+</ol>
+<p>أي رقم تُبقي، وما عيب كل رقم آخر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تُبقي 3. المصدر واحد لكل عملية، والمخطط يُربَط لاحقًا بالأنبوب الذي يفهمه.</p>
+<ol>
+<li><code>class-validator</code> غير ملغاة، و <code>ValidationPipe</code> ما زال مسار الأصناف.</li>
+<li>قاعدتان على العملية نفسها تفترقان.</li>
+<li>الاستيراد النوعّي يمسح الصنف وقت التشغيل فيتعطل الفحص.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

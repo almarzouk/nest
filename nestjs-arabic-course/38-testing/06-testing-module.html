@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TestingModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-testing-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>TestingModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء وحدة Nest في الاختبار بـ <code>Test.createTestingModule</code> ثم أخذ نسخة الصنف بعد <code>compile</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>new BooksService</code> يكفي عندما تعرف الباني. عندما يأتي الاعتماد من وحدة مستوردة أو من رمز <code>CACHE_MANAGER</code>، البناء اليدوي يعيد تنفيذ التسجيل. الحاوية الاختبارية تقرأ <code>providers</code> و <code>imports</code> كما في التطبيق وتسمح باستبدال مزوّد قبل <code>compile</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Test.createTestingModule({ imports أو providers })</code> يعيد بانٍ. <code>compile()</code> يعيد <code>TestingModule</code>. <code>get(BooksService)</code> النسخة. أغلق الوحدة في النهاية إن كانت تحمل وصلات: <code>module.close()</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة الاختبار:</p>
+<pre><code class="language-ts">import { Test } from &#39;@nestjs/testing&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+import { BooksStore } from &#39;./books.store.js&#39;;
+
+const moduleRef = await Test.createTestingModule({
+  providers: [
+    BooksService,
+    { provide: BooksStore, useValue: { update: async () =&gt; ({ id: &#39;42&#39; }) } },
+  ],
+}).compile();
+
+const service = moduleRef.get(BooksService);
+await service.publish(&#39;42&#39;);
+await moduleRef.close();
+</code></pre>
+<p><code>useValue</code> مزوّد بديل بالرمز <code>BooksStore</code>. الدرس التالي يركز على <code>overrideProvider</code> عندما يكون الصنف مسجّلًا داخل <code>imports: [BooksModule]</code> ولا تريد نسخ القائمة.</p>
+<p><code>get</code> يرمي إن لم يُسجل الرمز. هذا أفضل من <code>undefined</code> صامت.</p>
+<p>لا تستورد <code>AppModule</code> كاملًا في وحدة خدمة إن كان يسحب Redis وجدول الإنتاج. استورد وحدة الميزة أو صرّح المزودات التي تحتاجها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">createTestingModule
+  compile
+    get(BooksService)
+      close
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const moduleRef = await Test.createTestingModule({
+  providers: [BooksService, { provide: EventEmitter2, useValue: { emitAsync: async () =&gt; [] } }],
+}).compile();
+</code></pre>
+<p>بعد <code>compile</code> الخدمة موجودة و <code>EventEmitter2</code> هو الوهم. نداء <code>publish</code> يسلك الكود الحقيقي للخدمة.</p>
+<h2>شرح المثال</h2>
+<p>الترتيب: ابنِ، <code>compile</code>، <code>get</code>، نفّذ، <code>close</code>. <code>get</code> قبل <code>compile</code> غير متاح. إنشاء الوحدة داخل كل <code>it</code> يعزل الحالة. إن وضعتها في <code>beforeAll</code> فشارك الأوهام بين الحالات ما لم تُعد ضبطها في <code>beforeEach</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تبني حاوية صغيرة وتقرأ الزينة على <code>BooksService</code> ليحقن الرموز. إن سقطت أنواع المعاملات عند التحويل، <code>get</code> يعيد خدمة فيها <code>undefined</code>. هذا موضوع إعداد المشغّل لا نقص <code>providers</code>. المزود <code>useValue</code> لا يمر على باني الصنف الأصلي، لذلك أثر <code>OnModuleInit</code> في المخزن الحقيقي لن يعمل، وهذا مطلوب في الوحدة.</p>
+<p><code>createNestApplication()</code> من الوحدة نفسها عندما تنتقل إلى HTTP. للوحدة التي تختبر الخدمة فقط لا تبنِ التطبيق.</p>
+<h2>مثال عملي</h2>
+<p>مخبأ في حاوية:</p>
+<pre><code class="language-ts">const cache = { get: async () =&gt; undefined, set: async () =&gt; undefined, del: async () =&gt; undefined };
+const moduleRef = await Test.createTestingModule({
+  providers: [IsbnService, { provide: CACHE_MANAGER, useValue: cache }, httpDouble],
+}).compile();
+</code></pre>
+<p><code>CACHE_MANAGER</code> رمز وليس صنفًا. <code>useValue</code> بالمفتاح نفسه الذي تحقنه الخدمة. بعد <code>lookup</code> الناجح تتوقع <code>cache.set</code> استُدعي بمفتاح <code>isbn:</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استيراد <code>AppModule</code> في كل ملف وحدة.</li>
+<li>نسيان <code>compile</code>.</li>
+<li>نسيان <code>close</code> عندما يوجد مؤقت أو مقبس.</li>
+<li><code>get</code> لصنف غير مسجّل ثم معالجة <code>undefined</code> في الاختبار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يكون الحقن من رموز أو من وحدة، أو عندما ستستبدل مزوّدًا مسجّلًا. الدالة النقية لا تحتاج الحاوية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتشغيل التطبيق كاملًا مع Redis الحقيقي في كل <code>it</code>. الحاوية للاختبار، والوصلات الحقيقية تُحصر في تكامل قليل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>البناء</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>new Service(dep)</code></td>
+<td>الباني واضح ونقي</td>
+</tr>
+<tr>
+<td><code>createTestingModule</code></td>
+<td>رموز ووحدات وزينة</td>
+</tr>
+<tr>
+<td><code>createNestApplication</code></td>
+<td>رحلة HTTP</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تعيد الخدمة من الحاوية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>moduleRef.get(BooksService)</code> بعد <code>compile</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تستورد <code>AppModule</code> في اختبار <code>publish</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها تسحب طوابير ومخزنًا وإعدادًا لا يحتاجها إثبات الإعلان. ركّب مزودات الخدمة فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا يحدث لـ <code>OnModuleInit</code> على صنف استُبدل بـ <code>useValue</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا يعمل على الوهم. الوهم ليس نسخة الصنف. إن كنت تختبر الخطاف فسجّل الصنف الحقيقي لا <code>useValue</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب <code>compile</code> و <code>get</code>؟</li>
+<li>متى <code>close</code>؟</li>
+<li>أي رمز يُمرر لمدير المخبأ؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>createTestingModule</code> ثم <code>compile</code> ثم <code>get</code> يبني الخدمة كما تسجلها، مع بدائل <code>useValue</code>. أغلق الوحدة إن حملت وصلات، ولا تسحب الجذر كله.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>overrideProvider</code> عندما الصنف آتٍ من <code>imports</code> ولا تريد إعادة إعلانه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

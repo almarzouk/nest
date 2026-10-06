@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reflector</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-reflector.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Reflector</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة البيانات التي لُصقت على الدالة أو الصنف، وبناء الزينة بـ <code>Reflector.createDecorator</code> كما يفضّل Nest CLI 12.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>SetMetadata(&#39;deskRoles&#39;, ...)</code> يحتاج مفتاحًا نصيًا في الكاتب وفي القارئ. <code>Reflector.createDecorator</code> ينشئ الزينة والمرجع معًا فلا يُعاد كتابة السلسلة. ومن غير <code>getAllAndOverride</code> ترى الدالة زينتها فقط وتتجاهل زينة الصنف، أو العكس فيضيع استثناء الاسترداد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Reflector</code> من <code>@nestjs/core</code> يُحقن في الحارس. <code>get</code> يقرأ هدفًا واحدًا. <code>getAllAndOverride</code> يمشي قائمة أهداف وأول قيمة معرّفة تفوز، فتُمرَّر الدالة ثم الصنف حتى تغلب زينة المسار. <code>createDecorator&lt;T&gt;()</code> يصدر زينة تستقبل <code>T</code> وتُمرَّر هي نفسها إلى <code>get</code> بدل المفتاح النصي.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة في الحراس تبني الأدوار هكذا:</p>
+<pre><code class="language-ts">import { Reflector } from &#39;@nestjs/core&#39;;
+
+export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+</code></pre>
+<p>الاستخدام <code>@Roles([&#39;refund&#39;])</code>. القراءة:</p>
+<pre><code class="language-ts">const roles = this.reflector.get(Roles, context.getHandler());
+</code></pre>
+<p>إن غابت الزينة عن الدالة فالناتج <code>undefined</code>.</p>
+<p>لتغليب الدالة على الصنف:</p>
+<pre><code class="language-ts">this.reflector.getAllAndOverride(Roles, [
+  context.getHandler(),
+  context.getClass(),
+]);
+</code></pre>
+<p>أول عنصر في المصفوفة يُفحص أولًا. ضع الدالة قبل الصنف. <code>getAllAndMerge</code> يدمج القيم حين يكون الدمج مطلوبًا لا الاستبدال. للأدوار التي تستبدل سياسة الصنف، <code>getAllAndOverride</code> هو المناسب.</p>
+<p><code>SetMetadata</code> ما زال يعمل. القارئ عندئذ <code>this.reflector.get(DESK_ROLES_KEY, handler)</code> بالمفتاح. الزينة الجديدة في المشروع تُولد بـ <code>createDecorator</code> حتى لا يوجد مفتاحان. لا تخلط الأسلوبين على السياسة نفسها.</p>
+<p><code>Reflector</code> مزوّد جاهز. لا تسجّله في <code>providers</code> عادة. احقنه في الباني.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">createDecorator → Roles
+@Roles([&#39;refund&#39;]) على الدالة
+@Roles([&#39;audit&#39;]) على الصنف
+getAllAndOverride(Roles, [handler, class]) → [&#39;refund&#39;]
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Reflector } from &#39;@nestjs/core&#39;;
+
+export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+</code></pre>
+<pre><code class="language-ts">import { Injectable, type CanActivate, type ExecutionContext } from &#39;@nestjs/common&#39;;
+import { Reflector } from &#39;@nestjs/core&#39;;
+import { Roles } from &#39;./roles.decorator.js&#39;;
+
+@Injectable()
+export class RolesReaderGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const roles = this.reflector.getAllAndOverride(Roles, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    return Array.isArray(roles);
+  }
+}
+</code></pre>
+<p>الحارس هنا يثبت القراءة فقط: <code>true</code> إن وُجدت مصفوفة أدوار على الدالة أو الصنف. مطابقة المستخدم بالدور درس <code>@Roles</code>. لا تفتح كل المسارات بهذا الشرط في الإنتاج. الغياب <code>undefined</code> يرجع <code>false</code> هنا، وهو اختيار تعليمي ضيق.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>Roles</code> مرجع زينة لا سلسلة.</li>
+<li>ترتيب <code>[handler, class]</code> يجعل <code>@Roles</code> على <code>refund</code> تغلب <code>@Roles</code> على الصنف.</li>
+<li>الحقن <code>constructor</code> يعمل حين يُربَط الحارس كصنف لا <code>new RolesReaderGuard()</code>.</li>
+<li><code>get</code> على <code>getHandler()</code> وحده يكفي حين لا تلصق شيئًا على الصنف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>createDecorator</code> يسجل مفتاحًا داخليًا خاصًا بالدالة التي أرجعها. عند <code>@Roles([&#39;refund&#39;])</code> تُخزن المصفوفة على الدالة. <code>getAllAndOverride</code> يقرأ بيانات الدالة فإن وجد قيمة غير <code>undefined</code> و غير <code>null</code> يعيدها، وإلا يقرأ الصنف. لا يستدعي <code>refund</code>.</p>
+<p>القراءة في الحارس قبل الأنبوب والدالة. المعالج لا يستلم الأدوار إلا إذا قرأتها زينة معامل أيضًا. ابقِ السياسة في الحارس.</p>
+<p><code>Reflect.getMetadata</code> مباشرة يعمل مع <code>SetMetadata</code> إن عرفت المفتاح. مع <code>createDecorator</code> استخدم <code>Reflector</code> حتى لا تعتمد على سلسلة داخلية غير موثقة.</p>
+<h2>مثال عملي</h2>
+<p><code>TicketsController</code> عليه <code>@Roles([&#39;audit&#39;])</code> و <code>refund</code> عليها <code>@Roles([&#39;refund&#39;])</code>. اختبار الحارس يبني سياقًا فيه <code>getHandler</code> يشير إلى <code>refund</code> و <code>getClass</code> إلى الصنف، ويتوقع أن المصفوفة المقروءة <code>[&#39;refund&#39;]</code> لا <code>[&#39;audit&#39;]</code>. عكس ترتيب المصفوفة في <code>getAllAndOverride</code> يجعل الاختبار يتوقع <code>audit</code> وهذا خطأ مراجعة شائع. الدالة أولًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير المفتاح النصي القديم إلى <code>get(Roles)</code> بعد أن صارت <code>Roles</code> ناتج <code>createDecorator</code>. استخدم المرجع نفسه.</li>
+<li><code>get</code> على الصنف فقط فتضيع زينة الدالة.</li>
+<li>وضع الصنف قبل الدالة في <code>getAllAndOverride</code> فيغلب <code>audit</code> على <code>refund</code>.</li>
+<li><code>new Reflector()</code> في كل طلب بدل الحقن. الحقن هو مسار الإطار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند كل زينة بيانات جديدة: <code>createDecorator</code> للكتابة، و <code>getAllAndOverride</code> إن كان للصنف والدالة معًا، و <code>get</code> على الدالة إن كانت الزينة على المسار فقط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تقرأ <code>Reflector</code> من Middleware. السياق هناك لا يعطي <code>getHandler</code> كما في الحارس. ولا تستخدم <code>getAllAndMerge</code> للأدوار إن كنت تقصد الاستبدال لا اتحاد المجموعتين.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>الكتابة</th>
+<th>القراءة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مفتاح نصي</td>
+<td><code>SetMetadata(KEY, value)</code></td>
+<td><code>reflector.get(KEY, target)</code></td>
+</tr>
+<tr>
+<td>CLI 12</td>
+<td><code>Reflector.createDecorator&lt;T&gt;()</code></td>
+<td><code>reflector.get(Decorator, target)</code></td>
+</tr>
+<tr>
+<td>صنف ودالة</td>
+<td>الزينة على الاثنين</td>
+<td><code>getAllAndOverride(Decorator, [handler, class])</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة يُستورد <code>Reflector</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/core</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>دالة بلا <code>@Roles</code> وصنف عليه <code>@Roles([&#39;audit&#39;])</code>. ماذا يعيد <code>getAllAndOverride</code> إن كانت الدالة أول عنصر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>[&#39;audit&#39;]</code>، لأن الدالة لا تحمل قيمة فيكمل القارئ إلى الصنف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يمرَّر <code>&#39;deskRoles&#39;</code> إلى <code>get</code> بعد التحويل إلى <code>createDecorator</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المفتاح الداخلي تولّد مع الدالة <code>Roles</code>. القراءة بالمرجع <code>Roles</code>. السلسلة القديمة تشير إلى خريطة <code>SetMetadata</code> إن بقيت، لا إلى زينة <code>createDecorator</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يصدر <code>createDecorator&lt;string[]&gt;()</code>؟</li>
+<li>أي هدف يُفحص أولًا في <code>getAllAndOverride</code> كما نكتبه؟</li>
+<li>أين يُحقن <code>Reflector</code>؟</li>
+<li>متى يكفي <code>get</code> على <code>getHandler()</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Reflector</code> يقرأ ما لصقته الزينة. <code>createDecorator</code> يلغي المفتاح النصي المتكرر وهو شكل CLI 12. <code>getAllAndOverride</code> مع الدالة قبل الصنف يجعل استثناء المسار يغلب سياسة المتحكم.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>@CurrentUser</code>: زينة معامل تقرأ المستخدم الذي لصقه الحارس، مع <code>data</code> لاختيار حقل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

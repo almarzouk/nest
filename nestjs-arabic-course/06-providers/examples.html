@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة تسجيلات لمكتب إعارة. كل مثال وصفة مختلفة: صنف، قيمة مع <code>Symbol</code>، ومصنع ينتظر خيارًا. الاستيراد النسبي ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — Service مسجّلة وتُحقن</h2>
+<p>الغرامة في الخدمة، والمسار يعيد الناتج. النطاق الافتراضي نسخة واحدة.</p>
+<pre><code class="language-ts">import { Controller, Get, Injectable, Module, Query } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class FineService {
+  quote(days: number) {
+    const billable = Math.max(days - 3, 0);
+    return { days, amount: billable * 2 };
+  }
+}
+
+@Controller(&#39;fines&#39;)
+export class FinesController {
+  constructor(private readonly fines: FineService) {}
+
+  @Get(&#39;quote&#39;)
+  quote(@Query(&#39;days&#39;) days = &#39;1&#39;) {
+    return this.fines.quote(Number(days));
+  }
+}
+
+@Module({
+  controllers: [FinesController],
+  providers: [FineService],
+})
+export class FinesModule {}
+</code></pre>
+<p><code>GET /fines/quote?days=5</code> يستدعي النسخة المسجّلة. <code>Number</code> هنا تحويل ظاهر في المعالج لأن Pipe ما زال لاحقًا. <code>@Injectable</code> على <code>FineService</code> جاهز لليوم الذي تُضاف فيه اعتمادية.</p>
+<h2>مثال 2 — <code>useClass</code> ثم اسم بديل</h2>
+<p>الإشعارات تُبنى كصنف بريد، والرمز القديم يشير إلى النسخة نفسها.</p>
+<pre><code class="language-ts">import { Inject, Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class Notifier {
+  send(text: string) {
+    return { channel: &#39;base&#39;, text };
+  }
+}
+
+@Injectable()
+export class MailNotifier extends Notifier {
+  override send(text: string) {
+    return { channel: &#39;mail&#39;, text };
+  }
+}
+
+@Injectable()
+export class HoldsService {
+  constructor(
+    private readonly notifier: Notifier,
+    @Inject(&#39;LEGACY_NOTIFIER&#39;) private readonly legacy: Notifier,
+  ) {}
+
+  placed(isbn: string) {
+    const text = `حجز ${isbn}`;
+    this.legacy.send(text);
+    return this.notifier.send(text);
+  }
+}
+
+@Module({
+  providers: [
+    { provide: Notifier, useClass: MailNotifier },
+    { provide: &#39;LEGACY_NOTIFIER&#39;, useExisting: Notifier },
+    HoldsService,
+  ],
+})
+export class HoldsModule {}
+</code></pre>
+<p><code>placed</code> يرسل مرتين عبر <code>MailNotifier</code> نفسها. <code>useClass</code> يختار الصنف تحت رمز <code>Notifier</code>، و <code>useExisting</code> لا يبني بريدًا ثانيًا.</p>
+<h2>مثال 3 — مصنع لعميل الفهرس</h2>
+<p>الخيارات صنف، والعميل قيمة يحسبها المصنع. المنطقة اختيارية.</p>
+<pre><code class="language-ts">import { Inject, Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class CatalogOptions {
+  readonly host = &#39;https://catalog.internal&#39;;
+}
+
+export const CATALOG = Symbol(&#39;CATALOG&#39;);
+
+@Injectable()
+export class LookupService {
+  constructor(@Inject(CATALOG) private readonly catalog: { host: string }) {}
+
+  shelf(code: string) {
+    return { code, host: this.catalog.host };
+  }
+}
+
+@Module({
+  providers: [
+    CatalogOptions,
+    {
+      provide: CATALOG,
+      useFactory: (options: CatalogOptions, region?: string) =&gt; {
+        return { host: options.host, region: region ?? &#39;jeddah&#39; };
+      },
+      inject: [CatalogOptions, { token: &#39;CATALOG_REGION&#39;, optional: true }],
+    },
+    LookupService,
+  ],
+  exports: [CATALOG],
+})
+export class LookupModule {}
+</code></pre>
+<p><code>LookupService</code> تطلب <code>Symbol</code> لا واجهة. غياب <code>&#39;CATALOG_REGION&#39;</code> يترك المنطقة <code>jeddah</code>. تصدير <code>CATALOG</code> يشارك الكائن المحسوب مع من يستورد الـ Module.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>كل صنف في <code>constructor</code> له سجل في <code>providers</code> أو وصل عبر <code>imports</code> و <code>exports</code>.</li>
+<li><code>useExisting</code> يشير إلى رمز مسجّل في المصفوفة نفسها أو في سياقها.</li>
+<li><code>Symbol</code> يُستورد من مكان تعريفه ولا يُعاد إنشاؤه في كل ملف.</li>
+<li><code>REQUEST</code> غير مستخدم هنا؛ الخدمات Singleton.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

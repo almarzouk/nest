@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Controller</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-a-controller.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Controller</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف Controller: الصنف الذي يستقبل طلب HTTP ويعيد قيمة، ويُبقي قاعدة العمل في Service.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>في Express تختلط قراءة الطلب مع SQL وشكل الرد داخل دالة واحدة. تغيير قائمة الرفوف يعدّل الدالة التي تعرف أيضًا رمز الحالة. Controller يفصل الاستقبال عن القرار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Controller صنف عليه Decorator. Nest تجمع من الـ Decorators خريطة تربط الطلب بمعالج. المعالج يستدعي Service ويعيد قيمة، والإطار يكتب الاستجابة.</p>
+<h2>التعريف التقني</h2>
+<p>توثيق Controllers: Controller مسؤول عن الطلبات الواردة وعن إرجاع الاستجابات. آلية Routing تختار الصنف، ولكل مسار فعل مختلف.</p>
+<p><code>@Controller()</code> شرط حتى يدخل الصنف الخريطة. تسجيله في <code>controllers</code> داخل Module هو ما يجعل Nest تنشئه. الملف على القرص وحده لا ينشر مسارًا.</p>
+<p>الأمر <code>nest g controller shelves</code> ينشئ الملف ويضيف الصنف غالبًا إلى Module القريب. راجع المصفوفة بعد التوليد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب HTTP
+  -&gt; خريطة المسارات
+  -&gt; دالة داخل Controller
+  -&gt; Service
+  -&gt; قيمة معادة
+  -&gt; Nest تكتب الاستجابة
+</code></pre>
+<p>اسم الدالة لا يحدد المسار. الربط يتم بالـ Decorator على الدالة، والاسم للمبرمج.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { ShelvesService } from &#39;./shelves.service.js&#39;;
+
+@Controller(&#39;shelves&#39;)
+export class ShelvesController {
+  constructor(private readonly shelves: ShelvesService) {}
+
+  @Get()
+  findAll() {
+    return this.shelves.findAll();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Controller(&#39;shelves&#39;)</code> بادئة المجموعة. تفصيلها في الدرس التالي.</li>
+<li><code>@Get()</code> يربط <code>findAll</code> بطلب قراءة على تلك البادئة.</li>
+<li><code>constructor</code> يطلب <code>ShelvesService</code>. Nest تمرر النسخة المسجّلة. كتابة الحقن في فصل Providers.</li>
+<li>إعادة قيمة الخدمة هي الأسلوب القياسي. Nest تسلسل المصفوفة أو الكائن JSON.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تُقرأ الـ Metadata وتُسجَّل المعالجات. الطلب المطابق يستدعي الدالة. القيمة تذهب إلى طبقة الاستجابة في Nest. الاستثناء غير الممسوك يصل لاحقًا إلى Exception Filter، والترتيب الكامل في فصل Request Lifecycle.</p>
+<p>النسخة الافتراضية واحدة لكل الطلبات. Node خيط واحد، فالمشاركة آمنة ما دام المعالج لا يخزن حالة طلب على <code>this</code>. حالة الطلب تبقى في وسائط الدالة. نطاق REQUEST يُشرح مع Providers.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ShelvesController } from &#39;./shelves.controller.js&#39;;
+import { ShelvesService } from &#39;./shelves.service.js&#39;;
+
+@Module({
+  controllers: [ShelvesController],
+  providers: [ShelvesService],
+})
+export class ShelvesModule {}
+</code></pre>
+<p><code>GET /shelves</code> يصل إلى <code>findAll</code> فقط بعد أن تستورد شجرة التطبيق <code>ShelvesModule</code>. المعالج لا يعرف مكان حفظ الرف. <code>openNext</code> و <code>findAll</code> داخل الخدمة هما مكان القاعدة، والمساران في Controller يبقيان رفيعين.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وضع الاستعلام داخل المعالج</td>
+<td>القاعدة تتكرر عند كل مسار ويصعب اختبارها وحدها</td>
+</tr>
+<tr>
+<td>نسيان <code>controllers: [ShelvesController]</code></td>
+<td>الملف موجود و <code>GET /shelves</code> لا يجد معالجًا</td>
+</tr>
+<tr>
+<td>حفظ <code>lastVisitor</code> كحقل في الصنف</td>
+<td>الطلب التالي يقرأ زائر الطلب السابق</td>
+</tr>
+<tr>
+<td>Controller واحد لكل التطبيق</td>
+<td>البادئات تضيع في صنف بلا حد ميزة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لمورد HTTP واضح: رفوف، نسخ، إعارات. كل مجموعة مسارات مترابطة تأخذ Controller في مجلد ميزتها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحساب غرامة أو اختيار مخزن. ذلك Service. رفض الطلب قبل اختيار المعالج عمل Guard أو Middleware، وفصلهما لاحق. هنا المعالج يستقبل ثم يفوّض.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Express</th>
+<th>Controller في Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.get</code> يسجل دالة حرة</td>
+<td>Decorator على دالة داخل صنف مسجّل</td>
+</tr>
+<tr>
+<td>المعالج يكتب <code>res.json</code> غالبًا</td>
+<td>المعالج يعيد قيمة وNest تكتب الجسم</td>
+</tr>
+<tr>
+<td>الدالة تملك القاعدة والرد</td>
+<td>الدالة تملك شكل الطلب، والقاعدة في Service</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعيد دالة <code>findAll</code> في المثال؟</p>
+<details><summary>الحل</summary>
+
+<p>نتيجة <code>this.shelves.findAll()</code>. Nest تحوّل المصفوفة أو الكائن إلى JSON.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الصنف مكتوب، و <code>GET /shelves</code> لا يطابق معالجًا. أين النظر أولًا؟</p>
+<details><summary>الحل</summary>
+
+<p>مصفوفة <code>controllers</code> في Module الواصلة إلى الجذر. من غير تسجيل لا تُنشأ النسخة ولا تُبنى الخريطة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا حقل <code>lastVisitor</code> على Controller يخلط زائرين، بينما القيمة المعادة من الدالة تبقى لطلب واحد؟</p>
+<details><summary>الحل</summary>
+
+<p>النطاق الافتراضي نسخة واحدة. الحقل يعيش عليها فيراه الطلب التالي. القيمة المعادة محلية للاستدعاء، وتُكتب في استجابة ذلك الطلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مسؤولية Controller كما في التوثيق؟</li>
+<li>لماذا لا يحدد اسم الدالة المسار؟</li>
+<li>أين تُكتب قاعدة العمل عندما يكون المعالج رفيعًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Controller صنف مسجّل يستقبل الطلب، يفوّض Service، ويعيد قيمة. الخريطة من الـ Decorators، والنسخة الافتراضية مشتركة بين الطلبات.</p>
+<h2>ماذا بعد؟</h2>
+<p>Decorator <code>@Controller</code>: البادئة وشكل وسيطها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

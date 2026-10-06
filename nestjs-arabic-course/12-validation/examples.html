@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة إعدادات لصالة حجوزات. كل مثال خيار أو أنبوب واحد لا يجمعها كلها في كتلة مبهمة.</p>
+<h2>مثال 1 — تبييض ورفض على صنف</h2>
+<pre><code class="language-ts">import { IsInt, IsString, Min } from &#39;class-validator&#39;;
+
+export class ReserveSeatDto {
+  @IsString()
+  showId: string;
+
+  @IsInt()
+  @Min(1)
+  seat: number;
+}
+</code></pre>
+<pre><code class="language-ts">new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  errorFormat: &#39;grouped&#39;,
+})
+</code></pre>
+<p><code>{ &quot;showId&quot;: &quot;s1&quot;, &quot;seat&quot;: 4, &quot;role&quot;: &quot;admin&quot; }</code> يرجع <code>400</code> بسبب <code>role</code>. <code>{ &quot;showId&quot;: &quot;s1&quot;, &quot;seat&quot;: 4 }</code> يصل نسخة <code>ReserveSeatDto</code> لأن <code>transform: true</code>.</p>
+<h2>مثال 2 — عنوان متداخل</h2>
+<pre><code class="language-ts">import { Type } from &#39;class-transformer&#39;;
+import { IsString, MinLength, ValidateNested } from &#39;class-validator&#39;;
+
+export class BillingDto {
+  @IsString()
+  @MinLength(2)
+  city: string;
+}
+
+export class GiftSeatDto {
+  @ValidateNested()
+  @Type(() =&gt; BillingDto)
+  billing: BillingDto;
+}
+</code></pre>
+<p><code>billing.city</code> من حرف واحد يفشل. حذف <code>@Type</code> يوقف فحص المدينة. <code>each</code> غير لازم لأن الحقل كائن واحد.</p>
+<h2>مثال 3 — استعلام بمخطط بجانب الصنف</h2>
+<pre><code class="language-ts">import { z } from &#39;zod&#39;;
+
+export const seatQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+});
+</code></pre>
+<pre><code class="language-ts">app.useGlobalPipes(
+  new ValidationPipe({ whitelist: true, transform: true }),
+  new StandardSchemaValidationPipe(),
+);
+</code></pre>
+<pre><code class="language-ts">@Get()
+list(@Query({ schema: seatQuerySchema }) query: { page: number }) {
+  return query;
+}
+</code></pre>
+<p><code>POST</code> الذي ما زال على <code>ReserveSeatDto</code> يفحصه الأنبوب الأول. <code>GET</code> يفحصه الثاني. <code>page</code> الغائب يصبح <code>1</code>. لا <code>@Min</code> على <code>page</code> في هذا المسار.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>كل حقل مقبول على الصنف عليه زينة قبل <code>whitelist</code>.</li>
+<li><code>@ValidateNested</code> و <code>@Type</code> معًا على المتداخل.</li>
+<li>مسار المخطط يعلن <code>{ schema }</code> ولا يعيد الزينة نفسها.</li>
+<li><code>disableErrorMessages</code> لا يُشغَّل في أمثلة التطوير هذه حتى تبقى الرسائل ظاهرة في الاختبار.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

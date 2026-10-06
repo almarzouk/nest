@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prisma: Transactions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-prisma-transactions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Prisma: Transactions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حفظ عمليتين مترابطتين معًا أو التراجع عنهما معًا عبر <code>prisma.$transaction</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إعارة كتاب وتسجيل صف في <code>loans</code> خطوتان. إن نجحت الأولى وسقطت العملية قبل الثانية، الكتاب مربوط بعضو ولا يوجد سجل إعارة. العكس يترك سجلًا بلا تحديث للكتاب. طلبان متزامنان قد يعيران النسخة الأخيرة إن فحصت العدد خارج معاملة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المعاملة حدود على القاعدة: إما تُثبت كل الكتابات داخلها أو تُلغى كلها. Prisma يوفّر مصفوفة عمليات متتابعة، أو دالة تفاعلية تستقبل عميلًا <code>tx</code>. الكتابة داخل الدالة يجب أن تمر من <code>tx</code> لا من <code>this.prisma</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Nest:</p>
+<ul>
+<li>الكتابة المتداخلة التي تنشئ الأب والأبناء في استدعاء واحد تعمل داخل معاملة تلقائيًا.</li>
+<li>المصفوفة: <code>this.prisma.$transaction([query1, query2])</code> تنفّذ بالترتيب وتُرجع مصفوفة نتائج.</li>
+<li>الدالة: <code>this.prisma.$transaction(async (tx) =&gt; { ... })</code> تُثبَّت إن رجع الوعد، وتُلغى إن رمى.</li>
+</ul>
+<p>الخيار الثاني للمعاملة قد يحمل <code>maxWait</code> و <code>timeout</code> و <code>isolationLevel</code>.</p>
+<pre><code class="language-ts">const [loans, total] = await this.prisma.$transaction([
+  this.prisma.loan.findMany({ where: { returned: false }, take: 20 }),
+  this.prisma.loan.count({ where: { returned: false } }),
+]);
+</code></pre>
+<p>القراءة المزدوجة هنا لقطة واحدة. الإعارة التي تعتمد على شرط تُكتب بالدالة التفاعلية حتى تستطيع قراءة الصف ثم تحديثه قبل أن يثبّت غيرك.</p>
+<p>استعلام عبر <code>this.prisma</code> داخل الدالة يعمل خارج المعاملة. هذا أسهل خطأ في الدرس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">$transaction(async tx =&gt; {
+  tx.book.update(...)     داخل الحدود
+  tx.loan.create(...)     داخل الحدود
+  this.prisma.book...     خارج الحدود
+})
+ نجاح -&gt; COMMIT
+ رمي   -&gt; ROLLBACK
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;../prisma/prisma.service.js&quot;;
+
+@Injectable()
+export class LoansService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  loanOut(bookId: number, memberId: number) {
+    return this.prisma.$transaction(async (tx) =&gt; {
+      const book = await tx.book.findUnique({ where: { id: bookId } });
+      if (!book || book.memberId !== null) {
+        throw new Error(&quot;Book is not available&quot;);
+      }
+      await tx.loan.create({ data: { bookId, memberId } });
+      return tx.book.update({
+        where: { id: bookId },
+        data: { memberId },
+      });
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>رمي الخطأ يلغي <code>create</code> إن حدث قبل التحديث، ويلغي الاثنين إن فشل التحديث. الفحص <code>memberId !== null</code> يمنع إعارة كتاب خارج الرف داخل هذه المعاملة. تحت ضغط تزامن عالٍ قد تحتاج قيدًا فريدًا جزئيًا أو عزلًا أعلى حتى لا يمر طلبان من الفحص معًا. المعاملة تقصّر النافذة، والقيد يغلقها.</p>
+<p>حوّل <code>Error</code> العام إلى استثناء HTTP عند المتحكم، لا تترك الرسالة الداخلية للعميل كما هي إن كانت تكشف تفاصيل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Prisma يبدأ معاملة على الاتصال، وينفّذ استعلامات <code>tx</code> عليها، ثم <code>COMMIT</code> أو <code>ROLLBACK</code>. العمليات خارج <code>tx</code> تستخدم اتصالًا آخر من المجمع وقد تُثبَّت حتى لو أُلغيت المعاملة. لذلك القاعدة العملية: كل أثر جانبي في القاعدة داخل الدالة يمر بـ <code>tx</code>.</p>
+<p>مهلة <code>timeout</code> تلغي معاملة طالت لأن قفلًا انتظر. لا تضع نداء HTTP بطيئًا داخل الدالة، لأنه يمسك المعاملة مفتوحة.</p>
+<h2>مثال عملي</h2>
+<p>إعادة الكتاب: <code>tx.loan.update</code> يضع <code>returned: true</code> و <code>tx.book.update</code> يصفّر <code>memberId</code>. إن فشل أحدهما يبقى الكتاب مع المستعير والسجل غير معاد، أو العكس، وهذا أسوأ من فشل الطلب كاملًا. المصفوفة تكفي إن لم تحتج قراءة بينهما:</p>
+<pre><code class="language-ts">await this.prisma.$transaction([
+  this.prisma.loan.update({ where: { id: loanId }, data: { returned: true } }),
+  this.prisma.book.update({ where: { id: bookId }, data: { memberId: null } }),
+]);
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استخدام <code>this.prisma</code> داخل الدالة التفاعلية.</li>
+<li>معاملة حول استدعاء بريد أو HTTP.</li>
+<li>افتراض أن فحصًا قبل <code>$transaction</code> يكفي تحت طلبين متزامنين.</li>
+<li>ابتلاع الخطأ داخل الدالة وإرجاع <code>null</code> فيُثبَّت نصف العمل لأن الوعد نجح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجب أن تنجح كتابتان معًا: إعارة وسجل، تحويل رصيد، حذف أب بعد أبناء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقراءة واحدة أو كتابة واحدة. <code>create</code> المفرد معاملة بحد ذاته على مستوى الجملة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مصفوفة <code>$transaction</code></th>
+<th>دالة <code>async (tx)</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عمليات معروفة سلفًا</td>
+<td>فرع بعد قراءة</td>
+</tr>
+<tr>
+<td>ترتيب ثابت</td>
+<td>يمكنك الرمي قبل الكتابة الثانية</td>
+</tr>
+<tr>
+<td>لا عميل <code>tx</code> يدوي</td>
+<td>كل استعلام على <code>tx</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحدث لصف <code>loan</code> إن رمى <code>book.update</code> داخل الدالة بعد <code>loan.create</code> على <code>tx</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يُلغى مع المعاملة. لا يبقى سجل إعارة بلا تحديث كتاب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا نداء إرسال بريد داخل <code>$transaction</code> فكرة سيئة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البريد بطيء وقد ينجح ثم تُلغى المعاملة، أو يطيل القفل. أرسل البريد بعد نجاح المعاملة، أو سجّل نية الإرسال في الجدول نفسه داخل المعاملة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلبان يعيران الكتاب نفسه ويفحصان <code>memberId</code> قبل استدعاء <code>$transaction</code> لا داخله. أين الثغرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الفحص خارج القفل. كلاهما يرى الكتاب متاحًا ثم يكتبان. انقل القراءة والكتابة إلى الدالة نفسها، وعضّد ذلك بقيد يمنع مستعيرين للنسخة الواحدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين نجاح الدالة ورميها؟</li>
+<li>أي عميل يُستخدم داخل الدالة التفاعلية؟</li>
+<li>متى تكفي مصفوفة العمليات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>$transaction</code> يجمع آثار القاعدة التي لا يجوز أن تُرى منفصلة. <code>tx</code> هو حد الكتابة، والرمي هو التراجع.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./10-prisma-in-a-module.html">وضع Prisma داخل Module</a> يصدّر الخدمة لميزات الكتب والإعارات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>Prisma — Transactions: <a href="https://www.prisma.io/docs/orm/prisma-client/queries/transactions">https://www.prisma.io/docs/orm/prisma-client/queries/transactions</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>وثيقة واحدة لمقالات المكتبة. الاستيراد من <code>@nestjs/swagger</code>، ومسارات ESM تنتهي بـ <code>.js</code> حين تستورد ملفاتك.</p>
+<h2>مثال 1 — الإقلاع</h2>
+<p><code>DocumentBuilder</code> يضع العنوان <code>Library posts</code> والإصدار، ثم <code>addCookieAuth(&quot;__Host-sid&quot;)</code> و <code>addBearerAuth()</code>. <code>documentFactory</code> يستدعي <code>createDocument</code>. <code>setup(&quot;api&quot;, app, documentFactory)</code> قبل <code>listen</code>. على Fastify تُثبَّت <code>@fastify/static</code>.</p>
+<h2>مثال 2 — مقال</h2>
+<p><code>CreatePostDto</code> فيه <code>title</code> فقط كحقل إلزامي، مع محقق و <code>@ApiProperty</code> أو مع إضافة CLI. <code>POST</code> عليه <code>@ApiCreatedResponse({ type: PostResponseDto })</code> و <code>@ApiBearerAuth</code> أو كعكة، و <code>@ApiUnauthorizedResponse</code>. <code>GET /posts/:id</code> يعيد النوع نفسه مع <code>@ApiNotFoundResponse</code>. <code>passwordHash</code> ليس في <code>PostResponseDto</code>.</p>
+<h2>مثال 3 — صفحة</h2>
+<p><code>GET /posts</code> يستخدم مزخرف <code>ApiPaginatedResponse(PostResponseDto)</code> مبنيًا من <code>allOf</code> و <code>getSchemaPath</code> و <code>title</code>. الغلاف حقوله <code>items</code> و <code>page</code> و <code>pageSize</code> و <code>total</code>. <code>@ApiExtraModels</code> يسجّل الغلاف. <code>ListPostsQueryDto</code> يوثّق السقف <code>50</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>/api</code> يعرض <code>POST /posts</code> بقفل و <code>GET /posts</code> العام بلا قفل إن كانت القراءة <code>@Public</code>.</li>
+<li><code>api-json</code> يخلو من <code>authorId</code> في جسم الإنشاء ومن <code>passwordHash</code> في الاستجابة.</li>
+<li><code>PartialType</code> مستورد من <code>@nestjs/swagger</code> بعد تفعيل الإضافة.</li>
+<li>أمثلة الواجهة سلاسل وهمية.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

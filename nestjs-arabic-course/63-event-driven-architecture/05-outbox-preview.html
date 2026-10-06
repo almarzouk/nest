@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لمحة عن Transactional Outbox</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-outbox-preview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لمحة عن Transactional Outbox</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية الفجوة بين «التزم الكتاب» و«أُرسلت الرسالة»، وكيف يقرّب صندوق الصادر الإرسال من نفس معاملة الكتابة، قبل تفصيل النمط في فصل الاعتمادية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>markPublished</code> التزمت ثم قُتلت العملية قبل <code>queue.add</code>. الكتاب منشور ولا رسالة <code>book.published</code>. الفهرس والشريك لا يلحقان أبدًا. العكس أسوأ: أرسلتم الرسالة ثم تراجعت المعاملة فيعمل الشريك على كتاب غير منشور.</p>
+<h2>الفكرة ببساطة</h2>
+<p>في نفس معاملة <code>UPDATE</code> أدرجوا صفًا في جدول <code>outbox</code> فيه حدث التكامل. عامل منفصل يقرأ الصفوف غير المرسلة ويدفعها إلى الناقل ثم يعلّمها. إن سقطت العملية بعد الالتزام فالصف ما زال هناك ويُرسل لاحقًا. إن تراجعت المعاملة فلا صف ولا رسالة.</p>
+<h2>التعريف التقني</h2>
+<p>هذه لمحة لا تنفيذ <code>@nestjs</code> جاهز باسم Outbox في قلب الإطار. الصفحة الرسمية للنمط في فصل Reliability: <a href="https://docs.nestjs.com/reliability/outbox">https://docs.nestjs.com/reliability/outbox</a>. هنا يكفي الشكل: الجدول أعمدة <code>id</code>, <code>type</code>, <code>payload</code>, <code>createdAt</code>, <code>sentAt</code>. الإدخال مع نشر الكتاب في <code>prisma.$transaction</code>. الناشر يعلّم <code>sentAt</code> بعد ما يقبل الوسيط الرسالة. المستهلك ما زال يحتاج معرّف تكرار لأن العلامة قد تفشل بعد الإرسال فيُعاد الإرسال. لا تبنوا العامل الكامل في هذا الدرس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BEGIN
+  UPDATE books
+  INSERT outbox
+COMMIT
+عملية أخرى تقرأ outbox حيث sentAt فارغ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface OutboxRow {
+  id: string;
+  type: &#39;book.published&#39;;
+  payload: { bookId: string; organizationId: string };
+  sentAt: Date | null;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>payload</code> حدث تكامل لا صنف Prisma.</li>
+<li><code>sentAt</code> الفارغ يعني «لم يُسلَّم للوسيط بعد» لا «الشريك لم يعالج».</li>
+<li><code>id</code> هو معرّف الحدث الذي يراه المستهلك.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>معاملة واحدة تكتب الكتاب والصف.</li>
+<li>الرد للموظف يمكن أن يعود بعد الالتزام، والرسالة قد تتأخر حتى يمر العامل. هذا ما زال اتساقًا مؤجَّلًا للإسقاط، لكنه لا يضيع.</li>
+<li>العامل يرسل ثم يحدّث <code>sentAt</code>.</li>
+<li>إن أُرسلت الرسالة وسقط التحديث، الإرسال يتكرر والمعرّف يحمي المستهلك.</li>
+<li>لا <code>emit</code> ذاكري بديل عن الصف إن كان الضياع ممنوعًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">await prisma.$transaction(async (tx) =&gt; {
+  await tx.book.update({
+    where: { id: bookId, organizationId },
+    data: { status: &#39;published&#39; },
+  });
+  await tx.outbox.create({
+    data: {
+      id: eventId,
+      type: &#39;book.published&#39;,
+      payload: { bookId, organizationId },
+    },
+  });
+});
+</code></pre>
+<p>العامل ليس في المقطع. وجود الصف بعد الالتزام هو الوعد. فصل الاعتمادية يفصل القفل والقراءة. هنا لا تنسوا قيد المستأجر على <code>update</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إدراج الصندوق بعد المعاملة في نافذة أخرى للضياع.</li>
+<li>اعتبار <code>sentAt</code> إثبات أن الشريك أنهى المخزون.</li>
+<li>حمولة الصندوق كائن نطاق يتغير شكله.</li>
+<li>بناء ناشر يعيد الكتاب مسودة عند فشل الشريك.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما رسالة التكامل يجب أن تُخلق إن وفقط إن التزمت الكتابة، وتتحملون تأخر التسليم لا ضياعه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمستمع ذاكرة يجوز أن يضيع، أو لأثر داخل نفس المعاملة أصلًا (التدقيق). لا تضيفوا صندوقًا قبل أن يوجد ناقل خارجي فعلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الترتيب</th>
+<th>الخطر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إرسال ثم معاملة</td>
+<td>رسالة بلا حقيقة</td>
+</tr>
+<tr>
+<td>معاملة ثم إرسال في الذاكرة</td>
+<td>حقيقة بلا رسالة</td>
+</tr>
+<tr>
+<td>معاملة فيها صف صادر</td>
+<td>الحقيقة والرسالة تُخلقان معًا، والتسليم لاحق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>قُتلت العملية بعد <code>COMMIT</code> وقبل العامل. هل يضيع الحدث؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. صف <code>outbox</code> بلا <code>sentAt</code> سيقرأه العامل بعد الإقلاع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد تُرسل الرسالة مرتين رغم الصندوق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الوسيط قد يستلم قبل تعليم <code>sentAt</code>. المستهلك يطبّق قيد <code>id</code>. الصندوق يقلل الضياع ولا يلغي التكرار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>التدقيق والبريد ورسالة الشريك. ماذا يدخل المعاملة وماذا يدخل الصندوق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حالة الكتاب وسطر التدقيق في المعاملة. حدث التكامل للشريك (والبريد إن وجب ألا يضيع) صف صندوق. مستمع ذاكرة اختياري لا يحل محل الصف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُدرج مع <code>UPDATE</code>؟</li>
+<li>ماذا يثبت <code>sentAt</code> وماذا لا يثبت؟</li>
+<li>لماذا التكرار ما زال ممكنًا؟</li>
+<li>أين التفاصيل التشغيلية لاحقًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>صندوق الصادر صف حدث تكامل في معاملة الحقيقة. العامل يسلّم لاحقًا. هذا يمنع «نُشر بلا رسالة» و«رسالة بلا نشر». التعليم بعد الإرسال قد يكرر، والمعرّف عند المستهلك يبقى لازمًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الفجوة بين الكتابة والإسقاط تحتاج أن تُرى في التشغيل: سجلات ومقاييس وأثر. الفصل التالي المراقبة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Transactional outbox: <a href="https://docs.nestjs.com/reliability/outbox">https://docs.nestjs.com/reliability/outbox</a></li>
+<li>NestJS — Events: <a href="https://docs.nestjs.com/application/events">https://docs.nestjs.com/application/events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

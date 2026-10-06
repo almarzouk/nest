@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nest Logger</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-nest-logger.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Nest Logger</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استبدال <code>console.log</code> بـ <code>Logger</code> من Nest حتى يظهر السياق والمستوى في مخرجات التطوير.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سطر <code>published 42</code> بلا اسم الخدمة يضيع بين سطور الإقلاع. <code>console.error</code> لغياب كتاب يبدو كسقوط العملية. المستويات تفرّق «حدث متوقع» عن «يجب أن يوقظك». <code>Logger</code> يضيف اسم الصنف ويميز <code>log</code> و <code>warn</code> و <code>error</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>أنشئ <code>new Logger(BooksService.name)</code> في الخدمة. استخدم <code>log</code> للحدث الطبيعي، و <code>warn</code> لما اكتمل الطلب مع نقص غير قاتل، و <code>error</code> للفشل. لا تطبع الرمز ولا جسم الناشر. التصفية حسب المستوى تتم عند إنشاء التطبيق لا بحذف الأسطر.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable, Logger } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BooksService {
+  private readonly logger = new Logger(BooksService.name);
+
+  async publish(bookId: string) {
+    this.logger.log(`publishing ${bookId}`);
+    await this.prisma.book.update({
+      where: { id: bookId },
+      data: { status: &#39;PUBLISHED&#39; },
+    });
+    this.logger.log(`published ${bookId}`);
+  }
+}
+</code></pre>
+<p><code>BooksService.name</code> يبقى صحيحًا بعد التصغير إن حُفظ اسم الصنف، وهو أوضح من سلسلة <code>&#39;BooksService&#39;</code> المكررة. المستويات التي ستراها في المخرجات تشمل أيضًا <code>debug</code> و <code>verbose</code> و <code>fatal</code> على <code>Logger</code> الحديث. ابدأ بثلاثة: <code>log</code> و <code>warn</code> و <code>error</code>.</p>
+<p><code>error</code> يقبل رسالة ثم أثر المكدس:</p>
+<pre><code class="language-ts">this.logger.error(`isbn failed ${isbn}`, error instanceof Error ? error.stack : undefined);
+</code></pre>
+<p>لا تمرر كائن Axios كاملًا كرسالة. فيه ترويسات.</p>
+<p>في <code>main.ts</code> يمكن خفض الضوضاء:</p>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, {
+  logger: [&#39;error&#39;, &#39;warn&#39;, &#39;log&#39;],
+});
+</code></pre>
+<p>أضف <code>&#39;debug&#39;</code> محليًا عند تتبع القص، ولا تتركه في إنتاج مزدحم بلا سبب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Logger(اسم الصنف)
+  log    مسار سعيد
+  warn   عالق أو ناقص
+  error  فشل مع مكدس
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">if (counts.waiting &gt; 100) {
+  this.logger.warn(`covers waiting ${counts.waiting}`);
+}
+</code></pre>
+<p>هذا مكان <code>console.log</code> في نبضة الطابور. الرقم سياق كافٍ. لا تطبع قائمة معرفات الكتب كلها كل 30 ثانية.</p>
+<h2>شرح المثال</h2>
+<p><code>warn</code> يظهر حتى لو أخفيت <code>debug</code>. الشرط يمنع سطرًا كل نبضة عندما يكون الطابور هادئًا. اسم <code>QueueWatchService</code> يظهر من <code>new Logger(QueueWatchService.name)</code> حتى تعرف أن السطر من النبضة لا من <code>POST</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>Logger</code> الافتراضي يكتب إلى الطرفية بتنسيق Nest: مستوى، سياق، رسالة. هو لا يفتح ملفًا ولا يرسل إلى مجمع. التجميع لاحقًا عبر مسجّل مخصص يكتب JSON إلى المخرج القياسي وتلتقطه المنصة. في الاختبار، السطور الافتراضية تزعج المخرج. يمكن استبدال المسجّل في اختبار التطبيق أو تجاهل السجل حتى فصل الاختبار.</p>
+<p><code>fatal</code> لحالة ستوقف العملية. فشل ISBN لكتاب واحد <code>error</code> على الطلب لا <code>fatal</code> على التطبيق.</p>
+<h2>مثال عملي</h2>
+<p>مستويات المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>الحدث</th>
+<th>المستوى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نُشر <code>bookId</code></td>
+<td><code>log</code></td>
+</tr>
+<tr>
+<td>طابور أغلفة فوق الحد</td>
+<td><code>warn</code></td>
+</tr>
+<tr>
+<td>فشل <code>add</code> بعد الحفظ</td>
+<td><code>error</code> مع المكدس</td>
+</tr>
+<tr>
+<td>Redis المخبأ سقط ثم أكملنا من الناشر</td>
+<td><code>warn</code></td>
+</tr>
+<tr>
+<td>تعذر الإقلاع بلا <code>ISBN_TOKEN</code></td>
+<td>الفشل من <code>getOrThrow</code> قبل الطلبات</td>
+</tr>
+</tbody></table>
+<p>لا مستوى لـ «دخلت الدالة» في الإنتاج. ذلك <code>debug</code> مؤقت.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>console.log</code> بجانب <code>Logger</code> في الخدمة نفسها.</li>
+<li>طباعة <code>ISBN_TOKEN</code> أو <code>authorization</code>.</li>
+<li><code>error</code> لكل كتاب غير موجود. الغياب <code>warn</code> أو لا سطر إن كان <code>404</code> متوقعًا بكثرة.</li>
+<li><code>fatal</code> لفشل طلب واحد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في الخدمات والعاملين والمستمعين حيث وقع أثر: نشر، إدراج مهمة، فشل قص.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بدل رمي الاستثناء. السجل يشرح، و <code>NotFoundException</code> يجاوب الزائر. السطر بلا رمي يخفي الفشل عن المرشح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>ماذا تضيف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>console.log</code></td>
+<td>نص بلا مستوى ثابت</td>
+</tr>
+<tr>
+<td><code>Logger</code></td>
+<td>مستوى وسياق الصنف</td>
+</tr>
+<tr>
+<td>رمي الاستثناء</td>
+<td>رد HTTP أو فشل مهمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>كيف تسمي سياق <code>Logger</code> لخدمة الكتب؟</p>
+<details>
+<summary>الحل</summary>
+`new Logger(BooksService.name)`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أي مستوى لطابور ينتظر أكثر من الحد وما زال يقص؟</p>
+<details>
+<summary>الحل</summary>
+`warn`. العمل مستمر والوضع غير سليم.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تمرر <code>AxiosError</code> كاملًا إلى <code>logger.error</code>؟</p>
+<details>
+<summary>الحل</summary>
+لأن الكائن قد يحتوي ترويسة المفتاح وجسم الناشر. سجّل الرمز و `isbn` والمكدس إن لزم.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين <code>log</code> و <code>error</code>؟</li>
+<li>أين تُضبط مستويات الإقلاع؟</li>
+<li>ماذا يبقى مسؤولية الاستثناء لا السجل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Logger</code> يضع مستوىً واسم صنف على الحدث. لا تطبع أسرارًا، ولا تستبدل السجل بالرد الذي ينتظره الزائر.</p>
+<h2>ماذا بعد؟</h2>
+<p>مسجّل بصنفك أنت عندما لا يكفي تنسيق الطرفية الافتراضي.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/techniques/logger">https://docs.nestjs.com/techniques/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

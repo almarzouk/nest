@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أخطاء شائعة</title>
+<style>
+  :root { --bg:#f3efe6; --paper:#fffdf8; --ink:#1c2430; --muted:#5c6570; --line:#e4dccf; --teal:#0e6b66; --soft:#e5f3f1; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; }
+  main { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:28px 0 64px; }
+  header.bar { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:16px 0 0; color:var(--muted); font-size:14px; }
+  header.bar a { color:var(--teal); }
+  article { background:var(--paper); border:1px solid var(--line); padding:22px 26px 32px; }
+  h1 { font-size:28px; line-height:1.35; margin:0 0 12px; }
+  h2 { font-size:22px; margin:28px 0 8px; }
+  h3 { font-size:18px; margin:22px 0 8px; }
+  a { color:var(--teal); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; background:var(--soft); padding:0 4px; }
+  pre { background:#1c2430; color:#f4f1ea; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+  pre code { background:transparent; color:inherit; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th, td { border-bottom:1px solid var(--line); text-align:right; padding:8px; vertical-align:top; }
+  th { color:var(--muted); }
+  blockquote { margin:12px 0; padding:8px 14px; border-right:3px solid var(--teal); background:var(--soft); }
+  img { max-width:100%; }
+  ul, ol { padding-right:1.2em; }
+  details { background:var(--soft); padding:8px 12px; margin:10px 0; }
+  summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<header class="bar"><span>nestjs-arabic-course/COMMON-MISTAKES.md</span> · <a href="COMMON-MISTAKES.md">ملف Markdown الأصلي</a></header>
+<main>
+<article>
+<h1>أخطاء شائعة</h1>
+<p>مجمّعة من الدروس المكتوبة. كل بند يشير إلى مكان الشرح. أخطاء الفصول التالية تُضاف عندما تُكتب تلك الفصول.</p>
+<h2>المقدمة</h2>
+<ul>
+<li>اعتبار قاعدة البيانات هي Backend، بينما القرار يعيش في البرنامج الذي يسألها. <code>00-introduction/01-what-is-backend.md</code></li>
+<li>الاكتفاء بتحقق الواجهة. أي عميل يستطيع تجاوز الصفحة. المصدر نفسه.</li>
+<li>الظن أن الخادم دائمًا Server. عندما يستدعي خدمة أخرى يصبح Client في تلك المحادثة. <code>02-client-and-server.md</code></li>
+<li>إرجاع <code>200</code> مع <code>&quot;error&quot;</code> داخل JSON. الرمز جزء من العقد. <code>03-request-and-response.md</code></li>
+<li>استخدام <code>GET</code> لعملية تغيّر بيانات. <code>04-http.md</code></li>
+<li>خلط <code>401</code> (هوية) و <code>403</code> (منع) و <code>404</code> (غياب) و <code>500</code> (عطلنا). المصدر نفسه.</li>
+<li>تسمية أي JSON على HTTP بأنه REST. REST أسلوب موارد وأفعال. <code>05-rest.md</code></li>
+<li>أفعال داخل المسار: <code>/books/updatePrice</code>. المصدر نفسه.</li>
+<li>الثقة بنوع TypeScript على جسم الشبكة. النوع يُمحى، و <code>JSON.parse</code> يبني قيمًا بلا معنى. <code>06-json.md</code></li>
+<li>تسريب حقول لأن التحويل إلى JSON يكتب مفاتيح الكائن القابلة للعد. المصدر نفسه.</li>
+<li>جعل شكل الجدول هو عقد الـ API. <code>07-api-and-rest-api.md</code></li>
+<li>الاعتقاد أن <code>async</code> ينقل حسابًا ثقيلًا بعيدًا عن خيط JavaScript. <code>08-nodejs.md</code></li>
+<li>معاملة Express و Nest كأنهما الإطار نفسه. Express رقيق، و Nest طبقة معمارية فوقه. <code>09-library-vs-framework.md</code></li>
+<li>نسيان <code>listen</code>، أو إرسال الرد مرتين، أو قراءة <code>req.body</code> من غير <code>express.json()</code>. <code>10-what-is-express.md</code></li>
+<li>نسيان <code>next()</code> من غير إنهاء الرد، فيعلّق العميل. أو استدعاء <code>next()</code> بعد <code>res.json</code>. <code>11-how-express-works.md</code></li>
+<li>نقل معالج Express المزدحم كما هو إلى جسد Controller. <code>12-large-express-projects.md</code></li>
+<li>توقع أن <code>nest new</code> وحده يفصل القواعد عن HTTP. <code>13-why-nestjs-exists.md</code></li>
+<li>إنشاء تطبيق <code>express()</code> ثانٍ بجانب <code>NestFactory</code>. أو استيراد أنواع Express داخل Service. <code>14-nestjs-on-express-and-fastify.md</code></li>
+<li>تعلم Angular قبل Nest، أو جعل المزوّدات كلها عالمية لأن التشبيه أوحى بذلك. <code>15-why-nestjs-resembles-angular.md</code></li>
+<li>حفظ ترتيب طلب قديم. الترتيب المعتمد في هذه الدورة هو صفحة Request Lifecycle الحالية. <code>16-nestjs-architecture-overview.md</code></li>
+<li>وجود ملف Controller على القرص من غير تسجيله في <code>controllers</code> داخل الوحدة. المصدر نفسه.</li>
+<li>استثناء Middleware لا تراه فلاتر المسار، لأن المسار لم يُختر بعد. الفلاتر العامة فقط. المصدر نفسه.</li>
+</ul>
+<h2>بعد المقدمة</h2>
+<ul>
+<li>نسيان <code>providers</code> أو <code>exports</code> ثم حقن الخدمة من وحدة أخرى. <code>04-modules</code></li>
+<li><code>import type</code> لخدمة تُحقن، أو Interface مكان DTO. الفصول <code>01</code> و <code>11</code> و <code>12</code></li>
+<li><code>@Res()</code> من غير <code>passthrough</code> مع <code>return</code>. <code>05-controllers</code></li>
+<li>حارس عام بلا استثناء لمسار الدخول والصحة. <code>13</code> و <code>16</code></li>
+<li><code>catch</code> فارغ يلغي Exception Filter. <code>15</code></li>
+<li><code>whitelist</code> مطفأ فيمر حقل زائد مثل <code>isAdmin</code>. <code>12-validation</code></li>
+<li>كلمة مرور بلا تجزئة، أو هاش في الرد. <code>20</code> و <code>25</code></li>
+<li>تفعيل الاشتراك من صفحة النجاح لا من ويب هوك موقّع. <code>61</code> و <code>62</code></li>
+<li>أخذ <code>tenantId</code> من جسم يطلبه العميل. <code>59</code></li>
+<li>إعادة محاولة دفع بلا مفتاح تكرار. <code>66</code></li>
+<li>استخدام <code>localhost</code> لقاعدة البيانات داخل Compose. <code>50-docker</code></li>
+<li><code>start:dev</code> في صورة الإنتاج. <code>51</code></li>
+<li>نطاق <code>REQUEST</code> فقط لتمرير المستخدم. <code>40</code></li>
+<li><code>forwardRef</code> قبل إعادة رسم الحد. <code>41</code></li>
+<li>CQRS أو Microservices قبل وجود الألم الذي يبررهما. <code>48</code> و <code>49</code></li>
+</ul>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي اعتراض يطبّق <code>@Exclude</code>؟</li>
+<li>من أي حزمة يأتي <code>@Exclude</code>؟</li>
+<li>هل <code>@ApiHideProperty</code> يمنع الحقل في JSON؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>ClassSerializerInterceptor</code>.</li>
+<li><code>class-transformer</code>.</li>
+<li>لا. يخفي الوثيقة فقط.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا لا يعمل <code>@Exclude</code> على كائن Prisma العادي؟</li>
+<li>ماذا ينسخ <code>toResponse</code>؟</li>
+<li>أي رمز حين تفشل قيمة الاستجابة أمام مخطط Zod؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>instanceToPlain</code> يعمل على نسخة الصنف. استخدم <code>new</code> أو <code>@SerializeOptions({ type })</code>.</li>
+<li><code>id</code> و <code>email</code> و <code>role</code> فقط.</li>
+<li><code>500</code> لأن العيب من الخادم.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>عمود <code>passwordHash</code> ما زال في الجدول. <code>GET /me</code> يعيد نتيجة <code>validate</code>. وثيقة OpenAPI تشير إلى <code>UserResponse</code> بلا السر. السجل يطبع المستخدم عند <code>409</code>.</p>
+<ol>
+<li>لماذا يرى العميل التجزئة رغم الوثيقة؟</li>
+<li>ماذا تغيّر في المعالج؟</li>
+<li>ماذا يبقى في رسالة التعارض؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>الوثيقة لا تسلسل الاستجابة، والكائن المعاد واسع.</li>
+<li><code>select</code> أو <code>toResponse</code> إلى <code>UserResponse</code>، ولا تُعد كائن التحقق الخام.</li>
+<li>نص ثابت بلا صف وبلا <code>meta</code>. السجل يأخذ <code>userId</code> فقط.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HTTP</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-http.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>HTTP</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>أن تستخدم HTTP بوصفه اتفاقًا على شكل الكلام بين Client و Server: الطريقة، والعنوان، والرؤوس، والجسم، ورمز الحالة، واستقلال كل طلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إذا اتفق كل فريق على شكل رسائله الخاصة، فكل عميل يحتاج مكتبة خاصة بهذا الخادم. HTTP اتفاق واسع: المتصفح، و <code>curl</code>، وتطبيق الجوال، وخادم آخر، يستطيعون إرسال الرسالة نفسها إلى NestJS و Express و Fastify.</p>
+<p>NestJS، في مسار هذه الدورة، تطبيق HTTP. الإطار يرتب كودك. البروتوكول يبقى HTTP.</p>
+<h2>الفكرة ببساطة</h2>
+<p>HTTP بروتوكول طلب واستجابة للوصول إلى موارد على الشبكة. المورد شيء يُسمّى بعنوان URL: كتاب، أو قائمة كتب، أو جلسة، أو ملف.</p>
+<p>البروتوكول يحدد شكل الرسالة. هو لا يحدد أسماء حقولك ولا قواعد متجرك. هذا عملك فوقه.</p>
+<h2>التعريف التقني</h2>
+<p>Hypertext Transfer Protocol بروتوكول طبقة تطبيق. يعمل عادة فوق TCP. الرسالة نص منظمة (ومع HTTP/2 يصبح التمثيل على السلك مختلفًا مع بقاء المعاني: طريقة، مسار، رؤوس، جسم، حالة).</p>
+<p>خصائص تهمك الآن:</p>
+<ul>
+<li><strong>Request / Response</strong>: كل دورة تبدأ بطلب من العميل.</li>
+<li><strong>Stateless</strong>: الخادم لا يُلزم البروتوكول بأن يتذكر الطلب السابق. إذا احتاجت العملية ذاكرة، نحملها صراحة: Cookie، أو Token، أو معرّف في مخزننا. سنفصل ذلك في فصل Cookies و Sessions.</li>
+<li><strong>Resources</strong>: العنوان يشير إلى مورد.</li>
+<li><strong>Methods</strong>: أفعال متفق على معناها.</li>
+<li><strong>Status codes</strong>: أعداد متفق على فئاتها.</li>
+</ul>
+<p>HTTPS هو HTTP داخل قناة مشفرة عبر TLS. من جهة كود Nest، تتعامل مع الطلب نفسه. الفرق في النقل والشهادة. سنعود إلى HTTPS عند النشر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">URL
+https://api.example.com:443/books/2?currency=usd
+\___/   \______________/ \_/ \______/ \___________/
+scheme   host            port  path     query
+
+Request line:   GET /books/2?currency=usd HTTP/1.1
+Headers:        Host, Accept, Authorization
+Body:           غالبًا فارغ في GET
+
+Response line:  HTTP/1.1 200 OK
+Headers:        Content-Type
+Body:           تمثيل المورد
+</code></pre>
+<h2>الطرق التي ستستخدمها</h2>
+<p>المعاني التالية هي عقد HTTP الشائع، كما تلخصه MDN وتوقعه عملاء الـ API. الفعل قرار تصميمي: الخادم هو الذي يلتزم به.</p>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>معنى عملي على مورد</th>
+<th>هل يغيّر بيانات الخادم في الاستخدام القياسي؟</th>
+<th>تكرار الطلب نفسه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td>اقرأ تمثيلًا</td>
+<td>لا</td>
+<td>آمن تكراره</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td>أنشئ أو شغّل عملية يختارها المورد</td>
+<td>نعم غالبًا</td>
+<td>قد ينشئ مرة أخرى</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td>استبدل المورد كله بهذا التمثيل</td>
+<td>نعم</td>
+<td>التكرار يوصل إلى الحالة نفسها</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td>عدّل جزءًا من المورد</td>
+<td>نعم</td>
+<td>يعتمد على شكل التعديل</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td>احذف المورد</td>
+<td>نعم</td>
+<td>الحذف الثاني يجد المورد غائبًا</td>
+</tr>
+</tbody></table>
+<p><strong>Safe</strong>: <code>GET</code> لا يُفترض أن يغيّر حالة الخادم. رابط في صفحة، أو إعادة محاولة من المتصفح، قد يرسل <code>GET</code> من غير قصد تدميري.</p>
+<p><strong>Idempotent</strong>: تكرار الطلب المكافئ يترك الخادم في الحالة نفسها التي يتركها تنفيذ واحد. <code>GET</code> و <code>PUT</code> و <code>DELETE</code> ضمن هذا العقد الشائع. <code>POST</code> للإنشاء ليس كذلك: إرساله مرتين قد ينشئ كتابين. لهذا تظهر لاحقًا مفاتيح Idempotency على عمليات الدفع.</p>
+<p><code>HEAD</code> مثل <code>GET</code> بلا جسم. <code>OPTIONS</code> يسأل عما هو مسموح، وستقابله مع CORS.</p>
+<h2>رموز الحالة</h2>
+<p>الفئة أهم من حفظ كل رقم:</p>
+<table>
+<thead>
+<tr>
+<th>الفئة</th>
+<th>المعنى</th>
+<th>أمثلة ستتكرر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>1xx</code></td>
+<td>معلوماتية</td>
+<td>لن نركز عليها الآن</td>
+</tr>
+<tr>
+<td><code>2xx</code></td>
+<td>نجح الطلب</td>
+<td><code>200 OK</code>، <code>201 Created</code>، <code>204 No Content</code></td>
+</tr>
+<tr>
+<td><code>3xx</code></td>
+<td>التحويل</td>
+<td><code>301</code>، <code>302</code>، <code>304 Not Modified</code></td>
+</tr>
+<tr>
+<td><code>4xx</code></td>
+<td>الخطأ في الطلب كما وصل</td>
+<td><code>400</code>، <code>401</code>، <code>403</code>، <code>404</code>، <code>409</code>، <code>422</code></td>
+</tr>
+<tr>
+<td><code>5xx</code></td>
+<td>الخادم فشل وهو مسؤول</td>
+<td><code>500</code>، <code>502</code>، <code>503</code></td>
+</tr>
+</tbody></table>
+<p>فروق ستحتاجها مبكرًا:</p>
+<ul>
+<li><code>401 Unauthorized</code>: لا نعرف من أنت، أو إثبات الهوية مرفوض. الاسم التاريخي للرمز مربك؛ المعنى العملي: مشكلة Authentication.</li>
+<li><code>403 Forbidden</code>: نعرفك، وهذا الفعل ممنوع. هذه Authorization.</li>
+<li><code>404 Not Found</code>: لا مورد بهذا العنوان، أو لا نريد كشف وجوده.</li>
+<li><code>409 Conflict</code>: الطلب مفهوم، ويصطدم بحالة حالية، مثل بريد مسجّل مسبقًا.</li>
+<li><code>422 Unprocessable Content</code>: الطلب مفهوم نحويًا، والمعنى مرفوض. بعض الفرق تستخدم <code>400</code> للتحقق. سنثبت اختيارًا واحدًا عندما نصل إلى معالجة الأخطاء، ونلتزم به.</li>
+</ul>
+<p><code>400</code> طلب غير مفهوم أو غير صالح. التحقق من DTO في Nest ينتهي غالبًا إلى <code>400</code> مع <code>BadRequestException</code>. هذا سلوك ستراه في فصل Validation، لا تحفظ الاستثناء الآن.</p>
+<h2>الرؤوس</h2>
+<p>الـ Header زوج اسم وقيمة، ويحمل سياقًا خارج الجسم.</p>
+<table>
+<thead>
+<tr>
+<th>Header</th>
+<th>اتجاه شائع</th>
+<th>وظيفته</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Host</code></td>
+<td>Request</td>
+<td>أي مضيف على هذا العنوان</td>
+</tr>
+<tr>
+<td><code>Content-Type</code></td>
+<td>الاتجاهان</td>
+<td>كيف نقرأ الجسم</td>
+</tr>
+<tr>
+<td><code>Accept</code></td>
+<td>Request</td>
+<td>ما الذي يستطيع العميل قراءته</td>
+</tr>
+<tr>
+<td><code>Authorization</code></td>
+<td>Request</td>
+<td>إثبات الهوية</td>
+</tr>
+<tr>
+<td><code>Location</code></td>
+<td>Response</td>
+<td>أين المورد، غالبًا بعد <code>201</code> أو مع تحويل</td>
+</tr>
+<tr>
+<td><code>Set-Cookie</code></td>
+<td>Response</td>
+<td>يطلب من العميل حفظ Cookie</td>
+</tr>
+<tr>
+<td><code>Cache-Control</code></td>
+<td>Response غالبًا</td>
+<td>هل يجوز حفظ الاستجابة وإعادة استخدامها</td>
+</tr>
+</tbody></table>
+<p>الرأس ليس مكان Business Logic. هو سياق للبروتوكول والوسيط والعميل.</p>
+<h2>أبسط مثال</h2>
+<p>خادم Node من غير إطار، مأخوذ من صفحة About في موقع Node.js، بنسخة ESM. الوظيفة: أي طلب يصل إلى <code>127.0.0.1:3000</code> يأخذ الرد نفسه.</p>
+<pre><code class="language-ts">import { createServer } from &#39;node:http&#39;;
+
+const hostname = &#39;127.0.0.1&#39;;
+const port = 3000;
+
+const server = createServer((req, res) =&gt; {
+  res.statusCode = 200;
+  res.setHeader(&#39;Content-Type&#39;, &#39;text/plain&#39;);
+  res.end(&#39;Hello World&#39;);
+});
+
+server.listen(port, hostname, () =&gt; {
+  console.log(`Server running at http://${hostname}:${port}/`);
+});
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>import { createServer } from &#39;node:http&#39;</code> يستورد دالة إنشاء خادم HTTP من مكتبة Node القياسية. <code>node:</code> بادئة رسمية لمكتبات Node المدمجة.</li>
+<li><code>hostname</code> و <code>port</code> عنوان الاستماع. <code>127.0.0.1</code> هو الجهاز المحلي فقط. جهاز آخر على الشبكة لا يصل إليه عبر هذا العنوان.</li>
+<li><code>createServer</code> يسجّل دالة تُستدعى لكل طلب. هذه الدالة هي معالجك. Node يمرر <code>req</code> و <code>res</code>.</li>
+<li><code>req</code> هنا غير مستخدم. كل المسارات وكل الطرق تأخذ الرد نفسه. هذا مقصود في مثال &quot;أهلًا&quot;، وهو غير كافٍ لتطبيق حقيقي.</li>
+<li><code>res.statusCode = 200</code> يكتب رمز النجاح.</li>
+<li><code>setHeader</code> يعلن أن الجسم نص عادي، لا JSON.</li>
+<li><code>res.end(&#39;Hello World&#39;)</code> يرسل الجسم وينهي هذه الاستجابة.</li>
+<li><code>listen</code> هو ما يجعل العملية تنتظر. قبلها لا يوجد منفذ مفتوح.</li>
+<li>الدالة داخل <code>listen</code> تعمل بعد نجاح الاستماع، وتطبع العنوان. هي ليست ردًا على عميل.</li>
+</ul>
+<p>صفحة Node تقول إن كثيرًا من الاتصالات يمكن أن تُخدم معًا: عند كل اتصال تُستدعى الدالة، وإذا لم يوجد عمل فإن Node ينام. هذا تمهيد لدرس Node.js، لا شرح Event Loop كامل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>listen</code> يطلب من نظام التشغيل حجز المنفذ.</li>
+<li>عند وصول اتصال، Node يقرأ HTTP ويبني <code>req</code>.</li>
+<li>يستدعي دالتك. دالتك تعمل على خيط JavaScript الواحد. إذا انشغلت بحساب طويل من غير أن تُرجع التحكم، تأخرت الطلبات الأخرى. ستعود هذه الجملة في فصل الأداء.</li>
+<li>الكتابة على <code>res</code> تتجمع حتى <code>end</code>، ثم تخرج على الاتصال.</li>
+<li>بما أن البروتوكول Stateless، الطلب التالي يصل ومعه كل ما نحتاج لمعرفته. لا يوجد &quot;المستخدم ما زال في الخطوة الثانية&quot; داخل البروتوكول نفسه.</li>
+</ol>
+<p>HTTP/1.1 يستطيع إبقاء الاتصال مفتوحًا لعدة طلبات (keep-alive) لتوفير كلفة فتح TCP. هذا تحسين نقل. كل طلب ما زال يحمل معناه كاملاً.</p>
+<h2>مثال عملي</h2>
+<p>قراءة كتاب وتحديث سعره.</p>
+<pre><code class="language-http">GET /books/2 HTTP/1.1
+Host: localhost:3000
+Accept: application/json
+</code></pre>
+<pre><code class="language-http">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{&quot;id&quot;:&quot;2&quot;,&quot;title&quot;:&quot;Refactoring&quot;,&quot;price&quot;:40}
+</code></pre>
+<pre><code class="language-http">PATCH /books/2 HTTP/1.1
+Host: localhost:3000
+Content-Type: application/json
+
+{&quot;price&quot;:42}
+</code></pre>
+<pre><code class="language-http">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{&quot;id&quot;:&quot;2&quot;,&quot;title&quot;:&quot;Refactoring&quot;,&quot;price&quot;:42}
+</code></pre>
+<p><code>PATCH</code> هنا يغيّر السعر ويبقي العنوان. <code>PUT</code> كان سيطلب التمثيل الكامل الذي يجب أن يصبح الكتاب عليه. الفرق قرار تصميم ستثبّته في فصل REST API Design، بعد أن تملك Controllers.</p>
+<p>في Express، السطر المقابل للقراءة هو:</p>
+<pre><code class="language-ts">app.get(&#39;/books/:id&#39;, handler)
+</code></pre>
+<p>في Nest، بعد عدة فصول، الشكل المقابل سيكون:</p>
+<pre><code class="language-ts">@Get(&#39;:id&#39;)
+findOne() {}
+</code></pre>
+<p>لا تكتب الثاني في مشروع الآن. هو ترجمة الطريق نفسها إلى أسلوب الإطار، وسنفكها سطرًا بسطر في فصل Controllers.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استخدام <code>GET</code> للحذف لأن الرابط أسهل. المتصفحات والذاكرة الوسيطة تفترض أن <code>GET</code> آمن.</li>
+<li>إرجاع <code>500</code> عندما يكون المعرّف غير موجود. غياب المورد <code>404</code>. الخمسمئة تعني أننا انكسرنا.</li>
+<li>خلط <code>401</code> و <code>403</code>. الأول فشل إثبات الهوية، والثاني منع بعد المعرفة.</li>
+<li>نسيان <code>Content-Type</code> على JSON. بعض العملاء يخمنون، والتخمين ينكسر عند أول وسيط صارم.</li>
+<li>حشر حالة التطبيق في متغير عام على الخادم لكل مستخدم، لأن HTTP &quot;لا يتذكر&quot;. العملية تتذكر الذاكرة التي تكتبها أنت. البروتوكول لا يربط هذه الذاكرة بالطلب التالي تلقائيًا، ووجود أكثر من عملية لاحقًا يجعل المتغير العام خطأً.</li>
+</ul>
+<h2>متى نستخدم HTTP؟</h2>
+<p>لأي API يطلبها متصفح أو خدمة أخرى طلبًا ثم ينتظر ردًا. هذا المسار الافتراضي لـ NestJS: التوثيق يقول إن الإطار يبني تطبيقات خادم على Node، وتحت الغطاء يستخدم إطار HTTP مثل Express.</p>
+<h2>متى نختار قناة أخرى؟</h2>
+<p>عندما تكون الرسالة حدثًا إلى خدمة أخرى، لا طلبًا ينتظر تمثيل مورد. الطوابير والـ Microservices تأتي بعد أن نتقن HTTP. اختيارها قبل ذلك يخفي حدود النظام.</p>
+<h2>مقارنة مختصرة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>HTTP</th>
+<th>ما يبنيه Nest فوقه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يحدد شكل الرسالة على الشبكة</td>
+<td>نعم</td>
+<td>يستخدمه</td>
+</tr>
+<tr>
+<td>يحدد كيف تقسّم الكود</td>
+<td>لا</td>
+<td>Modules و Controllers و Providers</td>
+</tr>
+<tr>
+<td>يحدد أسماء حقولك</td>
+<td>لا</td>
+<td>DTOs التي ستكتبها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اختر Method و Status لكل عملية:</p>
+<ol>
+<li>قراءة قائمة الكتب.</li>
+<li>إنشاء كتاب نجح.</li>
+<li>حذف كتاب موجود.</li>
+<li>قراءة كتاب غير موجود.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>GET</code>، والاستجابة <code>200</code> مع القائمة. قائمة فارغة تبقى <code>200</code> وجسمًا فارغًا من العناصر، لأن المسار موجود.</li>
+<li><code>POST</code>، والاستجابة <code>201</code>.</li>
+<li><code>DELETE</code>، والاستجابة <code>204</code> بلا جسم أو <code>200</code> مع تمثيل. الاثنان نجاح. اختر واحدًا والتزم به.</li>
+<li><code>GET</code>، والاستجابة <code>404</code>.</li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يحتاج إنشاء الطلب (checkout) حماية من التكرار، بينما استبدال عنوان كتاب عبر <code>PUT</code> بالمحتوى نفسه لا ينشئ كتابًا ثانيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>PUT</code> بالمحتوى نفسه يوصل المورد إلى الحالة نفسها في كل مرة، فهذا Idempotent. إنشاء عملية دفع أو طلب شراء عبر <code>POST</code> يضيف أثرًا جديدًا في كل تنفيذ ناجح. التكرار بلا مفتاح يمنع التكرار يخصم أو ينشئ مرتين.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلب <code>GET /books/2</code> أعاد <code>200</code>. بين الطلب والاستجابة تغيّر السعر في قاعدة البيانات بسبب موظف آخر. أي سعر يجب أن يراه العميل، وما دور Stateless هنا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العميل يرى السعر الذي قرأه الخادم أثناء معالجة هذا الطلب. لا توجد &quot;جلسة قراءة&quot; يحفظها HTTP. الطلب التالي يرى السعر الجديد. إذا أردنا أن يشتري العميل بالسعر الذي رآه، نحفظ ذلك السعر صراحة مع عملية الشراء في تلك اللحظة، لا نعتمد على ذاكرة بروتوكول.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني أن HTTP بروتوكول Stateless؟</li>
+<li>ما الفرق العملي بين <code>PUT</code> و <code>PATCH</code>؟</li>
+<li>لماذا لا نستخدم <code>GET</code> لعملية تغيّر بيانات؟</li>
+<li>ما فئة الرمز التي تعني خطأ العميل، وما الفئة التي تعني فشل الخادم؟</li>
+<li>ماذا يفعل <code>createServer</code> قبل أن يستطيع أي Client الاتصال؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>HTTP اتفاق طلب واستجابة حول موارد: Method و URL و Headers و Body ذهابًا، و Status و Headers و Body إيابًا. كل طلب يحمل معناه. NestJS سترتب كود معالجة هذا الاتفاق، ولن تستبدله.</p>
+<h2>ماذا بعد؟</h2>
+<p>البروتوكول يعطيك أفعالًا وعناوين. REST طريقة لاستخدام هذه الأفعال والعناوين لتصميم API مفهوم. ليس كل API على HTTP تطبيقًا لـ REST.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>MDN — HTTP overview: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview">https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview</a></li>
+<li>MDN — HTTP request methods: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods</a></li>
+<li>MDN — HTTP response status codes: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status</a></li>
+<li>Node.js — About (مثال <code>createServer</code>): <a href="https://nodejs.org/en/about">https://nodejs.org/en/about</a></li>
+<li>Node.js — HTTP: <a href="https://nodejs.org/api/http.html">https://nodejs.org/api/http.html</a></li>
+<li>NestJS — Introduction: <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

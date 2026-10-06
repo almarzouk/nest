@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هي DI</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-what-is-di.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هي DI</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف Dependency Injection: الصنف يعلن ما يحتاجه، وطرف خارجي يمرر الكائنات الجاهزة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد رؤية سلسلة <code>new</code>، الخطوة التالية ليست «حاوية» بعد. الخطوة هي فصل الإعلان عن الإنشاء. <code>DraftService</code> تذكر <code>TaxPolicy</code> و <code>VendorGateway</code> في المُنشئ، ومن يبني الخدمة هو من يختار التنفيذ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>DI نمط يعطي الكائن اعتمادياته بدل أن يبنيها. في Nest الطرف الذي يمررها هو وقت التشغيل. السطر الذي تكتبه هو طلب، لا أمر <code>new</code>.</p>
+<p>التوثيق يصف DI كتقنية Inversion of Control: تفويض إنشاء الاعتماديات إلى الحاوية بدل إنشائها في كودك الأمري. IoC نفسه الدرس التالي. هنا شكل الطلب والتسليم.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">constructor(
+  private readonly tax: TaxPolicy,
+  private readonly vendors: VendorGateway,
+) {}
+</code></pre>
+<p>الصنف يعتمد على نوعين. هو لا يقرر عنوان البوابة ولا شهر الضريبة. من ينادي <code>new DraftService(tax, vendors)</code> — أو الحاوية في مكانه — يملك القرار.</p>
+<p>الحقن عبر المُنشئ هو الشكل الذي تستخدمه Nest افتراضيًا. حقن دالة أو خاصية أشكال أخرى في أنظمة ثانية. داخل Nest، المُنشئ هو العقد الذي تُقرأ منه Metadata.</p>
+<p>تمرير الضريبة وسيطًا إلى <code>total(net, tax)</code> حقن دالة واحدة. DI على الصنف تعني أن كل دواله ترى الحقول نفسها التي سُلّمت مرة عند البناء.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">من يبني الشبكة
+  يملك VendorGateway و TaxPolicy
+  ينشئ DraftService ويمررهما
+DraftService
+  تستدعي tax.rate() و vendors.list()
+  ولا تنادي new
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class DraftService {
+  constructor(
+    private readonly tax: TaxPolicy,
+    private readonly vendors: VendorGateway,
+  ) {}
+
+  total(net: number) {
+    return net * (1 + this.tax.rate());
+  }
+}
+
+export class TaxPolicy {
+  rate() {
+    return 0.15;
+  }
+}
+
+export class VendorGateway {
+  list() {
+    return [&#39;north&#39;];
+  }
+}
+
+const drafts = new DraftService(new TaxPolicy(), new VendorGateway());
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>new</code> بقي في سطر التركيب الأخير، وخرج من داخل <code>total</code>.</li>
+<li><code>DraftService</code> تعمل مع أي كائن يوفّر <code>rate</code> بالشكل الذي تستدعيه، عندما يكون النوع متوافقًا.</li>
+<li>اختبار يمرر <code>{ rate: () =&gt; 0 }</code> لا يحتاج ديسمبر ولا شبكة.</li>
+<li>سطر التركيب ما زال يدويًا. نقل هذا السطر إلى تسجيل Module هو ما تفعله Nest، لا تعريف DI وحده.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند <code>new DraftService(tax, vendors)</code> تُسند المراجع إلى الحقول قبل أي نداء <code>total</code>. لا بحث عن أسماء نصية في هذا المثال اليدوي: أنت مررت المراجع. Nest لاحقًا تطابق نوع المعامل برمز مسجّل ثم تفعل الإسناد نفسه.</p>
+<p>إذا نسيت وسيطًا، JavaScript ينادي المُنشئ بقيمة ناقصة وأنت ترى <code>undefined</code> عند أول <code>this.tax.rate()</code>. الحاوية تفشل عند الإقلاع بدل أن تنتظر أول طلب، لأن التسجيل أوضح من نداء يدوي متأخر.</p>
+<h2>مثال عملي</h2>
+<p>اختبار يعزل الضريبة:</p>
+<pre><code class="language-ts">import { DraftService } from &#39;./draft.service.js&#39;;
+
+const drafts = new DraftService(
+  { rate: () =&gt; 0.05 },
+  { list: () =&gt; [&#39;south&#39;] },
+);
+
+const gross = drafts.total(200);
+</code></pre>
+<p><code>gross</code> يساوي 210 لأن المُنشئ استلم سياسة 0.05. <code>VendorGateway</code> الحقيقية لا تُستدعى. هذا هو مكسب DI قبل الحديث عن الحاوية: موضع بناء واحد، وتوقيع يعلن الاحتياج.</p>
+<p>في التطبيق، Module تستبدل سطر <code>new DraftService(...)</code> بتسجيل الأصناف. الخدمة تبقى كما هي.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حقن الصنف مع الإبقاء على <code>new RegionalTax()</code> داخله</td>
+<td>التوقيع صادق جزئيًا والساعة ما زالت مخفية</td>
+</tr>
+<tr>
+<td>وسيط دالة لكل اعتمادية على كل عملية</td>
+<td>البناء يتكرر في كل نداء ولا حالة مشتركة مقصودة</td>
+</tr>
+<tr>
+<td>اعتبار DI اسمًا لـ <code>@Injectable</code> فقط</td>
+<td>الزينة Metadata؛ النمط هو تمرير الكائن من الخارج</td>
+</tr>
+<tr>
+<td>تمرير <code>undefined</code> يدويًا ثم معالجة الخطأ داخل <code>total</code></td>
+<td>الفشل يتأخر إلى وقت الطلب</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما لصنف اعتماد على خدمة أو بوابة أو سياسة سيتبدل تنفيذها أو تُختبر وحدها. المُنشئ هو مكان الإعلان.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكائن يُحسب من وسائط النداء فقط، مثل سطر فاتورة <code>{ net, tax }</code> يُنشأ داخل <code>total</code> كنتيجة لا كاعتمادية حية. تلك قيمة معادة، لا شيء تسجله الحاوية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>البناء الداخلي</th>
+<th>DI</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يختار التنفيذ</td>
+<td>الدالة التي تنادي <code>new</code></td>
+<td>من يبني الصنف</td>
+</tr>
+<tr>
+<td>أين يظهر الاحتياج</td>
+<td>داخل الجسم، وقد يختفي</td>
+<td>معاملات المُنشئ</td>
+</tr>
+<tr>
+<td>الاختبار</td>
+<td>يعدل الخدمة أو يضبط حالة عامة</td>
+<td>يمرر بديلًا عند البناء</td>
+</tr>
+<tr>
+<td>في Nest</td>
+<td>يتجاوز السجل</td>
+<td>الحاوية تملأ المعاملات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في المثال اليدوي، من ينادي <code>new RegionalTax</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا أحد داخل <code>DraftService</code>. سطر التركيب الخارجي ينشئ <code>TaxPolicy</code> ويمررها. الضريبة الإقليمية تكون ذلك السطر عندما تختارها أنت أو التسجيل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين <code>total(net, tax)</code> وحقن <code>tax</code> في المُنشئ؟</p>
+<details><summary>الحل</summary>
+
+<p>وسيط الدالة يمرر السياسة عند كل نداء وقد تختلف بين نداء ونداء. حقل المُنشئ يُسند مرة وتستخدمه كل دوال النسخة. الاثنان إمداد من الخارج؛ DI التي تتحدث عنها Nest هي شكل المُنشئ الذي تستطيع قراءة Metadata له.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا بقاء <code>new SystemClock()</code> داخل <code>TaxPolicy</code> يعني أن DI على <code>DraftService</code> لم تكتمل للساعة؟</p>
+<details><summary>الحل</summary>
+
+<p><code>DraftService</code> تستلم السياسة جاهزة، لكن السياسة ما زالت تبني الساعة. اختبار الشهر الثابت يفشل إلى أن تطلب <code>TaxPolicy</code> الساعة في مُنشئها أيضًا. الحقن المفيد يسري على السلسلة التي تريد استبدالها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يمرر الاعتماديات في تعريف DI؟</li>
+<li>أين تعلن <code>DraftService</code> احتياجها؟</li>
+<li>ماذا يبقى يدويًا إلى أن تتولى الحاوية سطر التركيب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>DI تعني أن الصنف يطلب كائنات جاهزة في المُنشئ، ومن يبنيه يختار التنفيذ. هذا يفصل الإعلان عن <code>new</code>، والحاوية في Nest هي التي تنفّذ سطر التركيب.</p>
+<h2>ماذا بعد؟</h2>
+<p>من يملك قرار البناء أصلًا: IoC.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers (Dependency injection): <a href="https://docs.nestjs.com/providers#dependency-injection">https://docs.nestjs.com/providers#dependency-injection</a></li>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

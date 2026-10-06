@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Module ثابت مقابل Dynamic Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-static-vs-dynamic.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Module ثابت مقابل Dynamic Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز الوحدة التي تُكتب بياناتها كلها في <code>@Module</code> عن الوحدة التي تُبنى بياناتها عند الاستيراد عبر دالة ترجع <code>DynamicModule</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>IdGeneratorModule</code> الثابت لا يستطيع أن يعطي <code>UsersModule</code> سابقة <code>usr_</code> و <code>OrdersModule</code> سابقة <code>ord_</code> من غير تكرار الملفات. المستورد لا يؤثر في مزودات الوحدة المضيفة ما دام الربط ساكنًا. الوحدة الديناميكية واجهة استيراد تُخصص السلوك وقت الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الصنف يبقى وحدة. دالة ثابتة مثل <code>register</code> أو <code>forRoot</code> ترجع كائنًا فيه المفتاح <code>module</code> وبقية حقول <code>@Module</code>. هذا الكائن يوضع في <code>imports</code> كما توضع الوحدة الساكنة. الفرق أن الحقول جاءت من كود حسب خيار المستورد، لا من زخرفة ثابتة فقط.</p>
+<h2>التعريف التقني</h2>
+<p>الربط الساكن: <code>providers</code> و <code>exports</code> و <code>imports</code> على <code>@Module</code>. Nest يبني المضيف، ثم يجعل المصدَّر مرئيًا للمستورد، ثم يحقن.</p>
+<p><code>DynamicModule</code> من <code>@nestjs/common</code> له شكل metadata الوحدة زائد <code>module</code> الذي يشير إلى الصنف. كل الحقول اختيارية إلا <code>module</code>. الدالة اصطلاحًا <code>register</code> أو <code>forRoot</code> أو <code>forFeature</code>، ويمكن أي اسم، ويجب أن تكون <code>static</code> لأنها تُستدعى على الصنف لا على نسخة.</p>
+<p><code>imports</code> يقبل صنف وحدة أو القيمة الراجعة من الدالة. الوحدة الديناميكية تستطيع أن تستورد وحدات أخرى في حقل <code>imports</code> الراجع.</p>
+<p>زخرفة <code>@Module</code> على الصنف تُدمَج مع الكائن الراجع. صنف فارغ <code>@Module({})</code> شائع عندما يأتي كل التسجيل من الدالة.</p>
+<p>من يعيد التصدير بعد التكوين يضع الصنف في <code>exports</code> ولا يستدعي <code>forRoot</code> أو <code>register</code> مرة ثانية. الاستدعاء الثاني يعيد البناء. فصل الوحدات مهّد لهذا، وهنا يصبح قاعدة المكتبة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ساكن:     imports: [UsersModule]
+ديناميكي: imports: [IdGeneratorModule.register({ prefix: &#39;usr&#39; })]
+الكائن الراجع: { module: IdGeneratorModule, providers, exports }
+إعادة التصدير: exports: [IdGeneratorModule]   بلا استدعاء ثانٍ
+</code></pre>
+<p>الدالة مكان الخيار. الصنف مكان الهوية.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { DynamicModule, Module } from &#39;@nestjs/common&#39;;
+import { IdGenerator } from &#39;./id-generator.js&#39;;
+
+@Module({})
+export class IdGeneratorModule {
+  static register(): DynamicModule {
+    return {
+      module: IdGeneratorModule,
+      providers: [IdGenerator],
+      exports: [IdGenerator],
+    };
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { IdGeneratorModule } from &#39;../id-generator/id-generator.module.js&#39;;
+
+@Module({
+  imports: [IdGeneratorModule.register()],
+})
+export class UsersModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>register</code> بلا خيار بعد. الشكل هو المقصود: المستورد يستدعي الدالة، والدالة تصرّح <code>module</code>. استيراد <code>IdGeneratorModule</code> من غير النداء لا يسجل <code>IdGenerator</code> إن كانت الزخرفة فارغة. هذا أوضح فرق عملي عن الوحدة الساكنة التي تكتب المزود فوق الصنف.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تقييم الملف يعرّف الصنف والدالة.</li>
+<li>بناء <code>UsersModule</code> يستدعي <code>register()</code> فور قراءة <code>imports</code>.</li>
+<li>الإطار يرى كائن <code>DynamicModule</code> ويدمج الحقول مع ما على <code>@Module</code>.</li>
+<li>يسجل <code>IdGenerator</code> ويصدّره داخل حدود هذا الاستيراد.</li>
+<li>استيراد آخر يستدعي <code>register()</code> ينتج كائنًا آخر. إن كان الخيار مختلفًا فالتسجيل مختلف، وهذا موضوع <code>register</code> مقابل <code>forRoot</code>.</li>
+<li>إعادة تصدير الصنف بعد استدعاء واحد تمرر ما بُني، ولا تشغّل الدالة من جديد.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>ConfigModule.forRoot()</code> و <code>TypeOrmModule.forRoot({ url })</code> في الجذر يتبعان الشكل: خيار خارجي يصنع مزودات. ميزات الكتب تستورد ما صُدّر أو <code>forFeature</code> حسب المكتبة، ولا تعيد <code>forRoot</code>. احفظ القاعدة قبل أن تكتب مكتبتك: مكان واحد يستدعي دالة التكوين، والباقي يستورد الصنف المعاد تصديره.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استدعاء <code>forRoot</code> في كل ميزة فيتكرر الاتصال.</li>
+<li>نسيان المفتاح <code>module</code>.</li>
+<li>توقع أن استيراد الصنف وحده يكفي عندما الزخرفة فارغة والدالة هي التي تسجل المزودات.</li>
+<li>وضع كائن عادي في <code>imports</code> بلا <code>module</code>.</li>
+<li>إعادة التصدير عبر <code>exports: [DatabaseModule.forRoot(url)]</code> من وحدة لا تملك الخيار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مكتبة أو وحدة داخلية تحتاج خيارًا من المستورد: سابقة، عنوان، مهلة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>ميزة كتب تعرف مزوداتها داخل التطبيق. <code>@Module</code> الساكن أوضح. لا تبنِ <code>forRoot</code> لخيار لا يتغير ولا يأتي من الخارج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ساكن</th>
+<th>ديناميكي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مكان البيانات</td>
+<td><code>@Module</code></td>
+<td>كائن راجع من دالة ثابتة</td>
+</tr>
+<tr>
+<td>خيار المستورد</td>
+<td>لا يغيّر المضيف</td>
+<td>يدخل عبر معاملات الدالة</td>
+</tr>
+<tr>
+<td>المفتاح الزائد</td>
+<td>—</td>
+<td><code>module</code></td>
+</tr>
+<tr>
+<td>إعادة التصدير</td>
+<td>الصنف</td>
+<td>الصنف بعد استدعاء التكوين مرة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الحقل الإلزامي في الكائن الذي ترجع الدالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>module</code>، ويشير إلى صنف الوحدة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا استيراد <code>IdGeneratorModule</code> من غير <code>register()</code> لا يسجل المولّد إن كانت الزخرفة <code>@Module({})</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التسجيل مكتوب في الكائن الراجع من الدالة. الزخرفة فارغة، فالصنف وحده بلا نداء لا يضيف <code>IdGenerator</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>CoreModule</code> استدعى <code>DatabaseModule.forRoot(url)</code>. ميزة الكتب تريد العميل. ماذا تضع في <code>exports</code>، وماذا لا تستدعي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>exports: [DatabaseModule]</code>. لا تستدعي <code>forRoot</code> مرة ثانية. التكوين تم في النواة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضيف <code>DynamicModule</code> على شكل <code>@Module</code>؟</li>
+<li>لماذا الدالة <code>static</code>؟</li>
+<li>أين يعيش استدعاء التكوين في التطبيق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوحدة الساكنة بياناتها ثابتة على الصنف. الديناميكية ترجع الوصف عند الاستيراد حتى يمر الخيار. أعد تصدير الصنف بعد استدعاء واحد.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>forRoot</code>: تكوين مرة للتطبيق، غالبًا مع <code>global</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

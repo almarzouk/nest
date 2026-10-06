@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>forRoot مرة في الجذر</h2>
+<pre><code class="language-ts">import { DynamicModule, Module } from &#39;@nestjs/common&#39;;
+import { DatabaseService } from &#39;./database.service.js&#39;;
+
+@Module({})
+export class DatabaseModule {
+  static forRoot(url: string): DynamicModule {
+    return {
+      module: DatabaseModule,
+      global: true,
+      providers: [
+        { provide: &#39;DATABASE_URL&#39;, useValue: url },
+        DatabaseService,
+      ],
+      exports: [DatabaseService],
+    };
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DatabaseModule } from &#39;./database/database.module.js&#39;;
+import { BooksModule } from &#39;./books/books.module.js&#39;;
+
+@Module({
+  imports: [
+    DatabaseModule.forRoot(process.env.DATABASE_URL ?? &#39;&#39;),
+    BooksModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p><code>BooksModule</code> تحقن <code>DatabaseService</code> ولا تستدعي <code>forRoot</code>.</p>
+<h2>register لسابقتين</h2>
+<pre><code class="language-ts">@Module({
+  imports: [IdGeneratorModule.register({ prefix: &#39;usr&#39; })],
+  providers: [UsersService],
+})
+export class UsersModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [IdGeneratorModule.register({ prefix: &#39;ord&#39; })],
+  providers: [OrdersService],
+})
+export class OrdersModule {}
+</code></pre>
+<p>الوحدة غير عامة حتى لا يختلط الرمز بين النداءين.</p>
+<h2>إعادة تصدير بلا نداء ثانٍ</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DatabaseModule } from &#39;../database/database.module.js&#39;;
+
+@Module({
+  imports: [DatabaseModule.forRoot(process.env.DATABASE_URL ?? &#39;&#39;)],
+  exports: [DatabaseModule],
+})
+export class CoreModule {}
+</code></pre>
+<p>ميزة لاحقة تستورد <code>CoreModule</code> فقط.</p>
+<h2>مصنع غير متزامن لقيمة المزود</h2>
+<pre><code class="language-ts">{
+  provide: &#39;ASYNC_CONNECTION&#39;,
+  useFactory: async (config: ConfigService) =&gt; ({
+    url: config.getOrThrow&lt;string&gt;(&#39;DATABASE_URL&#39;),
+    ready: true,
+  }),
+  inject: [ConfigService],
+}
+</code></pre>
+<p>الخدمة تحقن القيمة بعد انتظار الإطار، وتغلق المورد صنف يملك <code>onModuleDestroy</code> إن كان عميلًا حقيقيًا.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>بحث في المستودع عن <code>forRoot(</code> يظهر مرة للإعداد الواحد.</li>
+<li><code>register</code> لا يضع <code>global: true</code> مع رمز ثابت مشترك.</li>
+<li><code>exports</code> في النواة هو الصنف لا <code>DatabaseModule.forRoot(...)</code>.</li>
+<li>وحدة التقارير الثقيلة بلا متحكم تُحمَّل بـ <code>LazyModuleLoader</code> من عامل، لا من <code>GET</code> جديد.</li>
+<li><code>ModuleRef.get</code> داخل <code>onModuleInit</code> لا داخل <code>constructor</code>.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

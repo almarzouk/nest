@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>ما الفرق بين Modular monolith و <code>createMicroservice</code> من حيث عدد عمليات النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأول عملية واحدة. الثاني عملية مستقلة تستمع لناقل، وتنشر وحدها.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>البريد يجب أن يُرسل مرة. أي نقل ترفض: Redis Pub/Sub أم RabbitMQ، ولماذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترفض Pub/Sub لأن كل نسخة حاضرة تستلم البث فيتكرر البريد. RabbitMQ طابور يسلّم لعامل، مع معالجة متكررة آمنة إن أُعيد التسليم.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>صفحة الدفع تحتاج <code>invoiceId</code>، والبحث يحدّث فهرسه، والفوترة قد تكون متوقفة لحظة. صمّم الأساليب والعناوين في Compose من غير تعليق طلب المتصفح إلى الأبد.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>send</code> إلى الفوترة مع مهلة و <code>lastValueFrom</code>، والعنوان <code>billing</code> أو <code>nats://nats:4222</code> لا <code>localhost</code>. بعد الحفظ <code>emit</code> أو سجل للبحث لا داخل مهلة الصفحة. فشل المهلة يرد تعذر الدفع والكتالوج يبقى حيًا. <code>RpcException</code> عند غياب الطلب.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

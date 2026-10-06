@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Domain Repository</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-domain-repository.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Domain Repository</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع واجهة المجموعة بجانب الدومين وجعل عميل Prisma تنفيذًا خلف الرمز، يركّب الجذر ويحفظه من غير أن يستورد السياسةُ العميل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>Repository&lt;Entity&gt;</code> أو <code>prisma.order.findUnique</code> يعيد شكل الأداة. قواعد <code>cancel</code> إن قرأت هذا الشكل تعلقت بالأعمدة. مستودع الدومين يعيد <code>Order</code> الذي تملكه، و <code>PrismaOrdersRepository</code> يترجم صفوفًا إلى هذا الكائن ثم يعيد كتابتها. السياسة تبقى على <code>findById</code> و <code>save</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الواجهة والكيان في مجلد السياق. الصنف الذي يحقن <code>PrismaService</code> في مجلد البنية لنفس الوحدة أو لوحدة بنية يستوردها السياق عبر الربط فقط. الربط <code>{ provide: ORDERS, useClass: PrismaOrdersRepository }</code>. يمكن أن يبقى <code>PrismaService</code> Singleton كما بنيته في دورة الحياة. المستودع الدومين لا يعني عميلًا لكل طلب.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export class Order {
+  constructor(
+    readonly id: string,
+    private status: &#39;open&#39; | &#39;cancelled&#39;,
+  ) {}
+
+  cancel(): void {
+    if (this.status !== &#39;open&#39;) {
+      throw new Error(&#39;لا يُلغى إلا المفتوح&#39;);
+    }
+    this.status = &#39;cancelled&#39;;
+  }
+
+  snapshot(): { id: string; status: &#39;open&#39; | &#39;cancelled&#39; } {
+    return { id: this.id, status: this.status };
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+import { Order } from &#39;./order.js&#39;;
+import type { OrdersRepository } from &#39;./orders.repository.js&#39;;
+
+@Injectable()
+export class PrismaOrdersRepository implements OrdersRepository {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findById(id: string): Promise&lt;Order | null&gt; {
+    const row = await this.prisma.order.findUnique({ where: { id } });
+    if (row === null) {
+      return null;
+    }
+    return new Order(row.id, row.status as &#39;open&#39; | &#39;cancelled&#39;);
+  }
+
+  async save(order: Order): Promise&lt;void&gt; {
+    const data = order.snapshot();
+    await this.prisma.order.update({ where: { id: data.id }, data: { status: data.status } });
+  }
+}
+</code></pre>
+<p><code>snapshot</code> يفضّل على جعل كل الحقول عامة إن كنت تحمي التغيير عبر <code>cancel</code>. التنفيذ يقرأ اللقطة لا أن يعيد كتابة الحالة متجاوزًا الدالة.</p>
+<p>الواجهة:</p>
+<pre><code class="language-ts">export interface OrdersRepository {
+  findById(id: string): Promise&lt;Order | null&gt;;
+  save(order: Order): Promise&lt;void&gt;;
+}
+
+export const ORDERS = Symbol(&#39;ORDERS&#39;);
+</code></pre>
+<p>وحدة السياق تسجل المحول والرمز وتصدّر خدمة التطبيق لا <code>PrismaOrdersRepository</code> إلا لاختبارات التكامل داخل الوحدة.</p>
+<p>معاملة السطور: <code>save</code> يستعمل <code>prisma.$transaction</code> عندما يكتب أكثر من جدول. السياسة لا تفتح المعاملة nor تعرف أسماء الجداول.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">PlaceOrder -&gt; ORDERS -&gt; PrismaOrdersRepository -&gt; PrismaService
+                 ^
+              Order.cancel
+</code></pre>
+<p>العميل ورقة تحت التنفيذ. الكيان فوق الترجمة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Injectable()
+export class CancelOrder {
+  constructor(@Inject(ORDERS) private readonly orders: OrdersRepository) {}
+
+  async execute(id: string): Promise&lt;void&gt; {
+    const order = await this.orders.findById(id);
+    if (order === null) {
+      throw new Error(&#39;الطلب غير موجود&#39;);
+    }
+    order.cancel();
+    await this.orders.save(order);
+  }
+}
+</code></pre>
+<p>اختبار يمرر مستودعًا في الذاكرة يحفظ <code>Map</code>. <code>cancel</code> مرتين على المفتوح ثم الملغى يرمي من الكيان من غير Prisma.</p>
+<h2>شرح المثال</h2>
+<p><code>execute</code> لا يذكر <code>status</code> في عمود. تغيير اسم العمود يمس <code>PrismaOrdersRepository</code> و <code>snapshot</code> إن تغيّر شكل اللقطة المتفق مع الجدول. قاعدة «لا يُلغى إلا المفتوح» تبقى في <code>Order</code>. هذا تقسيم الدرسين: النمط والعكس.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>findUnique</code> يجلب صفًا أو <code>null</code>.</li>
+<li>التنفيذ يبني <code>Order</code> أو يعيد <code>null</code> بلا استثناء HTTP.</li>
+<li><code>cancel</code> يغيّر الحالة الداخلية.</li>
+<li><code>update</code> يكتب اللقطة.</li>
+<li>فشل القيد في Prisma عطل بنية، لا «طلب غير موجود».</li>
+<li><code>PrismaService</code> متصل منذ <code>onModuleInit</code> على Singleton. المستودع لا ينادي <code>$connect</code> لكل <code>save</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>سطور الطلب داخل <code>save</code> بـ <code>$transaction</code>: احذف السطور القديمة أو حدّثها حسب لقطة الجذر، ثم حدّث الرأس. السياسة <code>addLine</code> ثم <code>save</code> مرة. لا تصدّر دالة <code>addLineRow</code> على المستودع. تقرير الفواتير يقرأ بـ <code>prisma</code> في <code>InvoiceQuery</code> من غير المرور على <code>Order</code>. القراءة للعرض ليست مجموعة الجذر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الواجهة في ملف يستورد <code>PrismaClient</code>.</li>
+<li>إرجاع الصف من <code>findById</code>.</li>
+<li><code>$connect</code> داخل <code>save</code>.</li>
+<li>تعليم المستودع <code>REQUEST</code> لأن الصفحة تحتاج المستخدم. مرر المعرف وسيطًا.</li>
+<li>معاملة في السياسة فيها استدعاءات Prisma مباشرة فينهار العزل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تعيش قواعد على الجذر وتريد مزيف <code>Map</code> في الاختبار، وPrisma يبقى الترجمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قراءة DTO بلا كيان. <code>prisma</code> في خدمة الوحدة أصغر. لا تبنِ كيانًا يعيد تعيين الحقول فقط ليبرر المستودع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>النوع الذي تعرفه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CancelOrder</code></td>
+<td><code>Order</code> و <code>OrdersRepository</code></td>
+</tr>
+<tr>
+<td><code>PrismaOrdersRepository</code></td>
+<td><code>Order</code> و Prisma</td>
+</tr>
+<tr>
+<td><code>PrismaService</code></td>
+<td>الجداول</td>
+</tr>
+<tr>
+<td><code>InvoiceQuery</code></td>
+<td>DTO القراءة، بلا جذر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>findById</code> يبني <code>new Order</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى ترى السياسة كيانها لا صف Prisma. الترجمة مكانها التنفيذ.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين تُكتب معاملة الرأس والسطور؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>داخل <code>save</code> في التنفيذ، بـ <code>prisma.$transaction</code>. السياسة تنادي <code>save</code> مرة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تختبر «الإلغاء الثاني يرمي» بلا قاعدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مستودع ذاكرة خلف <code>ORDERS</code> يعيد <code>Order</code> مفتوحًا ثم يحفظ الملغى. النداء الثاني على نفس الكيان يرمي من <code>cancel</code> قبل أي SQL.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يستورد واجهة المستودع؟</li>
+<li>ماذا يفعل <code>snapshot</code>؟</li>
+<li>لماذا العميل يبقى Singleton؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>مستودع الدومين واجهة مجموعة تملكها السياسة، وتنفيذ Prisma يترجم الجذر. العميل المشترك يبقى خلف التنفيذ، والقراءات العرضية تبقى استعلامات بجانب النمط.</p>
+<h2>ماذا بعد؟</h2>
+<p>التجريد والاختبار: ماذا تزوّر، وماذا تترك لقاعدة حقيقية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

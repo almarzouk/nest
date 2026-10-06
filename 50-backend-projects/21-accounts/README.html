@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>21 — حسابات وتجزئة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>21 — حسابات وتجزئة</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new accounts</code></p>
+<h2>ماذا تبني</h2>
+<p>تسجيل بالبريد وكلمة المرور، ودخول يتحقق من التجزئة. الرد لا يحتوي التجزئة. فشل الدخول رسالة واحدة.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>أول سر في المسار. التخزين خطأ هنا يغلق كل المشاريع التي بعده.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>تجزئة بكلمة مرور لا SHA عاري</li>
+<li>رسالة دخول عامة</li>
+<li>عدم تسريب وجود البريد في الدخول</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>OAuth</li>
+<li>Refresh معقد</li>
+<li>Passport إن اخترت الحزمة الرسمية لاحقًا</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>السلة، وفصل المصادقة في الدورة. استخدم تجزئة من مكتبة معروفة مثل argon2 أو bcrypt.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/20-authentication/README.html">20-authentication</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>البريد فريد بعد تصغيره.</li>
+<li>كلمة المرور 10 أحرف على الأقل ولا تُسجَّل في اللوج.</li>
+<li>الدخول الفاشل دائمًا 401 بنفس النص سواء غاب البريد أو خابت الكلمة.</li>
+<li>التسجيل المكرر 409.</li>
+<li>رمز الجلسة عشوائي يُخزَّن مشيرًا إلى المستخدم، لا كلمة المرور.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/auth/register</code></td>
+<td>201</td>
+<td>ينشئ حسابًا بلا تجزئة في الرد</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/auth/login</code></td>
+<td>200</td>
+<td>يعيد رمز جلسة</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/auth/logout</code></td>
+<td>204</td>
+<td>يلغي الرمز</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new accounts</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>افصل PasswordHasher في مزوّد حتى يسهل استبداله في الاختبار.</li>
+<li>لا تبنِ JWT بعد. رمز عشوائي في الذاكرة يكفي لهذه المرحلة.</li>
+<li>ضع السر لاحقًا في البيئة عندما تنتقل إلى توقيع. هنا الرمز العشوائي لا يحتاج سر توقيع.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/auth/password-hasher.ts
+src/auth/auth.service.ts
+src/users/users.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">async login(email: string, password: string) {
+  const user = await this.users.findByEmail(email.toLowerCase());
+  const ok = user ? await this.hasher.verify(user.passwordHash, password) : false;
+  if (!user || !ok) throw new UnauthorizedException(&quot;invalid credentials&quot;);
+  return this.sessions.issue(user.id);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>مقارنة كلمة المرور بالنص المخزن.</li>
+<li>قول «البريد غير مسجّل» في الفتح الباب لمعرفة الحسابات.</li>
+<li>إرجاع passwordHash في 201.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>التسجيل ثم الدخول ينجح.</li>
+<li>كلمة خاطئة وبريد مجهول بنفس الرد.</li>
+<li>اللوج بلا كلمة مرور.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف حد طول أعلى لكلمة المرور حتى لا تُرهق التجزئة.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 21» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../20-shopping-cart/README.html">20. سلة لا تثق بالسعر</a></li>
+<li>التالي: <a href="../22-profile/README.html">22. الملف الحالي</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

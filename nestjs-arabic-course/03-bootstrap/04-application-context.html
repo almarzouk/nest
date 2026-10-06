@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Application Context</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-application-context.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Application Context</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز التطبيق الذي يستمع إلى HTTP عن سياق Nest الذي يحمل الوحدات والحاوية، لأن الإطار يستخدم السياق في أكثر من شكل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إذا ظننت أن Nest &quot;خادم Express فقط&quot;، ستعجز عن تفسير اختبار بلا منفذ، أو أمر CLI، أو microservice. المشترك هو سياق تطبيق فيه حاوية. HTTP غلاف على هذا السياق في مسارنا الحالي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Application context هو التطبيق بعد ما بنى Nest وحداته ومزوّداته. <code>INestApplication</code> سياق مع طبقة HTTP. يمكن وجود سياق بلا استماع.</p>
+<h2>التعريف التقني</h2>
+<p><code>NestFactory.create</code> ينتج تطبيق HTTP. التوثيق في Standalone applications يصف تركيب Nest بأشكال أخرى، منها سياق تحصل منه على مزوّدات وتستدعيها من غير خادم. Platform agnosticism تقول إن السياق يخدم HTTP و microservices و WebSockets ووظائف مجدولة وأوامر CLI.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Application context
+    modules + container
+         |
+         +-- HTTP server     مسار هذه الدورة الآن
+         +-- microservice    لاحقًا
+         +-- standalone      لاحقًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+await app.listen(3000);
+</code></pre>
+<p>هنا السياق نفسه هو تطبيق HTTP. <code>listen</code> يضيف الاستماع ولا ينشئ الوحدات مرة ثانية.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>بعد <code>create</code> تستطيع نظريًا الحصول على مزوّد من التطبيق للاختبار أو التهيئة.</li>
+<li><code>get</code> على التطبيق لاحقًا يعيد مزوّدًا مسجّلًا. لا تستخدمه داخل خدماتك لتبحث عن اعتماديات؛ الحقن في constructor هو الطريق. <code>get</code> أداة حافة وإقلاع واختبار.</li>
+<li><code>listen</code> لا يغيّر الرسم.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>السياق يحتفظ بالحاوية وبمرجع الوحدات. إغلاق التطبيق يغلق الخادم ويستدعي خطافات الإيقاف إن فُعّلت. لذلك &quot;السياق&quot; أطول عمرًا من طلب واحد، وأقصر من أن تعيد <code>create</code> في كل طلب. طلب HTTP يمر داخل السياق نفسه ويستعير المزوّدات الجاهزة، غالبًا النسخة الواحدة.</p>
+<h2>مثال عملي</h2>
+<p>اختبار لا يريد منفذًا:</p>
+<pre><code class="language-text">create(AppModule)
+   -&gt; app.getHttpServer()
+   -&gt; أداة ترسل GET / إلى هذا الخادم
+   -&gt; لا listen على 3000
+</code></pre>
+<p><code>getHttpServer</code> من أسئلة HTTP adapter في التوثيق عندما تحتاج الخادم الخام. الاسم يكفي الآن. فصل Testing يكتب الاستدعاء.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>بناء السياق داخل كل طلب.</li>
+<li>تخزين بيانات طلب على السياق العام.</li>
+<li>الاعتقاد أن إغلاق الطرفية دائمًا يشغّل خطافات الإيقاف. تفعيل shutdown hooks درس دورة الحياة.</li>
+</ul>
+<h2>متى نفكر بالسياق؟</h2>
+<p>عندما نسأل: هل القطع بُنيت مرة عند الإقلاع؟ الجواب نعم في هذا المسار.</p>
+<h2>متى ننشئ سياقًا بلا listen؟</h2>
+<p>في اختبار HTTP داخلي، أو في أمر لا يفتح منفذًا. لا تبدأ بذلك قبل أن ترى <code>listen</code> يعمل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>سياق HTTP</th>
+<th>طلب واحد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العمر</td>
+<td>عمر العملية</td>
+<td>عمر الطلب</td>
+</tr>
+<tr>
+<td>المزوّد الافتراضي</td>
+<td>يُنشأ مع السياق</td>
+<td>يستخدم النسخة الموجودة</td>
+</tr>
+<tr>
+<td>المنفذ</td>
+<td>خاصية للسياق بعد listen</td>
+<td>لا يملك منفذًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>listen</code> يعيد بناء الوحدات؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. البناء تم في <code>create</code>. <code>listen</code> يفتح الاستماع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا بيانات مستخدم داخل متغير على خدمة في هذا السياق ظاهرة لكل الطلبات؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن الخدمة تُنشأ مع السياق مرة واحدة افتراضيًا، لا مرة لكل طلب. الحقل مشترك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اذكر شكلين يستخدم فيهما Nest السياق من غير أن يكونا صفحة متصفح.</p>
+<details><summary>الحل</summary>
+
+<p>اختبار يضرب الخادم الداخلي، وأمر Standalone أو مهمة بلا <code>listen</code>. Microservices و WebSockets أشكال إضافية لاحقة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضيف <code>listen</code> فوق السياق؟</li>
+<li>لماذا السياق ليس &quot;الطلب الحالي&quot;؟</li>
+<li>أين يُبنى السياق: في <code>create</code> أم في كل <code>GET</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>السياق وحدات وحاوية تعيش مع العملية. HTTP في <code>create</code> يضيف محوّلًا، و <code>listen</code> يفتح الباب. الطلب زائر لهذا السياق لا مالك له.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحاوية داخل السياق: من ينشئ المزوّدات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Standalone applications: <a href="https://docs.nestjs.com/standalone-applications">https://docs.nestjs.com/standalone-applications</a></li>
+<li>NestJS — Platform agnosticism: <a href="https://docs.nestjs.com/fundamentals/platform-agnosticism">https://docs.nestjs.com/fundamentals/platform-agnosticism</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

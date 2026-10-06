@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Token Revocation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-token-revocation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Token Revocation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنهاء قدرة إثبات في رف فورًا: عائلة refresh لجهاز، أو جلسة متصفح، من غير انتظار انتهاء access token القصير وحده.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>القارئ فقد هاتفه. التدوير لن يحدث إن كان السارق هو من يجدد. انتظار ربع ساعة على access token الحالي، وأسبوعين على refresh إن لم يُستبدل، نافذة مفتوحة. زر «خروج من كل الأجهزة» يجب أن يسقط العائلة والجلسات الآن.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الإبطال علامة على الخادم. <code>TokenService.revoke</code> ينهي عائلة رمز التحديث: الرمز وأسلافه وخلفاءه. <code>SessionService.revoke</code> ينهي جلسة واحدة بشرط أن تكون لنفس المستخدم. خروج الكل ينهي جلسات الحساب ورموزه. access token الموقع قد يبقى حتى <code>exp</code> لأن التحقق بالتوقيع لا يسأل الجدول كل مرة؛ لذلك إبقاؤه قصيرًا جزء من الإبطال. لا تبنوا قائمة إبطال ضخمة لكل access إن كان عمره دقائق، إلا لحادثة تطلبون فيها رفضًا فوريًا أعقد.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة المصادقة تعرض <code>POST /auth/token/revoke</code> يستدعي <code>tokenService.revoke(refreshToken)</code> فتنتهي العائلة. الجلسات: <code>sessionService.revoke(id, { userId })</code> تعيد false لجلسة ليست لهذا المستخدم حتى لا ينهي معرّف في المسار جلسة شخص آخر، والرد عندها 404. معرّفات الجلسة المعروضة لصاحبها تجزئات ولا يُشتق منها سر الكعكة. مخزنكم ينفّذ <code>revokeRefreshTokenFamily</code> بعلامة <code>revoked</code> على صفوف العائلة، لا بحذف صامت يُعيد إدخال خلف خاسر في سباق. Passport ما زال موثّقًا كوصفة؛ إبطال جلسته هناك آلية تلك الوصفة. مسار رف الواحد لا يخلط المخزنين.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">جهاز واحد: revoke(refresh) → العائلة ميتة
+جلسة متصفح: revoke(sessionId, userId)
+كل الأجهزة: جلسات الحساب + كل عائلاته
+access الحالي: يموت عند exp أو عند فحص إضافي إن فرضتموه
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, HttpCode, Post } from &#39;@nestjs/common&#39;;
+import { TokenService } from &#39;@nestjs/authentication&#39;;
+
+@Controller(&#39;auth/token&#39;)
+export class TokenRevocationController {
+  constructor(private readonly tokens: TokenService) {}
+
+  @Post(&#39;revoke&#39;)
+  @HttpCode(200)
+  async revoke(@Body(&#39;refreshToken&#39;) refreshToken: string) {
+    await this.tokens.revoke(refreshToken);
+    return { revoked: true };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المسار يحتاج إثباتًا أو يقبل الرمز نفسه كدليل الجهاز الذي يخرج، حسب ما تعرضه الوحدة. لا تسجّلوا الرمز.</li>
+<li><code>{ revoked: true }</code> لا يعني أن access token نُزع من ذاكرة الجوال. الجوال يحذفه محليًا أيضًا.</li>
+<li>200 بعد الإبطال المتكرر أسلم من 500. الإبطال الناجح مرتين ما زال «العائلة ميتة».</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تُعلَّم صفوف <code>familyId</code> بـ <code>revoked</code>.</li>
+<li>أي <code>refresh</code> لاحق على فرد من العائلة يفشل بـ 401.</li>
+<li>access token وُقّع قبل الإبطال يمر من فحص التوقيع حتى <code>exp</code> إن لم يوجد فحص عائلة على كل طلب.</li>
+<li>لذلك <code>ttl</code> القصير من درس التدوير يحد المتبقي.</li>
+<li>جلسة الكعكة مسار آخر: حذف صف الجلسة يجعل الطلب التالي بلا مستخدم حتى لو بقيت الكعكة في المتصفح.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>خروج جهاز لا يخرج جارًا:</p>
+<pre><code class="language-ts">import { Controller, Delete, NotFoundException, Param } from &#39;@nestjs/common&#39;;
+import { CurrentUser, SessionService } from &#39;@nestjs/authentication&#39;;
+
+@Controller(&#39;auth/sessions&#39;)
+export class SessionsController {
+  constructor(private readonly sessions: SessionService) {}
+
+  @Delete(&#39;:id&#39;)
+  async revoke(@CurrentUser(&#39;id&#39;) userId: string, @Param(&#39;id&#39;) id: string) {
+    const ok = await this.sessions.revoke(id, { userId });
+    if (!ok) throw new NotFoundException();
+  }
+}
+</code></pre>
+<p><code>userId</code> من الجلسة الحالية لا من الجسم. جسم <code>{ userId }</code> الذي يرسله العميل لا يُستخدم لتحديد الضحية. هذا نفس الحذر الذي سترونه مع المستأجر لاحقًا: المعرّف الحساس من الإثبات لا من الحقل الحر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حذف refresh من الجوال فقط وتركه حيًا على الخادم.</li>
+<li><code>revoke</code> بلا <code>userId</code> على الجلسات فيُنهى أي معرّف يُخمَّن.</li>
+<li>اعتبار الإبطال بديلًا عن <code>ttl</code> قصير لـ access token.</li>
+<li>إبطال عائلة عند كل 401 عادي فيُخرج المستخدم كلما انتهت مهلة شبكة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>فقدان جهاز، زر خروج، تغيير كلمة المرور (الصفحة أصلًا تنهي الجلسات ورموز التحديث عند إعادة التعيين)، واشتباه إعادة استخدام من درس التدوير.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عند كل طلب API. التعليم على العائلة يتم عند الخروج والحادثة لا عند القراءة. ولا كحذف مستخدم من الجدول؛ الإبطال يسقط الإثبات والصف قرار آخر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الإجراء</th>
+<th>ماذا يموت فورًا</th>
+<th>ماذا قد يتبقى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tokenService.revoke</code></td>
+<td>عائلة refresh</td>
+<td>access حتى <code>exp</code></td>
+</tr>
+<tr>
+<td><code>sessionService.revoke</code></td>
+<td>تلك الجلسة</td>
+<td>جلسات الأجهزة الأخرى</td>
+</tr>
+<tr>
+<td>خروج الكل</td>
+<td>جلسات الحساب والعائلات</td>
+<td>access قصير حتى <code>exp</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>بعد <code>POST /auth/token/revoke</code>، هل ينجح <code>refresh</code> بنفس الرمز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. العائلة أُبطلت، والرد 401.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تمرير <code>userId</code> من جسم الطلب إلى <code>revoke</code> خطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن أي عميل يستطيع وضع معرّف شخص آخر. الصفحة تمرر مستخدم الجلسة وتطلب أن تطابق الجلسة صاحبها، وإلا 404.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>سارق يملك access token حيًا لعشر دقائق بلا refresh. ماذا يحد نافذته اليوم، وما الذي لا يفعله <code>revoke</code> على عائلة لا يملكها أصلًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>ttl</code> هو الحد إن لم تفحصوا العائلة عند كل access. <code>revoke</code> على refresh لا يسقط JWT الموقع قبل أن ينتهي. الخروج من كل الأجهزة يجب أن يسقط العائلات حتى لا يجدد، ويقصّر المتبقي عمر access. إن كانت الحادثة تستدعي قطعًا فوريًا للـ access، فذلك فحص إضافي (نسخة رمز أو قائمة قصيرة) وليس الوعد الافتراضي لـ JWT موقع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تنهي <code>TokenService.revoke</code>؟</li>
+<li>لماذا تُمرَّر هوية الجلسة لا هوية الجسم؟</li>
+<li>ماذا يبقى بعد إبطال refresh؟</li>
+<li>متى تُبطل العائلة تلقائيًا من غير زر خروج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإبطال علامة خادم على عائلة الرمز أو على جلسة صاحبها. الجوال يحذف نسخه محليًا. access token القصير يحد ما يتبقى بعد الإبطال. المعرّف الذي يحدد الضحية يأتي من الإثبات.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحساب صار يعرف صاحبه. الفصل التالي يفصل بيانات مكتبة عن مكتبة أخرى على نفس العملية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

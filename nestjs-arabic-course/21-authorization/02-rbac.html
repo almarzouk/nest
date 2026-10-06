@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RBAC</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-rbac.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>RBAC</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط الأدوار بأفعال مسموحة: Role-Based Access Control، كجدول يمكن قراءته قبل كتابة سياسة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>if (isEditor)</code> داخل النشر وداخل الحذف وداخل إخفاء التعليق يتكرر ويتناقض. محرر جديد لا يعرف ماذا يستطيع. إضافة دور <code>moderator</code> يلمس كل شرط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>RBAC يقول: الدور يملك مجموعة أفعال. الفعل اسم مثل <code>post:publish</code>. المستخدم يستطيع الفعل إن كان أحد أدواره يملكه. الفحص دالة واحدة <code>can(user, action)</code>. الملكية الخاصة بصف مقال ليست في هذا الجدول. RBAC هنا أفعال عامة على نوع المورد.</p>
+<h2>التعريف التقني</h2>
+<p>جدول الدورة:</p>
+<table>
+<thead>
+<tr>
+<th>الدور</th>
+<th>أفعال</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>reader</code></td>
+<td><code>post:read</code></td>
+</tr>
+<tr>
+<td><code>editor</code></td>
+<td><code>post:read</code>، <code>post:publish</code>، <code>comment:remove</code></td>
+</tr>
+</tbody></table>
+<pre><code class="language-ts">const grants: Record&lt;Role, readonly string[]&gt; = {
+  reader: [&quot;post:read&quot;],
+  editor: [&quot;post:read&quot;, &quot;post:publish&quot;, &quot;comment:remove&quot;],
+};
+
+export function roleCan(user: { roles: Role[] } | null, action: string): boolean {
+  if (!user) return false;
+  return user.roles.some((role) =&gt; grants[role].includes(action));
+}
+</code></pre>
+<p>الضيف <code>false</code>. لا استثناء <code>401</code> داخل الدالة. من يستدعيها يقرر الرمز: إن لم يوجد مستخدم أصلًا فالحارس أعاد <code>401</code> قبل النداء على مسار مغلق.</p>
+<p>هذا ليس <code>@nestjs/authorization</code> بعد. هو النموذج الذهني الذي ستترجمه سياسات الحزمة إلى دوال ترجع <code>true</code> حرفيًا. الحزمة لا تستخدم سلاسل <code>post:publish</code> كأسماء جاهزة. أنت تسمي دوال السياسة. أبقِ أسماء الجدول قريبة من أسماء الدوال حتى لا تظهر لغتان.</p>
+<p>Nest لا يفرض RBAC مدمجًا بهذا الشكل. الصفحة الحالية تبني السياسات مباشرة. الدرس يبرر لماذا السياسة أوضح من شروط مبعثرة، ثم الدرس التالي يفرّق الصلاحية عن الادعاء داخل الرمز.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">editor -&gt; post:publish, post:read, comment:remove
+reader -&gt; post:read
+roleCan(user, &quot;post:publish&quot;)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function assertRole(user: { roles: Role[] }, action: string) {
+  if (!roleCan(user, action)) {
+    throw new ForbiddenException();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>ForbiddenException</code> هنا <code>403</code> لأن الدالة استقبلت مستخدمًا موجودًا. لو استقبلت <code>null</code> لكان الخلط مع <code>401</code> سهلًا. على مسار مغلق بالحارس، المستخدم موجود والرفض تفويض.</p>
+<p><code>assertRole</code> ما زال لا يرى المقال. نشر مسودة الغير قد يكون ممنوعًا حتى على <code>editor</code> في منتجكم. لا تضف <code>post.authorId</code> إلى هذه الدالة. ذلك يخرجها من RBAC العام إلى سياسة السجل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الفحص في الذاكرة على مصفوفة صغيرة. لا استعلام لكل فعل إن كانت الأدوار محمّلة مع <code>PublicUser</code>. إن كبر الجدول إلى مئات الصلاحيات من قاعدة، حمّله مع المستخدم مرة في <code>validate</code> لا في كل <code>if</code>.</p>
+<p>تغيير <code>grants</code> إصدار سلوك. ضعه حيث يراجعه الفريق، لا منسوخًا في المتحكم.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /posts/:id/publish</code> يستدعي <code>assertRole(user, &quot;post:publish&quot;)</code> ثم يحدّث <code>published</code>. قارئ معروف يأخذ <code>403</code>. محرر يأخذ تحديثًا. ضيف لا يصل إلى الدالة لأن المصادقة أعادت <code>401</code>. حذف تعليق يستخدم <code>comment:remove</code> من الجدول نفسه، لا شرط <code>isEditor</code> جديد في <code>CommentsService</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ قائمة الأفعال داخل كل خدمة.</li>
+<li><code>401</code> عند نقص الدور.</li>
+<li>وضع ملكية الصف داخل <code>roleCan</code> حتى تصبح الدالة تعرف Prisma.</li>
+<li>دور بلا اسم في النوع، يُكتب <code>&quot;Editor&quot;</code> بحرف كبير في مكان واحد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تُمنح القدرات لفئات لا لصفوف بعينها، والقائمة قصيرة وثابتة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحل أخير لكل قاعدة. «صاحب التعليق يحذف تعليقه» ليست دورًا. ستحتاج سجلًا في السياسة حتى لو بقي RBAC للأفعال العامة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>شروط <code>isEditor</code></th>
+<th>جدول <code>grants</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الفعل مخفي في الكود</td>
+<td>الفعل اسم في الجدول</td>
+</tr>
+<tr>
+<td>دور جديد يلمس الملفات</td>
+<td>دور جديد يلمس الجدول</td>
+</tr>
+<tr>
+<td>سهل التناقض</td>
+<td>مصدر واحد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>reader</code> يستطيع <code>post:publish</code> في جدول هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الجدول يعطيه <code>post:read</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>assertRole</code> ترمي <code>403</code> لا <code>401</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها تُستدعى بعد وجود مستخدم. نقص الفعل تفويض. غياب الهوية قرار الحارس قبلها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>منتج يريد أن يحذف المحرر أي تعليق، والقارئ يحذف تعليقه فقط. أي جزء يبقى في RBAC، وأي جزء يخرج منه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>comment:remove</code> للمحرر يبقى فعل دور. حذف القارئ لتعليقه يحتاج مقارنة <code>comment.authorId</code> بالشخص، وهذا شرط سجل لا سطر في <code>grants</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يربط RBAC؟</li>
+<li>أين لا تكفي قائمة الأفعال؟</li>
+<li>أي رمز لنقص الدور بعد المصادقة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>RBAC جدول أدوار إلى أفعال عامة ودالة فحص واحدة. ملكية الصف تبقى خارج الجدول. السياسة لاحقًا تجمع الاثنين في دوال صريحة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-permissions-and-claims.html">Permissions و Claims</a> يفرّق الصلاحية المخزّنة عن الادعاء داخل الرمز.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

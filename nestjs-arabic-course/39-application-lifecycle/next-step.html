@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>خطافات هذا الفصل تخص عمر العملية: إقلاع من الأوراق، ثم باب مفتوح، ثم إيقاف من الجذر إن استدعيت <code>app.close()</code> أو وصلت إشارة بعد <code>enableShutdownHooks()</code>.</p>
+<p>حدّ واحد احمله معك: هذه الدوال لا تُستدعى على صنف <code>Scope.REQUEST</code>. عمر ذلك الصنف طلب واحد، لا عمر التطبيق. إن وضعت Prisma هناك لن ترى <code>$connect</code> في <code>onModuleInit</code>، وستدفع ثمن بناء الشجرة في كل طلب.</p>
+<p>الفصل التالي يسمي النطاقات الثلاثة: <code>DEFAULT</code> وهو Singleton الذي عشت معه حتى الآن، و <code>REQUEST</code> الذي يعدي من يحقنه، و <code>TRANSIENT</code> الذي يعطي نسخة لكل مكان حقن. سترى لماذا تمرير المستخدم الحالي لا يحتاج نطاق طلب، ولماذا النسخة الواحدة من عميل القاعدة هي التي تستحق خطاف الإقلاع.</p>
+<p>اكتب جملة قبل أن تفتح المجلد: أفتح المورد المشترك في <code>onModuleInit</code> على Singleton، وأغلقه في <code>onModuleDestroy</code>، ولا أعلّم الخدمة <code>REQUEST</code> كي أقرأ <code>user</code>.</p>
+<h2>ما تثبته كل محطة</h2>
+<p>خريطة الدورة ترسم الاتجاه: الإقلاع من الأوراق إلى الجذر، والإيقاف عكسه. <code>onModuleInit</code> ينتظر اعتماديات الوحدة بعد حلها، فـ <code>$connect</code> يعيش هنا على <code>PrismaService</code> الورقة. <code>onApplicationBootstrap</code> يأتي بعد كل الوحدات وقبل <code>listen</code>، وهو مكان <code>ClientProxy.connect()</code> حتى لا يُحجز المنفذ قبل الناقل. <code>onModuleDestroy</code> بلا وسيط إشارة، وفيه <code>$disconnect</code> و <code>clearInterval</code>. <code>beforeApplicationShutdown(signal)</code> قبل إغلاق الاتصالات، علم إفراغ أو جاهزية. <code>onApplicationShutdown(signal)</code> آخر خطوة في <code>app.close()</code>. <code>enableShutdownHooks()</code> مطفأ افتراضيًا لأن المستمعين يكلفون ذاكرة. على Windows يصل <code>SIGINT</code> ولا يصل <code>SIGTERM</code>. <code>app.close()</code> لا يستدعي <code>process.exit</code> إن بقي مؤقت.</p>
+<h2>سيناريو تعبر به</h2>
+<p>المتجر يغلق الحاوية بـ <code>SIGTERM</code>. السلسلة الصحيحة: الخطافات مفعّلة، Prisma ورقة، والفواتير مؤقت في الجذر يُمسح في <code>onModuleDestroy</code> قبل أن تصل الورقة إلى <code>$disconnect</code>. إن عكست الإغلاق تقطع القاعدة بينما الجذر ما زال يكتب.</p>
+<pre><code class="language-ts">await app.listen(process.env.PORT ?? 3000);
+</code></pre>
+<p>يأتي بعد <code>onApplicationBootstrap</code>. لا تضع <code>$connect</code> بعده وتتوقع أن الفشل يمنع فتح المنفذ: الفشل المتأخر يفتح بابًا على قاعدة ميتة.</p>
+<p>أصناف <code>Scope.REQUEST</code> لا ترى أي خطاف من هذه القائمة. عمرها الطلب. نقل Prisma إلى ذلك النطاق يخطئ مكانين: الخطاف لا يعمل، والشجرة تُبنى كل مرة. الفصل التالي يسمي هذا الصعود عدوى.</p>
+<h2>ماذا تقرأ هناك</h2>
+<p><code>DEFAULT</code> هو ما استخدمته: نسخة واحدة، والخطافات تعمل، و Node ليس خيطًا لكل طلب. <code>REQUEST</code> نسخة لكل طلب وتعدي من يحقنها، بما في ذلك المتحكم. <code>TRANSIENT</code> نسخة لكل مكان حقن ولا تعدي، و <code>INQUIRER</code> يسمي الأب. درس الأداء يقيس إعادة بناء الشجرة. المزود الدائم (<code>durable: true</code>) يعيد الشجرة لمفتاح مثل <code>x-tenant-id</code> ولا يصلح لآلاف المفاتيح، ولا تمرر المستخدم الحالي عبره.</p>
+<h2>تمرين عبور</h2>
+<p>خدمة كتالوج على الافتراضي، وحارس يملأ <code>request.user</code>. أين تقرأ المعرف، وأين تبقى <code>$connect</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المعرف من ديكور يقرأ <code>ExecutionContext</code> في المتحكم ويُمرر وسيطًا. <code>$connect</code> في <code>onModuleInit</code> على <code>PrismaService</code> بلا <code>scope</code>. لا تحقن <code>REQUEST</code> في الكتالوج.</p>
+</details>
+
+<h2>ملف تعبر به كما هو</h2>
+<p>الإقلاع يفعّل الخطافات ويستمع. Prisma ورقة تتصل وتقطع. الديكور يقرأ المستخدم من غير أن يعلّم الخدمة بنطاق طلب، وهذا أول ملف في الفصل التالي.</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap(): Promise&lt;void&gt; {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+}
+
+void bootstrap();
+</code></pre>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise&lt;void&gt; {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { createParamDecorator, type ExecutionContext } from &#39;@nestjs/common&#39;;
+
+export const CurrentUserId = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ user?: { id: string } }&gt;();
+    return request.user?.id ?? &#39;&#39;;
+  },
+);
+</code></pre>
+<p><code>BooksService.list(userId: string)</code> تبقى بلا <code>scope</code>. إن حقنت <code>REQUEST</code> داخلها صعد المتحكم، وسقط <code>onModuleInit</code> عن أي صنف في تلك السلسلة إن علّمته طلبًا أيضًا. Prisma ليست في تلك السلسلة.</p>
+<p>تحقق قبل المغادرة: فشل <code>$connect</code> يمنع <code>listen</code>. <code>SIGTERM</code> يطبع الإغلاق على Linux. Ctrl+C على Windows يصل كـ <code>SIGINT</code>. مؤقت بلا <code>clearInterval</code> يبقي العملية بعد <code>app.close()</code>. لا خطاف على مزود طلب.</p>
+<h2>قائمة قبل فتح النطاقات</h2>
+<ol>
+<li>ابحث عن <code>enableShutdownHooks</code> في <code>main.ts</code>.</li>
+<li>ابحث عن <code>$connect</code> وتأكد أن الصنف بلا <code>scope</code>.</li>
+<li>ابحث عن <code>setInterval</code> وتأكد من <code>clearInterval</code> في <code>onModuleDestroy</code>.</li>
+<li>لا تضع <code>process.exit</code> داخل خطاف.</li>
+<li><code>ClientProxy.connect</code> في <code>onApplicationBootstrap</code> لا في <code>onModuleInit</code> إن كان يجب أن تكتمل الوحدات أولًا.</li>
+<li>علم الإفراغ في <code>beforeApplicationShutdown</code> إن كان المنسّق يقرأ الجاهزية أثناء الإغلاق.</li>
+<li>السجل الأخير في <code>onApplicationShutdown</code> بعد إغلاق المقابس.</li>
+<li>اختبار يستدعي <code>app.close()</code> ويرى <code>$disconnect</code> حتى لو حذفت التفعيل مؤقتًا، ثم أعد التفعيل قبل التشغيل.</li>
+<li>لا تنقل Prisma إلى طلب كي «يملك كل مستخدم اتصالًا».</li>
+<li>اكتب جملة المستخدم: المعرف وسيط من الديكور، والعميل Singleton.</li>
+<li>ترتيب الإقلاع: أوراق ثم جذر، وكل خطاف يُنتظر.</li>
+<li>ترتيب الإيقاف: جذر ثم أوراق.</li>
+<li><code>onModuleDestroy</code> بلا إشارة، والخطافان الآخران يستقبلانها.</li>
+<li>الحياة لا تُستدعى على <code>Scope.REQUEST</code>.</li>
+</ol>
+<p><a href="../40-injection-scopes/README.html">Injection scopes</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

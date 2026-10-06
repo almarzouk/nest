@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Membership و Roles و Permissions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-membership-and-roles.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Membership و Roles و Permissions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمثيل عمل الشخص داخل مكتبة رف: عضوية بدور، والدور يُترجم إلى صلاحيات تُفحص على المسار لا تُخزَّن في JWT طويل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حقل <code>user.role = admin</code> يجعل الشخص مديرًا في كل المكتبات. أو تُنسخ قائمة صلاحيات داخل الرمز فتبقى بعد ما خُفض دوره إلى أن تنتهي العائلة. موظف المخزن يستطيع نشر الكتب لأن المسار فحص تسجيل الدخول فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Membership</code> ثلاثية: مستخدم، منظمة، دور. الأدوار في رف قليلة: <code>owner</code>, <code>editor</code>, <code>clerk</code>. كل دور مجموعة صلاحيات مثل <code>books.publish</code>. الحارس يقرأ الدور من القاعدة (أو من ذاكرة طلب) بعد ما عرف المستأجر، ثم يسمح أو يمنع.</p>
+<h2>التعريف التقني</h2>
+<p>الجدول مفتاحه <code>(userId, organizationId)</code>. الدور قيمة مغلقة لا نصًا حرًا من الجسم عند الدعوة إلا إن كان الداعي يملك <code>members.invite</code>. الصلاحيات خريطة في الكود لا صفوف يعدلها كل طلب. <code>@nestjs/authorization</code> في التوثيق الحالي يعبر عن الصلاحيات كسياسات؛ يمكنكم حارسًا بسيطًا يفحص الخريطة إن لم تبنوا سياسات كاملة بعد. الدور لا يُوضع في <code>claims</code> الدائمة لعائلة التحديث، كما في درس التدوير: <code>validate</code> أو حارس المستأجر يحمّل العضوية. 403 عند نقص الصلاحية بعد نجاح المصادقة. 401 إن غاب الإثبات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الطلب: user + tenant
+→ Membership.role
+→ permissions(role)
+→ books.publish ؟
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const permissions = {
+  owner: [&#39;books.publish&#39;, &#39;members.invite&#39;, &#39;billing.read&#39;],
+  editor: [&#39;books.publish&#39;],
+  clerk: [&#39;books.read&#39;],
+} as const;
+
+export function allows(role: keyof typeof permissions, permission: string) {
+  return (permissions[role] as readonly string[]).includes(permission);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الخريطة في الكود حتى تُراجع الصلاحيات في PR.</li>
+<li><code>owner</code> ليس تجاوزًا سحريًا في الحارس. هو دور لديه المفاتيح صراحة.</li>
+<li>إضافة صلاحية تعني تعديل الخريطة واختبار المسار.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>السياق فيه <code>userId</code> و <code>organizationId</code>.</li>
+<li>استعلام العضوية <code>findUnique</code> على الزوج. الغياب 403.</li>
+<li><code>allows(role, &#39;books.publish&#39;)</code> قبل أثر النشر.</li>
+<li>الدعوة تنشئ عضوية <code>clerk</code> أو <code>editor</code> لا <code>owner</code> ثانيًا إلا بقاعدة مكتوبة.</li>
+<li>إزالة العضوية تسري في الطلب التالي لأن المصدر القاعدة لا الرمز القديم وحده. access القصير قد يتأخر حتى <code>exp</code> إن دفنتم الدور فيه؛ لذلك لا تدفنوه.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Injectable()
+export class PublishGuard implements CanActivate {
+  constructor(private readonly memberships: { role: (userId: string, orgId: string) =&gt; Promise&lt;keyof typeof permissions | null&gt; }) {}
+
+  async canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest&lt;{ user: { id: string } }&gt;();
+    const role = await this.memberships.role(req.user.id, currentTenantId());
+    if (!role || !allows(role, &#39;books.publish&#39;)) throw new ForbiddenException();
+    return true;
+  }
+}
+</code></pre>
+<p>ضعوا الحارس على <code>POST /books/:id/publish</code> لا على كل المتحكم إن كانت القراءة لـ <code>clerk</code> مباحة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>دور عام على <code>User</code>.</li>
+<li>فحص الدور في الواجهة فقط.</li>
+<li><code>owner</code> في الجسم عند <code>POST /members</code>.</li>
+<li>صلاحية نصية يرسلها العميل في ترويسة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بمجرد وجود موظف غير المالك. حتى المالك الوحيد صف عضوية حتى لا يتخصص المسار لاحقًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنوا محرك صلاحيات لكل حقل كتاب في اليوم الأول. ابدأوا بأفعال واضحة. ولا تستبدلوا العزل بالدور: المدير يرى كتب مكتبته لا كتب المنصة كلها.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الفحص</th>
+<th>401</th>
+<th>403</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>لا جلسة ولا رمز</td>
+<td>نعم</td>
+<td></td>
+</tr>
+<tr>
+<td>عضو بلا <code>books.publish</code></td>
+<td></td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>ليس عضوًا في المستأجر</td>
+<td></td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>كتاب في مكتبة أخرى</td>
+<td>العزل يعيد 404 على المورد</td>
+<td></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>clerk</code> ينشر كتابًا. ما الرمز؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol start="403">
+<li>هو معروف الهوية وعضو، والصلاحية غير موجودة في خريطة <code>clerk</code>.</li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي <code>role</code> داخل access token لعشرين دقيقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خفض الدور أو حذف العضوية لن يظهر حتى ينتهي الرمز. حمّلوا العضوية من القاعدة في الحارس. أبقوا الرمز قصيرًا إن بقي فيه أي تلميح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مالك يدعو مالكًا ثانيًا. ما القاعدة التي تمنعون بها فقدان آخر مالك عند الحذف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحذف والتخفيض يرفضان إن كان صف <code>owner</code> الوحيد. نقل الملكية معاملة: ترقية العضو الآخر ثم تخفيض الأول. لا <code>delete</code> على عضوية المالك الأخير.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مفتاح العضوية؟</li>
+<li>أين تعيش خريطة الصلاحيات؟</li>
+<li>ما فرق 401 و 403 هنا؟</li>
+<li>لماذا الدور ليس على جدول المستخدم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>العضوية تربط شخصًا بمكتبة بدور. الدور مفاتيح ثابتة في الكود. الحارس يقرأها من القاعدة بعد المستأجر. العزل يبقى قيد الاستعلام حتى للمدير.</p>
+<h2>ماذا بعد؟</h2>
+<p>المكتبة والأعضاء واضحون. الدرس التالي حد الاشتراك والفاتورة كحد خدمة لا كشاشة دفع فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

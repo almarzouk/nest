@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Social Login</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-social-login.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Social Login</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قرار رف عندما يعود شخص من مزود اجتماعي: إنشاء حساب، أو دخول حساب مربوط، أو رفض الربط بالبريد إن لم يُثبت الطرفان العنوان.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>أول زيارة بـ Google تنشئ مستخدمًا. الثانية يجب أن تدخل نفس المستخدم لا أن تنشئ صفًا ثانيًا. زيارة ثالثة تحمل بريد موظف موجود بكلمة مرور لم يُتحقق منه، فإن ربطتم فورًا بالبريد ملك المهاجم الحسابين معًا (pre-hijacking).</p>
+<h2>الفكرة ببساطة</h2>
+<p>جدول هويات <code>(provider, subject) → userId</code>. العائد يجد الصف ويدخل. الجديد يُنشأ فقط إن كان البريد مثبتًا عند المزود، ويُربط فورًا. إن وُجد حساب محلي بنفس البريد، لا تربطوا إلا إذا كان بريدكم المحلي مثبتًا أيضًا. خلاف ذلك اطلبوا الدخول بكلمة المرور ثم الربط من جلسة مفتوحة.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة تسأل <code>OidcAccountResolver.resolveUser(profile, tokens, context)</code>. <code>profile.subject</code> و <code>profile.provider</code> و <code>profile.email</code> و <code>profile.emailVerified</code> هي المعطيات. إرجاع <code>null</code> يرفض الدخول (403 في وصف الصفحة عندما لا يُثبت البريد). <code>linkTo</code> في السياق يعني أن الجلسة مفتوحة والشخص يريد ربط المزود بحسابه الحالي (<code>?link=true</code>). إن كان <code>subject</code> مربوطًا بشخص آخر فالنتيجة <code>ConflictException</code>. تسجيل المعالج عبر <code>AuthenticationRegistry.registerHandler(&#39;oidc&#39;, this)</code>. هذا قرار تطبيق تكتبونه. Passport strategy ما زالت طريقًا آخر لنفس القرار إن كانت هي مسار المشروع كله، لا طبقة ثانية بجانب المعالج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">موجود (provider, sub)     → المستخدم المربوط
+لا، وبريد المزود غير مثبت → ارفض
+لا حساب محلي              → أنشئ واربط
+حساب محلي بريده غير مثبت  → ارفض واطلب كلمة المرور ثم ربطًا من الجلسة
+حساب محلي بريده مثبت      → اربط sub به
+linkTo وحساب آخر يملك sub → 409
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export async function decide(input: {
+  linkedUserId: string | null;
+  emailVerifiedByProvider: boolean;
+  localEmailVerified: boolean | null;
+}) {
+  if (input.linkedUserId) return { action: &#39;sign-in&#39; as const, userId: input.linkedUserId };
+  if (!input.emailVerifiedByProvider) return { action: &#39;reject&#39; as const };
+  if (input.localEmailVerified === null) return { action: &#39;create&#39; as const };
+  if (!input.localEmailVerified) return { action: &#39;reject&#39; as const };
+  return { action: &#39;link&#39; as const };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>localEmailVerified === null</code> يعني لا صف بهذا البريد.</li>
+<li>الرفض عند بريد محلي غير مثبت يمنع من سجّل البريد بكلمة مرور قبل صاحب Google.</li>
+<li>الدالة لا تلمس HTTP. الحزمة تحوّل <code>null</code> من <code>resolveUser</code> إلى رفض.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>finish</code> يتحقق من الرمز ثم يستدعي <code>resolveUser</code>.</li>
+<li>البحث بالمفتاح <code>provider:subject</code>.</li>
+<li>عند <code>linkTo</code> لا يُستخدم تطابق البريد. الجلسة الحالية هي الدليل، ويُفحص أن <code>sub</code> ليس لشخص آخر.</li>
+<li>عند الإنشاء يُحفظ المستخدم ثم سطر الهوية.</li>
+<li>الدخول يتم عبر <code>SignInService</code> في الحزمة، فمسار العامل الثنائي إن وُجد ما زال يُطبَّق.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { ConflictException, Injectable } from &#39;@nestjs/common&#39;;
+import { AuthenticationRegistry, OidcAccountResolver, type OidcProfile, type OAuthTokens, type OidcResolveContext } from &#39;@nestjs/authentication&#39;;
+
+@Injectable()
+export class ShelfAccountLinker extends OidcAccountResolver {
+  constructor(registry: AuthenticationRegistry, private readonly users: {
+    findByIdentity: (p: string, s: string) =&gt; Promise&lt;{ id: string } | null&gt;;
+    findByEmail: (e: string) =&gt; Promise&lt;{ id: string; emailVerified: boolean } | null&gt;;
+    link: (id: string, p: string, s: string) =&gt; Promise&lt;{ id: string }&gt;;
+    create: (email: string) =&gt; Promise&lt;{ id: string }&gt;;
+  }) {
+    super();
+    registry.registerHandler(&#39;oidc&#39;, this);
+  }
+
+  async resolveUser(profile: OidcProfile, _tokens: OAuthTokens, { linkTo }: OidcResolveContext) {
+    const linked = await this.users.findByIdentity(profile.provider, profile.subject);
+    if (linkTo) {
+      if (linked &amp;&amp; linked.id !== linkTo.id) throw new ConflictException(&#39;identity belongs to someone else&#39;);
+      return this.users.link(linkTo.id, profile.provider, profile.subject);
+    }
+    if (linked) return linked;
+    if (!profile.email || !profile.emailVerified) return null;
+    const existing = await this.users.findByEmail(profile.email);
+    if (!existing) {
+      const user = await this.users.create(profile.email);
+      return this.users.link(user.id, profile.provider, profile.subject);
+    }
+    if (!existing.emailVerified) return null;
+    return this.users.link(existing.id, profile.provider, profile.subject);
+  }
+}
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إنشاء مستخدم جديد في كل دخول لأن البحث كان بالبريد بعد ما تغيّر.</li>
+<li>ربط فوري بالبريد غير المثبت محليًا.</li>
+<li>السماح بـ <code>link=true</code> من صفحة موقع آخر. الحزمة تقيد الربط بجلسة قائمة وتعيد 403 لبدء الربط من غير ذلك السياق.</li>
+<li>تخزين access token الخاص بالمزود في <code>localStorage</code> واعتباره هوية رف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند أي مزود OIDC اجتماعي: Google في الدرس التالي أو غيره بنفس المعالج إن أضفتهم في <code>providers</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحسابات خدمة بلا مستخدم بشري. ولا لتجاوز العامل الثنائي: <code>SignInService</code> يكمل سياسة الحساب بعد الربط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>النتيجة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>sub</code> معروف</td>
+<td>دخول</td>
+</tr>
+<tr>
+<td>بريد مزود غير مثبت</td>
+<td>رفض</td>
+</tr>
+<tr>
+<td>بريد محلي غير مثبت</td>
+<td>رفض حتى يدخل بكلمة المرور ويربط من الجلسة</td>
+</tr>
+<tr>
+<td>ربط والـ <code>sub</code> لغير هذا المستخدم</td>
+<td>409</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>دخول ثانٍ بنفس Google. هل يُنشأ صف مستخدم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. <code>findByIdentity</code> يجد الربط ويعيد المستخدم نفسه.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>شخص سجّل <code>reader@raf.example</code> بكلمة مرور ولم يفتح رسالة التحقق، ثم دخل بـ Google لنفس البريد. ماذا تعيد <code>resolveUser</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>null</code> لأن <code>emailVerified</code> المحلي غير صحيح. الصفحة تسمي هذا منع pre-hijacking. الدخول بكلمة المرور ثم «اربط Google» من الجلسة يستخدم <code>linkTo</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا ربط الجلسة لا يحتاج تطابق بريد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الدليل هو الجلسة القائمة لا البريد. المستخدم أثبت أنه صاحب حساب رف، ويطلب إرفاق <code>sub</code> به. الشرط الوحيد أن هذا <code>sub</code> ليس مربوطًا بحساب آخر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مفتاح جدول الهويات؟</li>
+<li>متى يُرفض تطابق البريد؟</li>
+<li>ماذا يعني <code>linkTo</code>؟</li>
+<li>لماذا لا يُنشأ مستخدم عند كل عودة من المزود؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>تسجيل الدخول الاجتماعي قرار ربط: <code>sub</code> أولًا، ثم إنشاء أو ربط ببريد مثبت من الجهتين، والرفض عند الشك. الربط من جلسة مفتوحة لا يعتمد على البريد ويعارض إن كان <code>sub</code> لشخص آخر.</p>
+<h2>ماذا بعد؟</h2>
+<p>القرار عام. الدرس التالي يملأ مزود Google: المسارات، <code>google()</code>، والكعكة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

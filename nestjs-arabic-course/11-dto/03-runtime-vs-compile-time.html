@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Runtime مقابل Compile-time</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-runtime-vs-compile-time.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Runtime مقابل Compile-time</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفريق فحص TypeScript قبل التشغيل عن البيانات التي يقرأها Nest بعد تشغيل JavaScript.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المشروع «يمر <code>tsc</code>» ثم يقبل JSON فاسدًا. الفريق يظن أن النوع حماية شبكة. النوع حماية محرر وخطوة بناء. الشبكة ترسل JSON بلا أنواع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Compile-time ما يختفي قبل أن يعمل Node: الأنواع والواجهات. Runtime ما يبقى: الأصناف، الزينة، <code>reflect-metadata</code>. <code>ValidationPipe</code> يعيش في الثاني.</p>
+<h2>التعريف التقني</h2>
+<p>TypeScript يتحقق ثم يمسح الأنواع. صنف بحقول مزيّنة يبقى دالة بناء، والزينة تسجّل بيانات عبر <code>reflect-metadata</code> حين يكون المشروع على الزينة التقليدية: <code>experimentalDecorators</code> و <code>emitDecoratorMetadata</code> واستيراد <code>reflect-metadata</code> عند الإقلاع. مشاريع Nest CLI تفعّل ذلك. من غيره لا يجد الأنبوب <code>design:type</code> ولا زينة <code>class-validator</code>.</p>
+<p><code>design:paramtypes</code> على الباني هو ما يستخدمه الحقن لمعرفة نوع المعامل. <code>design:type</code> على الحقل يساعد التحويل. كلاهما وقت تشغيل، وكلاهما غائب عن واجهة.</p>
+<p>JSON القادم من Express كائن عادي: مفاتيح وقيم. لا يصبح <code>CreateMemberDto</code> لأن التوقيع قال ذلك. التحويل إلى نسخة الصنف قرار <code>transform</code> لاحق.</p>
+<p><code>import type</code> خطوة إضافية للمسح حتى للصنف. درس الواجهة غطى العرض. هنا السبب: المسح قاعدة المترجم لا حادث Nest.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المحرر: email يجب أن يكون string     compile-time
+السلك:   { &quot;email&quot;: 5 }              runtime
+الأنبوب: يقرأ زينة الصنف إن وُجدت    runtime
+</code></pre>
+<p>السطر الأول لا يرى السطر الثاني.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsEmail, IsInt, Min } from &#39;class-validator&#39;;
+
+export class OpenDeskDto {
+  @IsInt()
+  @Min(1)
+  desk: number;
+
+  @IsEmail()
+  email: string;
+}
+</code></pre>
+<p>المترجم يمنعك داخل TypeScript من نداء <code>open({ desk: &#39;a&#39;, email: &#39;x&#39; })</code> إن كان المعامل <code>OpenDeskDto</code>. طلب HTTP ليس نداء TypeScript. الجسم <code>{ &quot;desk&quot;: &quot;a&quot;, &quot;email&quot;: &quot;x&quot; }</code> يصل كائنًا. الأنبوب هو من يرفضه لأن الزينة ما زالت على الدالة البناء.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@IsInt()</code> و <code>@IsEmail()</code> دوال تعمل عند تحميل الصنف وتسجّل القواعد.</li>
+<li>من غير الحزمتين ومن غير بيانات الزينة، الصنف هيكل فارغ وقت التشغيل.</li>
+<li><code>desk: number</code> في المصدر لا يحوّل النص <code>&quot;1&quot;</code> وحده. التحويل خيار <code>class-transformer</code>.</li>
+<li>فشل <code>tsc</code> يظهر في البناء. فشل الأنبوب يظهر كـ <code>400</code> لطلب حي.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>tsc</code> ينتج JavaScript. الأنواع تذهب. الصنف ودعاوى الزينة تبقى.</li>
+<li>عند تحميل الملف، الزينة تستدعي <code>Reflect.defineMetadata</code>.</li>
+<li>طلب يصل. المحلّل يصنع كائنًا عاديًا.</li>
+<li><code>ValidationPipe</code> يقرأ <code>metatype</code> من بيانات المعامل، ويحوّل مؤقتًا إلى نسخة للفحص، ويرمي إن خالفت الزينة.</li>
+<li>المترجم لا يشارك في الخطوة 4.</li>
+</ol>
+<p>إغلاق <code>emitDecoratorMetadata</code> يترك الحقن والتحقق بلا أنواع منعكسة. الأعراض تظهر عند الإقلاع أو بمرور بيانات كان يجب رفضها. لا تعالجها بشرط داخل الخدمة.</p>
+<h2>مثال عملي</h2>
+<p>اختبار وحدة يستدعي <code>MembersService</code> بكائن TypeScript صحيح، فينجح. طلب من الواجهة يرسل <code>desk</code> كنص لأن الحقل <code>&lt;input&gt;</code> . الخدمة في الإنتاج ترى نصًا إن لم يكن هناك أنبوب. إصلاح المحرر لا يغيّر المتصفح. إصلاح الحد هو زينة زائد <code>ValidationPipe</code>، وتحويل صريح حين تريد عددًا من نص.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتقاد أن <code>strict: true</code> يفحص JSON.</li>
+<li>حذف <code>reflect-metadata</code> من <code>main.ts</code> بعد أن «البناء نجح».</li>
+<li>كتابة حارس <code>if (typeof dto.email === &#39;string&#39;)</code> في كل خدمة بدل زينة واحدة على العقد.</li>
+<li>قياس الأمان بعدد أخطاء <code>tsc</code> فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما شرحت لفريق الواجهة لماذا النوع في المستودع لا يغني عن <code>400</code>. وكلما ضبطت <code>tsconfig</code> لمشروع Nest: الزينة التقليدية مع إصدار البيانات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تُلغِ الأنواع بحجة أن الفحص وقت التشغيل يكفي. المترجم يمنع خلطًا داخليًا بين الخدمات. الطبقتان معًا: مترجم داخل العملية، أنبوب على السلك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Compile-time</th>
+<th>Runtime على الحد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الأداة</td>
+<td><code>tsc</code></td>
+<td><code>ValidationPipe</code> والزينة</td>
+</tr>
+<tr>
+<td>ماذا يرى</td>
+<td>مصدر TypeScript</td>
+<td>JSON بعد المحلّل</td>
+</tr>
+<tr>
+<td>الفشل</td>
+<td>خطأ بناء</td>
+<td><code>400</code> غالبًا</td>
+</tr>
+<tr>
+<td>الواجهة</td>
+<td>مفيدة</td>
+<td>غائبة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل يمنع <code>email: string</code> في الصنف وصول <code>&quot;email&quot;: 5</code> من HTTP وحده؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. هذا قيد مترجم. الرفض وقت التشغيل يأتي من زينة مثل <code>@IsEmail()</code> مع الأنبوب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما دور <code>emitDecoratorMetadata</code> مع <code>ValidationPipe</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يبقي بيانات الأنواع على الصنف حتى يقرأها <code>reflect-metadata</code> وقت التشغيل. من غيرها لا يجد الإطار والأنبوب الأنواع المنعكسة التي يعتمد عليها الربط والفحص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار الخدمة ينجح وطلب الواجهة يمر بحقل زائد. أي طبقة لم تُشغَّل، وما الذي لا يصلحه توسيع الواجهة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طبقة الحد: الأنبوب مع <code>whitelist</code> لاحقًا، والعقد صنف. توسيع الواجهة يغيّر المترجم فقط. الحقل الزائد يعيش في الكائن العادي القادم من JSON.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يمسح <code>tsc</code>؟</li>
+<li>أين تُسجَّل زينة <code>class-validator</code>؟</li>
+<li>لماذا لا يرى المحرر طلب المتصفح؟</li>
+<li>ما الحزم والإعداد الذي يبقي البيانات حتى الإقلاع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المترجم يحمي المصدر. التشغيل يحمي السلك. DTO الذي يفحصه Nest صنف بزينة بقيت بعد الترجمة، لا نوعًا اختفى مع <code>tsc</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يجمع الحقول والزينة في صنف واحد بوصفه عقد البيانات الذي يقرأه الفريق والأنبوب.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>يوم على مستودع رف ESM.</p>
+<h2>المثال 1 — إنشاء وتشغيل</h2>
+<p><code>npx @nestjs/cli@latest new raf-api</code> مع ESM فيأتي Vitest و oxlint و Prettier. <code>npm run start:dev</code> يراقب ويعيد تشغيل العملية. <code>nest generate controller projects --dry-run</code> قبل الكتابة. <code>nest info</code> قبل ترقية.</p>
+<h2>المثال 2 — مساحة وعامل</h2>
+<p><code>nest generate app worker</code> يحوّل المجلد ويضع <code>&quot;builder&quot;: &quot;rspack&quot;</code>. <code>nest g library membership</code> يصدّر <code>@app/membership</code> من <code>libs/membership/src/index.ts</code>. Vitest يكرر المسار في <code>resolve.alias</code>. لا <code>--webpack</code> في السكربتات.</p>
+<h2>المثال 3 — طرفية بلا منفذ</h2>
+<p>تطوير أسرع على التطبيق القياسي: <code>npm run start -- -b swc</code> مع <code>typeCheck</code>. استكشاف الخدمة: <code>repl.ts</code> و <code>npm run start -- --entryFile repl</code> ثم <code>get(ProjectsService)</code> مع معرف المنظمة وسيطًا. التصدير الليلي: <code>createApplicationContext</code> ثم <code>app.close()</code>، أو <code>CommandFactory.run</code> لأمر <code>export-invoices</code>. Devtools بـ <code>snapshot: true</code> و <code>http</code> خارج الإنتاج فقط.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

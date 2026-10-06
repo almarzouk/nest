@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>وضع Prisma داخل Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-prisma-in-a-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>وضع Prisma داخل Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل <code>PrismaService</code> في <code>PrismaModule</code> وتصديرها حتى تستوردها ميزات الكتب والإعارات من غير إنشاء عميل ثانٍ.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وضع <code>PrismaService</code> في <code>providers</code> داخل كل ميزة ينشئ نسخة لكل وحدة إن لم تُشارَك، أو يفشل الحقن إن نُسيت من <code>exports</code>. المتحكم الذي يستورد العميل المولَّد مباشرة يكسر حد الخدمة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>وحدة صغيرة تملك المزوّد وتصدّره. <code>BooksModule</code> تستورد <code>PrismaModule</code> وتسجّل <code>BooksService</code> فقط. النسخة الواحدة، لأن المزوّد singleton افتراضيًا، تعني مجمع اتصالات واحدًا.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Nest:</p>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;./prisma.service.js&quot;;
+
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [PrismaModule],
+  controllers: [BooksController],
+  providers: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<p><code>ConfigModule</code> عام من فصل الإعداد حتى يحقن <code>PrismaService</code> خدمة <code>ConfigService</code> في بنّائها. إن لم يكن عامًا، <code>PrismaModule</code> تستورد <code>ConfigModule</code>.</p>
+<p><code>@Global()</code> على <code>PrismaModule</code> مع استيرادها مرة في <code>AppModule</code> يجعل الخدمة مرئية في كل مكان. الصفحة الرسمية تشير إلى فصل Global modules للمقايضة: الراحة مقابل إخفاء من يعتمد على القاعدة. في مكتبة صغيرة الاستيراد الصريح أوضح. إن كثرت الوحدات التي تكتب جداول، العام قرار واعٍ لا عادة.</p>
+<p>اختبار وحدة يستبدل الرمز <code>PrismaService</code> بـ <code>useValue</code>. اختبار وحدة تستورد <code>PrismaModule</code> الحقيقية يستخدم <code>overrideProvider(PrismaService)</code> حتى لا يعمل <code>$connect</code>.</p>
+<p>لا تصدّر <code>PrismaClient</code> كرمز ثانٍ. الخدمة الممتدة هي الرمز الوحيد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+  ConfigModule (عام)
+  BooksModule
+    imports PrismaModule
+      exports PrismaService
+    BooksService تحقن PrismaService
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Global, Module } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;./prisma.service.js&quot;;
+
+@Global()
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [PrismaModule, BooksModule, LoansModule],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>@Global()</code> هنا اختياري ومُعلَّم. بعد تسجيل <code>PrismaModule</code> في الجذر، <code>BooksService</code> و <code>LoansService</code> تحقن الخدمة ولو لم تذكر وحداتهما <code>PrismaModule</code>. إن حذفت <code>exports</code> بقي الاختباء رغم <code>@Global()</code>.</p>
+<p>ابدأ بالاستيراد الصريح في المثال الأول إن كان عدد الوحدات قليلًا. انتقل إلى <code>@Global()</code> حين يتكرر الاستيراد في كل ملف وحدة بلا استثناء.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest ينشئ <code>PrismaService</code> مرة للمستوردين الذين يرون المزوّد نفسه، ويستدعي <code>onModuleInit</code> عند إقلاع التطبيق لا عند كل طلب. <code>BooksService</code> تستقبل تلك النسخة في البنّاء. دورة الطلب لا تفتح اتصالًا جديدًا. المجمع داخل المحوّل يعير اتصالًا للاستعلام ويعيده.</p>
+<p>إن سجّلت الخدمة مرتين كمزوّد محلي في وحدتين بلا تصدير مشترك، تحصل على عميلين ومجمعين. شارك المزوّد بالتصدير أو بالوحدة العامة.</p>
+<h2>مثال عملي</h2>
+<p><code>LoansModule</code> تستورد <code>PrismaModule</code> وتوفّر <code>LoansService</code> التي تستدعي <code>$transaction</code>. <code>BooksModule</code> لا تستورد <code>LoansModule</code> كي لا تصير الإعارة تفصيلًا داخليًا للكتالوج. كلتاهما تعتمد على القاعدة عبر الوحدة المشتركة، لا على بعضهما بسبب <code>PrismaService</code>.</p>
+<p>اختبار <code>BooksService</code> لا يستورد الوحدة العامة الحقيقية. يمرّر مزيفًا. اختبار e2e يستورد <code>AppModule</code> ويستدعي <code>app.close()</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مزوّد <code>PrismaService</code> مكرر في كل <code>providers</code>.</li>
+<li><code>@Global()</code> من غير استيراد الوحدة في الجذر.</li>
+<li>حقن <code>PrismaService</code> في المتحكم وكتابة الاستعلام هناك.</li>
+<li>نسيان أن <code>ConfigModule</code> يجب أن يكون مرئيًا لبنّاء الخدمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حالما توجد أكثر من خدمة تقرأ PostgreSQL عبر Prisma.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في سكربت CLI خارج Nest يتصل بأمر واحد ثم يخرج. هناك عميل محلي يُغلَق في <code>finally</code> أوضح من وحدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>استيراد صريح</th>
+<th><code>@Global()</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كل ميزة تذكر <code>PrismaModule</code></td>
+<td>استيراد الجذر مرة</td>
+</tr>
+<tr>
+<td>الاعتماد ظاهر</td>
+<td>الاعتماد مخفي</td>
+</tr>
+<tr>
+<td>مناسب لعدد قليل</td>
+<td>مناسب حين القاعدة في كل الميزات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يجب أن تحتوي <code>exports</code> حتى ترى <code>BooksService</code> العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>PrismaService</code>. وجودها في <code>providers</code> وحدها يبقيها داخل <code>PrismaModule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُوضع <code>PrismaService</code> في <code>providers</code> الخاصة بـ <code>BooksModule</code> و <code>LoansModule</code> معًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل وحدة تنشئ نسخة، فيتعدد المجمع. التصدير من وحدة واحدة يشارك النسخة الافتراضية singleton.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>PrismaModule</code> عامة ومستوردة في الجذر، واختبار الوحدة ما زال يتصل بقاعدة التطوير. ماذا غاب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاختبار يستورد الوحدة الحقيقية. استبدل المزوّد بـ <code>overrideProvider(PrismaService).useValue(...)</code> أو لا تستورد الوحدة وابنِ <code>TestingModule</code> فيه الخدمة والمزيف فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا التصدير جزء من الوحدة لا تفصيل؟</li>
+<li>متى يكون <code>@Global()</code> مبرَّرًا؟</li>
+<li>كم مجمع اتصالات نريد للتطبيق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>PrismaModule</code> تصدّر خدمة واحدة. الميزات تستوردها أو تراها بعد قرار عام واعٍ. الاستعلام يبقى في خدمة الميزة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./11-typeorm.html">TypeORM كما في التوثيق الرسمي</a> يعرض البديل الذي يحافظ عليه Nest، بلا تغيير مسار Prisma.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

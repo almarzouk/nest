@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pagination</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-pagination.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Pagination</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تقسيم <code>GET /posts</code> إلى صفحات صغيرة بـ <code>page</code> و <code>pageSize</code>، كمقدمة على هذا المسار فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>findMany</code> بلا حد يقرأ كل المقالات كلما كبر الجدول، فيطول الطلب ويكبر JSON. العميل الذي يريد «أول عشرين» لا يملك عقدًا مشتركًا إن أعاد كل مطوّر اسم استعلام مختلفًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الاستعلام <code>?page=1&amp;pageSize=20</code>. الصفحة تبدأ من <code>1</code>. الخدمة تحسب <code>skip = (page - 1) * pageSize</code> وتمرّر <code>take = pageSize</code>. الاستجابة تعيد العناصر وعدد الصفحة وحجمها، والعدد الكلي إن كان رخيصًا على هذا الجدول. الفصل <code>26</code> يعمّم العقد ويناقش متى يصبح <code>skip</code> مكلفًا. هنا نثبّت سلوكًا واحدًا لقائمة المنشورات.</p>
+<h2>التعريف التقني</h2>
+<p>DTO الاستعلام:</p>
+<pre><code class="language-ts">import { Type } from &quot;class-transformer&quot;;
+import { IsInt, IsOptional, Max, Min } from &quot;class-validator&quot;;
+
+export class ListPostsQueryDto {
+  @IsOptional()
+  @Type(() =&gt; Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+
+  @IsOptional()
+  @Type(() =&gt; Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  pageSize = 20;
+}
+</code></pre>
+<p><code>@Type</code> يلزم لأن الاستعلام نص. <code>Max(50)</code> يمنع <code>pageSize=100000</code>. الأنبوب يحتاج <code>transform: true</code>.</p>
+<pre><code class="language-ts">@Get()
+list(@Query() query: ListPostsQueryDto) {
+  return this.posts.list(query.page, query.pageSize);
+}
+</code></pre>
+<pre><code class="language-ts">async list(page: number, pageSize: number) {
+  const skip = (page - 1) * pageSize;
+  const [items, total] = await this.prisma.$transaction([
+    this.prisma.post.findMany({
+      skip,
+      take: pageSize,
+      orderBy: { id: &quot;asc&quot; },
+      select: { id: true, title: true, published: true, authorId: true },
+    }),
+    this.prisma.post.count(),
+  ]);
+  return { items, page, pageSize, total };
+}
+</code></pre>
+<p>المعاملة هنا لقطة للقائمة والعدد معًا، لا كتابة. الترتيب الافتراضي <code>id</code> حتى لا تقفز الصفوف بين الصفحات بلا <code>orderBy</code>. التصفية والترتيب بمعاملات إضافية درسان لاحقان. لا تبنِ مؤشرًا <code>cursor</code> في هذا الفصل.</p>
+<p><code>GET /posts/:id</code> ما زال يجلب واحدًا. لا تمرّر <code>page</code> إليه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">page=2 pageSize=20
+        |
+ skip 20 take 20
+        |
+ { items, page, pageSize, total }
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>طلب:</p>
+<pre><code class="language-http">GET /posts?page=2&amp;pageSize=20 HTTP/1.1
+</code></pre>
+<p>استجابة مختصرة:</p>
+<pre><code class="language-json">{
+  &quot;items&quot;: [],
+  &quot;page&quot;: 2,
+  &quot;pageSize&quot;: 20,
+  &quot;total&quot;: 25
+}
+</code></pre>
+<p>إن كان العدد <code>25</code>، الصفحة <code>2</code> فيها خمسة عناصر. صفحة <code>3</code> مصفوفة فارغة مع <code>total</code> نفسه، وهذا أفضل من <code>404</code> لأن الصفحة خارجة عن النطاق ليست مقالًا غائبًا.</p>
+<h2>شرح المثال</h2>
+<p>العميل يحسب عدد الصفحات بـ <code>Math.ceil(total / pageSize)</code> إن احتاج شريط صفحات. الخادم لا يلزم أن يرسل كل الأرقام. <code>items</code> بلا <code>body</code> في القائمة حتى تبقى خفيفة، والتفاصيل في <code>GET /posts/:id</code>. هذا قرار عقد، لا قيد Prisma.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>OFFSET</code> في SQL يتخطى الصفوف. على صفحة <code>1</code> التكلفة صغيرة. على صفحة بعيدة الخادم ما زال يمر على المتروك. لذلك الفصل <code>26</code> يشرح المؤشر والفهرس. مقدمة هذا المشروع تقبل <code>skip</code> لأن حجم التمرين صغير والسقف <code>50</code>.</p>
+<p><code>count()</code> استعلام ثانٍ. على جدول عملاق قد يُؤجَّل العدد. هنا الجدول تعليمي والإرجاع مفيد.</p>
+<h2>مثال عملي</h2>
+<p>ازرع <code>25</code> مقالًا. اطلب الصفحة <code>1</code> وتوقع <code>20</code> معرّفًا تصاعديًا. اطلب الصفحة <code>2</code> وتوقع الخمسة التالية من غير تداخل. أرسل <code>pageSize=500</code> وتوقع <code>400</code> بسبب <code>@Max(50)</code>. أرسل <code>page=0</code> وتوقع <code>400</code> بسبب <code>@Min(1)</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>page</code> يبدأ من <code>0</code> في الخادم ومن <code>1</code> في التوثيق.</li>
+<li>قائمة بلا <code>orderBy</code> فتتبدّل الحدود.</li>
+<li><code>pageSize</code> بلا سقف.</li>
+<li>بناء مساعد عام لكل الموارد قبل أن يعمل هذا المسار. التعميم لاحقًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على <code>GET /posts</code> حين تتجاوز النتيجة ما تريد إرساله دفعة واحدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على <code>GET /posts/:id</code>. وعلى تعليقات هذا الفصل إن كان السقف الثابت <code>50</code> كافيًا للتمرين. وحين تحتاج ثباتًا تحت إدراجات كثيفة: ذلك مؤشر في الفصل <code>26</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الكل دفعة واحدة</th>
+<th><code>page</code> و <code>pageSize</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بسيط على عشرة صفوف</td>
+<td>ثابت على ألف</td>
+</tr>
+<tr>
+<td>بلا عقد استعلام</td>
+<td>أسماء محددة</td>
+</tr>
+<tr>
+<td>بلا <code>skip</code></td>
+<td><code>skip</code> مقبول هنا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما <code>skip</code> للصفحة <code>3</code> والحجم <code>10</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>(3 - 1) * 10 = 20</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تُرفض صفحة فارغة بـ <code>200</code> ومصفوفة فارغة لا بـ <code>404</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسار صحيح والمورد الموجود هو القائمة. <code>404</code> للمقال ذي المعرّف الغائب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا ننسخ هذا الـ DTO إلى التعليقات والمستخدمين في اليوم نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العقد ما زال تجربة على المنشورات. الفصل <code>26</code> يستخرج النمط بعد أن تثبت الأسماء والحجم الأقصى وأثر <code>skip</code> على الفهرس.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يأتي <code>page</code> نصًا؟</li>
+<li>لماذا <code>orderBy</code> لازم مع <code>skip</code>؟</li>
+<li>أين يُشرح قصور <code>OFFSET</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>قائمة المنشورات صفحة بحجم محدود مع <code>skip</code> و <code>take</code> وعدد كلي. هذا عقد مسار واحد، لا مكتبة ترقيم بعد.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./08-filtering.html">Filtering</a> يضيّق الصفحة بشرط مثل <code>published</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

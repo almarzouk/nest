@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Inheritance</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-inheritance.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Inheritance</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم <code>extends</code> و <code>super</code> بما يكفي لقراءة أصناف توسع أساسًا جاهزًا، من غير بناء هرم وراثة في كل ميزة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سلوك مشترك بين أصناف، مثل &quot;كل خطأ HTTP يحمل رمزًا ورسالة&quot;، يمكن نسخه في كل ملف أو وضعه في أساس واحد. الوراثة أحد الحلول. التركيب (صنف يملك صنفًا آخر عبر constructor) هو الحل الذي تفضله Nest في الخدمات غالبًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>class AdminGuard extends GuardBase</code> يعني أن الابن يأخذ ما هو عام في الأب ويمكنه تجاوز دالة. <code>super</code> ينادي نسخة الأب.</p>
+<h2>التعريف التقني</h2>
+<p>الوراثة في JavaScript سلسلة prototype. TypeScript يفحص أن الابن يحترم عقد الأب. دالة في الابن بنفس الاسم تستبدل دالة الأب عند الاستدعاء على كائن الابن. <code>super.method()</code> يصل إلى نسخة الأب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Base: سلوك عام
+  |
+  +-- Child: يخصص جزءًا ويستدعي super عند الحاجة
+
+التركيب البديل:
+Child يملك Base كحقل محقون، ويناديه بالاسم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">class HttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+const missing = new HttpError(404, &#39;Book not found&#39;);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>Error</code> أساس اللغة وفيه <code>message</code>.</li>
+<li><code>super(message)</code> يجب أن يُستدعى قبل استخدام <code>this</code> في constructor الابن عندما يوجد constructor أب يحتاج تهيئة.</li>
+<li><code>statusCode</code> خاصية عامة للقراءة عبر parameter property.</li>
+<li><code>missing.message</code> قادم من الأب. <code>missing.statusCode</code> من الابن.</li>
+<li>Nest لاحقًا تعطي <code>HttpException</code> الجاهز. لا تبنِ هرم أخطاء قبل فصل Exception Filters. المثال لغة فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>new HttpError</code> يستدعي constructor الابن، وهو يستدعي constructor الأب عبر <code>super</code>، ثم يهيئ الحقول. <code>instanceof HttpError</code> و <code>instanceof Error</code> كلاهما صحيح. سلاسل <code>catch</code> تستطيع التقاط الأب والتفريق بالابن.</p>
+<p>تجاوز دالة:</p>
+<pre><code class="language-ts">class Loud extends HttpError {
+  constructor(message: string) {
+    super(500, message.toUpperCase());
+  }
+}
+</code></pre>
+<p>الابن يجهّز الوسيط ثم يسلمه للأب.</p>
+<h2>مثال عملي</h2>
+<p>في Passport لاحقًا سترى شكلًا مثل تمديد <code>PassportStrategy</code>. المعنى اللغوي واحد: صنف المكتبة أب، وصفك ابن يمرر خيارات إلى <code>super(...)</code> ويعرّف <code>validate</code>. لن نكتب الاستراتيجية هنا. اعرف فقط أن <code>super</code> في constructor ليس اختياريًا إذا كان الأب يحتاج وسائط.</p>
+<p>خدمات العمل العادية في Nest: <code>OrdersService</code> لا ترث <code>BooksService</code> لتستخدم الكتب. تحقن <code>BooksService</code>. الوراثة بين الخدمات تربطهما إلى الأبد وتجعل الاختبار أثقل. الحقن يبقي العلاقة معلنة وقابلة للاستبدال.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>super()</code> في constructor الابن.</li>
+<li>استخدام <code>this</code> قبل <code>super()</code>.</li>
+<li>هرم <code>BaseService</code> ثم <code>CrudService</code> ثم <code>BookService</code> لنسخ دوال عامة. يتكرر القالب ويصعب الاستثناء. مزوّد صغير أوضح.</li>
+<li>تجاوز دالة وتغيير معناها بحيث كائن الابن لا يصلح مكان الأب. هذا كسر لتوقع الاستبدال (Liskov)، وسيعود في فصل SOLID.</li>
+</ul>
+<h2>متى نستخدم الوراثة؟</h2>
+<p>لأخطاء متخصصة، أو عندما يفرض إطار أو مكتبة صنفًا أساسًا (<code>extends PassportStrategy</code> مثلًا في الوصفة الرسمية).</p>
+<h2>متى نفضل التركيب؟</h2>
+<p>عندما &quot;تستخدم&quot; سلوكًا لا &quot;تكون&quot; نوعًا منه. الخدمة التي ترسل بريدًا تملك mailer محقونًا، وليست ابنًا لصنف البريد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Inheritance</th>
+<th>Composition عبر constructor</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العلاقة</td>
+<td>هو نوع من</td>
+<td>يستخدم</td>
+</tr>
+<tr>
+<td>في خدمات Nest</td>
+<td>نادرة</td>
+<td>الشكل الافتراضي</td>
+</tr>
+<tr>
+<td>الاستبدال في الاختبار</td>
+<td>أصعب إذا ثبت الأب</td>
+<td>تمرر بديلًا للحقن</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>missing instanceof Error</code> صحيح في المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>HttpError</code> يمتد <code>Error</code>، فسلسلة prototype تصل إلى <code>Error</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أصلح:</p>
+<pre><code class="language-ts">class NotFound extends HttpError {
+  constructor() {
+    this.kind = &#39;missing&#39;;
+  }
+}
+</code></pre>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">class NotFound extends HttpError {
+  readonly kind = &#39;missing&#39;;
+  constructor() {
+    super(404, &#39;Not found&#39;);
+  }
+}
+</code></pre>
+<p><code>super</code> قبل أي استخدام لـ <code>this</code>. الحقل يمكن تهيئته في التصريح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا حقن <code>BooksService</code> داخل <code>OrdersService</code> أضعف ارتباطًا من <code>class OrdersService extends BooksService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحقن يعتمد على ما تستدعيه من دوال عامة ويمكن استبدال الكائن في الاختبار. الوراثة ترث كل التفاصيل المحمية وتجعل الطلب ابنًا للكتاب، وهذا وصف كاذب للمجال. تغيير أساس الكتب يهز الطلبات حتى في ما لا تستخدمه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>super</code> في constructor؟</li>
+<li>متى تفضّل الحقن على <code>extends</code> لخدمتين؟</li>
+<li>أي مكتبة لاحقًا ستجبرك على تمديد صنف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>extends</code> يشارك سلوك أب، و <code>super</code> يهيئه أو ينادي دالته. في Nest، الخدمات تتركب بالحقن. الوراثة لأساسات اللغة والمكتبات التي صممت لذلك.</p>
+<h2>ماذا بعد؟</h2>
+<p>أساس لا يُنشأ وحده، والابن يملأ دالة ناقصة: الأصناف المجردة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Inheritance: <a href="https://www.typescriptlang.org/docs/handbook/2/classes.html#inheritance">https://www.typescriptlang.org/docs/handbook/2/classes.html#inheritance</a></li>
+<li>NestJS — Passport (تمديد Strategy لاحقًا): <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>نشر كتاب: الحفظ في الخدمة، والآثار مستمعون.</p>
+<h2>مثال 1 — العقد</h2>
+<pre><code class="language-ts">export const bookPublished = &#39;book.published&#39;;
+
+export interface BookPublishedPayload {
+  bookId: string;
+}
+</code></pre>
+<pre><code class="language-ts">EventEmitterModule.forRoot();
+</code></pre>
+<p>بلا <code>wildcard</code>.</p>
+<h2>مثال 2 — المعلن</h2>
+<pre><code class="language-ts">await this.prisma.book.update({
+  where: { id: bookId },
+  data: { status: &#39;PUBLISHED&#39; },
+});
+await this.events.emitAsync(bookPublished, { bookId });
+</code></pre>
+<h2>مثال 3 — مستمعان مستقلان</h2>
+<pre><code class="language-ts">@OnEvent(bookPublished)
+async queueMail(payload: BookPublishedPayload) {
+  await this.mail.enqueuePublished(payload.bookId);
+}
+
+@OnEvent(bookPublished)
+async dropListCache(payload: BookPublishedPayload) {
+  await this.cache.del(&#39;books:published&#39;);
+  await this.cache.del(`book:${payload.bookId}`);
+}
+</code></pre>
+<p>كلا الصنفين في <code>providers</code>. لا <code>smtp.send</code> هنا. لا حذف مفتاح <code>draft:${bookId}</code> كنص مسودة.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>اختبار <code>publish</code> يتوقع <code>emitAsync</code> فقط.</li>
+<li>اختبار المستمع يتوقع <code>enqueuePublished(&#39;42&#39;)</code>.</li>
+<li>قتل العملية بعد <code>add</code> لا يضيع المهمة. قتلها أثناء SMTP المباشر يضيعها، لذلك SMTP ليس في المستمع.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

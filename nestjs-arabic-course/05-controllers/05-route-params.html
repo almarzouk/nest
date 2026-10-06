@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Route Params</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-route-params.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Route Params</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التقاط قيمة متغيرة داخل مسار URL عبر رمز مثل <code>:tracking</code> وقراءتها بـ <code>@Param</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسار ثابت <code>/shipments/item</code> لا يميز شحنة عن أخرى. المعرف جزء من هوية المورد في REST، فيعيش في المسار، و <code>@Param</code> يخرجه للمعالج.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>:tracking</code> رمز في نص <code>@Get</code> أو غيره. <code>@Param(&#39;tracking&#39;)</code> يعيد ذلك الجزء كنص. <code>@Param()</code> بلا اسم يعيد الكائن كله.</p>
+<h2>التعريف التقني</h2>
+<p>المسار <code>GET /shipments/4481</code> مع <code>@Get(&#39;:tracking&#39;)</code> يملأ الرمز <code>tracking</code> بالقيمة <code>4481</code>. الاستعلام <code>?expand=route</code> يبقى خارج هذا الدرس.</p>
+<pre><code class="language-ts">@Get(&#39;:tracking&#39;)
+findOne(@Param() params: { tracking: string }) {
+  return params.tracking;
+}
+
+@Get(&#39;:tracking&#39;)
+findOne(@Param(&#39;tracking&#39;) tracking: string) {
+  return tracking;
+}
+</code></pre>
+<p>القيمة نص. تعليق TypeScript <code>number</code> لا يحوّل <code>&quot;4481&quot;</code> إلى عدد. التحويل عمل Pipe، وفصله لاحق. من غير Pipe يبقى النص كما التقطه المسار.</p>
+<p>أكثر من رمز: <code>@Get(&#39;:carrier/:tracking&#39;)</code> ينتج <code>params.carrier</code> و <code>params.tracking</code>.</p>
+<p>ضع المسارات الثابتة قبل هذا النمط ما دامت الاستراتيجية <code>declaration</code> على Express، كما في درس Routing. <code>@Get(&#39;delayed&#39;)</code> بعد <code>@Get(&#39;:tracking&#39;)</code> يجعل كلمة <code>delayed</code> تبدو كرقم تتبع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /shipments/dhl/4481
+  @Controller(&#39;shipments&#39;)
+  @Get(&#39;:carrier/:tracking&#39;)
+  @Param(&#39;carrier&#39;)    -&gt; &quot;dhl&quot;
+  @Param(&#39;tracking&#39;)   -&gt; &quot;4481&quot;
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Param } from &#39;@nestjs/common&#39;;
+import { ShipmentsService } from &#39;./shipments.service.js&#39;;
+
+@Controller(&#39;shipments&#39;)
+export class ShipmentsController {
+  constructor(private readonly shipments: ShipmentsService) {}
+
+  @Get(&#39;:tracking&#39;)
+  findOne(@Param(&#39;tracking&#39;) tracking: string) {
+    return this.shipments.findOne(tracking);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>Param</code> مستورد من <code>@nestjs/common</code>.</li>
+<li>وسيطة <code>&#39;tracking&#39;</code> تطابق اسم الرمز في المسار، حرفًا بحرف.</li>
+<li>الخدمة تستقبل نصًا. إن احتاجت عددًا، التحويل موثّق عندها أو عبر Pipe لاحقًا.</li>
+<li>الدالة تعيد كائن الشحنة، وNest يرسله JSON برمز 200.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد اختيار المعالج تنسخ Nest <code>req.params</code> إلى وسيط <code>@Param</code>. مع الاسم تأخذ <code>req.params.tracking</code>. من غير اسم تمرر الكائن. هذا بعد مطابقة Routing وقبل جسم الدالة. Pipes المرتبطة بالوسيط، عندما تُضاف لاحقًا، تعمل في مرحلة Pipes وترى هذه القيمة.</p>
+<p>اسم في <code>@Param(&#39;code&#39;)</code> مع رمز <code>:tracking</code> يعطي <code>undefined</code> لأن المفتاح غير موجود على <code>req.params</code>.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, Param } from &#39;@nestjs/common&#39;;
+import { ShipmentsService } from &#39;./shipments.service.js&#39;;
+
+@Controller(&#39;shipments&#39;)
+export class CarrierShipmentsController {
+  constructor(private readonly shipments: ShipmentsService) {}
+
+  @Get(&#39;delayed&#39;)
+  delayed() {
+    return this.shipments.findDelayed();
+  }
+
+  @Get(&#39;:carrier/:tracking&#39;)
+  findOne(
+    @Param(&#39;carrier&#39;) carrier: string,
+    @Param(&#39;tracking&#39;) tracking: string,
+  ) {
+    return this.shipments.findByCarrier(carrier, tracking);
+  }
+}
+</code></pre>
+<p><code>GET /shipments/delayed</code> يثبت على الدالة الأولى. <code>GET /shipments/dhl/4481</code> يملأ الناقل والتتبع. ترتيب الإعلان هنا يحمي المسار الثابت على Express الافتراضي.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>معاملة <code>@Param(&#39;tracking&#39;)</code> كعدد لأن النوع <code>number</code></td>
+<td>المقارنة <code>=== 4481</code> تفشل والنص <code>&quot;4481&quot;</code> هو المخزَّن</td>
+</tr>
+<tr>
+<td><code>@Param(&#39;id&#39;)</code> بينما الرمز <code>:tracking</code></td>
+<td>القيمة <code>undefined</code> والخدمة تبحث بمفتاح فارغ</td>
+</tr>
+<tr>
+<td>مسار ثابت بعد <code>@Get(&#39;:tracking&#39;)</code></td>
+<td>الكلمة الثابتة تُلتقط كمعامل</td>
+</tr>
+<tr>
+<td>وضع معرف الشحنة في الاستعلام فقط</td>
+<td>عنوان المورد لا يعود كافيًا لإعادة الطلب نفسه</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تميز القيمة موردًا داخل المجموعة: تتبع، رقم طبعة، معرف عضو في مسار مثل <code>/members/:id</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>للترقيم والفرز <code>?page=2&amp;sort=eta</code>. ذلك <code>@Query</code>. المعامل في المسار جزء من الهوية، والاستعلام يضيّق نتيجة مسار ثابت.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشكل</th>
+<th>ماذا يصل إلى الدالة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Param(&#39;tracking&#39;)</code></td>
+<td>نص الجزء المسمّى</td>
+</tr>
+<tr>
+<td><code>@Param()</code></td>
+<td>كائن كل رموز المسار</td>
+</tr>
+<tr>
+<td><code>@Query(&#39;tracking&#39;)</code></td>
+<td>قيمة <code>?tracking=</code> بعد أن تطابق المسار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد <code>@Param(&#39;tracking&#39;)</code> لطلب <code>GET /shipments/4481</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>النص <code>&quot;4481&quot;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>المسار <code>@Get(&#39;:carrier/:tracking&#39;)</code>. كيف تقرأ الناقل فقط؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Param(&#39;carrier&#39;) carrier: string</code>. الكائن الكامل عبر <code>@Param()</code> ثم <code>params.carrier</code> يؤدي الغرض نفسه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>@Get(&#39;:tracking&#39;)</code> ثم <code>@Get(&#39;delayed&#39;)</code> يجعل قائمة المتأخرين فارغة أو خاطئة على Express الافتراضي؟</p>
+<details><summary>الحل</summary>
+
+<p><code>delayed</code> يطابق <code>:tracking</code> أولًا، فتعمل <code>findOne(&quot;delayed&quot;)</code> وتبحث عن شحنة بهذا المعرف. المسار الثابت يُكتب قبل نمط المعامل، أو تُفعَّل استراتيجية <code>specificity</code> كما في درس Routing.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُعلَن رمز Route Param؟</li>
+<li>ما نوع القيمة القادمة من <code>@Param</code> قبل أي Pipe؟</li>
+<li>متى تختار <code>@Param()</code> بلا اسم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>:name</code> يلتقط قطعة من المسار و <code>@Param</code> يمررها كنص. المسارات الثابتة تُحمى بترتيب الإعلان، والتحويل إلى عدد يبقى عمل Pipe لاحق.</p>
+<h2>ماذا بعد؟</h2>
+<p>قيم <code>?</code> بعد المسار: Query Params.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Route parameters: <a href="https://docs.nestjs.com/controllers#route-parameters">https://docs.nestjs.com/controllers#route-parameters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — الترتيب</h2>
+<p>رتّبوا أول بناء يمكن اختباره: Docker، مشروع، منظمة، تسجيل، صحة.</p>
+<details>
+<summary>الحل</summary>
+
+<p>صحة وقاعدة، ثم تسجيل، ثم منظمة، ثم مشروع. Docker يثبت العزل بعد ما توجد المسارات لا قبل الحساب.</p>
+</details>
+
+<h2>تمرين متوسط — صفحة النجاح</h2>
+<p>سارة أنهت الدفع في المتصفح والحدث لم يصل. ماذا يعرض <code>GET /billing</code> وهل تستطيع النشر إن كانت على <code>trial</code> أصلًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يعرض <code>trial</code> لا <code>active</code>. النشر ما زال مسموحًا بسبب التجربة لا بسبب صفحة النجاح. <code>active</code> ينتظر حدثًا موقّعًا على <code>rawBody</code>.</p>
+</details>
+
+<h2>تمرين متقدم — شريحة ناقصة</h2>
+<p>حذفتم اختبار العزل وأبقيتم Swagger. أي خلل يمر إلى الإنتاج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>findUnique</code> على <code>id</code> فقط قد يسرّب مشروع الجار بينما الوثيقة ما زالت صحيحة شكليًا. الاختبار الذي يطلب الترويسة الأخرى ويتوقع 404 هو الذي يمسك الخلل. أعيدوه قبل أي حاوية إنتاج.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

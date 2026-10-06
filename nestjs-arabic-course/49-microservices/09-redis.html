@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Redis</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-redis.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Redis</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استعمال Redis ناقلًا لرسائل Nest عبر النشر والاشتراك، وتمييز ذلك عن Redis الذاكرة المؤقتة أو طابور BullMQ.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>TCP لا يوصل عدة نسخ من نفس المستمع بنمط واحد بسهولة. Redis موجود أصلًا في كثير من مشاريع Nest للكاش. <code>Transport.REDIS</code> يمرر الرسائل عبر Pub/Sub. هذا ليس ضمان طابور أعمال ولا تخزين تيار مثل Kafka. الرسالة تُنشر لمن هو مشترك حينها. إن لم يكن المستمع متصلًا ضاع الحدث. لا تستبدل به BullMQ ولا جلسة المستخدم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المستمع والعميل <code>transport: Transport.REDIS</code> و <code>options.host</code> و <code>options.port</code>. داخل Compose المضيف <code>redis</code> لا <code>localhost</code>. الحزمة التي يتوقعها النقل تُثبت مع <code>@nestjs/microservices</code> حسب صفحة Redis في التوثيق (<code>ioredis</code> في الإصدارات الحديثة). الأنماط نفسها <code>@MessagePattern</code> و <code>@EventPattern</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">{
+  transport: Transport.REDIS,
+  options: {
+    host: process.env.REDIS_HOST ?? &#39;127.0.0.1&#39;,
+    port: 6379,
+  },
+}
+</code></pre>
+<p>نفس الشكل في <code>createMicroservice</code> و <code>ClientsModule</code>. <code>REDIS_HOST=redis</code> في شبكة Compose.</p>
+<p>الطلب-الرد ممكن على هذا النقل لأن Nest يوفّر مسار رد فوق Pub/Sub حيث يلزم، بتكلفة أوضح من NATS. للأحداث الخفيفة بين النسخ الحدث أصدق.</p>
+<p>لا تشارك اتصال الكاش واتصال الناقل في خيار واحد مشوش إن كان الكاش حساسًا للزمن. قاعدة Redis واحدة مقبولة في التطوير. في الإنتاج راقب الذاكرة لأن Pub/Sub لا يُخزن لك إعادة المعالجة.</p>
+<p>BullMQ من فصل الطوابير وظيفة مختلفة: مهمة تُعاد ولها محاولات. لا تضع <code>@EventPattern</code> مكان <code>Processor</code> إن كنت تحتاج إعادة محاولة ومتأخرات.</p>
+<p>كلمة المرور و <code>tls</code> في <code>options</code> عندما لا تكون الشبكة خاصة. لا تنشر Redis على الإنترنت بلا حماية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ناشر -&gt; Redis Pub/Sub -&gt; كل مشترك حاضر
+الغائب لا يستلم لاحقًا
+ليس طابور BullMQ وليس كاش المفاتيح
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>خدمتا فوترة تشتركان على نفس النمط الحدثي. <code>emit(&#39;invoice.issued&#39;, { invoiceId })</code> من الكتالوج. كل نسخة حاضرة تتلقى الحدث. إن كانت المعالجة يجب أن تتم مرة واحدة فهذا النمط خاطئ لـ Redis Pub/Sub التقليدي لأنه يبث. للعمل مرة واحدة استعمل طابورًا (BullMQ أو RabbitMQ) لا بثًا.</p>
+<h2>شرح المثال</h2>
+<p>البث مفيد لإبطال كاش محلي في كل نسخة: كل نسخة تحذف مفتاحًا في ذاكرتها. ضار لإرسال بريد: كل نسخة ترسل رسالة. اختر النمط حسب «مرة لكل نسخة» أو «مرة في العنقود».</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العميل يتصل بـ Redis.</li>
+<li><code>emit</code> ينشر على قناة يشتقها الإطار من النمط.</li>
+<li>المستمعون المشتركون يستلمون.</li>
+<li>من اتصل بعد النشر لا يرى الرسالة القديمة.</li>
+<li><code>send</code> يستخدم مسار الرد الذي يبنيه Nest فوق Redis.</li>
+<li>انقطاع Redis يفشل الطرفين معًا، وهو حد مشترك جديد لم يكن في TCP المباشر فقط بل في الوسيط.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>إبطال ذاكرة عناوين الكتب في كل نسخة كتالوج عند <code>book.updated</code>. الحدث Redis. إصدار الفاتورة يبقى طلب-رد على NATS أو TCP نحو عملية واحدة، أو طابور إن وجب التخزين. لا تجعل Redis الناقل الوحيد لكل شيء لأنه يعمل في التطوير.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع إعادة المحاولة كـ BullMQ.</li>
+<li>بث يرسل بريدًا مكررًا.</li>
+<li><code>localhost</code> من حاوية التطبيق.</li>
+<li>استعمال نفس مفتاح الكاش كحمولة رسالة ضخمة.</li>
+<li>خلط <code>Transport.REDIS</code> مع <code>CacheModule</code> كأنهما إعداد واحد بلا قصد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بث خفيف لمن هو متصل، خصوصًا إبطال حالة محلية بين نسخ، و Redis أصلًا لديك.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>مهمة يجب أن تُنفذ مرة وتُعاد عند الفشل. استعمل طابورًا. ولا كبديل Kafka لسجل دائم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الدور</th>
+<th>الأداة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بث رسائل Nest</td>
+<td><code>Transport.REDIS</code></td>
+</tr>
+<tr>
+<td>كاش مفاتيح</td>
+<td>CacheModule</td>
+</tr>
+<tr>
+<td>مهمة مع إعادة محاولة</td>
+<td>BullMQ</td>
+</tr>
+<tr>
+<td>سجل دائم</td>
+<td>Kafka</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل رسالة Pub/Sub تُخزن حتى يعود المستمع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. من لم يكن مشتركًا عند النشر لا يستلمها لاحقًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا إشعار البريد على Pub/Sub مع نسختين خطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل نسخة حاضرة تستلم البث فترسل البريد مرتين. المطلوب طابور يسلّم لمعالج واحد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما قيمة <code>REDIS_HOST</code> في Compose لحاوية التطبيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اسم الخدمة، مثل <code>redis</code>، لا <code>localhost</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يبث Redis هنا؟</li>
+<li>بماذا لا يُستبدل BullMQ؟</li>
+<li>أين يُضبط المضيف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Transport.REDIS</code> ناقل بث خفيف فوق وسيط تعرفه، لا طابور مهام ولا كاش. استعمله عندما يجب أن تسمع كل نسخة حاضرة، وانقل العمل الذي يُنفذ مرة واحدة إلى طابور.</p>
+<h2>ماذا بعد؟</h2>
+<p>RabbitMQ: طابور يبقى فيه العمل حتى يعالجه مستهلك.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Redis: <a href="https://docs.nestjs.com/microservices/redis">https://docs.nestjs.com/microservices/redis</a></li>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

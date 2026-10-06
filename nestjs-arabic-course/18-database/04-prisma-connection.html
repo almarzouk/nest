@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prisma: الاتصال</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-prisma-connection.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Prisma: الاتصال</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فتح Prisma Client على PostgreSQL من مزوّد Nest، وربط العمر بخطافات الوحدة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إنشاء <code>PrismaClient</code> داخل كل خدمة يفتح مجمعات متعددة ويمنع إغلاقها عند الإيقاف. قراءة <code>DATABASE_URL</code> من <code>process.env</code> في أعلى الملف تسبق التحقق. أول استعلام كسول قد يفشل بعد أن صار الخادم يستقبل طلبات.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>PrismaService</code> يمتد <code>PrismaClient</code>، يبني محوّل PostgreSQL من العنوان الذي يقدّمه <code>ConfigService</code>، ويتصل في <code>onModuleInit</code> ويقطع في <code>onModuleDestroy</code>. نسخة واحدة تُحقن حيث نحتاج القاعدة.</p>
+<h2>التعريف التقني</h2>
+<p>توثيق Nest الحالي يستخدم Prisma ORM 7. ثبّت الإصدار صراحة لأن وسم <code>latest</code> وقت كتابة تلك الصفحة قد يشير إلى إصدار سابق للطرح لا يوفّر أوامر <code>migrate</code> و <code>generate</code> نفسها:</p>
+<pre><code class="language-bash">npm install prisma@7 dotenv --save-dev
+npm install @prisma/client@7 @prisma/adapter-pg
+</code></pre>
+<p>Prisma 7 يحتاج driver adapter، أو عنوان Accelerate، لبناء العميل. لـ PostgreSQL الصنف <code>PrismaPg</code> من <code>@prisma/adapter-pg</code>.</p>
+<pre><code class="language-ts">const adapter = new PrismaPg({
+  connectionString: configService.getOrThrow&lt;string&gt;(&quot;DATABASE_URL&quot;),
+});
+super({ adapter });
+</code></pre>
+<p>العميل المولَّد يُستورد من المسار الذي يحدده <code>output</code> في المولّد، ومع ESM بلاحقة <code>.js</code>:</p>
+<pre><code class="language-ts">import { PrismaClient } from &quot;../generated/prisma/client.js&quot;;
+</code></pre>
+<p><code>$connect()</code> في <code>onModuleInit</code> يفشل الإقلاع إن كان العنوان خاطئًا، بدل الانتظار الكسول لأول استعلام. <code>$disconnect()</code> في <code>onModuleDestroy</code> يغلق المجمع. Nest يستدعي الخطاف عند <code>app.close()</code>. لتفعيله عند <code>SIGTERM</code> استدعِ <code>app.enableShutdownHooks()</code> في <code>main.ts</code>.</p>
+<p>Prisma 7 لا يعتمد حدث <code>beforeExit</code> الذي استخدمته تكاملات أقدم.</p>
+<p>عنوان PostgreSQL يعيش في <code>DATABASE_URL</code>. ملف تهيئة Prisma 7 يقرأه لأوامر CLI. التطبيق يقرأه عبر <code>ConfigModule</code> كما في الصفحة الرسمية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ConfigService DATABASE_URL
+        |
+ PrismaPg adapter
+        |
+ PrismaService extends PrismaClient
+        |
+ onModuleInit $connect -&gt; مجمع -&gt; PostgreSQL
+ onModuleDestroy $disconnect
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &quot;@nestjs/common&quot;;
+import { ConfigService } from &quot;@nestjs/config&quot;;
+import { PrismaPg } from &quot;@prisma/adapter-pg&quot;;
+import { PrismaClient } from &quot;../generated/prisma/client.js&quot;;
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  constructor(config: ConfigService) {
+    const adapter = new PrismaPg({
+      connectionString: config.getOrThrow&lt;string&gt;(&quot;DATABASE_URL&quot;),
+    });
+    super({ adapter });
+  }
+
+  async onModuleInit() {
+    await this.$connect();
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>super</code> يُستدعى بعد بناء المحوّل لأن الصنف الأب يحتاج <code>adapter</code> في الخيارات. <code>getOrThrow</code> يوقف الإقلاع إن غاب العنوان، وهذا يتفق مع مخطط البيئة إن كان <code>DATABASE_URL</code> مطلوبًا.</p>
+<p>الخدمة ما زالت تحتاج تسجيلًا في وحدة وتصديرًا. درس «وضع Prisma داخل Module» يفصل ذلك. هنا الحد هو الاتصال نفسه.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>PrismaPg</code> يمسك مشغّل <code>pg</code> ومجمعه. استدعاءات <code>prisma.book.findMany</code> لاحقًا تستعير اتصالًا من المجمع وتعيده. <code>$disconnect</code> ينهي المجمع حتى لا تبقى مقابس بعد الاختبار أو بعد إشارة الإيقاف.</p>
+<p>من غير <code>enableShutdownHooks</code>، إيقاف العملية بإشارة قد لا يمر على <code>onModuleDestroy</code>. استدعاء <code>app.close()</code> في الاختبار يفعل ذلك.</p>
+<p>لا تنشئ <code>PrismaClient</code> ثانيًا بجانب الخدمة. نسختان تعنيان مجمعين على القاعدة نفسها بلا داعٍ.</p>
+<h2>مثال عملي</h2>
+<p>اختبار e2e يستدعي <code>app.close()</code> في <code>afterAll</code> فيمر <code>$disconnect</code>. اختبار وحدة لخدمة الكتب يستبدل <code>PrismaService</code> بقيمة مزيفة ولا يفتح PostgreSQL. إن بقي <code>onModuleInit</code> على النسخة الحقيقية داخل اختبار وحدة، كل اختبار يدفع ثمن اتصال.</p>
+<p>عنوان التطوير يشير إلى قاعدة <code>library</code>. عنوان الاختبار يشير إلى <code>library_test</code>. المخطط الذي رفض العنوان الفارغ يبقى كما هو.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>new PrismaClient()</code> بلا <code>adapter</code> على Prisma 7.</li>
+<li>نسيان <code>.js</code> في استيراد العميل المولَّد تحت ESM.</li>
+<li>فتح عميل في المتحكم.</li>
+<li>الاعتماد على الاتصال الكسول ثم مفاجأة أول طلب بخطأ شبكة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند إقلاع أي تطبيق دورة يستخدم Prisma على PostgreSQL.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل سكربت <code>prisma</code> الذي يدير CLI. ذلك يقرأ التهيئة الخاصة به. التطبيق يستخدم الخدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>عميل في كل خدمة</th>
+<th><code>PrismaService</code> واحد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مجمعات متعددة</td>
+<td>مجمع واحد</td>
+</tr>
+<tr>
+<td>إغلاق غير واضح</td>
+<td><code>$disconnect</code> في الخطاف</td>
+</tr>
+<tr>
+<td>عنوان من <code>process.env</code> المبكر</td>
+<td>عنوان من <code>ConfigService</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في أي خطاف يُستدعى <code>$connect</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>onModuleInit</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المحوّل <code>PrismaPg</code> وليس سلسلة العنوان وحدها في <code>super</code> على Prisma 7؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Prisma ORM 7 في توثيق Nest يبني العميل بمحوّل مشغّل، مثل <code>PrismaPg</code>، أو بعنوان Accelerate. صفحة Prisma في Nest تمرّر <code>connectionString</code> إلى المحوّل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبارات e2e تترك اتصالات مفتوحة حتى تمتلئ قاعدة الاختبار. ماذا تضيف في <code>main</code> وفي نهاية الاختبار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.enableShutdownHooks()</code> حتى تُستدعى خطافات الإيقاف مع الإشارة، و <code>await app.close()</code> في نهاية الاختبار حتى يعمل <code>onModuleDestroy</code> ويستدعي <code>$disconnect</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يُقرأ <code>DATABASE_URL</code> داخل الخدمة؟</li>
+<li>ماذا يغلق <code>$disconnect</code>؟</li>
+<li>لماذا تفشل الإقلاع أفضل من فشل أول طلب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاتصال مزوّد واحد يمتد العميل، يبني <code>PrismaPg</code> من الإعداد، ويتصل وينقطع مع حياة الوحدة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-prisma-schema.html">Prisma: Schema</a> يصف جدولي الكتب والأعضاء في <code>schema.prisma</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

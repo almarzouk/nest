@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>إرسال الملفات إلى العميل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-streaming.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>إرسال الملفات إلى العميل</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرجاع غلاف أو تقرير من مسار HTTP عبر <code>StreamableFile</code>، بحيث تُضخ البايتات إلى العميل وتبقى المعترضات بعد المتحكم قادرة على العمل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>fs.readFile</code> يحمّل الملف كاملًا في <code>Buffer</code> ثم يضعه في الرد. تقرير كبير أو غلاف يُطلب كثيرًا يرفع الذاكرة مع كل طلب. <code>file.pipe(res)</code> مع <code>@Res()</code> يرسل التيار، لكنه يسلب Nest الرد: منطق المعترضات بعد المتحكم لا يجري.</p>
+<h2>الفكرة ببساطة</h2>
+<p>افتح <code>createReadStream</code> وأعد <code>new StreamableFile(stream)</code>. Nest تضخ التيار في الرد على Express و Fastify. النوع والاسم في خيارات المنشئ أو عبر <code>@Header</code> أو <code>@Res({ passthrough: true })</code> إن كانت الترويسة محسوبة وقت التشغيل.</p>
+<h2>التعريف التقني</h2>
+<p><code>StreamableFile</code> من <code>@nestjs/common</code>. المنشئ يقبل <code>Readable</code> أو <code>Uint8Array</code>. تمرير <code>Buffer</code> يعني أن المحتوى محبوس مسبقًا. التوثيق يخص هذا الأسلوب بتطبيقات HTTP، لا GraphQL ولا الخدمات المصغرة.</p>
+<p>خيارات المنشئ:</p>
+<table>
+<thead>
+<tr>
+<th>الخيار</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>type</code></td>
+<td><code>Content-Type</code>، والافتراض <code>application/octet-stream</code></td>
+</tr>
+<tr>
+<td><code>disposition</code></td>
+<td><code>Content-Disposition</code>، مثل إرفاق باسم ملف</td>
+</tr>
+<tr>
+<td><code>length</code></td>
+<td><code>Content-Length</code> إن عرفته مسبقًا للتيار</td>
+</tr>
+</tbody></table>
+<p>مسلسلات الصنف لا تسلسل <code>StreamableFile</code>. على Express، خطأ التيار قبل أي بايت يصبح <code>400</code>، و <code>setErrorHandler</code> يبدّل ذلك. على Fastify الافتراض <code>500</code> عبر طبقة الاستثناءات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">createReadStream(path)
+  StreamableFile
+    Nest تكتب الترويسات
+    ثم تضخ الكتل
+المعترض بعد المتحكم ما زال يرى القيمة المعادة
+</code></pre>
+<p><code>@Res()</code> بلا <code>passthrough</code> فرع آخر: أنت تملك <code>res</code>، والإطار لا يكمل الإرسال نيابة عنك.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Header, Param, StreamableFile } from &#39;@nestjs/common&#39;;
+import { createReadStream } from &#39;node:fs&#39;;
+import { CoversService } from &#39;./covers.service.js&#39;;
+
+@Controller(&#39;books&#39;)
+export class CoverFilesController {
+  constructor(private readonly covers: CoversService) {}
+
+  @Get(&#39;:id/cover&#39;)
+  @Header(&#39;Cache-Control&#39;, &#39;private, max-age=3600&#39;)
+  download(@Param(&#39;id&#39;) bookId: string): StreamableFile {
+    const stored = this.covers.resolve(bookId);
+    const stream = createReadStream(stored.absolutePath);
+    return new StreamableFile(stream, {
+      type: stored.mime,
+      disposition: `inline; filename=&quot;${stored.downloadName}&quot;`,
+      length: stored.bytes,
+    });
+  }
+}
+</code></pre>
+<p><code>resolve</code> تُرجع مسارًا مطلقًا بنته الخدمة من مفتاح مخزّن، لا من سلسلة أرسلها العميل في الاستعلام.</p>
+<h2>شرح المثال</h2>
+<p><code>inline</code> يعرض الصورة في المتصفح. <code>attachment</code> ينزّلها. <code>length</code> معروف لأننا حفظنا الحجم عند الرفع، فيقدر العميل النسبة. <code>Cache-Control: private</code> لأن الغلاف قد يكون لمستخدم مسجّل. المسار الثابت العام، إن وُجد، عمل <code>ServeStaticModule</code> في الفصل التالي لا هذا المتحكم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>createReadStream</code> لا يقرأ الملف عند بناء الكائن. القراءة تبدأ عندما تسحب Nest التيار. <code>setErrorHandler</code> يحوّل <code>ENOENT</code> قبل إرسال البايتات إلى <code>404</code> إن لم تُرسل الترويسات. لا تمرر <code>bookId</code> إلى <code>join</code> من العميل: <code>../</code> يهرب من المجلد. الخدمة تترجم المعرف إلى اسم <code>randomUUID</code>.</p>
+<h2>مثال عملي</h2>
+<p>تقرير جاهز يُرسل بـ <code>StreamableFile</code> ونوع <code>application/pdf</code> و <code>disposition: attachment</code>. <code>pathFor</code> تقبل أسماءً من قائمة بيضاء. البناء الثقيل لا يحدث داخل المسار. <code>file.buffer</code> للرفع الكبير و <code>readFile</code> للتنزيل الكبير كلاهما يحبس الملف. الحجم الكبير يريد قرصًا أو تيارًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>readFileSync</code> ثم <code>new StreamableFile(buffer)</code> لملف كبير، فتختفي فائدة التيار.</li>
+<li><code>@Res()</code> ثم <code>stream.pipe(res)</code> فتتوقف معترضات القياس بعد المتحكم.</li>
+<li>أخذ مسار الملف من <code>?path=</code> الذي يرسله العميل.</li>
+<li>نسيان <code>type</code> فيصل <code>application/octet-stream</code> لصورة PNG.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يكون الملف خلف قاعدة: صلاحية، اسم منطقي، أو ترويسة تُحسب لكل طلب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لملفات عامة ثابتة بلا تفويض. تلك جذر <code>ServeStaticModule</code>. ولرفع كبير على Express، هذا الصنف لا يحوّل القبضة إلى تيار وارد. الوارد الكبير يبقى <code>diskStorage</code> مع حد، أو <code>FileStreamInterceptor</code> على Fastify.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>الذاكرة</th>
+<th>المعترض بعد المتحكم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>readFile</code> ثم JSON أو Buffer</td>
+<td>الملف كله</td>
+<td>يعمل</td>
+</tr>
+<tr>
+<td><code>@Res()</code> و <code>pipe</code></td>
+<td>كتل</td>
+<td>يتوقف لأنك تملك الرد</td>
+</tr>
+<tr>
+<td><code>StreamableFile</code></td>
+<td>كتل</td>
+<td>يعمل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة تُستورد <code>StreamableFile</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/common</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>passthrough: true</code> عند ضبط ترويسة ديناميكية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تكتب الترويسة على <code>res</code> وتُرجع <code>StreamableFile</code> فيكمل Nest الإرسال. من غير <code>passthrough</code> يصبح الرد ملك المعالج.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الغلاف يُطلب بمعرف كتاب. لماذا لا تقرأ <code>join(uploadRoot, id)</code> مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المعرف قد يحمل مسارًا نسبيًا. الخدمة تترجم المعرف إلى اسم مولَّد خُزّن عند الرفع، ثم تبني المسار المطلق من ذلك الاسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تضع <code>length</code>؟</li>
+<li>ماذا يفعل <code>setErrorHandler</code> على Express قبل إرسال البايتات؟</li>
+<li>أي اتجاه يبقى خطرًا إن حُبس في <code>Buffer</code>: الرفع الكبير أم التنزيل الكبير؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>StreamableFile</code> فوق <code>createReadStream</code> يرسل الملف كتلاً ويبقي الرد داخل Nest. المسار يأتي من مفتاح خزّنته، لا من سلسلة العميل.</p>
+<h2>ماذا بعد؟</h2>
+<p>الملفات العامة التي تُخدم من مجلد بلا متحكم لكل صورة، ومتى يبتلع ذلك مسارات الـ API.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Streaming files: <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

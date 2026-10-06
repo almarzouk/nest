@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>نشر مشروع في رف ثم تصدير ليلي، كل أداة في مكانها.</p>
+<h2>المثال 1 — زر الإنشاء</h2>
+<p><code>POST /projects</code> عليه <code>@Idempotent({ required: true })</code> ونطاق المستخدم. الإعادة لا تنشئ مسودة ثانية. <code>@Retry</code> من <code>@nestjs/resilience</code> ليس على هذا المسار.</p>
+<h2>المثال 2 — الرسالة مع الصف</h2>
+<p><code>prisma.$transaction(async (tx) =&gt; { update; outbox.add(..., tx) })</code>. لا مصفوفة استعلامات. <code>@OnOutboxMessage(&#39;project.published&#39;)</code> يحمّل المنظمة من الحمولة. تذكير بعد سبعة أيام تدفق <code>@nestjs/workflows</code> لا <code>setTimeout</code>.</p>
+<h2>المثال 3 — الثالثة فجرًا</h2>
+<p><code>@Cron</code> مع <code>@OnOneInstance()</code> ومخزن قفل في Postgres لا في الذاكرة. اختبار ثلاث نسخ يعد تصديرًا واحدًا. اقتباس الناقل البطيء <code>@Timeout(&#39;2s&#39;)</code> فيرد 504 ولا يغيّر <code>published</code>.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

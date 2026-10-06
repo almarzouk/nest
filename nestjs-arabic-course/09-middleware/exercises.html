@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس. المجال مكتب إعارة: <code>LoansController</code> و <code>CopiesController</code> و <code>GET /health</code>.</p>
+<h2>سهل</h2>
+<ol>
+<li>ما المعاملات الثلاثة لدالة Middleware على محوّل Express؟</li>
+<li>أي سطر تسجيل يعمل قبل <code>configure</code> في أي وحدة؟</li>
+<li>ماذا تفعل إن لم ترد إنهاء الرد داخل الدالة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>req</code> و <code>res</code> و <code>next</code>.</li>
+<li><code>app.use(...)</code> في <code>main.ts</code>.</li>
+<li>تنادي <code>next()</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>ارسم ربطًا واحدًا:</p>
+<ul>
+<li><code>requestId</code> على كل الطلبات بلا حقن.</li>
+<li><code>CopyClockMiddleware</code> على <code>CopiesController</code> فقط، والساعة مزوّد.</li>
+<li><code>traceLoan</code> على <code>LoansController</code> ما عدا <code>POST /loans</code>.</li>
+</ul>
+<p>اذكر الملف الذي يعيش فيه كل سطر.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>main.ts</code>: <code>app.use(requestId)</code> بعد <code>NestFactory.create</code>.</li>
+<li><code>copies.module.ts</code>: <code>providers: [CopyClock]</code>، و <code>configure</code> فيها <code>consumer.apply(CopyClockMiddleware).forRoutes(CopiesController)</code>.</li>
+<li><code>loans.module.ts</code>: <code>consumer.apply(traceLoan).exclude({ path: &#39;loans&#39;, method: RequestMethod.POST }).forRoutes(LoansController)</code>.</li>
+<li>ترتيب الطلب على <code>GET /copies</code>: <code>requestId</code> ثم <code>CopyClockMiddleware</code>. <code>traceLoan</code> لا يعمل لأن المسار ليس على <code>LoansController</code>.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>ظهر العطل التالي في المراجعة. لكل بند اذكر الطبقة الصحيحة والسبب المختصر.</p>
+<ol>
+<li>فحص <code>roles</code> المخزّنة على <code>DELETE /loans/:id</code> داخل <code>use</code>.</li>
+<li><code>express.json()</code> مرة ثانية مع الإعداد الافتراضي لـ <code>NestFactory.create</code>.</li>
+<li>فلتر <code>@Catch()</code> على <code>LoansController</code> لا يرى <code>UnauthorizedException</code> رُمي من Middleware المكتب.</li>
+<li>مسجّل في وحدة <code>@Global()</code> يطبع <code>x-request-id</code> فارغًا، والمولّد يعيش في <code>LoansModule</code>.</li>
+<li><code>GET /health</code> يرجع <code>403</code> بعد <code>APP_GUARD</code>، والفريق أضاف <code>exclude(&#39;health&#39;)</code> على Middleware.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Guard مع <code>ExecutionContext</code>. Middleware لا يعرف المعالج التالي.</li>
+<li>المحوّل سجّل المحلّل. التخصيص يبدأ بـ <code>bodyParser: false</code> ثم تسجيل واعٍ، لا بمصنع ثانٍ فوق الافتراضي.</li>
+<li>استثناء Middleware تراه الفلاتر العامة فقط (<code>useGlobalFilters</code> أو <code>APP_FILTER</code>). فلتر المتحكم لا يُختار قبل تحديد المسار.</li>
+<li>مولّد المعرّف يجب أن يسبق القارئ. انقله إلى <code>app.use</code> أو إلى وحدة أقرب إلى الجذر من المسجّل العام. <code>@Global()</code> يقدّم Middleware تلك الوحدة على الجذر وعلى <code>LoansModule</code>.</li>
+<li><code>exclude</code> يطرح من سلسلة Middleware. الحارس العام يعمل بعد ذلك. فتح الصحة يتم بعلامة على المسار يقرأها الحارس، مثل <code>@Public</code> في فصل الزينة، لا بثقب في Middleware.</li>
+</ol>
+</details>
+
+<h2>سؤال إضافي قبل الإغلاق</h2>
+<p><code>ShelfClockMiddleware</code> يرمي <code>UnauthorizedException</code> عند غياب ترويسة. فلتر مكتوب على <code>LoansController</code> لا يغيّر جسم الرد. اكتب أين تسجّل الفلتر الذي يستطيع ذلك، ولماذا <code>@UseFilters</code> على صنف Middleware لا يكفي.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الفلتر العام عبر <code>app.useGlobalFilters()</code> أو مزوّد <code>APP_FILTER</code>. الصفحة تقول إن استثناء Middleware، لأن المعالج لم يُختر بعد، تراه الفلاتر العامة فقط، وإن ربط <code>@UseFilters()</code> على صنف Middleware غير مدعوم.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

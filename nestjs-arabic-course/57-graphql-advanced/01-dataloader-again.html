@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DataLoader مرة أخرى</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-dataloader-again.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>DataLoader مرة أخرى</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تجميع قراءات المؤلف في استعلام كتب رف داخل الطلب الواحد، باستخدام مكتبة DataLoader مع Nest، لا باستخدام ديكور يزعم أنه يحل N+1 وحده.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حقل <code>author</code> على كل كتاب يستدعي <code>findUnique</code> من داخل <code>@ResolveField</code>. عشرون كتابًا تعني عشرين استعلامًا زيادة على استعلام القائمة. الفريق جرّب ذاكرة على خدمة singleton فخلط مؤلفين بين طلبات مستأجرين مختلفين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>خلال الطلب، اجمع معرّفات المؤلفين التي ستُطلب في نفس الدورة، ثم اقرأها باستعلام واحد، ووزّع الصفوف على الحقول. هذه مهمة DataLoader. Nest يوفّر مكان الحقن. المكتبة توفّر التجميع. لا يوجد <code>@DataLoader()</code> رسمي في <code>@nestjs/graphql</code> يغني عن الاثنين.</p>
+<h2>التعريف التقني</h2>
+<p><code>DataLoader</code> من حزمة <code>dataloader</code> تأخذ دالة <code>batch(keys)</code> تعيد مصفوفة بنفس ترتيب المفاتيح. تُنشأ داخل نطاق الطلب (<code>Scope.REQUEST</code>) أو داخل سياق GraphQL الذي يُبنى لكل عملية، حتى لا تخدم الذاكرة طلبًا آخر. في GraphQL، حقن الطلب يتم عبر <code>CONTEXT</code> لا عبر <code>REQUEST</code> كما في صفحة Injection scopes. الحقل يستدعي <code>loader.load(authorId)</code> ولا يستدعي Prisma مباشرة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كتاب 1 load(a1) ─┐
+كتاب 2 load(a1) ─┼─ دورة واحدة → WHERE id IN (a1, a2)
+كتاب 3 load(a2) ─┘
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import DataLoader from &#39;dataloader&#39;;
+import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { AuthorsService } from &#39;../authors/authors.service.js&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class AuthorLoader {
+  readonly loader: DataLoader&lt;string, { id: string; name: string } | null&gt;;
+
+  constructor(authors: AuthorsService) {
+    this.loader = new DataLoader(async (ids) =&gt; {
+      const rows = await authors.findManyByIds([...ids]);
+      const byId = new Map(rows.map((row) =&gt; [row.id, row]));
+      return ids.map((id) =&gt; byId.get(id) ?? null);
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>ترتيب الإرجاع يطابق ترتيب <code>ids</code>. خلط الترتيب يربط كتابًا بمؤلف آخر.</li>
+<li><code>Scope.REQUEST</code> هنا مقصود: عمر المجمّع عمر العملية. كلفته نوقشت في فصل الأداء؛ لا ترفع كل الخدمات إلى هذا النطاق، ارفع المجمّع فقط.</li>
+<li><code>findManyByIds</code> استعلام واحد. إن بقيت <code>findUnique</code> داخل <code>batch</code> فقد أعدت N+1 باسم جديد.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>GraphQL يحل حقول <code>author</code> في نفس المستوى.</li>
+<li>كل <code>load</code> يسجّل المفتاح ولا يذهب إلى القاعدة فورًا.</li>
+<li>في نهاية دورة الأحداث الحالية، DataLoader يستدعي <code>batch</code> مرة.</li>
+<li>المفاتيح المكررة (نفس المؤلف على كتابين) تُستعلم مرة.</li>
+<li>بعد انتهاء الطلب تموت النسخة الطلبية فلا تبقى نتائج مستأجر في طلب تالٍ.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Parent, ResolveField, Resolver } from &#39;@nestjs/graphql&#39;;
+import { AuthorLoader } from &#39;./author.loader.js&#39;;
+
+@Resolver(&#39;Book&#39;)
+export class BookAuthorResolver {
+  constructor(private readonly authors: AuthorLoader) {}
+
+  @ResolveField()
+  author(@Parent() book: { authorId: string }) {
+    return this.authors.loader.load(book.authorId);
+  }
+}
+</code></pre>
+<p><code>@Resolver</code> و <code>@ResolveField</code> من <code>@nestjs/graphql</code>. التجميع من <code>dataloader</code>. إن نسيت تسجيل <code>AuthorLoader</code> كمزوّد في الوحدة، الحقل لا يجد مجمّعًا. هذا ليس فشل ديكور واحد ينقصه خيار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مجمّع singleton يعيش طول العملية فيخلط الطلبات.</li>
+<li><code>batch</code> تعيد الصفوف بترتيب القاعدة لا بترتيب المفاتيح.</li>
+<li>فتح DataLoader داخل كل <code>load</code> فلا يتجمع شيء.</li>
+<li>الاعتقاد أن <code>@nestjs/graphql</code> يجمّع علاقات Prisma تلقائيًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لحقل علاقة يُحل لكثير من الآباء في عملية واحدة: مؤلف الكتاب، عدد المراجعات، الناشر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستعلام جذر يعيد كتابًا واحدًا بمعرّفه؛ الاستعلام الواحد أوضح. ولا ككاش عبر الطلبات. لذلك يوجد تخزين مؤقت بمفتاح مستأجر إن كان الناتج عامًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>دورها</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@ResolveField</code></td>
+<td>يعلن كيف يُحسب الحقل</td>
+</tr>
+<tr>
+<td><code>DataLoader</code></td>
+<td>يجمع المفاتيح في الطلب</td>
+</tr>
+<tr>
+<td><code>Scope.REQUEST</code> أو سياق العملية</td>
+<td>يعزل الذاكرة</td>
+</tr>
+<tr>
+<td>فهرس SQL</td>
+<td>يسرّع <code>IN (...)</code> الناتج</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>عشرون كتابًا لعشرة مؤلفين. كم مرة تُستدعى <code>batch</code> إن شُغّلت الحقول في مستوى واحد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مرة واحدة في تلك الدورة، و <code>ids</code> فيها عشرة مفاتيح بعد إزالة التكرار داخل DataLoader، لا عشرون استعلام <code>findUnique</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المجمّع العام على التطبيق خطر في رف متعدد المستأجرين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الذاكرة تبقى بعد الطلب. طلب مكتبة أخرى قد يحصل على مؤلف من ذاكرة الطلب السابق إن تطابق المعرّف أو إن نسي <code>batch</code> قيد <code>tenantId</code>. عمر المجمّع عمر العملية، و <code>batch</code> نفسه يقيّد المستأجر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>batch</code> أعادت صفين بينما المفاتيح ثلاثة، وبترتيب مختلف. ماذا يحدث للحقل الثالث؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>DataLoader يربط بالنظر إلى الموضع. نقص عنصر أو اختلاف ترتيب يربط القيمة الخطأ أو يرمي. أعد مصفوفة بطول المفاتيح: القيمة أو <code>null</code> في موضع المفتاح الغائب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة تجمع المفاتيح، وأي حزمة تعلن الحقل؟</li>
+<li>لماذا الترتيب في <code>batch</code> جزء من الصحة؟</li>
+<li>لماذا لا يكفي singleton؟</li>
+<li>هل Nest يقدّم ديكورًا واحدًا يغني عن DataLoader؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>DataLoader مجمّع لكل طلب تكتبه أنت حول استعلام <code>IN</code>. <code>@ResolveField</code> يستدعي <code>load</code>. لا ديكور رسمي واحد يلغي N+1 بالنيابة عن هذا التصميم.</p>
+<h2>ماذا بعد؟</h2>
+<p>التجميع يمنع شكلًا واحدًا من الانفجار. الدرس التالي يسمّي هذا الشكل N+1 ويعرض من أين يأتي في المخطط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>DataLoader: <a href="https://github.com/graphql/dataloader">https://github.com/graphql/dataloader</a></li>
+<li>NestJS — GraphQL resolvers: <a href="https://docs.nestjs.com/graphql/resolvers">https://docs.nestjs.com/graphql/resolvers</a></li>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

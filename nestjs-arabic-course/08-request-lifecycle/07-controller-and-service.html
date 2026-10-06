@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Controller و Service</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-controller-and-service.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Controller و Service</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد وسط الدورة: بعد Pipes تُستدعى دالة Controller، وهي التي تستدعي Service، والقيمة تعود إلى Interceptors الخروج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وضع القاعدة في الدالة يجعل وسط الرسم يحمل HTTP وقرار الإعارة معًا. وضع HTTP داخل Service يجعل الخدمة تنتظر Pipe و Guard. الوسط الرسمي ضيق: المعالج يستلم قيمًا جاهزة، ينادي الخدمة، يعيد الناتج أو يرمي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>البند 6 معالج الطريقة. البند 7 الخدمة إن وُجدت. اسم الدالة لا معنى له في المطابقة؛ المطابقة تمت قبل Middleware انتهت وقبل Guards. هنا التنفيذ فقط. نجاح الإرجاع يدخل طريق Interceptors من المسار إلى العام ثم طبقة الاستجابة التي عرفتها في Controllers: كائن يُسلسل JSON، و POST افتراضيًا 201.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@Patch(&#39;:id&#39;)
+update(@Param(&#39;id&#39;) id: string, @Body() body: UpdateLoanDto) {
+  return this.loans.update(id, body);
+}
+</code></pre>
+<p><code>id</code> و <code>body</code> هما ناتج Pipes. <code>update</code> على الخدمة هي القاعدة. ما تعيده الدالة هو ما تصعد به سلسلة <code>Observable</code> إن بقي الأسلوب القياسي.</p>
+<p>رمي من المعالج أو من الخدمة يتخطى بقية طريق النجاح. Interceptors التي دخلت قبل الدالة تستطيع قراءة الخطأ في <code>catchError</code>. إن بقي غير ممسوك تذهب الدورة إلى Exception Filters من المسار إلى العام.</p>
+<p><code>try/catch</code> يبتلع الرمي يعيد قيمة نجاح. المرشح لا يراها. Interceptor الخروج يرى القيمة البديلة كأي إرجاع.</p>
+<p><code>@Res()</code> من غير <code>passthrough</code> يعني أنك تكتب الرد، فطريق التسلسل و Interceptors القياسي على القيمة المعادة لا يجري كالمعتاد. ذلك استثناء أسلوب في درس لاحق من هذا الفصل. الوسط الطبيعي <code>return</code>.</p>
+<p>لا توجد مرحلة اسمها «بين Controller و Service» غير نداء الدالة. الخدمة مزود جاهز منذ الإقلاع في النطاق الافتراضي، لا كائنًا يُبنى بعد Pipe.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Pipes سلّمت الوسائط
+  -&gt; update في Controller
+  -&gt; LoansService.update
+  -&gt; قيمة
+  -&gt; Interceptors الخروج
+</code></pre>
+<p>أو رمي من أحد السهمين فيخرج عن طريق النجاح.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Param, Patch } from &#39;@nestjs/common&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+import { UpdateLoanDto } from &#39;./update-loan.dto.js&#39;;
+
+@Controller(&#39;loans&#39;)
+export class LoansController {
+  constructor(private readonly loans: LoansService) {}
+
+  @Patch(&#39;:id&#39;)
+  update(@Param(&#39;id&#39;) id: string, @Body() body: UpdateLoanDto) {
+    return this.loans.update(id, body);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>LoansService</code> حُقنت عند بناء Controller، قبل أي طلب، ما دام Scope الافتراضي.</li>
+<li><code>PATCH</code> ناجح يعيد كائن الخدمة برمز 200 ما لم يضبط <code>@HttpCode</code>.</li>
+<li>المعالج لا يقرأ <code>req</code> الخام ولا يفحص صلاحية؛ تلك مراحل سابقة.</li>
+<li>إن كانت <code>update</code> غير متزامنة، Nest تنتظر الوعد ثم تمرر الناتج إلى طريق الخروج.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>استدعاء الطريقة هو أول كود تطبيق يعمل بعد التحويل. أي Interceptor ما زال ينتظر <code>Observable</code> الذي يصدر عندما ترجع الدالة. الخدمة تعمل على نفس مكدس النداء: هي دالة عادية على النسخة المحقونة. وقتها جزء من زمن المعالج، لا مرحلة بإعادة ترتيب.</p>
+<p>حقل على Singleton يتغير هنا مرئي للطلب التالي. ذلك أثر العمر لا أثر ترتيب الدورة. قيمة هذا الطلب تبقى في الوسائط <code>id</code> و <code>body</code> وفي الكائن المعاد.</p>
+<p>انتهاء الدالة بقيمة يبدأ البند 8. انتهاءها برمي يبحث عن ممسك في أغلفة Interceptor ثم في المرشحات.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { UpdateLoanDto } from &#39;./update-loan.dto.js&#39;;
+
+@Injectable()
+export class LoansService {
+  update(id: string, body: UpdateLoanDto) {
+    if (body.days &lt; 1) {
+      throw new Error(&#39;days&#39;);
+    }
+    return { id, days: body.days };
+  }
+}
+</code></pre>
+<p><code>days</code> الأقل من 1 لا يرجع <code>{ id, days }</code> إلى Interceptor الخروج كنجاح. الخطأ يصعد. استثناء HTTP أوضح سيأتي مع Exception Filters؛ الرمي هنا يكفي لبيان أن الخدمة قادرة على إيقاف طريق النجاح. فحص <code>days &lt; 1</code> قاعدة مجال. شكل الجسم الفارغ كان يمكن أن ترفضه Pipe قبل الدخول، فيبقى هذا الفحص لما تعرفه الخدمة عن الإعارة لا عن JSON.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>فتح اتصال أو فحص صلاحية داخل <code>update</code> في Controller</td>
+<td>وسط الدورة صار يعيد مراحل سابقة</td>
+</tr>
+<tr>
+<td>توقع بناء <code>LoansService</code> بعد Pipe لكل طلب</td>
+<td>النسخة الافتراضية جاهزة قبل الطلب</td>
+</tr>
+<tr>
+<td><code>try/catch</code> يعيد <code>{ ok: false }</code> وتوقع مرشح</td>
+<td>طريق النجاح يكمل بالقيمة</td>
+</tr>
+<tr>
+<td><code>@Res()</code> بلا <code>passthrough</code> مع <code>return</code></td>
+<td>التسلسل القياسي لا يرسل تلك القيمة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لتنفيذ العملية بعد أن نجحت المحطات السابقة: قراءة وسيط محوّل، نداء Service، إرجاع القيمة. اجعل الدالة رفيعة حتى يبقى الوسط واضحًا في التتبع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لترتيب Middleware أو لمنع Guard أو لتحويل Pipe. تلك تمت. ولا لتشكيل خطأ HTTP النهائي إن كان لديك مرشح لاحقًا؛ ارمِ ودع المرشح يرد، إلا عندما تريد إمساك الحالة داخل الخدمة عمدًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>البند</th>
+<th>العمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>6 Controller</td>
+<td>استلام وسائط جاهزة وإرجاع قيمة أو رمي</td>
+</tr>
+<tr>
+<td>7 Service</td>
+<td>القاعدة على النسخة المحقونة</td>
+</tr>
+<tr>
+<td>ما قبل 6</td>
+<td>اختيار مسار ومنع وتحويل</td>
+</tr>
+<tr>
+<td>ما بعد 7 عند النجاح</td>
+<td>Interceptors من المسار إلى العام ثم الاستجابة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل تُبنى <code>LoansService</code> الافتراضية داخل <code>update</code> لكل <code>PATCH</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. الحاوية بنتها مع الإقلاع وحقنتها. <code>update</code> تستدعي الدالة على تلك النسخة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>loans.update</code> ترمي. ما الذي لا يكمل في طريق النجاح؟</p>
+<details><summary>الحل</summary>
+
+<p>صعود قيمة نجاح عبر Interceptors الخروج إلى تسلسل 200. الخطأ يصعد في الأغلفة، فإن بقي غير ممسوك وصل إلى Exception Filters.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا فحص «الأيام أقل من 1» قد يعيش في الخدمة بينما فحص «الجسم ليس JSON» لا يعيش فيها؟</p>
+<details><summary>الحل</summary>
+
+<p>JSON التالف يتوقف عند المحلل أو عند Pipe قبل البند 6. الأيام قاعدة إعارة بعد أن وصلت الأرقام محوّلة. وضع فحص JSON في الخدمة يعيد عمل مرحلة سابقة بعد أن فات موضعها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يستلم المعالج من المرحلة السابقة؟</li>
+<li>أين تذهب القيمة المعادة في طريق النجاح؟</li>
+<li>ماذا يفعل <code>try/catch</code> بمرشح الاستثناء؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>وسط الدورة دالة Controller تستدعي Service على نسخة جاهزة. الإرجاع يصعد إلى Interceptors الخروج. الرمي يوقف طريق النجاح ما دام غير ممسوك.</p>
+<h2>ماذا بعد؟</h2>
+<p>انعكاس الأغلفة: Interceptors بعد Controller.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

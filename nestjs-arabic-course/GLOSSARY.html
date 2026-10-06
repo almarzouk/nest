@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>قاموس المصطلحات</title>
+<style>
+  :root { --bg:#f3efe6; --paper:#fffdf8; --ink:#1c2430; --muted:#5c6570; --line:#e4dccf; --teal:#0e6b66; --soft:#e5f3f1; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; }
+  main { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:28px 0 64px; }
+  header.bar { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:16px 0 0; color:var(--muted); font-size:14px; }
+  header.bar a { color:var(--teal); }
+  article { background:var(--paper); border:1px solid var(--line); padding:22px 26px 32px; }
+  h1 { font-size:28px; line-height:1.35; margin:0 0 12px; }
+  h2 { font-size:22px; margin:28px 0 8px; }
+  h3 { font-size:18px; margin:22px 0 8px; }
+  a { color:var(--teal); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; background:var(--soft); padding:0 4px; }
+  pre { background:#1c2430; color:#f4f1ea; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+  pre code { background:transparent; color:inherit; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th, td { border-bottom:1px solid var(--line); text-align:right; padding:8px; vertical-align:top; }
+  th { color:var(--muted); }
+  blockquote { margin:12px 0; padding:8px 14px; border-right:3px solid var(--teal); background:var(--soft); }
+  img { max-width:100%; }
+  ul, ol { padding-right:1.2em; }
+  details { background:var(--soft); padding:8px 12px; margin:10px 0; }
+  summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<header class="bar"><span>nestjs-arabic-course/GLOSSARY.md</span> · <a href="GLOSSARY.md">ملف Markdown الأصلي</a></header>
+<main>
+<article>
+<h1>قاموس المصطلحات</h1>
+<p>شرح قصير بالعربية. المصطلح الإنجليزي يبقى كما في التوثيق. كل بند يشير إلى أول فصل يعمّقه. القاموس يكبر مع المادة.</p>
+<h2>من المقدمة</h2>
+<h3>Backend</h3>
+<p>الجزء الخادمي الذي يملك القواعد والبيانات المشتركة ويرد على الطلبات. المقدمة: <code>00-introduction</code>.</p>
+<h3>Frontend</h3>
+<p>الجزء الذي يعرض ويجمع المدخلات. ليس مكان القرار النهائي على السعر أو الصلاحية.</p>
+<h3>Client</h3>
+<p>الطرف الذي يبدأ الطلب في هذه المحادثة. قد يكون متصفحًا أو اختبارًا أو خادمًا آخر.</p>
+<h3>Server</h3>
+<p>الطرف الذي يستمع ويقبل الطلب ويكتب الاستجابة.</p>
+<h3>Request</h3>
+<p>رسالة العميل: Method و URL و Headers وجسم اختياري.</p>
+<h3>Response</h3>
+<p>رسالة الخادم: Status و Headers وجسم اختياري.</p>
+<h3>HTTP</h3>
+<p>بروتوكول الطلب والاستجابة الذي تتحدث به واجهات هذه الدورة. Stateless: كل طلب يحمل ما يلزم لفهمه.</p>
+<h3>Method</h3>
+<p>فعل HTTP. الأكثر استخدامًا هنا: <code>GET</code> و <code>POST</code> و <code>PUT</code> و <code>PATCH</code> و <code>DELETE</code>.</p>
+<h3>Status code</h3>
+<p>عدد يصف قرار الخادم. <code>2xx</code> نجاح، <code>4xx</code> مشكلة في الطلب، <code>5xx</code> فشل الخادم.</p>
+<h3>URL</h3>
+<p>عنوان المورد: scheme و host و port و path و query.</p>
+<h3>Header</h3>
+<p>زوج اسم وقيمة يحمل سياق الرسالة، مثل <code>Content-Type</code> و <code>Authorization</code>.</p>
+<h3>Body</h3>
+<p>حمولة الرسالة بعد الرؤوس. في الـ API عندنا غالبًا JSON.</p>
+<h3>JSON</h3>
+<p>صيغة نصية للبيانات بين العمليتين. النحو أضيق من كائن JavaScript. <code>JSON.parse</code> لا يفرض معنى الحقول.</p>
+<h3>REST</h3>
+<p>أسلوب تصميم يسمي الموارد في المسار ويستخدم أفعال HTTP بمعناها. التمثيل الشائع JSON. ليس بروتوكولًا، وليس مرادفًا لأي JSON على HTTP.</p>
+<h3>Resource</h3>
+<p>شيء نسميه ونخاطبه بعنوان، مثل كتاب أو قائمة كتب.</p>
+<h3>Representation</h3>
+<p>نسخة وصفية تُنقل عبر الشبكة. تختلف عن الكائن داخل ذاكرة الخادم وعن صف الجدول.</p>
+<h3>API</h3>
+<p>عقد ظاهر لاستخدام برنامج من غير فتح داخله. في هذه الدورة غالبًا Web API على الشبكة.</p>
+<h3>REST API</h3>
+<p>API على HTTP بأسلوب REST.</p>
+<h3>Idempotent</h3>
+<p>تكرار الطلب المكافئ يترك الخادم في الحالة التي يتركها تنفيذ واحد. وصف شائع لـ <code>GET</code> و <code>PUT</code> و <code>DELETE</code>. <code>POST</code> الإنشاء ليس كذلك بالضرورة.</p>
+<h3>Node.js</h3>
+<p>بيئة تشغيل JavaScript خارج المتصفح، غير متزامنة ومقادة بالأحداث، و HTTP فيها من أساسيات المكتبة. NestJS تعمل فوقها.</p>
+<h3>Event loop</h3>
+<p>حلقة في Node تنتظر الشبكة والملفات والمؤقتات وتشغّل JavaScript على خيط رئيسي. حساب طويل على هذا الخيط يؤخر الطلبات الأخرى.</p>
+<h3>Library</h3>
+<p>أداة تناديها أنت. مثال: <code>JSON.parse</code>.</p>
+<h3>Framework</h3>
+<p>هيكل ينادي كودك في نقاط حددها. Express إطار توجيه رقيق. NestJS إطار ذو رأي معماري فوق Express أو Fastify.</p>
+<h3>Inversion of Control</h3>
+<p>قلب التحكم: الإطار يملك ترتيب التشغيل أو إنشاء الكائنات، وأنت تملأ النقاط. المعنى الأوسع في المقدمة، والمعنى الخاص بالإنشاء في فصل Dependency Injection.</p>
+<h3>Express</h3>
+<p>إطار HTTP خفيف على Node. المنصة الافتراضية لـ Nest عبر <code>@nestjs/platform-express</code>. <code>req</code> و <code>res</code> هما كائنا Node مع إضافات Express.</p>
+<h3>Middleware</h3>
+<p>في Express: دالة <code>(req, res, next)</code> في مكدس الطلب. <code>next()</code> يمرر التحكم. في Nest: دالة تُستدعى قبل route handler، وهي أول محطة في Request Lifecycle بعد دخول الطلب. الفصل <code>09</code>.</p>
+<h3>Fastify</h3>
+<p>منصة HTTP بديلة أسرع في وصف توثيق Nest، وتُركب بمحوّل. ليست الافتراضية.</p>
+<h3>HTTP Adapter</h3>
+<p>قطعة Nest تترجم تسجيل المسارات والـ middleware إلى نداءات Express أو Fastify.</p>
+<h3>Platform-agnostic</h3>
+<p>تصميم Nest بحيث تُعاد استخدام القطع المنطقية عبر HTTP و WebSockets و Microservices، ما دامت القطعة لا تلتصق بكائنات منصة واحدة.</p>
+<h3>NestJS</h3>
+<p>إطار Node.js لبناء تطبيقات خادم قابلة للاختبار والنمو، قليلة الارتباط، وقابلة للصيانة. المعمارية مستوحاة من Angular. الإصدار الذي كُتبت عليه هذه المادة: 12، حسب التوثيق في 5 أكتوبر 2026.</p>
+<h3>Module</h3>
+<p>صنف معلّم بـ <code>@Module()</code> ينظم المتحكمات والمزوّدات وما يُستورد وما يُصدَّر. يغلّف مزوّداته افتراضيًا. الفصل <code>04</code>.</p>
+<h3>Root Module</h3>
+<p>الوحدة التي تُمرَّر إلى <code>NestFactory.create</code>، ومنها يبدأ application graph. في القالب: <code>AppModule</code>.</p>
+<h3>Application graph</h3>
+<p>التركيب الداخلي لعلاقات الوحدات والمزوّدات الذي تبنيه Nest عند الإقلاع.</p>
+<h3>Controller</h3>
+<p>صنف يستقبل HTTP ويعيد الرد. يقابل <code>app.get</code> في Express، ولا يُفترض أن يملك Business Logic. الفصل <code>05</code>.</p>
+<h3>Provider</h3>
+<p>أي شيء تسجّله الحاوية ليُحقن. الفصل <code>06</code>.</p>
+<h3>Service</h3>
+<p>مزوّد نضع فيه Business Logic. كل Service مزوّد، وليس كل مزوّد خدمة بالمعنى الضيق.</p>
+<h3>Dependency Injection</h3>
+<p>تمرير الاعتماديات من الخارج، عادة عبر constructor، بدل <code>new</code> داخل الدالة. الفصل <code>07</code>.</p>
+<h3>IoC container</h3>
+<p>الحاوية التي تنشئ المزوّدات المسجّلة وتحقنها.</p>
+<h3>Decorator</h3>
+<p>دالة خاصة تعلّم صنفًا أو دالة وتلصق Metadata. أمثلة الأسماء: <code>@Module</code> و <code>@Controller</code> و <code>@Get</code> و <code>@Injectable</code>. الآلية في الفصل <code>01</code>، والاستخدام في كل فصل لاحق.</p>
+<h3>Metadata</h3>
+<p>بيانات وصفية يلصقها الـ Decorator ويقرأها Nest عند الإقلاع عبر <code>reflect-metadata</code>.</p>
+<h3>Request lifecycle</h3>
+<p>ترتيب معالجة الطلب في التوثيق: Middleware، ثم Guards، ثم Interceptors، ثم Pipes، ثم Controller، ثم Service، ثم Interceptors في العودة، ثم Exception Filters عند الاستثناء. الفصل <code>08</code>.</p>
+<h3>Guard</h3>
+<p>محطة تقرر هل يُكمل الطلب. مكان Authentication و Authorization على البوابة. الفصل <code>13</code>.</p>
+<h3>Interceptor</h3>
+<p>يلتف حول تنفيذ المعالج قبلًا وبعدًا، ويعمل مع <code>Observable</code>. الفصل <code>14</code>.</p>
+<h3>Pipe</h3>
+<p>يحوّل مدخل المسار أو يرفضه قبل الدالة. الفصل <code>10</code>.</p>
+<h3>Exception Filter</h3>
+<p>يلتقط استثناءً غير ممسوك ويحوله إلى رد. الاختيار من الأخص إلى الأعم. الفصل <code>15</code>.</p>
+<h3>DTO</h3>
+<p>كائن يصف شكل البيانات على حدود التطبيق. الفصل <code>11</code>.</p>
+<h3>Singleton</h3>
+<p>نسخة واحدة من المزوّد طوال عمر التطبيق. هذا السلوك الافتراضي لمزوّدات Nest، واسمه في التوثيق scope من نوع DEFAULT. الفصل <code>40</code>.</p>
+<h3>Business Logic</h3>
+<p>قواعد العمل: ما الذي يجوز شراؤه، وبأي سعر، ومن يملك المراجعة. بيتها Service لا شكل HTTP.</p>
+<h3>Coupling</h3>
+<p>ارتباط قطعة بتفاصيل قطعة أخرى. المعالج الذي يعرف أعمدة SQL ورؤوس HTTP معًا شديد الارتباط. Nest تدفع القواعد نحو خدمات وحدود وحدات.</p>
+<h2>من بقية المسار</h2>
+<h3>ValidationPipe</h3>
+<p>أنبوب يفحص أصناف DTO وقت التشغيل. الخيارات المهمة: <code>whitelist</code> و <code>forbidNonWhitelisted</code> و <code>transform</code>.</p>
+<h3>StandardSchemaValidationPipe</h3>
+<p>أنبوب Nest 12 لفحص مخططات متوافقة مع Standard Schema مثل Zod، ويمكن أن يعمل مع <code>ValidationPipe</code> معًا.</p>
+<h3>Guard / CanActivate</h3>
+<p>بوابة قبل الأنبوب ترجع هل يكمل الطلب. مكان الهوية والإذن على حافة المسار.</p>
+<h3>Interceptor / Observable</h3>
+<p>يلف التنفيذ. <code>next.handle()</code> ترجع <code>Observable</code>. ما قبل الاستدعاء يجري قبل المتحكم، وما داخل <code>pipe</code> بعده.</p>
+<h3>Exception Filter</h3>
+<p>يلتقط الاستثناء غير الممسوك. الاختيار من المسار إلى المتحكم إلى العام.</p>
+<h3>DTO</h3>
+<p>صنف عقد على حدود HTTP. الواجهة لا تكفي لـ <code>ValidationPipe</code>.</p>
+<h3>JWT</h3>
+<p>إثبات موقع يحمله العميل. ليس بديلًا عن تجزئة كلمة المرور، ولا يُخزَّن فيه سر قابل للقراءة الحساسة.</p>
+<h3>RBAC</h3>
+<p>تفويض بالأدوار. السياسة أدق عندما يهم مالك السجل.</p>
+<h3>Prisma</h3>
+<p>عميل بيانات مولَّد من مخطط، مع ترحيل. مسار الدورة التطبيقي. TypeORM و Drizzle موثّقان أيضًا.</p>
+<h3>BullMQ</h3>
+<p>طابور مهام على Redis. الحزمة <code>@nestjs/bullmq</code>. Bull موثّق وفي وضع الصيانة.</p>
+<h3>Idempotency</h3>
+<p>تنفيذ مكرر للنفس الطلب لا يضاعف الأثر. لازم على الدفع والويب هوك.</p>
+<h3>Tenant</h3>
+<p>زبون تُعزل بياناته. في النموذج المشترك كل استعلام يحمل معرفه القادم من هوية موثوقة.</p>
+
+</article>
+</main>
+</body>
+</html>

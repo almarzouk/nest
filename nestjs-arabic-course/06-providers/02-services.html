@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Service</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-services.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Service</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع قاعدة العمل في Service يستدعيها Controller، بدلًا من كتابة القرار داخل المسار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>غرامة التأخير إن بقيت داخل <code>@Post</code> تتكرر عند مسار الإعارة ومسار التقرير. Service تجمع القاعدة في صنف واحد يُختبر من غير HTTP.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Service هي Provider يحمل منطق التطبيق: حفظ واسترجاع وحساب. Controller يستقبل الطلب ويفوّض. التوثيق يبدأ بـ <code>CatsService</code> لهذا السبب، والأمر <code>nest g service fees</code> ينشئ الملف.</p>
+<h2>التعريف التقني</h2>
+<p>Service صنف عليه <code>@Injectable()</code> وفيه حالة أو دوال. المثال الرسمي يحتفظ بمصفوفة خاصة ويعرض <code>create</code> و <code>findAll</code>. الحالة على النسخة تُشارك بين الطلبات لأن النطاق الافتراضي Singleton. هذا آمن في Node ما دامت الحالة حالة تطبيق، مثل كتالوج في الذاكرة، لا حالة زائر واحد.</p>
+<p>لا تجعل Service تقرأ <code>@Body</code> أو <code>@Param</code>. المدخلات تصلها وسائط عادية من Controller.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">FeesController.create(dto)
+  -&gt; FeesService.quote(dto.days)
+  -&gt; رقم
+  -&gt; Controller يعيد الرقم
+  -&gt; Nest ترسل الاستجابة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+export interface FeeQuote {
+  days: number;
+  amount: number;
+}
+
+@Injectable()
+export class FeesService {
+  private readonly quotes: FeeQuote[] = [];
+
+  quote(days: number): FeeQuote {
+    const row = { days, amount: days * 2 };
+    this.quotes.push(row);
+    return row;
+  }
+
+  findAll(): FeeQuote[] {
+    return this.quotes;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>quotes</code> خاصة. خارج الصنف لا أحد يدفع عنصرًا إلى المصفوفة إلا عبر <code>quote</code>.</li>
+<li><code>FeeQuote</code> واجهة وصف. استيرادها لاحقًا يكون <code>import type</code> لأنها ليست رمز حقن.</li>
+<li><code>@Injectable()</code> يعلن أن الحاوية تدير الصنف عند تسجيله.</li>
+<li><code>findAll</code> يعيد المصفوفة نفسها المخزنة. في مثال الذاكرة هذا متعمد. مستودع حقيقي يعيد نسخة أو نتيجة استعلام حتى لا يعدّل المستدعي التخزين مباشرة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>نسخة واحدة من <code>FeesService</code> تخدم كل المعالجات التي حقنت الرمز، ضمن Module التسجيل أو من استوردها عبر <code>exports</code>. <code>quote</code> مرتين من طلبين مختلفين تدفع عنصرين في المصفوفة نفسها. هذا نتيجة Singleton، لا نتيجة خطأ في <code>@Post</code>. إن احتجت حالة لكل طلب، Scope <code>REQUEST</code> في الدرس الخاص به، وهو مكلف ويعدي من يحقن الخدمة.</p>
+<p>Controller:</p>
+<pre><code class="language-ts">import { Body, Controller, Get, Post } from &#39;@nestjs/common&#39;;
+import { FeesService, type FeeQuote } from &#39;./fees.service.js&#39;;
+
+@Controller(&#39;fees&#39;)
+export class FeesController {
+  constructor(private readonly fees: FeesService) {}
+
+  @Post(&#39;quote&#39;)
+  quote(@Body(&#39;days&#39;) days: number): FeeQuote {
+    return this.fees.quote(days);
+  }
+
+  @Get()
+  findAll() {
+    return this.fees.findAll();
+  }
+}
+</code></pre>
+<p><code>POST /fees/quote</code> رمزه 201. الجسم رقم أيام. الخدمة لا تعرف أن الرقم جاء من <code>@Body</code>.</p>
+<h2>مثال عملي</h2>
+<p>قاعدة من طبقتين: الأيام المجانية ثم سعر اليوم.</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class FeesService {
+  private readonly freeDays = 3;
+  private readonly daily = 2;
+
+  quote(days: number) {
+    const billable = Math.max(days - this.freeDays, 0);
+    return { days, amount: billable * this.daily };
+  }
+}
+</code></pre>
+<p>اختبار الخدمة يستدعي <code>quote(2)</code> ويتوقع <code>amount: 0</code> من غير تشغيل خادم. Controller يبقى غلاف HTTP حول هذه الدالة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حساب الغرامة داخل Controller وفي تقرير آخر</td>
+<td>النسبتان تتباعدان عند تغيير اليوم المجاني</td>
+</tr>
+<tr>
+<td>قراءة <code>request</code> داخل Service</td>
+<td>الخدمة لا تُختبر إلا بطلب كامل</td>
+</tr>
+<tr>
+<td>اعتبار المصفوفة الخاصة قاعدة بيانات دائمة</td>
+<td>إعادة التشغيل تمسحها؛ المثال للذاكرة فقط</td>
+</tr>
+<tr>
+<td>إرجاع <code>this.quotes</code> ثم تعديلها في Controller</td>
+<td>المستدعي يغيّر حالة Singleton المشتركة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتكرر قاعدة أو تحتاج اختبارًا بلا HTTP: تسعير، إتاحة نسخة، فتح إعارة، تجميع تقرير.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لترجمة <code>@Param</code> فقط من غير قاعدة. إن كانت الدالة تمرر الوسيط كما هو إلى مستودع، قد يكفي المستودع كـ Provider. Service تظهر عندما يوجد قرار.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Controller</th>
+<th>Service</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Decorators الطرق والمدخلات</td>
+<td>دوال بأسماء المجال</td>
+</tr>
+<tr>
+<td>تعيد قيمة إلى Nest</td>
+<td>تعيد نتيجة القاعدة إلى المستدعي</td>
+</tr>
+<tr>
+<td>مسجّل في <code>controllers</code></td>
+<td>مسجّل في <code>providers</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تعيش قاعدة «أول ثلاثة أيام بلا غرامة»؟</p>
+<details><summary>الحل</summary>
+
+<p>في <code>FeesService.quote</code>، لا في جسم <code>@Post</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>findAll</code> في مثال المصفوفة يعيد العناصر التي أضافها طلب سابق؟</p>
+<details><summary>الحل</summary>
+
+<p>النسخة Singleton واحدة، والمصفوفة حقل عليها. الطلبات تشارك حالة التطبيق هذه. حالة زائر واحد لا تُخزَّن بهذا الشكل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى يكون مستودع الإعارات Provider أنسب من حشر SQL داخل <code>FeesService</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>عندما التسعير يحتاج بيانات الإعارة لكن جملة SQL تفصيل تخزين. المستودع Provider يُحقن في الخدمة، والخدمة تبقى على قاعدة الأيام والسعر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفوّض Controller إلى Service؟</li>
+<li>لماذا تُختبر <code>quote</code> من غير خادم؟</li>
+<li>ماذا يعني وجود حالة على نسخة Service الافتراضية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Service هي Provider لقاعدة العمل. Controller يمرر مدخلات ظاهرة ويستلم نتيجة، والحالة على النسخة الافتراضية حالة تطبيق مشتركة.</p>
+<h2>ماذا بعد؟</h2>
+<p>ماذا يضيف <code>@Injectable</code> حتى تدير الحاوية هذا الصنف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers (Services): <a href="https://docs.nestjs.com/providers#services">https://docs.nestjs.com/providers#services</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

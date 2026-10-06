@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>16 — غرفة تصويت</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>16 — غرفة تصويت</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new poll-booth</code></p>
+<h2>ماذا تبني</h2>
+<p>استطلاع بخيارات تُثبَّت عند الإنشاء. المصوّت يُعرف بمفتاح يرسله في ترويسة، ويصوّت مرة واحدة حتى إغلاق الاستطلاع.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>القيد على الفعل لا على شكل الصف فقط. الترويسة هنا هوية مؤقتة قبل مشروع الحسابات.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>ترويسة مطلوبة</li>
+<li>409 على الصوت الثاني</li>
+<li>إغلاق يمنع الزيادة</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>حسابات حقيقية</li>
+<li>تصويت سري مشفّر</li>
+<li>واجهة نتائج حية</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الوصفات.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/13-guards/README.html">13-guards</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الخيارات من 2 إلى 6 ولا تتغير بعد الإنشاء.</li>
+<li>الترويسة x-voter-key مطلوبة للتصويت.</li>
+<li>الصوت الثاني لنفس المفتاح 409.</li>
+<li>بعد الإغلاق التصويت 409 والنتائج تبقى مقروءة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/polls</code></td>
+<td>201</td>
+<td>سؤال وخيارات</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/polls/:id/votes</code></td>
+<td>201</td>
+<td>صوت واحد</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/polls/:id/close</code></td>
+<td>200</td>
+<td>يغلق</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/polls/:id</code></td>
+<td>200</td>
+<td>الأعداد من غير مفاتيح المصوتين</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new poll-booth</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>لا تُرجع قائمة المفاتيح في GET. الأعداد فقط.</li>
+<li>خزّن المفاتيح في مجموعة لكل استطلاع.</li>
+<li>خيار خارج القائمة 400.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/polls/polls.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">vote(pollId: string, optionId: string, voterKey: string) {
+  if (this.voters.get(pollId)?.has(voterKey)) {
+    throw new ConflictException(&quot;already voted&quot;);
+  }
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>إظهار مفاتيح المصوتين في النتائج.</li>
+<li>السماح بتعديل الخيارات بعد أول صوت.</li>
+<li>عد الصوت في العميل.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>الصوت المكرر 409.</li>
+<li>النتيجة بلا هويات.</li>
+<li>الإغلاق يوقف التصويت ولا يمسح الأعداد.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>ارفض مفتاحًا أقصر من 8 أحرف.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 16» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../15-recipe-box/README.html">15. صندوق وصفات</a></li>
+<li>التالي: <a href="../17-room-booking/README.html">17. حجز غرف</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

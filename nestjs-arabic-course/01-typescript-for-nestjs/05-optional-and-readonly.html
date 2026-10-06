@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Optional و Readonly</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-optional-and-readonly.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Optional و Readonly</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمثيل حقل غير إلزامي، ومنع إعادة تعيين ما يجب أن يبقى ثابتًا بعد البناء. هذا يمهد لـ <code>private readonly</code> في الـ constructor.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تحديث كتاب قد يرسل السعر فقط. إذا كان كل حقل إلزاميًا في نوع التحديث، تجبر العميل على إرسال العنوان أيضًا. وإذا سُمح لكود لاحق بتغيير <code>id</code> بعد إنشاء الكائن، المعرّف الذي مر في الطلب يضيع وسط الدالة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>?</code> يعني الحقل قد يغيب. <code>readonly</code> يعني لا نعيد تعيينه من الكود العادي بعد التهيئة.</p>
+<h2>التعريف التقني</h2>
+<p>Optional property نوعها يتضمن <code>undefined</code> عند القراءة، وقد تُحذف من الكائن. <code>readonly</code> قيد على التعيين أثناء الفحص، لا تجميد للكائن وقت التشغيل مثل <code>Object.freeze</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreateBook     title و price مطلوبان
+UpdateBook     title? و price? اختياريان
+Book           id للقراءة بعد الإنشاء
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">interface UpdateBook {
+  title?: string;
+  price?: number;
+}
+
+function hasPrice(input: UpdateBook): boolean {
+  return input.price !== undefined;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>title?</code> يساوي تقريبًا <code>title?: string | undefined</code> في القراءة.</li>
+<li>الجسم <code>{}</code> صالح كـ <code>UpdateBook</code>.</li>
+<li>قبل استخدام <code>input.price</code> كعدد، تأكد أنه ليس <code>undefined</code>.</li>
+<li><code>hasPrice</code> تضييق عملي.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>?</code> و <code>readonly</code> يختفيان بعد الترجمة. كائن JavaScript يقبل <code>book.id = &#39;other&#39;</code> حتى لو كان الحقل <code>readonly</code> في النوع، إلا إذا منعت ذلك بطريقة تشغيل. القيد يحمي كودك الذي يمر على المترجم، لا عميلًا خبيثًا.</p>
+<p>في Nest، <code>readonly</code> على خدمة محقونة يذكر الفريق ألا يستبدل الاعتماد. الحقن يحدث مرة في البناء. إعادة التعيين غالبًا خطأ تصميم.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">interface Book {
+  readonly id: string;
+  title: string;
+  price: number;
+}
+
+function rename(book: Book, title: string): Book {
+  return { ...book, title };
+}
+</code></pre>
+<p><code>rename</code> لا يغيّر <code>id</code> لأنه ينسخ الكائن ويبدل العنوان. هذا أوضح من تعديل الكائن في مكانه عندما تمرر المرجع إلى أكثر من دالة. الخدمات في Nest غالبًا تعدّل مخزنًا خارجيًا لا كائن الطلب نفسه.</p>
+<p><code>readonly string[]</code> يمنع استبدال المصفوفة، ولا يمنع <code>push</code> على عناصر مصفوفة عادية. إن أردت منع الدفع فالنوع <code>readonly string[]</code> أو <code>ReadonlyArray&lt;string&gt;</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>معاملة الحقل الاختياري كأنه موجود في JSON دائمًا.</li>
+<li>الظن أن <code>readonly</code> يخفي الحقل عن <code>JSON.stringify</code>. الحقل يُسلسَل. الإخفاء عن الرد Serialization لاحقًا.</li>
+<li>استخدام الاختياري بدل اتحاد واضح مع <code>null</code> من غير اتفاق. اختر: الغياب بحذف المفتاح، أو <code>null</code> الصريح، واتركه ثابتًا في العقد.</li>
+</ul>
+<h2>متى نستخدم optional؟</h2>
+<p>في التحديث الجزئي المقابل لـ <code>PATCH</code>، وفي إعدادات لها افتراض داخلي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحقل إن غاب فالعملية بلا معنى، مثل عنوان عند الإنشاء. اجعله مطلوبًا وافشل التحقق إن غاب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>?</code></th>
+<th><code>readonly</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يمنع</td>
+<td>إلزام المستدعي بالحقل</td>
+<td>إعادة التعيين في الكود المفحوص</td>
+</tr>
+<tr>
+<td>وقت التشغيل</td>
+<td>لا يفرض شيئًا وحده</td>
+<td>لا يجمّد الكائن وحده</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>{}</code> مقبول كـ <code>UpdateBook</code> في المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نعم. الحقلان اختياريان.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>book.id = &#39;3&#39;</code> يفشل في الفحص وينجح إذا تجاوزت المترجم بـ <code>as Book</code> ثم التعيين في JavaScript ناتج بلا فحص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>readonly</code> قاعدة مترجم. التحويل القسري <code>as</code> يسكت الفحص في تلك النقطة. الناتج كائن عادي قابل للتغيير. لا تعتمد على <code>readonly</code> كحماية أمنية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>صمّم نوع <code>PatchBook</code> بحيث يمكن إرسال <code>price</code> وحده، ولا يمكن إرسال <code>id</code> ضمن التحديث.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">interface PatchBook {
+  title?: string;
+  price?: number;
+}
+</code></pre>
+<p>عدم وجود <code>id</code> في النوع يمنع المستدعي المكتوب بـ TypeScript من إرساله كحقل معروف. الحقول الزائدة على حدود الشبكة ما زالت تصل حتى يحذفها <code>whitelist</code> لاحقًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغير <code>?</code> في نوع الحقل؟</li>
+<li>هل <code>readonly</code> يصل إلى JSON الخارج؟</li>
+<li>أين يناسب الاختياري فعل <code>PATCH</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاختياري يصف الغياب في العقد المكتوب. <code>readonly</code> يذكر الكود ألا يعيد التعيين. كلاهما فحص مترجم، والشبكة لها طبقة تحقق لاحقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أحيانًا المجموعة المغلقة من القيم تُكتب كـ Enum. سترى متى يكون اتحاد النصوص أوضح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Optional properties: <a href="https://www.typescriptlang.org/docs/handbook/2/objects.html">https://www.typescriptlang.org/docs/handbook/2/objects.html</a></li>
+<li>TypeScript — <code>readonly</code>: <a href="https://www.typescriptlang.org/docs/handbook/2/objects.html#readonly-properties">https://www.typescriptlang.org/docs/handbook/2/objects.html#readonly-properties</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

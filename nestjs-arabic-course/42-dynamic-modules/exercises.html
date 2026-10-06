@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>ما الحقل الذي لا يُحذف من كائن <code>DynamicModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>module</code>، ويشير إلى صنف الوحدة. بقية الحقول اختيارية وتُدمَج مع <code>@Module</code>.</p>
+</details>
+
+<h2>متوسط</h2>
+<p><code>USER_ID_PREFIX</code> في الإعداد و <code>ORDER_ID_PREFIX</code> في الإعداد. أي دالة على <code>IdGeneratorModule</code>، وأين تعيش كل واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>registerAsync</code> داخل <code>UsersModule</code> بمصنع يقرأ المفتاح الأول، و <code>registerAsync</code> داخل <code>OrdersModule</code> للمفتاح الثاني. ليست <code>forRootAsync</code> واحدة في الجذر لأن الخيار ليس مشتركًا.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>عامل serverless يبني PDF أحيانًا. الوحدة فيها <code>PdfService</code> فقط. اكتب خطوات التحميل، واذكر لماذا لا تضع <code>PdfController</code> هناك، وأين تغلق ملفًا مؤقتًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>import(&#39;./pdf.module.js&#39;)</code> ثم <code>lazyModuleLoader.load(() =&gt; PdfModule)</code> ثم <code>moduleRef.get(PdfService)</code>. المتحكم المتأخر لا يسجل مسارًا بعد الاستماع. خطافات الوحدة الكسولة لا تعمل، فأغلق الملف في الدالة أو في خدمة ساخنة لها <code>onModuleDestroy</code>.</p>
+</details>
+
+<h2>سؤال إعادة التصدير</h2>
+<p>لماذا <code>exports: [DatabaseModule.forRoot(url)]</code> من <code>BooksModule</code> خطأ حتى لو تطابق العنوان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه استدعاء تكوين ثانٍ. بعد النداء الأول في الجذر أو النواة يُعاد تصدير الصنف <code>DatabaseModule</code> وحده.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

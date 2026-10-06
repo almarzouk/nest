@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>45 — خطط واشتراك</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>45 — خطط واشتراك</h1>
+<p><strong>المستوى:</strong> إنتاج<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new subscriptions</code></p>
+<h2>ماذا تبني</h2>
+<p>خطط ثابتة. بدء الاشتراك يعيد عنوان إكمال ولا يفعّل الخطة. التفعيل من ويب هوك موقّع فقط.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>صفحة النجاح في المتصفح ليست دفعًا. هذا المشروع يثبّت الحد حتى مع مزود وهمي.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>فصل البدء عن التفعيل</li>
+<li>حالة incomplete ثم active</li>
+<li>حدث موقّع</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>لوحة Stripe حقيقية إن لم تملك مفاتيح. المزود الوهمي يكفي إن حافظت على الحد.</li>
+<li>ضرائب</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>المنظمات والويب هوك الوارد.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/62-stripe-architecture/README.html">62-stripe-architecture</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>POST /billing/checkout يعيد { url } والحالة تبقى incomplete.</li>
+<li>GET صفحة نجاح لا يكتب active.</li>
+<li>الحدث subscription.activated بعد التوقيع هو الذي يكتب active.</li>
+<li>تكرار الحدث لا يمدد الفترة مرتين.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/billing/checkout</code></td>
+<td>201</td>
+<td>رابط فقط</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/webhooks/billing</code></td>
+<td>200</td>
+<td>يفعّل بعد التوقيع</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/billing</code></td>
+<td>200</td>
+<td>الحالة الحالية</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new subscriptions</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>جدول Subscription مربوط بالمنظمة.</li>
+<li>المزود الوهمي يعطي url وحدثًا تستطيع إرساله في الاختبار.</li>
+<li>ارفض كتابة active من أي متحكم متصفح.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/billing/billing.service.ts
+src/billing/billing-webhook.controller.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">startCheckout() {
+  return { url: &quot;https://billing.example/checkout/session&quot;, status: &quot;incomplete&quot; };
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>تفعيل في مسار success.</li>
+<li>تمديد الفترة عند كل إعادة للحدث.</li>
+<li>خلط فاتورة المنظمة بفاتورة مستخدم من غير مفتاح.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>بعد البدء الحالة ليست active.</li>
+<li>بعد حدث صحيح تصبح active.</li>
+<li>الحدث المكرر لا يضاعف النهاية.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف إلغاء يكتب canceled من حدث لا من زر فقط.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 45» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../44-organizations/README.html">44. منظمات ودعوات</a></li>
+<li>التالي: <a href="../46-outbox-publisher/README.html">46. صندوق صادر</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

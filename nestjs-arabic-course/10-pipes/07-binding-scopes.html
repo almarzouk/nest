@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ربط Pipe على Parameter و Route و Controller و Global</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-binding-scopes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ربط Pipe على Parameter و Route و Controller و Global</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط الأنبوب في المستويات الأربعة، وحفظ ترتيب التشغيل كما في دورة الطلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>ParseIntPipe</code> على معامل و <code>ValidationPipe</code> عام و <code>@UsePipes</code> على المتحكم تعمل معًا. من غير الترتيب تظن أن الفحص العام لم يرَ الاستعلام، أو أن معاملًا تاليًا سبق الأول.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المستويات: عام، ثم متحكم، ثم مسار، ثم معامل. داخل المستوى الذي يغطي كل المعاملات، الزيارة من آخر معامل إلى أول معامل. أنابيب المعامل نفسه تُكتب من اليسار إلى اليمين بعد ذلك.</p>
+<h2>التعريف التقني</h2>
+<p>الربط:</p>
+<ul>
+<li>عام: <code>app.useGlobalPipes(new ValidationPipe())</code> أو مزوّد <code>APP_PIPE</code> مع <code>useClass</code> حتى يعمل الحقن. النسخة في <code>main.ts</code> خارج أي وحدة فلا تُحقن.</li>
+<li>متحكم: <code>@UsePipes(GeneralPipe)</code> فوق الصنف.</li>
+<li>مسار: <code>@UsePipes(RoutePipe)</code> فوق الدالة.</li>
+<li>معامل: الوسيط الثاني في <code>@Body</code> أو <code>@Query</code> أو <code>@Param</code> أو زينة مخصصة.</li>
+</ul>
+<p>صفحة Request lifecycle تقول إن <code>@UsePipes</code> يتبع عام ثم متحكم ثم مسار، أول داخل أول خارج. وعلى مستوى المعاملات، حين تتعدد المعاملات، المعالجة من الأخير إلى الأول. وهذا ينطبق أيضًا على أنابيب المسار والمتحكم. مثال الصفحة: <code>GeneralValidationPipe</code> يعمل على <code>query</code> ثم <code>params</code> ثم <code>body</code> قبل <code>RouteSpecificPipe</code> الذي يكرر الاتجاه نفسه. أنابيب المعامل الخاصة تعمل بعد ذلك، ومن آخر معامل إلى أوله أيضًا.</p>
+<p>على المعامل الواحد، الترتيب المكتوب هو ترتيب التنفيذ: <code>DefaultValuePipe</code> ثم <code>ParseIntPipe</code>.</p>
+<p>عدة <code>APP_PIPE</code> تتبع ترتيب التسجيل. <code>useGlobalPipes</code> في تطبيق هجين لا يركب الأنابيب على الخدمات المتصلة إلا بضبط منفصل. في تطبيق HTTP العادي الربط العام يشمل المتحكمات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">APP_PIPE / useGlobalPipes
+  @UsePipes على الصنف     يزور المعاملات من الأخير إلى الأول
+  @UsePipes على الدالة    الاتجاه نفسه
+  أنابيب مكتوبة على المعاملات   من الأخير إلى الأول
+</code></pre>
+<p>توقيع فيه <code>body</code> ثم <code>params</code> ثم <code>query</code> يعني أن <code>query</code> يُزار أولًا داخل كل أنبوب على مستوى الصنف أو الدالة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Param, Query, UsePipes } from &#39;@nestjs/common&#39;;
+import { HoldCodePipe } from &#39;./hold-code.pipe.js&#39;;
+import { InvoiceAuditPipe } from &#39;./invoice-audit.pipe.js&#39;;
+import { UpdateInvoiceDto } from &#39;./update-invoice.dto.js&#39;;
+
+@UsePipes(InvoiceAuditPipe)
+@Controller(&#39;invoices&#39;)
+export class InvoicesController {
+  @Patch(&#39;:id&#39;)
+  update(
+    @Body() body: UpdateInvoiceDto,
+    @Param(&#39;id&#39;, HoldCodePipe) id: string,
+    @Query(&#39;note&#39;) note: string,
+  ): UpdateInvoiceDto {
+    void id;
+    void note;
+    return body;
+  }
+}
+</code></pre>
+<p><code>InvoiceAuditPipe</code> على المتحكم يرى <code>note</code> ثم <code>id</code> ثم <code>body</code>، لأن هذا اتجاه آخر معامل إلى أوله. <code>HoldCodePipe</code> أنبوب معامل على <code>id</code> فقط، ويعمل بعد أنابيب المتحكم والمسار، ضمن مرور أنابيب المعاملات من الأخير إلى الأول.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا <code>@UsePipes</code> على الدالة في المثال، فمستوى المسار فارغ.</li>
+<li><code>HoldCodePipe</code> لا يعمل على <code>note</code> ولا على <code>body</code>.</li>
+<li>أنبوب عام <code>ValidationPipe</code>، إن وُجد، يسبق <code>InvoiceAuditPipe</code> ويزور المعاملات بالاتجاه نفسه.</li>
+<li>إضافة <code>@UsePipes(RoutePipe)</code> فوق <code>update</code> تجعله بعد أنبوب المتحكم وقبل أنابيب المعاملات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الإطار يجمع الأنابيب عند بناء المسار. عند الطلب يشغّلها بالترتيب الموثّق. كل <code>transform</code> يستلم القيمة الحالية، وقد تكون خرج الأنبوب السابق على المعامل نفسه.</p>
+<p>فشل أي أنبوب يوقف الباقي ولا يستدعي <code>update</code>. الاستثناء يذهب إلى فلتر المسار إن وُجد، وإلا فلتر المتحكم، وإلا العام.</p>
+<p><code>APP_PIPE</code> مزوّد وهمي يستهلكه الإطار عند الإقلاع. لا تسترجعه بـ <code>app.get</code>. سجّله في الوحدة التي تعرّف الأنبوب.</p>
+<p>الحقن يحتاج صنفًا في <code>useClass</code> أو في <code>@UsePipes(InvoiceAuditPipe)</code> لا <code>new InvoiceAuditPipe()</code>.</p>
+<h2>مثال عملي</h2>
+<p>تطبيق الفواتير:</p>
+<ul>
+<li><code>main.ts</code> أو <code>APP_PIPE</code>: <code>ValidationPipe</code> لكل أجسام الأصناف.</li>
+<li><code>InvoicesController</code>: أنبوب يسجّل اسم المعامل أثناء التطوير، على مستوى الصنف.</li>
+<li><code>PATCH :id</code>: <code>HoldCodePipe</code> على <code>id</code> فقط.</li>
+<li>الاستعلام <code>page</code> على دالة أخرى: <code>DefaultValuePipe</code> ثم <code>ParseIntPipe</code> بهذا الترتيب المكتوب.</li>
+</ul>
+<p>اختبار الترتيب: اجعل كل أنبوب يدفع اسمه في مصفوفة على كائن طلب. الناتج المتوقع يطابق آخر-معامل-أولًا داخل المستوى، ثم المستوى التالي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>افتراض أن أول معامل في التوقيع يُفحص أولًا دائمًا. داخل المستوى الاتجاه عكسي.</li>
+<li>وضع <code>ParseIntPipe</code> يسار <code>DefaultValuePipe</code>. على المعامل نفسه اليسار يعمل أولًا، فيرى التحليل فراغًا.</li>
+<li><code>new ValidationPipe()</code> داخل <code>useGlobalPipes</code> ثم محاولة حقن خدمة فيه. انقل الربط إلى <code>APP_PIPE</code>.</li>
+<li>نسيان أن أنبوب المتحكم يزور كل المعاملات، فيكسر استعلامًا لم تقصده. ضيّق القاعدة أو انزل إلى المعامل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>العام لسياسة واحدة مثل <code>ValidationPipe</code>. المتحكم لقاعدة تخص كل دواله. المسار لاستثناء دالة. المعامل لقيمة واحدة مثل رمز القيد أو عدد الصفحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تربط أنبوب نطاق ضيق على التطبيق كله. ولا تستخدم مستوى المتحكم بدل المعامل حين تكون القاعدة على <code>id</code> فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المستوى</th>
+<th>الآلية</th>
+<th>الحقن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Global</td>
+<td><code>useGlobalPipes</code></td>
+<td>غير متاح من <code>main.ts</code></td>
+</tr>
+<tr>
+<td>Global</td>
+<td><code>APP_PIPE</code></td>
+<td>متاح</td>
+</tr>
+<tr>
+<td>Controller</td>
+<td><code>@UsePipes</code> على الصنف</td>
+<td>متاح عند تمرير الصنف</td>
+</tr>
+<tr>
+<td>Route</td>
+<td><code>@UsePipes</code> على الدالة</td>
+<td>متاح عند تمرير الصنف</td>
+</tr>
+<tr>
+<td>Parameter</td>
+<td>وسيط الزينة</td>
+<td>متاح عند تمرير الصنف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما ترتيب المستويات الأربعة من الأسبق إلى الأنابيب الخاصة بالمعامل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عام، ثم متحكم، ثم مسار، ثم أنابيب المعاملات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الدالة <code>(body, params, query)</code> وعليها <code>@UsePipes(RoutePipe)</code> فقط. أي كائن يراه <code>RoutePipe</code> أولًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>query</code>، ثم <code>params</code>، ثم <code>body</code>. آخر معامل في التوقيع يُعالَج أولًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد <code>ConfigService</code> داخل أنبوب عام. لماذا يفشل <code>useGlobalPipes(new ConfigPipe())</code>، وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البناء في <code>main.ts</code> خارج الوحدات. سجّل <code>{ provide: APP_PIPE, useClass: ConfigPipe }</code> في الوحدة التي ترى <code>ConfigService</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مستوى يزور كل المسارات؟</li>
+<li>ما اتجاه المعاملات داخل <code>@UsePipes</code> على الدالة؟</li>
+<li>ما ترتيب أنبوبين مكتوبين على معامل واحد؟</li>
+<li>متى تختار <code>APP_PIPE</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>أربعة مستويات: عام، متحكم، مسار، معامل. داخل المستوى الذي يشمل التوقيع، آخر معامل يُعالَج أولًا. على المعامل الواحد، اكتب الافتراضي ثم التحليل. الحقن العام يمر بـ <code>APP_PIPE</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع المستويات على مسار فواتير واحد، ثم التمارين، ثم فصل DTO حيث يصبح الصنف الذي يراه <code>ValidationPipe</code> عقدًا واضحًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

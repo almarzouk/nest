@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Header Versioning</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-header-versioning.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Header Versioning</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>خدمة نسختي كتاب رف على نفس المسار <code>/books</code>، والنسخة تأتي في ترويسة تسميها أنت عند <code>enableVersioning</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>روابط الكتالوج مشتركة في رسائل المتجر: <code>https://api.raf.example/books/b1</code>. تغييرها إلى <code>/v2/books/b1</code> يكسر الإشارات المحفوظة. العميل يستطيع إرسال ترويسة، والمسار يبقى.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>VersioningType.HEADER</code> يقرأ النسخة من اسم ترويسة تحدده في <code>header</code>. المسار في الديكور لا يحتوي رقمًا. <code>@Controller({ version: &#39;1&#39; })</code> ما زال يعلن أي الدوال تخدم تلك القيمة. طلب بلا الترويسة 404 إن لم يوجد <code>defaultVersion</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">app.enableVersioning({
+  type: VersioningType.HEADER,
+  header: &#39;X-Api-Version&#39;,
+});
+</code></pre>
+<p><code>header</code> اسم الترويسة كما في الصفحة. القيمة <code>&#39;1&#39;</code> أو <code>&#39;2&#39;</code> تطابق <code>version</code> في المتحكم أو <code>@Version</code>. لا تُضاف بادئة <code>v</code> لأن البادئة سلوك URI. وسائط Nest تستطيع استهداف نسخة: <code>forRoutes({ path: &#39;books&#39;, method: RequestMethod.GET, version: &#39;2&#39; })</code>. التخزين المؤقت أمام المسار يجب أن يغيّر مفتاحه حسب الترويسة، وإلا تُخدم v2 من نسخة v1 المخزنة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /books/b1
+X-Api-Version: 2
+→ BooksV2Controller
+</code></pre>
+<p>نفس السطر بلا الترويسة لا يختار v2 «بالتقدير».</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Param } from &#39;@nestjs/common&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+import { toV2 } from &#39;./book.presenters.js&#39;;
+
+@Controller({ path: &#39;books&#39;, version: &#39;2&#39; })
+export class BooksHeaderV2Controller {
+  constructor(private readonly books: BooksService) {}
+
+  @Get(&#39;:id&#39;)
+  async find(@Param(&#39;id&#39;) id: string) {
+    return toV2(await this.books.find(id));
+  }
+}
+</code></pre>
+<p>الطلب: <code>X-Api-Version: 2</code>. العنوان يبقى <code>/books/:id</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>نوع الإصدار عام للتطبيق. لا تخلط URI و Header في نفس <code>enableVersioning</code> إلا عبر النوع Custom، وهو خارج هذا الدرس.</li>
+<li>متحكم <code>version: &#39;1&#39;</code> على <code>path: &#39;books&#39;</code> يخدم نفس العنوان عندما تكون الترويسة <code>1</code>.</li>
+<li>العميل الذي لا يرسل الترويسة يحتاج <code>defaultVersion</code> إن أردت إبقاء السلوك القديم أثناء الانتقال.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Nest يقرأ الترويسة المسماة في <code>header</code>.</li>
+<li>يطابق القيمة مع metadata النسخة على المتحكم أو الدالة.</li>
+<li><code>@Version</code> على الدالة يتجاوز نسخة الصنف، كما في كل الأنواع.</li>
+<li>عدم التطابق أو غياب النسخة بلا افتراضي يعيد 404، والنص في الصفحة واحد لكل الأنواع.</li>
+<li>الوسيط الذي قيّد <code>version: &#39;2&#39;</code> لا يعمل على طلب ترويسته <code>1</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>إبقاء الجوال القديم بلا تعديل ترويسة خلال شهر، عبر الافتراضي:</p>
+<pre><code class="language-ts">import { VersioningType } from &#39;@nestjs/common&#39;;
+
+app.enableVersioning({
+  type: VersioningType.HEADER,
+  header: &#39;X-Api-Version&#39;,
+  defaultVersion: &#39;1&#39;,
+});
+</code></pre>
+<p>الجوال الحالي ينادي <code>/books/b1</code> بلا ترويسة فيحصل على <code>toV1</code>. الموقع يرسل <code>X-Api-Version: 2</code>. عندما يُحدَّث الجوال، أزل <code>defaultVersion</code> حتى يظهر من نسي الترويسة كـ 404 في الاختبارات لا كعقد قديم صامت.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية الترويسة <code>version</code> في الكود و <code>X-Api-Version</code> في الدليل، أو العكس.</li>
+<li>افتراض أن المتصفح يرسل الترويسة في انتقال عادي. صفحة تفتح الرابط لا تضيف ترويسة مخصصة؛ هذا النمط لعميل API.</li>
+<li>CDN يخزن <code>/books/b1</code> من غير تضمين الترويسة في مفتاح التخزين.</li>
+<li>وضع <code>v2</code> في الترويسة بينما <code>version</code> في المتحكم <code>&#39;2&#39;</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عملاء مبرمجون يقدرون على ترويسة، وعناوين تريد إبقاءها ثابتة بين العقود.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لروابط تُفتح في المتصفح مباشرة، أو لشريك لا يتحكم في الترويسات. عندها URI أوضح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>URI</th>
+<th>Header</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين النسخة</td>
+<td>المسار</td>
+<td>ترويسة تحدد اسمها</td>
+</tr>
+<tr>
+<td>العنوان بين v1 و v2</td>
+<td>مختلف</td>
+<td>نفسه</td>
+</tr>
+<tr>
+<td>طلب بلا نسخة</td>
+<td>404 أو افتراضي أو neutral</td>
+<td>404 أو <code>defaultVersion</code></td>
+</tr>
+<tr>
+<td>بادئة <code>v</code></td>
+<td>نعم افتراضيًا</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>header: &#39;X-Api-Version&#39;</code> والمتحكم <code>version: &#39;2&#39;</code>. أي طلب يصل إلى <code>toV2</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>GET /books/...</code> مع <code>X-Api-Version: 2</code>. المسار لا يحتوي <code>v2</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد يرى عميل v2 جسم v1 من وراء الكاش؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المفتاح كان المسار فقط. يجب أن يدخل <code>X-Api-Version</code> في مفتاح التخزين أو في <code>Vary</code> حتى لا تُعاد نسخة عقد آخر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بعد شهر الانتقال تريد اكتشاف الجوالات التي لم تُحدَّث. ماذا تغيّر في <code>enableVersioning</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أزل <code>defaultVersion</code>. الطلب بلا <code>X-Api-Version</code> يصبح 404 حسب الصفحة، فيظهر في السجل كعميل لم ينتقل، بدل أن يبقى على v1 بصمت.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حقل في الخيارات يسمي الترويسة؟</li>
+<li>هل حرف <code>v</code> يُضاف إلى قيمة الترويسة؟</li>
+<li>ماذا يفعل <code>defaultVersion</code> هنا؟</li>
+<li>لماذا المتصفح العادي ليس العميل النموذجي لهذا النوع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Header Versioning يثبت المسار وينقل رقم العقد إلى ترويسة تسميها <code>header</code>. القيمة تطابق <code>version</code> في الديكور. الغياب 404 بلا <code>defaultVersion</code>، والكاش يجب أن يفرّق الترويسة.</p>
+<h2>ماذا بعد؟</h2>
+<p>عميل يريد النسخة داخل تفاوض المحتوى في <code>Accept</code> لا في ترويسة مخصصة. الدرس التالي Media Type.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Versioning: <a href="https://docs.nestjs.com/techniques/versioning">https://docs.nestjs.com/techniques/versioning</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

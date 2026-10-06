@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التجريد والاختبار</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-abstraction-and-tests.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التجريد والاختبار</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختبار السياسة بمستودع في الذاكرة، واختبار ترجمة Prisma على قاعدة حقيقية بشكل أضيق، من غير تزوير العميل كله في كل ملف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تزوير <code>PrismaClient</code> بكل مولداته هش: الاختبار ينكسر عندما يتغير الاستدعاء لا عندما تتكسر القاعدة. تزوير <code>OrdersRepository</code> يثبت <code>cancel</code>. ترك SQL بلا أي اختبار تكامل يترك <code>snapshot</code> يكتب عمودًا خاطئًا. اقسم الاختبارات على الحد الذي رسمته.</p>
+<h2>الفكرة ببساطة</h2>
+<p>وحدة السياسة: <code>useValue</code> على <code>ORDERS</code> بكائن يحفظ <code>Map</code>. لا <code>TestingModule</code> إن كان <code>new CancelOrder(repo)</code> يكفي. وحدة التنفيذ: اختبار أقل عددًا ضد Postgres، أو حاوية في CI، تتأكد أن <code>save</code> ثم <code>findById</code> يعيدان الحالة. لا تكرر جدول حالات الإلغاء في اختبار SQL. تلك الحالات على الكيان.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Order } from &#39;./order.js&#39;;
+import type { OrdersRepository } from &#39;./orders.repository.js&#39;;
+
+export function inMemoryOrders(): OrdersRepository {
+  const rows = new Map&lt;string, Order&gt;();
+  return {
+    async findById(id) {
+      return rows.get(id) ?? null;
+    },
+    async save(order) {
+      const snap = order.snapshot();
+      rows.set(snap.id, new Order(snap.id, snap.status));
+    },
+  };
+}
+</code></pre>
+<pre><code class="language-ts">const orders = inMemoryOrders();
+await orders.save(new Order(&#39;o1&#39;, &#39;open&#39;));
+const cancel = new CancelOrder(orders);
+await cancel.execute(&#39;o1&#39;);
+const stored = await orders.findById(&#39;o1&#39;);
+</code></pre>
+<p>بعد <code>execute</code> الحالة الملغاة في الخريطة. استدعاء ثانٍ يرمي. هذا اختبار ليسكوف للمزيف: <code>findById</code> يعيد <code>null</code> للغياب لا رميًا.</p>
+<p>اختبار Nest عندما تحتاج الحارس أو المتحكم:</p>
+<pre><code class="language-ts">await Test.createTestingModule({
+  controllers: [OrdersController],
+  providers: [CancelOrder, { provide: ORDERS, useValue: inMemoryOrders() }],
+}).compile();
+</code></pre>
+<p>لا تسجل <code>PrismaService</code> في هذا الاختبار.</p>
+<p>اختبار التنفيذ علامة واحدة تكفي للمسار السعيد للحفظ، مع قاعدة معزولة. إن كان المشروع صغيرًا وما زال <code>prisma</code> داخل الخدمة بلا منفذ، زوّر الدوال التي تناديها الخدمة (<code>book.findUnique</code>) لا الكائن المولَّد كله، أو ارفع قاعدة اختبار. لا تبنِ منفذًا فقط ليصبح المزيف أسهل إن كان لديك اختبار واحد.</p>
+<p><code>useExisting</code> لا يبدّل التنفيذ في الاختبار. غطِّ الرمز <code>ORDERS</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كيان + CancelOrder + Map     -&gt; كثير، بلا Docker
+PrismaOrdersRepository       -&gt; قليل، مع قاعدة
+Controller + inMemory         -&gt; عقد HTTP الحرج
+</code></pre>
+<p>الهرم أثقل عند السياسة وأخف عند الترجمة.</p>
+<h2>أبسط مثال</h2>
+<p>الدالتان أعلاه. تأكيد: <code>stored?.snapshot().status === &#39;cancelled&#39;</code>. لا تتصل بـ <code>localhost</code>. إن فشل التأكيد فالعيب في <code>cancel</code> أو في المستودع الذاكرة، وكلاهما بلا شبكة.</p>
+<h2>شرح المثال</h2>
+<p><code>save</code> في الذاكرة يخزن نسخة من اللقطة حتى لا يشارك الاختبار مرجعًا يغيّره لاحقًا بصمت. هذا يحاكي أن الجلب التالي يعيد حالة محفوظة لا المؤشر نفسه إن كان ذلك وعد التنفيذ الحقيقي. طابق الوعد الذي كتبته في العقد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>Map</code> تعيش داخل إغلاق الدالة لكل اختبار.</li>
+<li><code>CancelOrder</code> لا يعرف نوع التخزين.</li>
+<li><code>execute</code> يجلب ويعدّل ويحفظ.</li>
+<li>الجلب الثاني يقرأ ما كُتب.</li>
+<li>اختبار Prisma يشغّل SQL حقيقيًا ويتأكد من العمود.</li>
+<li>تغطية <code>PrismaService</code> بـ <code>useValue</code> جزئي تصلح عندما لا يوجد منفذ بعد، وتكسر عندما تستدعي الخدمة دالة لم تكتبها على المزيف.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مسار <code>POST /orders/:id/cancel</code> مع <code>supertest</code> و <code>inMemoryOrders</code> يثبت <code>404</code> عندما <code>findById</code> يعيد <code>null</code> و <code>200</code> عند الإلغاء. اختبار واحد على Postgres يثبت أن <code>status</code> في الجدول يصير <code>cancelled</code>. لا تشغّل العشرة سيناريوهات التجارية على Postgres. إن كتب التنفيذ استثناء HTTP فانقله قبل أن تعتمد على هرم الاختبار هذا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مزيف Prisma ضخم يتتبع شكل المولّد.</li>
+<li>اختبار سياسة يحتاج Docker.</li>
+<li><code>Map</code> واحدة على مستوى الملف تسرّب حالة بين الاختبارات.</li>
+<li>إعادة كيان Prisma من مزيف الدومين.</li>
+<li>حذف اختبار القاعدة كليًا فيضيع خطأ العمود.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>فور وجود <code>OrdersRepository</code>. السياسة على الذاكرة، والترجمة على قاعدة بعدد صغير.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تزور مستودعًا لم تبنِه. زوّر حد الخدمة الحالي أو اختبر HTTP. ولا تغطِّ <code>ORDERS</code> في اختبار أردت منه تنفيذ Prisma.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاختبار</th>
+<th>البديل</th>
+<th>يثبت</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>new CancelOrder(memory)</code></td>
+<td>منفذ</td>
+<td>قواعد الجذر</td>
+</tr>
+<tr>
+<td><code>TestingModule</code> بلا Prisma</td>
+<td>المنفذ أيضًا</td>
+<td>عقد المتحكم</td>
+</tr>
+<tr>
+<td>Prisma ضد Postgres</td>
+<td>لا بديل</td>
+<td>الترجمة والقيود</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>Map</code> داخل الدالة لا خارجها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يأخذ كل اختبار خريطة جديدة ولا يرى صفوف اختبار سابق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا لا تعيد كتابته في اختبار Postgres؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جدول قواعد الإلغاء. تلك على <code>Order</code> مع المستودع الذاكرة. اختبار القاعدة يثبت الحفظ والقراءة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الخدمة ما زالت تحقن <code>PrismaService</code> مباشرة. كيف تختبر فرع «غير موجود» قبل أن تستخرج منفذًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>غطِّ الدالة المستخدمة فقط، مثل <code>{ book: { findUnique: async () =&gt; null } }</code> على رمز <code>PrismaService</code>، أو استخرج المنفذ عندما تتعدد الدوال ويهش التزوير.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي رمز يُغطى في اختبار السياسة؟</li>
+<li>ماذا يبقى على قاعدة حقيقية؟</li>
+<li>متى التزوير الجزئي لـ Prisma مؤقت مشروع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>زوّر مستودع الدومين في اختبار السياسة، واترك لـ Prisma اختبار ترجمة قليلًا على قاعدة حقيقية. لا تزور العميل المولَّد كله ما دام الحد يمكن أن يكون مجموعة الجذر.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة واجهة وتنفيذ ذاكرة وتنفيذ Prisma.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

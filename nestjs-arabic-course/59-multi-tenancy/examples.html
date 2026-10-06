@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>مكتبتان على مخطط مشترك. الحل من الترويسة، والاستعلام مقيّد، والجسم مرفوض.</p>
+<h2>المثال 1 — صفان ونفس العنوان</h2>
+<pre><code class="language-text">lib_a  موسم الهجرة
+lib_b  موسم الهجرة
+</code></pre>
+<p><code>GET /books</code> مع <code>X-Tenant-Id: lib_a</code> يعيد صف <code>lib_a</code> فقط لأن <code>where</code> فيه <code>tenantId</code>. 200 و <code>data: []</code> إن لم تنشر <code>lib_a</code> شيئًا، لا كتب <code>lib_b</code>.</p>
+<h2>المثال 2 — الحارس ثم الخدمة</h2>
+<p>الترويسة <code>lib_a</code> والجسم <code>{ &quot;tenantId&quot;: &quot;lib_b&quot;, &quot;title&quot;: &quot;جديد&quot; }</code>. الحارس يرمي 400 قبل <code>BooksService.create</code>. لا يُنشأ كتاب تحت <code>lib_b</code>. إنشاء صحيح يمرر معرّف السياق إلى <code>data: { tenantId, title }</code> لا معرّف الجسم.</p>
+<h2>المثال 3 — متى يتغير النموذج</h2>
+<p>نفس الحارس ونفس المخزن إن انتقلت مكتبة واحدة إلى قاعدة خاصة: المستودع يسأل السجل «هل لهذا المعرّف عميل silo؟» وإلا يستخدم Prisma المشترك مع <code>where</code>. الخدمة لا تقرأ <code>Host</code> بنفسها. إن أصبح العزل schema، المستودع يضبط <code>search_path</code> المطهر ويعيده في <code>finally</code> قبل أن يرجع الاتصال إلى المجمع.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>useExisting</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-use-existing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>useExisting</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إعطاء رمز ثانٍ للنسخة نفسها المسجّلة أصلًا، من غير بناء ثانٍ كما يفعل <code>useClass</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مكتبة تتوقع الرمز <code>&#39;LOGGER&#39;</code> ومستهلك قديم يحقن الصنف <code>LoggerService</code>. إن ربطت <code>useClass</code> مرتين حصلت على نسختين وحالة مزدوجة. <code>useExisting</code> لقب: الرمز الجديد يُحل إلى الرمز القديم، والنسخة واحدة ما دام النطاق Singleton.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">{
+  provide: &#39;AliasedLoggerService&#39;,
+  useExisting: LoggerService,
+}
+</code></pre>
+<p>مع تسجيل <code>LoggerService</code> في الوحدة نفسها. من يحقن النص ومن يحقن الصنف يريان المرجع نفسه.</p>
+<h2>التعريف التقني</h2>
+<p>مثال التوثيق:</p>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class LoggerService {}
+
+const loggerAliasProvider = {
+  provide: &#39;AliasedLoggerService&#39;,
+  useExisting: LoggerService,
+};
+
+@Module({
+  providers: [LoggerService, loggerAliasProvider],
+  exports: [LoggerService, &#39;AliasedLoggerService&#39;],
+})
+export class AppModule {}
+</code></pre>
+<p>الحقن:</p>
+<pre><code class="language-ts">constructor(
+  private readonly primary: LoggerService,
+  @Inject(&#39;AliasedLoggerService&#39;) private readonly alias: LoggerService,
+) {}
+</code></pre>
+<p>في النطاق الافتراضي <code>primary === alias</code>.</p>
+<p><code>useExisting</code> يشير إلى رمز موجود. إن غاب <code>LoggerService</code> من التسجيل يفشل الحل. <code>useClass: LoggerService</code> تحت لقب نصي يبني نسخة ثانية حتى لو كان الصنف مسجّلًا أيضًا.</p>
+<p>في <code>registerAsync</code> حقل <code>useExisting</code> يعني إعادة استخدام صنف خيارات موجود. الفكرة قريبة: لا تنسخ البناء. لا تخلط اسم الحقل في تكوين الوحدة مع مزود <code>useExisting</code> هذا، لكن القصد واحد.</p>
+<p>صدّر اللقب إن كانت وحدة أخرى تحقنه. تصدير الصنف وحده لا يصدّر النص تلقائيًا.</p>
+<p>مع <code>Scope.TRANSIENT</code> على الأصل، اللقب يتبع سلوك الرمز الأصلي عند حله. لا تستعمل اللقب لتغيير النطاق. النطاق يُعلن على التسجيل الذي يبني.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">LoggerService        -&gt; يبني نسخة أ
+AliasedLoggerService -&gt; يشير إلى الرمز -&gt; النسخة أ
+useClass تحت لقب     -&gt; يبني نسخة ب
+</code></pre>
+<p>المساواة مرجع في Singleton، لا تشابه حقول.</p>
+<h2>أبسط مثال</h2>
+<p>المقطعان أعلاه. أضف في اختبار:</p>
+<pre><code class="language-ts">expect(app.get(LoggerService)).toBe(app.get(&#39;AliasedLoggerService&#39;));
+</code></pre>
+<p><code>toBe</code> يتحقق من المرجع. إن كتب أحدهم <code>useClass</code> بدل <code>useExisting</code> يفشل التوقع، وهذا اختبار مفيد عند تغليف مكتبة.</p>
+<h2>شرح المثال</h2>
+<p>ترتيب المصفوفة يسجل الأصل ثم اللقب. اللقب لا يستدعي constructor. حقول تُملأ على <code>primary</code> تظهر عبر <code>alias</code> لأنهما كائن واحد. لذلك اللقب لا يعزل حالة اختبار. للعزل استعمل <code>useValue</code> على الرمز الذي يحقنه المستهلك.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية تسجل <code>LoggerService</code> كبناء صنف.</li>
+<li>تسجل النص كإحالة إلى ذلك الرمز.</li>
+<li>أول حقن لأي من الرمزين يبني مرة إن كان Singleton.</li>
+<li>الحقن الثاني يعيد المخزون.</li>
+<li>التصدير قائمة منفصلة لكل رمز تريد إخراجه.</li>
+<li>دورة <code>useExisting</code> نحو رمز يحيل إلى نفسه حلقة إعداد. أشر إلى الرمز الذي يبني فعلًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عقد قديم <code>PaymentGateway</code> مجرد، والتنفيذ الحالي <code>StripeGateway</code> مسجّل لتطبيق واحد. مستهلك جديد يحقن الصنف المجرد ومستهلك قديم يحقن <code>&#39;PAYMENT_GATEWAY&#39;</code>.</p>
+<pre><code class="language-ts">{
+  provide: &#39;PAYMENT_GATEWAY&#39;,
+  useExisting: StripeGateway,
+}
+</code></pre>
+<p>وسجّل <code>{ provide: PaymentGateway, useExisting: StripeGateway }</code> إن كان المجرد صالحًا كرمز لأنه صنف مجرد يبقى وقت التشغيل. نسخة Stripe واحدة تغلق في <code>onModuleDestroy</code> مرة. <code>useClass</code> تحت الرمزين كان سيغلق مرتين أو يترك عميلًا ثانيًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>useClass</code> ظنًا أنه لقب، فتزدوج النسخة.</li>
+<li>لقب بلا تسجيل الأصل.</li>
+<li>تصدير واحد ونسيان الرمز الذي تستعمله الوحدة الأخرى.</li>
+<li>توقع عزل حالة عبر اللقب.</li>
+<li>سلسلة <code>useExisting</code> دائرية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>رمز قديم ورمز جديد يجب أن يشيرا إلى Singleton واحد، أو اسم تتوقعه مكتبة خارجية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>تنفيذان متعايشان. لكل رمز <code>useClass</code> خاص. مزيف اختبار يستبدل السلوك: <code>useValue</code> على الرمز المستهلك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>النسخ</th>
+<th>يبني</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useExisting</code></td>
+<td>واحدة للرموز المحالة في Singleton</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>useClass</code> مكرر</td>
+<td>نسخة لكل تسجيل</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>useValue</code> مرتين بالمرجع نفسه</td>
+<td>واحدة إن مررت المرجع نفسه</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يساوي <code>app.get(LoggerService)</code> و <code>app.get(&#39;AliasedLoggerService&#39;)</code> في مثال التوثيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المرجع نفسه، لأن اللقب <code>useExisting</code> والنطاق Singleton.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا التصدير يذكر الرمزين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل رمز يُطلب خارج الوحدة يحتاج أن يكون في <code>exports</code>. تصدير الصنف لا يصدّر النص تلقائيًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى يضر اللقب إن أردت في الاختبار مسجّلًا لا يكتب إلى الشبكة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اللقب يشارك النسخة الحقيقية. غطِّ الرمز الذي يحقنه الكود تحت الاختبار بـ <code>useValue</code>، ولا تضف لقبًا إلى التنفيذ الشبكي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق عن <code>useClass</code> للرمز نفسه؟</li>
+<li>هل اللقب يعزل الحقول؟</li>
+<li>ماذا يجب أن يكون مسجّلًا أولًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useExisting</code> اسم إضافي لنسخة الرمز الموجود. استعمله لمنع بناء مزدوج عندما يتعدد المستهلكون في تسمية الاعتماد نفسه.</p>
+<h2>ماذا بعد؟</h2>
+<p>Tokens و Symbols: ماذا تضع في <code>provide</code> عندما لا يوجد صنف صالح كمفتاح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مرحلة Guards</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-guards-stage.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مرحلة Guards</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت ترتيب Guards: العام، ثم Controller، ثم المسار، وداخل المستوى ترتيب الربط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس «المكتبة مفتوحة» وحارس «العضو أمين» وحارس «هذا <code>PATCH</code> مسموح» تتداخل إن لم يُعرف من يعمل أولًا. تشغيل حارس المسار قبل العام يترك قاعدة عامة ناقصة على بعض الدوال. Nest تمشي من الخارج إلى الدالة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Guard يقرر هل يكمل الطلب نحو Interceptors و Pipes والمعالج. العام عبر <code>app.useGlobalGuards()</code> أو الرمز <code>APP_GUARD</code> يسبق الزينة على الصنف، وتلك تسبق الزينة على الدالة. <code>@UseGuards(Guard1, Guard2)</code> يشغّل <code>Guard1</code> ثم <code>Guard2</code>.</p>
+<p>تنفيذ <code>canActivate</code> فصل Guards. هنا الترتيب وأثر التوقف.</p>
+<h2>التعريف التقني</h2>
+<p>من التوثيق، على Controller:</p>
+<pre><code class="language-ts">@UseGuards(Guard1, Guard2)
+@Controller(&#39;vaults&#39;)
+export class VaultsController {
+  @UseGuards(Guard3)
+  @Get()
+  list() {
+    return this.vaults.list();
+  }
+}
+</code></pre>
+<p><code>Guard1</code> قبل <code>Guard2</code>، وكلاهما قبل <code>Guard3</code>. أي حارس عام يسبق <code>Guard1</code>.</p>
+<p>«عام» يعني الربط بـ <code>app.useGlobalGuards()</code> أو بمزوّد <code>APP_GUARD</code>. «Controller» زينة قبل الصنف. «مسار» زينة قبل الدالة. داخل المستوى الواحد الترتيب هو ترتيب الربط.</p>
+<p>إعادة <code>false</code> تمنع الطلب: Nest ترمي استثناء رفض، فتنتقل الدورة إلى Exception Filters ولا تبدأ Pipes ولا المعالج. الرمي من الحارس يقفز بالطريقة نفسها. النجاح يستدعي الحارس التالي ثم مرحلة Interceptors الدخول.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حراس APP_GUARD بترتيب التسجيل
+  -&gt; Guard1
+  -&gt; Guard2
+  -&gt; Guard3
+  -&gt; Interceptors قبل المعالج
+</code></pre>
+<p>توقف أي حارس يقطع هذا السهم.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, UseGuards } from &#39;@nestjs/common&#39;;
+import { Guard1 } from &#39;./guard1.js&#39;;
+import { Guard2 } from &#39;./guard2.js&#39;;
+import { Guard3 } from &#39;./guard3.js&#39;;
+import { VaultsService } from &#39;./vaults.service.js&#39;;
+
+@UseGuards(Guard1, Guard2)
+@Controller(&#39;vaults&#39;)
+export class VaultsController {
+  constructor(private readonly vaults: VaultsService) {}
+
+  @UseGuards(Guard3)
+  @Get()
+  list() {
+    return this.vaults.list();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>list</code> لا تُستدعى إلا بعد نجاح الثلاثة وبعد Interceptors و Pipes التي تليهم.</li>
+<li><code>Guard3</code> لا يعوّض عن فشل <code>Guard1</code>. الأول لم يمرر التحكم.</li>
+<li>الخدمة مكان القاعدة. الحارس لا يحسب غرامة ولا يفتح خزنة.</li>
+<li>الأسماء <code>Guard1</code> كما في التوثيق لبيان الترتيب، وبناء الصنف في فصل Guards.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد Middleware يكون المسار قد حُدد، لذلك زينة الصنف والدالة معروفتان. Nest تجمع الحراس من العام إلى الدالة وتناديهم بالترتيب. <code>true</code> يكمل. <code>false</code> يصبح منعًا والاستثناء يدخل المرشحات من مرشح المسار إلى Controller ثم العام. هذا غير استثناء Middleware الذي لا يراه إلا العام.</p>
+<p>عدة مزودات <code>APP_GUARD</code> تعمل بترتيب التسجيل قبل حراس الصنف، وما زالت داخل البند «العام». Scope <code>REQUEST</code> على حارس يغيّر عمر النسخة ولا يغيّر موضع المرحلة.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-text">APP_GUARD LibraryOpenGuard
+@UseGuards(MemberGuard) على VaultsController
+@UseGuards(PatchGuard) على PATCH :id
+</code></pre>
+<p><code>PATCH /vaults/9</code> يسأل: هل المكتبة مفتوحة، ثم هل العضو معروف، ثم هل التعديل مسموح. <code>GET /vaults</code> يسأل الأولين فقط. فشل <code>MemberGuard</code> لا يشغّل <code>PatchGuard</code> ولا Pipe على <code>:id</code>.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وضع الحارس العام على دالة واحدة فقط</td>
+<td>بقية المسارات بلا القاعدة العامة</td>
+</tr>
+<tr>
+<td>توقع <code>Guard3</code> قبل <code>Guard1</code></td>
+<td><code>@UseGuards</code> من اليسار إلى اليمين بعد العام</td>
+</tr>
+<tr>
+<td>فحص الصلاحية داخل Service بعد Pipe ثقيل</td>
+<td>التحقق من الجسم تم لطالب قد يُرفض</td>
+</tr>
+<tr>
+<td>اعتبار فشل Guard استثناء Middleware</td>
+<td>المسار مختار، فمرشحات المسار و Controller مشاركة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يكون السؤال «هل يُسمح لهذا الطلب بتجاوز هذا المسار؟» بعد معرفة المعالج وقبل تحويل الجسم وتنفيذ القاعدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لختم كل الطلبات قبل اختيار المسار. ذلك Middleware. لتحويل <code>id</code> أو شكل JSON. ذلك Pipe. لحساب نتيجة الإعارة. ذلك Service بعد نجاح السلسلة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مكان الربط</th>
+<th>موقعه في المرحلة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.useGlobalGuards</code> أو <code>APP_GUARD</code></td>
+<td>أول الحراس</td>
+</tr>
+<tr>
+<td><code>@UseGuards</code> على الصنف</td>
+<td>بعد العام وقبل الدالة</td>
+</tr>
+<tr>
+<td><code>@UseGuards(Guard1, Guard2)</code></td>
+<td><code>Guard1</code> ثم <code>Guard2</code></td>
+</tr>
+<tr>
+<td><code>@UseGuards</code> على الدالة</td>
+<td>آخر الحراس</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يعمل أولًا: <code>Guard3</code> على <code>list</code> أم <code>Guard1</code> على الصنف؟</p>
+<details><summary>الحل</summary>
+
+<p><code>Guard1</code>. حراس الصنف تسبق حراس الدالة، والعام يسبق الاثنين.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>MemberGuard</code> أعاد <code>false</code>. هل تعمل <code>ParseIntPipe</code> على <code>:id</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. المنع ينهي المرحلة باستثناء رفض، و Pipes لا تبدأ.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يرى مرشح على <code>PATCH</code> فشل Guard بينما لا يرى استثناء <code>app.use</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>Guard يعمل بعد اختيار المسار، فمرشحات المسار ثم Controller ثم العام قادرة على الرؤية، وأول من يمسك يوقف الباقي. استثناء Middleware قبل الاختيار، فلا ينطبق إلا المرشح العام.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب المستويات الثلاثة؟</li>
+<li>ماذا يحدث عند <code>false</code>؟</li>
+<li>أين يقف <code>APP_GUARD</code> بالنسبة لزينة الدالة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Guards من العام إلى Controller إلى المسار، وبالترتيب المكتوب داخل <code>@UseGuards</code>. النجاح يكمل نحو Interceptors. الفشل يمنع Pipes والمعالج وينقل الاستثناء إلى مرشحات مسار معروف.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدخول إلى اللف: Interceptors قبل Controller.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle (Guards): <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

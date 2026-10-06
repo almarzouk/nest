@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>32 — إصداران للملاحظات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>32 — إصداران للملاحظات</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new notes-versioning</code></p>
+<h2>ماذا تبني</h2>
+<p>v1 تأخذ عنوانًا فقط. v2 تأخذ عنوانًا ومتنًا. الاثنان يعملان. لا تكسر عميل v1.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>التغيير شكل عقد لا استبدال عشوائي للمسار.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>تمكين versioning</li>
+<li>مساران متعايشان</li>
+<li>حقل جديد في الإصدار الأحدث</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>ترويسة Accept المعقدة</li>
+<li>إهلاك زمني مؤتمت</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الملاحظات.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/55-api-versioning/README.html">55-api-versioning</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>URI يبدأ بـ v1 أو v2.</li>
+<li>v1 يرفض body الزائد أو يتجاهل body بقرار مكتوب. اختر الرفض حتى لا يظن العميل أن المتن حُفظ.</li>
+<li>v2 يتطلب body.</li>
+<li>البيانات واحدة. v1 يعيد العنوان فقط.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/v1/notes</code></td>
+<td>201</td>
+<td>عنوان</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/v2/notes</code></td>
+<td>201</td>
+<td>عنوان ومتن</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/v1/notes/:id</code></td>
+<td>200</td>
+<td>بلا متن</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new notes-versioning</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>فعّل الإصدار في bootstrap بنوع URI.</li>
+<li>كنترولران أو نسخة واحدة بزينة version. اختر ما تفهمه وتثبّت عليه.</li>
+<li>عميل v1 القديم يبقى قابلًا للتشغيل كما هو.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/notes/notes-v1.controller.ts
+src/notes/notes-v2.controller.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">app.enableVersioning({ type: VersioningType.URI });
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>تغيير v1 ليعيد المتن فيكسر عميلًا يعد الحقول.</li>
+<li>نسيان رقم الإصدار على مسار واحد.</li>
+<li>نسختان من البيانات.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>عميل v1 لا يرى body.</li>
+<li>v2 يحفظ المتن.</li>
+<li>نفس المعرّف يُقرأ من الإصدارين بالشكل الخاص بكل واحد.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف ترويسة Deprecation على v1 من غير إيقافه.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 32» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../31-shop-tenants/README.html">31. ملاحظات لكل متجر</a></li>
+<li>التالي: <a href="../33-public-docs/README.html">33. توثيق الكتالوج</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أساسيات OpenTelemetry</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-opentelemetry.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أساسيات OpenTelemetry</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ماذا يوحّد OpenTelemetry لرف إن كانت المنظمة تجمع عدة لغات: أثر، ومقاييس، وسياق يمر بين HTTP وقاعدة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل مكتبة تسجّل بطريقتها. الأثر ينقطع عند <code>fetch</code> إلى خدمة الإشعارات. فريق المنصة يريد نفس شكل span في Nest وفي عامل Python. حل خاص برف لا يُقرأ في المجمع العام.</p>
+<h2>الفكرة ببساطة</h2>
+<p>OpenTelemetry API يصف spans ومقاييس وسياقًا يُحقن في الترويسات (<code>traceparent</code>). SDK يصدّر إلى مجمع. الإطار لا يختفي: ما زلتم تسمّون العمليات. المعيار يهم عندما تخرج الإشارة من Nest إلى أنظمة أخرى. إن كانت رف وحدها وتريدون اختصارًا بلا مجمع، الحزمة الرسمية في الدرس التالي خيار آخر لا يلغي هذا المعيار.</p>
+<h2>التعريف التقني</h2>
+<p>المفاهيم: <code>Tracer</code> يبدأ span، والسياق النشط يتبع async، والـ exporter يرسل OTLP غالبًا. التلقين التلقائي (auto-instrumentation) يغطي HTTP و Prisma/pg إن رُكّبت المكتبات. span يدوي حول «نشر كتاب» يربط أبناء HTTP و SQL. المعرّف في السجل يجب أن يكون <code>traceId</code> حتى تجدوا الشجرة من سطر واحد. لا تسجّلوا جسم البطاقة داخل attributes. صفحة Nest للمراقبة تقول إن <code>@nestjs/observe</code> ليس بديلًا عن OpenTelemetry في بيئة متعددة اللغات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب → span HTTP
+        └ span publish
+             └ span SQL
+traceparent إلى خدمة الإشعارات
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { trace } from &#39;@opentelemetry/api&#39;;
+
+export async function withPublishSpan&lt;T&gt;(bookId: string, run: () =&gt; Promise&lt;T&gt;) {
+  return trace.getTracer(&#39;raf&#39;).startActiveSpan(&#39;books.publish&#39;, async (span) =&gt; {
+    span.setAttribute(&#39;book.id&#39;, bookId);
+    try {
+      return await run();
+    } finally {
+      span.end();
+    }
+  });
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاسم <code>books.publish</code> ثابت للبحث.</li>
+<li><code>book.id</code> صفة منخفضة الحساسية.</li>
+<li><code>finally</code> يغلق span حتى عند الرمي، وإلا يبقى الأثر مفتوحًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>SDK يبدأ مع العملية قبل استقبال الطلبات حتى لا يفوت الإقلاع.</li>
+<li>جهاز HTTP يفتح span الجذر.</li>
+<li><code>startActiveSpan</code> يجعل الأبناء يتبعون السياق عبر <code>await</code>.</li>
+<li>عميل HTTP الصادر يضيف <code>traceparent</code> إن كان ملقّنًا.</li>
+<li>المجمّع يجمع النسخ. من غير مصدر، الاستدعاءات المحلية لا تظهر في لوحة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function logLine(msg: string) {
+  const span = trace.getActiveSpan();
+  const traceId = span?.spanContext().traceId;
+  return { msg, traceId };
+}
+</code></pre>
+<p>السطر يحمل <code>traceId</code> فتنتقلون من السجل إلى الشجرة. إن لم يوجد span فالطلب لم يُلقَّن؛ لا تخترعوا معرّفًا وتسموه trace.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تشغيل SDK بعد <code>listen</code> فيضيع أول المسارات.</li>
+<li>صفات فيها بريد أو جسم ويب هوك.</li>
+<li>اعتبار المكتبة بديلًا عن مقياس عدّ الأخطاء إن لم تصدّروا metrics أيضًا.</li>
+<li>توقع أن Nest يحقن OpenTelemetry لأنكم ثبّتم الحزمة فقط. يحتاج إقلاعًا وتلقينًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تُجمع الإشارات مع خدمات غير Nest أو مع مجمع OTLP قائم في المنظمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنوا مجمعًا في الأسبوع الأول لمسار واحد إن كان <code>@nestjs/observe</code> يغطي سؤالكم. ولا تلقّنوا كل دالة صغيرة فتصبح الشجرة ضجيجًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>سجلات فقط</th>
+<th>OpenTelemetry</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عبر الخدمات</td>
+<td>تبحثون يدويًا</td>
+<td><code>traceparent</code></td>
+</tr>
+<tr>
+<td>المعيار</td>
+<td>خاص</td>
+<td>API مشترك</td>
+</tr>
+<tr>
+<td>التشغيل</td>
+<td>أخف</td>
+<td>SDK ومجمّع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تضعون في السجل لفتح الشجرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>traceId</code> من <code>spanContext</code> النشط، لا رقمًا عشوائيًا منفصلًا إن كان الأثر ملقّنًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تُغلق span في <code>finally</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يُرسل المدة عند الاستثناء أيضًا. الترك يترك أثرًا بلا نهاية أو يسرب السياق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمة الإشعارات Python لا ترى الأب. ماذا ينقص HTTP الصادر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حقن <code>traceparent</code> من السياق النشط عبر تلقين العميل أو ترويسة صريحة. من غيرها تبدأ شجرة جديدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يوحّد المعيار؟</li>
+<li>لماذا SDK قبل <code>listen</code>؟</li>
+<li>أي صفة لا تُوضع على span؟</li>
+<li>متى لا يكون هذا أقصر طريق لرف وحدها؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>OpenTelemetry يربط spans وسياقًا عابرًا للخدمات بمعرّف واحد. يحتاج إقلاعًا وتصديرًا. هو الخيار عندما تعيش رف وسط أنظمة أخرى.</p>
+<h2>ماذا بعد؟</h2>
+<p>إن أردتم إشارات بأسماء متحكمات Nest من غير مجمع، الدرس التالي الحزمة الرسمية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>OpenTelemetry — JavaScript: <a href="https://opentelemetry.io/docs/languages/js/">https://opentelemetry.io/docs/languages/js/</a></li>
+<li>NestJS — Observability overview: <a href="https://docs.nestjs.com/observability/overview">https://docs.nestjs.com/observability/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

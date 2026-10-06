@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DTO مقابل Interface</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-dto-vs-interface.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>DTO مقابل Interface</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار صنف لعقد يقرأه <code>ValidationPipe</code>، وفهم أين تبقى الواجهة مفيدة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>interface MemberInput { email: string }</code> تُرضي المترجم وتختفي في JavaScript. الأنبوب يبحث عن صنف وقت التشغيل فلا يجد زينة ولا <code>metatype</code> قابلًا للفحص.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الواجهة عقد مترجم. الصنف عقد مترجم وقيمة موجودة بعد الترجمة. فحص الدخل يحتاج الثانية. الواجهة تصلح لمخرجات داخلية لا تمر على الأنبوب.</p>
+<h2>التعريف التقني</h2>
+<p>توثيق التحقق يقول: TypeScript لا يصدر بيانات وصفية للواجهات ولا للأنواع العامة، لذلك <code>ValidationPipe</code> لا يفحص DTO مُعلَنًا بها. استخدم أصنافًا ملموسة.</p>
+<p>وكذلك: لا تستورد DTO باستيراد نوع فقط. <code>import type { CreateMemberDto }</code> يُمسح. اكتب <code>import { CreateMemberDto }</code>.</p>
+<p>الواجهة ما زالت أداة صحيحة لشكل لا يُفحص بهذا الأنبوب: ناتج دالة خاصة، أو كائن تجمعه داخل الخدمة. هي لا توضع على <code>@Body()</code> إن كان الأنبوب العام هو خط الدفاع.</p>
+<p><code>implements SomeInterface</code> على الصنف ممكن حتى يطابق شكلًا داخليًا، لكن الزينة والفحص على الصنف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">interface  →  تختفي بعد tsc  →  الأنبوب لا يراها
+class      →  تبقى دالة بناء  →  metatype يصل إلى ValidationPipe
+import type →  يُمسح حتى لو كان الهدف صنفًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface MemberView {
+  id: string;
+  email: string;
+}
+</code></pre>
+<pre><code class="language-ts">import { IsEmail } from &#39;class-validator&#39;;
+
+export class CreateMemberDto {
+  @IsEmail()
+  email: string;
+}
+</code></pre>
+<pre><code class="language-ts">import { Body, Controller, Post } from &#39;@nestjs/common&#39;;
+import { CreateMemberDto } from &#39;./create-member.dto.js&#39;;
+
+@Controller(&#39;members&#39;)
+export class MembersController {
+  @Post()
+  create(@Body() dto: CreateMemberDto): MemberView {
+    return { id: &#39;m1&#39;, email: dto.email };
+  }
+}
+</code></pre>
+<p><code>CreateMemberDto</code> يُفحص. <code>MemberView</code> شكل الإرجاع للمترجم فقط. لا أنبوب على قيمة ترجعها الدالة من داخل العملية.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الواجهة لا تحمل <code>@IsEmail</code>. الزينة مكانها الصنف.</li>
+<li>استيراد القيمة يبقي الصنف في الملف المترجم.</li>
+<li>الإرجاع كائنًا يطابق <code>MemberView</code> يرضي TypeScript ولا يمر على <code>ValidationPipe</code>، لأن الأنبوب على الداخل.</li>
+<li>لو بدّلت المعامل إلى <code>MemberView</code>، الجسم كله يمر مهما كان <code>email</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>tsc</code> يحذف الواجهات. الصنف يبقى ويُستدعى <code>plainToInstance</code> عليه داخل الأنبوب حين يكون <code>metatype</code> ذلك الصنف. بيانات الزينة التي كتبتها <code>class-validator</code> تُقرأ من الصنف عبر <code>reflect-metadata</code>.</p>
+<p>الاستيراد النوعّي لا يصدر ربطًا وقت التشغيل، فيصبح <code>metatype</code> بلا البناء الذي تتوقعه. الأعراض: كل طلب ينجح، أو السلوك يتغير حسب إعداد الاستيراد. العلاج استيراد قيمة.</p>
+<p>الأنواع العامة مثل <code>CreateMemberDto[]</code> لا تصدر بيانات عناصرها. ذلك حد آخر ذُكر مع <code>ParseArrayPipe</code>، وهو قريب من حد الواجهة: ما لا يوجد وقت التشغيل لا يُفحص.</p>
+<h2>مثال عملي</h2>
+<p>فريق وضع كل العقود في <code>member.types.ts</code> كواجهات لأن «DTO كلمة ثقيلة». <code>POST /members</code> يقبل <code>{ &quot;email&quot;: &quot;no&quot; }</code>. بعد نقل الإنشاء إلى <code>CreateMemberDto</code> مع <code>@IsEmail()</code> و <code>ValidationPipe</code>، الطلب نفسه يرجع <code>400</code>. <code>MemberView</code> تبقى واجهة لنتيجة داخلية يجمعها المتحكم للاختبار. الحدّان مختلفان.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>زينة على واجهة. TypeScript قد يرفضها أو تُهمل، والأنبوب لن يفحص.</li>
+<li><code>import type</code> لصنف DTO في المتحكم.</li>
+<li>جعل كل الأشكال أصنافًا بما فيها ناتج حساب داخلي لا يعبر الأنبوب. الواجهة أخف هناك.</li>
+<li>توقع أن <code>implements</code> ينسخ الزينة من الواجهة. الزينة لا تعيش على الواجهة أصلًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الصنف على <code>@Body()</code> و <code>@Query()</code> و <code>@Param()</code> حين يكون المعامل كائن قواعد. الواجهة لشكل داخلي أو لناتج لا يفحصه <code>ValidationPipe</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضع واجهة مكان صنف الدخل. لا تستورد الصنف كنوع فقط. لا تبنِ صنفًا لكل متغير محلي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>interface</code></th>
+<th><code>class</code> DTO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بعد <code>tsc</code></td>
+<td>تختفي</td>
+<td>تبقى</td>
+</tr>
+<tr>
+<td>زينة <code>class-validator</code></td>
+<td>غير متاحة للأنبوب</td>
+<td>تُقرأ وقت التشغيل</td>
+</tr>
+<tr>
+<td><code>ValidationPipe</code></td>
+<td>يتخطى الفحص</td>
+<td>يفحص</td>
+</tr>
+<tr>
+<td>استعمال مناسب</td>
+<td>شكل داخلي</td>
+<td>عقد يدخل الأنبوب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يكفي <code>interface</code> لـ <code>ValidationPipe</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها تُمسح عند الترجمة ولا تترك بيانات زينة يقرأها الأنبوب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين <code>import { CreateMemberDto }</code> و <code>import type { CreateMemberDto }</code> في ملف المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأول يبقي الصنف وقت التشغيل فيصله <code>metatype</code>. الثاني يُحذف، والأنبوب لا يرى البناء.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد شكل ناتج الخدمة <code>{ id, email }</code> بلا فحص أنبوب، وشكل الدخل مع <code>@IsEmail()</code>. أين الواجهة وأين الصنف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الدخل <code>class CreateMemberDto</code>. الناتج <code>interface MemberView</code> أو صنف خرج منفصل إن كان سيمر على تحويل لاحق. لا تجعل الواجهة معامل <code>@Body()</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يصدر TypeScript عن الواجهة؟</li>
+<li>أي استيراد يُمسح؟</li>
+<li>هل <code>implements</code> تنقل الزينة؟</li>
+<li>أين تبقى الواجهة مفيدة داخل الخدمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>عقد <code>ValidationPipe</code> صنف يُستورد كقيمة. الواجهة عقد مترجم لشكل لا يفحصه ذلك الأنبوب. خلطهما على <code>@Body()</code> يفتح الحد.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفصل ما يراه المترجم عما يبقى في Node بعد تشغيل الملف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

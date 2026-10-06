@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IoC</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-ioc.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>IoC</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف Inversion of Control: الإطار يملك مسار التحكم وينادي كودك، و DI إحدى تقنيات هذا القلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد إخراج <code>new</code> من الخدمة، ما زال ملف <code>main</code> يدويًا يستطيع بناء الشجرة كلها ثم مناداة <code>drafts.total</code>. في Nest لا تكتب هذه الشجرة عند كل تشغيل. <code>NestFactory.create</code> يقرأ Module الجذر وينشئ الكائنات وينادي المعالج عندما يصل طلب. التحكم في «متى يُبنى الكائن» و«متى تُستدعى الدالة» انتقل إلى الإطار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>IoC تعني أن كود التطبيق لا يقود الحلقة الرئيسة. هو يقدّم أصنافًا، والإطار يقرر الترتيب ويناديها. DI تقنية IoC خاصة بالاعتماديات: الحاوية تنشئها وتمررها. نداء Nest لمعالج <code>@Get</code> عند وصول الطلب IoC أيضًا، على محور الطلب لا على محور البناء.</p>
+<h2>التعريف التقني</h2>
+<p>توثيق Custom providers يسمي DI تقنية IoC تفوّض إنشاء الاعتماديات إلى حاوية NestJS بدل الأسلوب الأمري في كودك.</p>
+<p>الحاوية هنا وقت التشغيل. أنت تصف Module و Decorators. <code>NestFactory.create(AppModule)</code> نقطة الدخول التي تملكها Nest. بعدها <code>app.listen</code> ينتظر الشبكة، وعند الطلب تختار الخريطة دالة Controller. الدالة ليست من تنادي <code>listen</code>.</p>
+<p>عبارة Hollywood تلخص الاتجاه: الإطار ينادي كودك. كودك يعلن الاحتياج في المُنشئ ثم ينتظر التسليم.</p>
+<p>IoC ليس اسم حاوية ولا اسم <code>@Injectable</code>. الحاوية أداة. <code>@Injectable</code> Metadata. IoC هو اتجاه التحكم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">من غير IoC
+  main يبني الكائنات
+  main ينادي total عند الحاجة
+  main يقرأ المنفذ
+
+مع Nest
+  NestFactory.create يقرأ الجذر
+  الحاوية تبني من التسجيل
+  listen ينتظر
+  الإطار ينادي المعالج
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+await app.listen(3000);
+</code></pre>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+
+@Controller(&#39;drafts&#39;)
+export class DraftsController {
+  constructor(private readonly drafts: DraftService) {}
+
+  @Get(&#39;preview&#39;)
+  preview() {
+    return { gross: this.drafts.total(100) };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>main</code> لا ينشئ <code>DraftService</code> ولا <code>DraftsController</code>.</li>
+<li><code>create</code> يستلم الجذر. ما يُبنى يقرره <code>imports</code> و <code>providers</code> و <code>controllers</code>.</li>
+<li>عند <code>GET /drafts/preview</code> الإطار ينادي <code>preview</code>. أنت لا تسجل <code>app.get</code> يدويًا في هذا الملف.</li>
+<li>المُنشئ طلب الخدمة. هذا الجزء DI، والنداء على <code>preview</code> جزء التحكم بالطلب.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الإقلاع يمشي من <code>AppModule</code> إلى الوحدات المستوردة، يسجل الوصفات، يحل Singleton من الأوراق نحو الجذر، ثم يربط المسارات. هذا قبل أي طلب. الطلب لا يبني تلك النسخ مرة أخرى ضمن النطاق الافتراضي؛ هو يدخل المعالج الجاهز.</p>
+<p>لو بقي التحكم عندك، كل طلب كان سيمر على سطر التركيب الذي كتبته، أو كنت ستخزن النسخة في متغير تغلق عليه بنفسك. الإطار يجعل هذا التخزين داخل الحاوية.</p>
+<p>خلط الاسمين شائع: الناس تقول IoC وهي تقصد <code>@Injectable</code>. الزينة بلا <code>NestFactory</code> وبدون تسجيل لا تقلب التحكم. ملف يشغّل <code>new DraftsController(new DraftService(...))</code> ما زال أمريًا حتى لو نسخت شكل المُنشئ من Nest.</p>
+<h2>مثال عملي</h2>
+<p>إقلاع يفشل قبل <code>listen</code> إن نقص رمز، لأن الحاوية تحل الرسم أثناء <code>create</code>. هذا أثر IoC: خطأ التركيب يظهر عند بدء العملية لا عند أول زائر يصل إلى <code>preview</code>. طلب لاحق ينادي دالة على كائنات سُلّمت أصلًا.</p>
+<p>مهمة مجدولة أو رسالة طابور، لاحقًا في الدورة، تتبع النمط نفسه: الإطار ينادي دالة مزوّد جاهز. بناء المزوّد لا ينتقل إلى معالج الرسالة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تسمية <code>@Injectable</code> باسم IoC</td>
+<td>الزينة Metadata والتحكم عند <code>create</code> والحاوية</td>
+</tr>
+<tr>
+<td><code>new DraftsController(...)</code> داخل أمر تشغيلي بجانب Nest</td>
+<td>مساران للبناء، وأحدهما خارج السجل</td>
+</tr>
+<tr>
+<td>توقع أن DI تغطي نداء المسار فقط</td>
+<td>DI للتسليم، ونداء <code>@Get</code> محور تحكم آخر</td>
+</tr>
+<tr>
+<td>بناء الخدمات داخل <code>preview</code></td>
+<td>الطلب عاد يقود الإنشاء</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تريد أن يبقى تشغيل التطبيق ونداء المسارات وتسليم الاعتماديات عند Nest. هذا هو نموذج التطبيق الذي يبدأ بـ <code>NestFactory.create</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في سكربت من عشرين سطرًا يبني صنفًا واحدًا وينهي. <code>new</code> هناك أوضح من حاوية. عندما تكبر الاعتماديات أو يظهر HTTP، نقل التحكم إلى الإطار يعيد الشكل الذي تبنيه هذه الدورة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المحور</th>
+<th>من ينادي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>DI</td>
+<td>الحاوية تنشئ الاعتمادية وتمررها للمُنشئ</td>
+</tr>
+<tr>
+<td>مسار HTTP</td>
+<td>الإطار ينادي المعالج بعد المطابقة</td>
+</tr>
+<tr>
+<td>سكربت أمري</td>
+<td><code>main</code> ينشئ وينادي</td>
+</tr>
+<tr>
+<td>Metadata</td>
+<td>لا تنادي أحدًا؛ تصف ما يقرأه الإطار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في تطبيق Nest، من ينادي <code>preview</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الإطار عندما يطابق <code>GET /drafts/preview</code>. ملف <code>main</code> استدعى <code>listen</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا نقص <code>DraftService</code> من <code>providers</code> يوقف <code>create</code> قبل أي طلب؟</p>
+<details><summary>الحل</summary>
+
+<p>الحاوية تملك التركيب أثناء الإقلاع وتحل Singleton قبل الخدمة. الرمز الناقص فشل في الرسم، لا في أول زائر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اذكر محورَي IoC الظاهرين في المثال، وأيهما يساوي DI.</p>
+<details><summary>الحل</summary>
+
+<p>البناء: الحاوية تنشئ Controller وتمرر <code>DraftService</code>. هذا DI. الطلب: الإطار ينادي <code>preview</code>. هذا قلب تحكم على مسار HTTP، وليس تسليم مُنشئ.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يملك الإطار في IoC بدل ملفك؟</li>
+<li>كيف يصف التوثيق علاقة DI بـ IoC؟</li>
+<li>لماذا <code>@Injectable</code> وحدها لا تقلب التحكم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>IoC نقل قرار التشغيل والنداء إلى Nest. DI التقنية التي تفوّض إنشاء الاعتماديات إلى الحاوية. نداء المعالج عند الطلب الوجه الآخر للتحكم، على محور مختلف.</p>
+<h2>ماذا بعد؟</h2>
+<p>الاعتماد على تجريد لا على صنف تفصيلي: Dependency Inversion.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

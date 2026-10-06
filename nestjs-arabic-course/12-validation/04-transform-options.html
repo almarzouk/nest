@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>transform و transformOptions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-transform-options.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>transform و transformOptions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسليم المعالج نسخة من صنف العقد، وضبط التحويل الذي تمرره <code>transformOptions</code> إلى <code>class-transformer</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفحص قد ينجح والمعالج ما زال يمسك كائنًا عاديًا: <code>instanceof ReserveSeatDto</code> خاطئ، والحقل المتداخل ليس نسخة صنفه. مسار واستعلام يصلان نصًا بينما التوقيع يقول <code>number</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>transform: true</code> يعيد إلى الدالة القيمة بعد التحويل: نسخة الصنف للكائن، وتحويلًا للأنواع الأولية في المسار والاستعلام حسب النوع المنعكس. <code>transformOptions</code> خيارات <code>class-transformer</code> مثل <code>enableImplicitConversion</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة التحقق: الأجسام تصل كائنات عادية. <code>transform: true</code> على الأنبوب، محليًا أو عامًا، يفعّل التحويل التلقائي. مع هذا الخيار يحوّل الأنبوب أيضًا أنواعًا أولية في المسار والاستعلام. المثال الرسمي: <code>@Param(&#39;id&#39;) id: number</code> يطبع <code>typeof id === &#39;number&#39;</code> لأن المعامل وصل نصًا والانعكاس قال <code>Number</code>.</p>
+<p>لا يوجد <code>ParseStringPipe</code> لأن المسار والاستعلام نص أصلًا.</p>
+<p><code>transformOptions</code> تُمرَّر إلى <code>plainToInstance</code>. الخيار الذي تقابله في العقود المتداخلة والحقول:</p>
+<pre><code class="language-ts">new ValidationPipe({
+  transform: true,
+  transformOptions: {
+    enableImplicitConversion: true,
+  },
+})
+</code></pre>
+<p><code>enableImplicitConversion</code> يحوّل حسب <code>design:type</code> داخل الكائن، مثل <code>&quot;4&quot;</code> على حقل <code>number</code>. التحويل الضمني أوسع من تحويل مسار واحد، وقد يجعل قيمة خاطئة تبدو عددًا. فعّله حيث تقبل هذا السلوك، لا كنسخة افتراضية على كل عقد إن كان <code>@IsInt()</code> يجب أن يرفض النص.</p>
+<p><code>@Type(() =&gt; Nested)</code> ما زال لازمًا لنسخة الحقل المتداخل. التحويل الضمني لا يستبدل تلك الزينة لكائن داخلي.</p>
+<p>من غير <code>transform: true</code>، المعالج قد يستلم الأصل بعد الفحص. النسخة الداخلية استُخدمت للتحقق ثم لم تُرجَع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">transform: false   الفحص على نسخة، الدالة قد ترى الأصل
+transform: true    الدالة ترى الناتج المحوّل، ومنها نسخة الصنف
+enableImplicitConversion   &quot;4&quot; قد تصبح 4 داخل الحقل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { ValidationPipe } from &#39;@nestjs/common&#39;;
+
+new ValidationPipe({
+  transform: true,
+})
+</code></pre>
+<pre><code class="language-ts">@Get(&#39;:id&#39;)
+findOne(@Param(&#39;id&#39;) id: number): { id: number } {
+  return { id };
+}
+</code></pre>
+<p>مع الخيار، <code>GET /reservations/4</code> يجعل <code>typeof id</code> يساوي <code>&#39;number&#39;</code> كما في مثال الصفحة. من غير الخيار، القيمة تبقى النص <code>&quot;4&quot;</code> رغم أن TypeScript قال <code>number</code>.</p>
+<p>لجسم الحجز:</p>
+<pre><code class="language-ts">@Post()
+reserve(@Body() dto: ReserveSeatDto): boolean {
+  return dto instanceof ReserveSeatDto;
+}
+</code></pre>
+<p>مع <code>transform: true</code> الناتج <code>true</code> بعد نجاح الفحص.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>تحويل <code>id</code> هنا يعتمد على النوع المنعكس <code>Number</code> مع <code>transform: true</code>، لا على <code>ParseIntPipe</code>. الأنبوب المدمج للتحليل ما زال أصرح حين تريد رسالة «سلسلة رقمية» الخاصة به.</li>
+<li><code>instanceof</code> على الجسم يحتاج إعادة النسخة إلى الدالة، وهذا معنى <code>transform</code> للكائنات.</li>
+<li><code>transformOptions</code> ليست مطلوبة لمثال المسار في الصفحة الحالية. أضفها حين تحتاج سلوك <code>class-transformer</code> داخل الحقول.</li>
+<li>اجمع <code>whitelist: true</code> مع <code>transform: true</code> في التطبيق حين تريد نسخة نظيفة. كل خيار يبقى مفهومًا وحده.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأنبوب يستدعي <code>plainToInstance(metatype, value, transformOptions)</code>. عند النجاح و <code>transform: true</code> تكون هذه النسخة هي قيمة المعامل. عند <code>transform: false</code> تبقى النسخة أداة فحص.</p>
+<p>للأنواع الأولية في <code>param</code> و <code>query</code>، الأنبوب يحوّلها حين يكون التحويل مفعّلًا والنوع المنعكس <code>Number</code> أو <code>Boolean</code>. هذا يحتاج <code>emitDecoratorMetadata</code> حتى يُعرف النوع. إغلاق إصدار البيانات يعيد النص.</p>
+<p><code>enableImplicitConversion</code> يوسّع الفكرة إلى خصائص الكائن. <code>&quot;seat&quot;: &quot;4&quot;</code> قد يمر <code>@IsInt()</code> بعد أن صار <code>4</code>. إن كان العقد يفرّق بين النص والعدد، اترك الخيار مطفأً وأصلح العميل أو استخدم تحويلًا في حقل واحد عبر <code>@Type(() =&gt; Number)</code> حيث تقصده.</p>
+<p>الحقل المتداخل: <code>@Type</code> يحدد الصنف. من غيرها <code>instanceof</code> على الداخل يفشل رغم <code>transform: true</code> على الأب.</p>
+<h2>مثال عملي</h2>
+<p><code>GET /shows/:id</code> في الصالة يريد عددًا داخليًا. فريق يفعّل <code>transform: true</code> فيرى <code>id</code> عددًا. فريق آخر يبقي <code>ParseIntPipe</code> على المعامل لأن رسالة الفشل أوضح. الاثنان صحيحان إن لم يزدوجا على المعامل نفسه بلا داعٍ.</p>
+<p><code>POST /reservations</code> يفعّل <code>transform: true</code> حتى تسجّل الخدمة <code>dto instanceof ReserveSeatDto</code>. لا يفعّل <code>enableImplicitConversion</code> لأن نموذجًا يرسل <code>seat</code> كنص يجب أن يُرفض ويُصلح في الواجهة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع <code>instanceof</code> من غير <code>transform: true</code>.</li>
+<li>تفعيل التحويل الضمني ثم اختفاء أخطاء <code>@IsInt()</code> على النصوص.</li>
+<li>نسيان <code>@Type</code> للمتداخل والاعتقاد أن <code>transform</code> يكفي.</li>
+<li>تحويل كل الاستعلامات ضمنيًا بينما <code>ParseBoolPipe</code> على علم واحد كان يكفي.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>transform: true</code> حين تريد نسخة الصنف في الدالة أو تحويل مسار واستعلام أوليًا حسب النوع المعلن. <code>enableImplicitConversion</code> لحقل تعرف أن عملاءه يرسلون نصًا لعدد، مع اختبار يثبت التحويل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفعّل التحويل الضمني لإخفاء نموذج مكسور على كل الحقول. ولا تستبدل <code>ParseUUIDPipe</code> بتحويل ضمني. UUID يبقى نصًا مفحوصًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخيار</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بلا <code>transform</code></td>
+<td>فحص، والأصل غالبًا هو ما يصل للدالة</td>
+</tr>
+<tr>
+<td><code>transform: true</code></td>
+<td>النسخة أو القيمة المحوّلة تصل للدالة</td>
+</tr>
+<tr>
+<td><code>enableImplicitConversion</code></td>
+<td>تحويل خصائص حسب النوع المنعكس</td>
+</tr>
+<tr>
+<td><code>@Type</code></td>
+<td>صنف الحقل المتداخل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يجب أن يرجع <code>dto instanceof ReserveSeatDto</code> داخل المعالج بعد <code>transform: true</code> ونجاح الفحص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>true</code>، لأن المعامل هو ناتج التحويل إلى الصنف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد يبقى <code>@Param(&#39;id&#39;) id: number</code> نصًا في التشغيل رغم أن البناء نجح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسار نص. من غير <code>transform: true</code> أو <code>ParseIntPipe</code> لا يبدّل الأنبوب القيمة. نوع TypeScript لا يعيش على السلك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>seat</code> يصل <code>&quot;4&quot;</code> ويمر <code>@IsInt()</code> بعد نشر الإعداد. أي خيار سبّب ذلك، ومتى تطفئه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>transformOptions.enableImplicitConversion</code>. أطفئه إن كان العقد يرفض النص، وأصلح العميل ليرسل عددًا. أبقه فقط حيث التحويل مقصود ومختبر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغيّر <code>transform: true</code> للمعالج؟</li>
+<li>إلى أي مكتبة تذهب <code>transformOptions</code>؟</li>
+<li>هل التحويل الضمني يغني عن <code>@Type</code>؟</li>
+<li>متى يبقى <code>ParseIntPipe</code> أوضح؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>transform: true</code> يسلّم الدالة ناتج التحويل، نسخة صنف أو قيمة أولية محوّلة في المسار والاستعلام. <code>transformOptions.enableImplicitConversion</code> يوسّع التحويل إلى الحقول وقد يخفي نصًا كان يجب رفضه. <code>@Type</code> يبقى للحقل المتداخل.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي شكل رسالة الخطأ: <code>disableErrorMessages</code> و <code>errorFormat</code> بقيمتيه <code>list</code> و <code>grouped</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>كيف يعمل Express</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-how-express-works.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>كيف يعمل Express</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تتبع طلب واحد داخل مكدس Express حتى المعالج النهائي، لأن Nest تعيد استخدام الفكرة نفسها في طبقة Middleware.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>التطبيق الذي يضع كل شيء داخل <code>app.get</code> يصعب فيه مشاركة سلوك: تسجيل الطلب، وتحليل JSON، ورفض من لا يحمل مفتاحًا. نريد دوالًا تمر على الطلب بالترتيب، وكل واحدة تكمل أو توقف السلسلة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Express يمرر الطلب عبر طبقات بالترتيب الذي سجّلت به. الطبقة دالة بشكل:</p>
+<pre><code class="language-ts">(req, res, next) =&gt; { /* ... */ }
+</code></pre>
+<ul>
+<li>إذا أنهت الرد عبر <code>res.send</code> أو <code>res.json</code> أو <code>res.end</code>، فالسلسلة تتوقف عمليًا لأن الرد اكتمل.</li>
+<li>إذا نادت <code>next()</code>، فالتحكم ينتقل إلى الطبقة التالية.</li>
+<li>إذا نادت <code>next(error)</code>، فالتحكم يقفز إلى معالج أخطاء.</li>
+</ul>
+<p>Middleware اسم هذه الطبقة عندما تكون في وسط الطريق، لا بالضرورة &quot;النهائية&quot; التي تعرف المورد.</p>
+<h2>التعريف التقني</h2>
+<p>Middleware دالة لها وصول إلى كائن الطلب وكائن الرد والدالة <code>next</code> في دورة الطلب والاستجابة. قد تنفّذ كودًا، أو تغيّر <code>req</code> و <code>res</code>، أو تنهي الدورة، أو تستدعي <code>next</code> لتمرر التحكم.</p>
+<p>هذا تعريف دليل Express عن كتابة الـ middleware، بصياغة عربية هنا.</p>
+<p>Nest تعرّف Middleware بجملة قريبة: دالة تُستدعى قبل route handler. عندما نصل إلى فصل Middleware في Nest سترى <code>NestMiddleware</code> و <code>configure</code>. الترتيب الذهني الذي تبنيه الآن هو نفسه: قبل المعالج، طبقة بعد طبقة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">app.use(log)
+app.use(express.json())
+app.get(&#39;/books&#39;, listBooks)
+
+GET /books
+   |
+   v
+ log -- next() --&gt; json parser -- next() --&gt; listBooks -- res.json
+</code></pre>
+<p>ترتيب <code>use</code> و <code>get</code> هو ترتيب المرور للطلب الذي يطابقها.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import express, { type Express, type NextFunction, type Request, type Response } from &#39;express&#39;;
+
+const app: Express = express();
+
+app.use((req: Request, res: Response, next: NextFunction) =&gt; {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+app.get(&#39;/books&#39;, (_req: Request, res: Response) =&gt; {
+  res.json([{ id: &#39;1&#39;, title: &#39;Clean Code&#39; }]);
+});
+
+app.listen(3000);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>app.use(fn)</code> يسجّل طبقة لكل الطرق والمسارات، لأننا لم نمرر مسارًا. ستعمل قبل المسارات المسجّلة بعدها.</li>
+<li>المعاملات الثلاثة هي عقد Express: الطلب، الرد، والتمرير.</li>
+<li><code>req.method</code> مثل <code>GET</code>. <code>req.url</code> المسار مع query إن وُجدت.</li>
+<li><code>console.log</code> أثر جانبي على الخادم. لا يغيّر الرد.</li>
+<li><code>next()</code> يسلم إلى الطبقة التالية. من غير هذا الاستدعاء، ومن غير إنهاء <code>res</code>، يبقى العميل منتظرًا حتى تنتهي المهلة. هذا من أكثر أعطال Express صمتًا.</li>
+<li><code>app.get</code> طبقة لاحقة. لا تُستدعى إلا إذا وصلت إليها السلسلة وطابقت الطريقة والمسار.</li>
+<li><code>res.json</code> ينهي الرد. لا حاجة إلى <code>next()</code> بعد الإنهاء.</li>
+</ul>
+<p>طلب <code>GET /books</code> يطبع السطر ثم يعيد المصفوفة. طلب <code>POST /books</code> يطبع السطر ثم يأخذ <code>404</code> لأن لا طبقة <code>POST</code>، والطباعة حصلت قبل قرار 404.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Express يحتفظ بمكدس. لكل طلب ينشئ مؤشرًا على الطبقة الحالية.</p>
+<ol>
+<li>يدخل الطبقة الأولى.</li>
+<li>إن استُدعيت <code>next()</code> من غير وسيط، يزيد المؤشر وينادي الطبقة التالية المتطابقة.</li>
+<li>إن كُتب الرد وانتهت الدالة، لا توجد طبقة تالية تُستدعى إلا إذا استدعاها الكود بالخطأ بعد الإنهاء.</li>
+<li><code>express.json()</code> طبقة جاهزة: تقرأ الجسم إذا كان <code>Content-Type</code> يدل على JSON، ثم تضع الناتج في <code>req.body</code>، ثم تنادي <code>next()</code>. إن كان JSON مكسورًا تمرر خطأ.</li>
+<li>معالج المسار طبقة تتطابق بطريقة ومسار. <code>:id</code> قاعدة ضمن المسار، والنص المطابق يذهب إلى <code>req.params</code>.</li>
+</ol>
+<p><code>express.json()</code> ليست مفعّلة لأنك ثبّت Express. هي middleware تختارها. موضعها في المكدس مهم: مسار قبلها يرى <code>req.body</code> غير محللة.</p>
+<p>معالج الأخطاء طبقة بأربعة معاملات:</p>
+<pre><code class="language-ts">app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) =&gt; {
+  res.status(500).json({ message: &#39;Unexpected error&#39; });
+});
+</code></pre>
+<p>Express يميّزه بعدد المعاملات. يُسجَّل بعد المسارات. <code>next(err)</code> من طبقة سابقة يقفز إليه ويتجاوز المسارات العادية. لن نبني نظام أخطاء Express كاملًا. في Nest، Exception Filter يحتل هذا الدور على مستوى الإطار، مع فرق مهم في الترتيب ستقرأه في فصل Request Lifecycle: الفلتر في Nest يلتقط ما لم يُمسك أثناء معالجة الطلب، وترتيب اختياره من الأخص إلى الأعم.</p>
+<p>نقطة من توثيق Nest عن Fastify، للعلم فقط: عند استخدام Fastify، دوال middleware تستقبل <code>req</code> و <code>res</code> الخام لا أغلفة Fastify، بسبب الحزمة التي يستخدمها Nest. لا تخلط هذا مع Express. على منصة Express، كائنات Express هي التي تعرفها.</p>
+<h2>مثال عملي</h2>
+<p>تحليل JSON ثم رفض جسم فارغ، ثم إنشاء كتاب. البيانات في الذاكرة للتوضيح.</p>
+<pre><code class="language-ts">import express, { type NextFunction, type Request, type Response } from &#39;express&#39;;
+
+const app = express();
+const books: { id: string; title: string }[] = [];
+
+app.use(express.json());
+
+app.use((req: Request, res: Response, next: NextFunction) =&gt; {
+  if (req.method === &#39;POST&#39; &amp;&amp; req.path === &#39;/books&#39;) {
+    const title = req.body?.title;
+    if (typeof title !== &#39;string&#39; || title.length === 0) {
+      res.status(400).json({ message: &#39;title is required&#39; });
+      return;
+    }
+  }
+  next();
+});
+
+app.post(&#39;/books&#39;, (req: Request, res: Response) =&gt; {
+  const book = { id: String(books.length + 1), title: req.body.title as string };
+  books.push(book);
+  res.status(201).json(book);
+});
+
+app.listen(3000);
+</code></pre>
+<p>المسار:</p>
+<pre><code class="language-text">POST /books  { &quot;title&quot;: &quot;&quot; }
+   -&gt; express.json يملأ req.body
+   -&gt; الطبقة الثانية ترى عنوانًا فارغًا وترسل 400 ولا تنادي next
+   -&gt; app.post لا يعمل
+
+POST /books  { &quot;title&quot;: &quot;Refactoring&quot; }
+   -&gt; json
+   -&gt; الطبقة الثانية تنادي next
+   -&gt; app.post يحفظ ويرسل 201
+</code></pre>
+<p>الطبقة الثانية بداية لفكرة Pipe: افحص المدخل قبل الدالة. في Express مكان الفحص قرارك، وقد تنسى ربطه على <code>POST /reviews</code>. في Nest ستضع القاعدة على DTO فتسري حيث يُستخدم الـ DTO. الفرق معماري، والكود أعلاه يكفي لرؤية المشكلة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>next()</code> مع عدم إنهاء الرد. العميل يعلّق.</li>
+<li>استدعاء <code>next()</code> وبعدها <code>res.json</code> أيضًا. رد مزدوج أو استجابة بعد أن بدأت طبقة أخرى بالكتابة.</li>
+<li>وضع <code>express.json()</code> بعد المسار الذي يقرأ <code>req.body</code>. الترتيب هو التنفيذ.</li>
+<li>حشر الصلاحية وقواعد العمل والتسجيل في middleware واحد عام. الطبقة تصبح تطبيقًا خفيًا. كل مسؤولية تستحق طبقة أو مكانًا أوضح عندما نصل إلى Guards و Pipes و Interceptors.</li>
+<li>الاعتماد على <code>req.body.title as string</code> لإسكات TypeScript. هذا لا يفحص القيمة. الفحص هو <code>typeof</code> في المثال، أو Validation لاحقًا.</li>
+</ul>
+<h2>متى نستخدم Middleware في Express؟</h2>
+<p>لسلوك عرضي على الطلب قبل معرفة تفاصيل المورد: تسجيل، تحليل جسم، رأس أمني عام، قياس زمن. ولأي شيء يجب أن يمر قبل اختيار المعالج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقاعدة تخص موردًا واحدًا وشكل جسمه، إذا كان وضعها في middleware عام يخفي القاعدة عن قارئ المسار. ضعها قرب المسار أو في مكان الإطارات المخصصة للتحقق. المقارنة الكاملة بين Middleware و Guard و Interceptor و Pipe فصلها الخاص بعد أن تُبنى الأربعة. الجدول التالي خريطة أسماء فقط:</p>
+<table>
+<thead>
+<tr>
+<th>الأداة لاحقًا في Nest</th>
+<th>قريبها الذهني الآن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Middleware</td>
+<td>طبقة Express قبل اختيار السلوك الدقيق للمسار</td>
+</tr>
+<tr>
+<td>Guard</td>
+<td>هل يُسمح لهذا الطلب أن يكمل</td>
+</tr>
+<tr>
+<td>Pipe</td>
+<td>حوّل المدخل أو ارفضه</td>
+</tr>
+<tr>
+<td>Interceptor</td>
+<td>لفّ حول تنفيذ المعالج قبلًا وبعدًا</td>
+</tr>
+<tr>
+<td>Exception Filter</td>
+<td>حوّل الاستثناء غير الممسوك إلى رد</td>
+</tr>
+</tbody></table>
+<p>لا تستخدم الجدول كمرجع تنفيذ. هو سبب وجود فصول منفصلة: Express يضع أكثر هذه الأدوار في شكل دالة <code>(req, res, next)</code> واحدة، والفرق يصبح اتفاق فريق. Nest يفصل الأماكن.</p>
+<h2>مقارنة مع Node الخام</h2>
+<p>على <code>node:http</code> تكتب بنفسك:</p>
+<pre><code class="language-ts">if (req.method === &#39;GET&#39; &amp;&amp; req.url === &#39;/books&#39;) {
+  // ...
+}
+</code></pre>
+<p>Express يستبدل سلسلة <code>if</code> بمكدس طبقات ومطابقة مسارات. أنت ما زلت تصمم ترتيب الطبقات.</p>
+<p>Nest ستأخذ المكدس نفسه على منصة Express: Middleware الذي تعرّفه في Nest يُربَط على Express تحت الغطاء. لهذا يفيدك فهم <code>next</code>. لن تكتب <code>next</code> في Controller العادي. ستكتبه في Middleware عندما نصل إليه.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>طبقة تطبع <code>A</code> ثم <code>next()</code>، ثم طبقة تطبع <code>B</code> ثم <code>next()</code>، ثم <code>GET /</code> يرسل <code>ok</code>. ماذا يُطبع لطلب <code>GET /</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>A</code> ثم <code>B</code> ثم يُرسل <code>ok</code>. الترتيب هو ترتيب التسجيل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الطبقة الأولى ترسل <code>res.status(401).json({ message: &#39;no&#39; })</code> ولا تنادي <code>next</code>. هل يعمل المعالج النهائي؟ ماذا يرى العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المعالج النهائي لا يعمل لأن السلسلة لم تُمرَّر إليه. العميل يرى <code>401</code> والجسم <code>{ &quot;message&quot;: &quot;no&quot; }</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا فحص <code>title</code> في المثال العملي ما زال هشًا حتى بعد أن كتبنا middleware؟ اذكر سيناريو يمر فيه عنوان غير نصي إلى <code>app.post</code>، أو سيناريو لا يعمل فيه الفحص لعملية إنشاء أخرى.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الفحص مربوط بشرط <code>req.path === &#39;/books&#39;</code> فقط. <code>POST /notes</code> لا يُفحص. كذلك الشرط يعتمد على أن <code>express.json</code> سبقه؛ لو انعكس الترتيب فـ <code>req.body</code> غير جاهز وقد يرمي الفحص أو يرفض كل شيء. و <code>req.body.title as string</code> في المعالج يوثق نية لا يفرضها المترجم على الشبكة. مسار جديد يحتاج تذكر الشرط. هذا نوع التكرار الذي ستنقله Pipes إلى شكل البيانات نفسه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الأشكال الثلاثة التي تنهي فيها طبقة عملها: رد، أم <code>next</code>، أم خطأ؟</li>
+<li>لماذا يعلّق المتصفح إذا لم يحدث أي منها؟</li>
+<li>لماذا ترتيب <code>express.json()</code> بالنسبة للمسار مهم؟</li>
+<li>ماذا ستقابل <code>next</code> لاحقًا داخل Nest، وأين لن تحتاج كتابتها؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Express مكدس دوال بالترتيب. <code>next()</code> يمرر التحكم، وإنهاء <code>res</code> يرسل الرد، و <code>next(error)</code> يبحث عن معالج أخطاء. Nest على Express تبني فوق هذا المكدس وتضيف أماكن أوضح لبقية المسؤوليات.</p>
+<h2>ماذا بعد؟</h2>
+<p>الآلية تكفي لمشروع صغير. الدرس التالي ينظر إلى المشروع بعد سنة: أين تنكسر هذه الحرية، ولماذا صارت المعمارية هي المشكلة لا توجيه المسار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Express — Writing middleware: <a href="https://expressjs.com/en/guide/writing-middleware.html">https://expressjs.com/en/guide/writing-middleware.html</a></li>
+<li>Express — Routing: <a href="https://expressjs.com/en/guide/routing.html">https://expressjs.com/en/guide/routing.html</a></li>
+<li>Express — Error handling: <a href="https://expressjs.com/en/guide/error-handling.html">https://expressjs.com/en/guide/error-handling.html</a></li>
+<li>NestJS — Middleware: <a href="https://docs.nestjs.com/middleware">https://docs.nestjs.com/middleware</a></li>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

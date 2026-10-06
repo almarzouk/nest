@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>PostgreSQL</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-postgresql.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>PostgreSQL</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت مصطلحات PostgreSQL التي ستظهر في <code>schema.prisma</code> وفي SQL الترحيل: قاعدة، مخطط، جدول، صف، مفتاح، قيد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كلمات «الداتابيس» و«الجدول» تختلط. المبتدئ يظن أن ملف SQLite وقاعدة PostgreSQL وخدمة Nest شيء واحد، أو أن العمود في JSON هو نفسه عمود الجدول. حين يفشل قيد <code>UNIQUE</code> على البريد، الرسالة تبدو عطلًا في الإطار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>PostgreSQL خادم. داخله قواعد بيانات. داخل القاعدة مخطط <code>public</code> غالبًا، وداخله جداول. الصف نسخة من شكل الجدول. المفتاح الأساسي يميّز الصف. المفتاح الأجنبي يربط صفًا بصف في جدول آخر. القيد يرفض كتابة تكسر الشكل حتى لو تجاوزها تطبيق مهمل.</p>
+<h2>التعريف التقني</h2>
+<p>عنوان الاتصال الذي يذكره توثيق Nest لـ Prisma:</p>
+<pre><code class="language-text">postgresql://USER:PASSWORD@HOST:PORT/DATABASE?schema=SCHEMA
+</code></pre>
+<p><code>DATABASE</code> اسم القاعدة، و <code>schema</code> في الاستعلام اسم المخطط، وغالبًا <code>public</code>. هذه ليست كلمة السر التي تُرفع. هي شكل النص.</p>
+<p>أنواع ستستخدمها الدورة: عدد صحيح للمفتاح، <code>text</code> للعنوان، <code>boolean</code> لحالة النشر، وقت للإنشاء. القيد <code>NOT NULL</code> يمنع الفراغ. <code>UNIQUE</code> يمنع تكرار البريد. <code>PRIMARY KEY</code> مفتاح أساسي. <code>REFERENCES</code> مفتاح أجنبي.</p>
+<p>المعاملات في PostgreSQL تُكتب <code>$1</code> و <code>$2</code> مع مشغّل <code>pg</code>. الخادم يخطط الجملة ثم يربط القيم.</p>
+<p>Nest لا يضمّن PostgreSQL. تشغّله محليًا أو عبر خدمة، وتضع العنوان في <code>DATABASE_URL</code> كما في فصل الإعداد. توثيق Prisma يذكر <code>npx prisma dev</code> لتشغيل Postgres محلي من طرفية Prisma إن لم يكن لديك خادم بعد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">خادم PostgreSQL
+  قاعدة library
+    مخطط public
+      جدول books
+        صف id=3 title=Refactoring
+      جدول members
+        صف id=9 email=reader@example.com
+</code></pre>
+<p>حذف القاعدة يمسح جداولها. حذف صف لا يمسح الجدول.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-sql">create table books (
+  id integer generated always as identity primary key,
+  title text not null,
+  published boolean not null default false
+);
+</code></pre>
+<pre><code class="language-ts">await pool.query(
+  &quot;insert into books (title, published) values ($1, $2) returning id, title&quot;,
+  [&quot;Refactoring&quot;, false],
+);
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>identity</code> يولّد <code>id</code> في الخادم. التطبيق لا يخترع المفتاح بلصق وقت الساعة. <code>title</code> لا يُقبل فارغًا بسبب <code>not null</code>. <code>published</code> يبدأ <code>false</code> إن لم يُذكر. <code>returning</code> يعيد الصف بعد الكتابة حتى لا تستعلم مرة ثانية لمعرفة <code>id</code>.</p>
+<p>القيم في المصفوفة، لا داخل النص.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الخادم يحلّل SQL، يتحقق من الأعمدة والأنواع، ويفحص القيود قبل إتمام الكتابة. مخالفة <code>not null</code> ترجع خطأً من PostgreSQL، لا من <code>ValidationPipe</code>. أنبوب HTTP يمنع طلبًا سيئ الشكل. القيد يمنع كتابة سيئة حتى لو جاء المسار من سكربت يتجاوز الأنبوب.</p>
+<p>الفهرس بنية تسرّع البحث. المفتاح الأساسي مفهرس. البحث عن عنوان بلا فهرس على جدول كبير يمسح الصفوف. فصل القوائم يعود إلى هذا عندما يكبر <code>skip</code> و <code>take</code>.</p>
+<h2>مثال عملي</h2>
+<p>عضو المكتبة في جدول <code>members</code> بريده <code>unique</code>. طلب تسجيل ثانٍ بالبريد نفسه يفشل عند القيد حتى لو نسي الخدمة فحص التكرار. الخدمة تترجم رمز التكرار إلى <code>409</code>. الاعتماد على القيد وحده يعطي خطأ خامًا للعميل، والفحص المبكر يعطي رسالة أوضح، والقيد يبقى الحارس الأخير بين نسختين متزامنتين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استخدام قاعدة التطوير من تطبيق الإنتاج لأن العنوان نُسخ.</li>
+<li>تخزين قائمة كتب داخل عمود نصي بدل صفوف.</li>
+<li>جعل <code>id</code> نصًا يرسله العميل في <code>POST</code>.</li>
+<li>تجاهل خطأ القيد واعتباره عطل Nest.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مخزن الدورة العلائقي: كتب، أعضاء، إعارات، ثم مستخدمو واجهة المنشورات في الفصل التالي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمثال تعليم لغة من عشر دقائق بلا تثبيت. المصفوفة أوضح هناك، وتتوقف عند نهاية المثال.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>قيد في PostgreSQL</th>
+<th>فحص في DTO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يحمي كل الكتّاب إلى الجدول</td>
+<td>يحمي طلب HTTP</td>
+</tr>
+<tr>
+<td><code>unique</code> على البريد</td>
+<td>شكل البريد في الجسم</td>
+</tr>
+<tr>
+<td>يبقى إن تغيّر الإطار</td>
+<td>يبقى عند حدود Nest</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الفرق بين قاعدة <code>library</code> وجدول <code>books</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القاعدة حاوية داخل الخادم. الجدول مجموعة صفوف داخل مخطط في تلك القاعدة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يولّد الخادم <code>id</code> بدل أن يرسله العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المفتاح مميّز الصف عند الخادم. عميل يختار <code>id</code> قد يصطدم بصف موجود أو يخمن معرّفات غيره.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلبان متزامنان يسجّلان البريد نفسه، والخدمة فحصت الفراغ قبل الكتابة فقط. ماذا يمنع الصفين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قيد <code>UNIQUE</code> في الجدول. الفحص في الخدمة يضيّق النافذة ولا يغلقها وحدها تحت التزامن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني <code>schema=public</code> في عنوان الاتصال؟</li>
+<li>ماذا يرفض <code>NOT NULL</code>؟</li>
+<li>أين مكان معامل <code>$1</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>PostgreSQL يحفظ جداولًا بقيود. التطبيق يرسل SQL مربوطًا. ORM لاحقًا يولّد هذا SQL من نموذج، ولا يلغي القيد ولا العنوان.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-what-is-an-orm.html">ما هو ORM</a> يشرح ماذا توفّر الطبقة فوق هذه الجمل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Databases: <a href="https://docs.nestjs.com/data/overview">https://docs.nestjs.com/data/overview</a></li>
+<li>PostgreSQL — Tutorial: <a href="https://www.postgresql.org/docs/current/tutorial.html">https://www.postgresql.org/docs/current/tutorial.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

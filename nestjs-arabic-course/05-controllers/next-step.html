@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>المسارات الآن تستقبل الطلب وتعيد قيمة. <code>ShelvesController</code> يستدعي <code>this.shelves.findAll()</code>، لكننا لم نبنِ بعد مكان القاعدة ولا طريقة تسجيله.</p>
+<p>الفصل <code>06-providers</code> يعلّم Provider: الصنف الذي يُحقَن، وعلى رأسه Service حيث تعيش قاعدة العمل. <code>@Injectable()</code> يعلن أن الحاوية تستطيع إدارة الصنف، ومصفوفة <code>providers</code> في Module هي التسجيل. <code>constructor(private readonly shelves: ShelvesService)</code> الذي رأيته هنا يصبح حقنًا حقيقيًا عندما تكون الخدمة مسجّلة.</p>
+<p>سترى أيضًا Scope بنظرة أولى: Singleton هو الافتراضي، و <code>REQUEST</code> يعدي من يعتمد عليه ويثقل الطلب، و <code>TRANSIENT</code> نسخة لكل موضع حقن. ثم أشكال التسجيل <code>useClass</code> و <code>useValue</code> و <code>useFactory</code> و <code>useExisting</code>، والرمز الذي تُحقن به عندما لا يكون الرمز صنفًا.</p>
+<p>أبقِ Controller رفيعًا كما في هذا الفصل. انقل القرار إلى Service، ثم افتح <a href="../06-providers/README.html"><code>06-providers</code></a>.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

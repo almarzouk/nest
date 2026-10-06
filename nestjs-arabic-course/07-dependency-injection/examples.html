@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة رسوم لمكتب المشتريات. كل مثال يبرز قرارًا واحدًا: إخراج <code>new</code>، الربط على تجريد، ومشاركة Singleton عبر التصدير. الاستيراد النسبي ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — التركيب في الحاوية لا داخل الخدمة</h2>
+<p>الساعة والسياسة والمسودة أوراق ثم جذر. Controller يعيد الناتج ولا يبني أحدًا.</p>
+<pre><code class="language-ts">import { Controller, Get, Injectable, Module, Query } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class SystemClock {
+  now() {
+    return new Date();
+  }
+}
+
+@Injectable()
+export class TaxPolicy {
+  constructor(private readonly clock: SystemClock) {}
+
+  rate() {
+    return this.clock.now().getMonth() === 11 ? 0.05 : 0.15;
+  }
+}
+
+@Injectable()
+export class DraftService {
+  constructor(private readonly tax: TaxPolicy) {}
+
+  total(net: number) {
+    return { gross: net * (1 + this.tax.rate()) };
+  }
+}
+
+@Controller(&#39;drafts&#39;)
+export class DraftsController {
+  constructor(private readonly drafts: DraftService) {}
+
+  @Get(&#39;preview&#39;)
+  preview(@Query(&#39;net&#39;) net = &#39;100&#39;) {
+    return this.drafts.total(Number(net));
+  }
+}
+
+@Module({
+  controllers: [DraftsController],
+  providers: [SystemClock, TaxPolicy, DraftService],
+})
+export class AcquisitionModule {}
+</code></pre>
+<p>الحل أثناء الإقلاع: الساعة، ثم السياسة، ثم المسودة، ثم Controller. <code>GET /drafts/preview?net=200</code> ينادي <code>total</code> على النسخة نفسها لكل الطلبات. <code>Number</code> تحويل ظاهر لأن Pipe لاحق.</p>
+<h2>مثال 2 — الانقلاب على سياسة قابلة للاستبدال</h2>
+<p>المسودة تعرف التجريد. الاختبار يربط <code>useValue</code> من غير تحرير <code>total</code>.</p>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+export abstract class TaxPolicy {
+  abstract rate(): number;
+}
+
+@Injectable()
+export class FlatTax extends TaxPolicy {
+  rate() {
+    return 0.15;
+  }
+}
+
+@Injectable()
+export class DraftService {
+  constructor(private readonly tax: TaxPolicy) {}
+
+  total(net: number) {
+    return net * (1 + this.tax.rate());
+  }
+}
+
+@Module({
+  providers: [DraftService, { provide: TaxPolicy, useClass: FlatTax }],
+})
+export class AcquisitionModule {}
+
+@Module({
+  providers: [
+    DraftService,
+    { provide: TaxPolicy, useValue: { rate: () =&gt; 0 } },
+  ],
+})
+export class AcquisitionTestModule {}
+</code></pre>
+<p><code>import type</code> لـ <code>TaxPolicy</code> هنا يكسر الحل لأن الصنف المجرد هو المفتاح. استيراده في ملف المسودة يكون استيراد قيمة. الواجهة الممسوحة لا تحل محل <code>abstract class</code>.</p>
+<h2>مثال 3 — عقدة مصدَّرة وعدّاد مشترك</h2>
+<p>التقرير يرى المسودة فقط. التسجيل الثاني للساعة كان سينسخ الورقة، وهو غير موجود هنا عمدًا.</p>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+import { SystemClock } from &#39;./system-clock.js&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+
+@Module({
+  providers: [SystemClock, TaxPolicy, DraftService],
+  exports: [DraftService],
+})
+export class AcquisitionModule {}
+
+@Injectable()
+export class ReportsService {
+  constructor(private readonly drafts: DraftService) {}
+
+  previewPair() {
+    return [this.drafts.total(10), this.drafts.total(10)];
+  }
+}
+
+@Module({
+  imports: [AcquisitionModule],
+  providers: [ReportsService],
+})
+export class ReportsModule {}
+</code></pre>
+<p><code>ReportsService</code> تحقن الرمز المصدَّر فتشارك Singleton المشتريات. <code>previewPair</code> ينادي النسخة نفسها مرتين. <code>TaxPolicy</code> و <code>SystemClock</code> غير مصدَّرتين، فرسم التقارير يتوقف عند المسودة. تسجيل الساعة مرة ثانية داخل <code>ReportsModule</code> كان سينسخ الورقة، وهو غير موجود هنا عمدًا.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>new DraftService</code> داخل المعالج.</li>
+<li>مفتاح المُنشئ صنف مستورد كقيمة، أو <code>@Inject</code> لرمز غير صنفي.</li>
+<li>كل سهم في الرسم له خانة في السياق المرئي.</li>
+<li>حالة الطلب ليست حقلًا على نسخة <code>DEFAULT</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

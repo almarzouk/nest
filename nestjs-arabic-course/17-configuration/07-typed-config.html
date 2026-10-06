@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Typed Config</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-typed-config.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Typed Config</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل المترجم يرفض مفتاح إعداد غير موجود، ويستنتج نوع القيمة من واجهة تصف البيئة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>get(&quot;DATABSE_URL&quot;)</code> خطأ إملائي يُترجم بنجاح ويرجع <code>undefined</code> عند التشغيل. <code>get&lt;number&gt;(&quot;PORT&quot;)</code> الذي تكتبه بيدك قد يكذب: البيئة ما زالت نصًا إن لم يحوّلها المخطط. الواجهة مع <code>infer</code> تربط الاسم المسموح والنوع المعلن في مكان واحد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عرّف واجهة بالمفاتيح التي تقرأها. مرّرها وسيطًا أول إلى <code>ConfigService&lt;EnvironmentVariables&gt;</code>. في <code>get</code> مرّر <code>{ infer: true }</code> ليستنتج النوع من الواجهة. وسيط ثانٍ <code>true</code> يزيل <code>undefined</code> من الإرجاع حين تكون القيم مضمونة بعد التحقق.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Configuration، للخدمة وسيطان نوعيان اختياريان:</p>
+<pre><code class="language-ts">constructor(
+  private readonly config: ConfigService&lt;EnvironmentVariables, true&gt;,
+) {}
+
+const port = this.config.get(&quot;PORT&quot;, { infer: true });
+</code></pre>
+<p>الوسيط الأول يقيّد المفاتيح. <code>get(&quot;URL&quot;)</code> يفشل الترجمة إن لم توجد <code>URL</code> في الواجهة. مع <code>infer: true</code>، نوع <code>PORT</code> يصبح <code>number</code> إن أعلنتها <code>number</code> في الواجهة. مع <code>strictNullChecks</code> ومن غير الوسيط الثاني، النوع <code>number | undefined</code>. الوسيط الثاني <code>true</code> تأكيد بأن الطرق لا ترجع <code>undefined</code>.</p>
+<p>النقطة تعمل مع كائن متداخل معلن في الواجهة:</p>
+<pre><code class="language-ts">ConfigService&lt;{ database: { host: string } }&gt;
+this.config.get(&quot;database.host&quot;, { infer: true });
+</code></pre>
+<p>هذا تلميح ترجمة. التشغيل يبقى على ما خزّنه <code>forRoot</code> بعد المخطط. إن أعلنت <code>PORT: number</code> بينما Zod لم يُجبر القيمة، النوع يكذب وقت التشغيل. اجعل الواجهة مرآة لناتج <code>validationSchema</code>.</p>
+<p><code>ConfigType&lt;typeof databaseConfig&gt;</code> من الدرس السابق نوع لكائن نطاق واحد. <code>ConfigService&lt;...&gt;{}</code> نوع لخدمة القراءة العامة. استخدم الاثنين معًا: النطاق لخيارات القاعدة، والواجهة للمفاتيح المسطحة التي تُقرأ في <code>main.ts</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">واجهة EnvironmentVariables
+  PORT: number
+  DATABASE_URL: string
+        |
+ConfigService&lt;EnvironmentVariables, true&gt;
+        |
+get(&quot;PORT&quot;, { infer: true })  -&gt; number
+get(&quot;DATABSE_URL&quot;)            -&gt; خطأ ترجمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { ConfigService } from &quot;@nestjs/config&quot;;
+
+interface LibraryEnv {
+  PORT: number;
+  DATABASE_URL: string;
+  LIBRARY_NAME: string;
+}
+
+@Injectable()
+export class LibraryRuntime {
+  constructor(private readonly config: ConfigService&lt;LibraryEnv, true&gt;) {}
+
+  listenPort(): number {
+    return this.config.get(&quot;PORT&quot;, { infer: true });
+  }
+
+  databaseUrl(): string {
+    return this.config.get(&quot;DATABASE_URL&quot;, { infer: true });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>LibraryEnv</code> تذكر ثلاثة مفاتيح فقط. أي اسم آخر على <code>get</code> يرفضه المترجم مع <code>infer</code>. الوسيط <code>true</code> يناسب تطبيقًا يمرّر <code>validationSchema</code> يجعل هذه المفاتيح موجودة بعد الإقلاع. من غير المخطط، <code>true</code> وعد لا يفرضه التشغيل.</p>
+<p><code>LIBRARY_NAME</code> إن كان له <code>default</code> في Zod فهو نص مضمون. اربطه في الواجهة بالنوع الذي يرجع به المخطط.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>TypeScript يمحو الواجهة. لا يُضاف فحص مفاتيح عند التشغيل بسبب <code>ConfigService&lt;LibraryEnv&gt;</code>. الحماية التشغيلية تبقى <code>validationSchema</code> أو <code>getOrThrow</code>. <code>infer</code> يغيّر النوع المعروض في المحرر فقط، بقراءة حقل الواجهة المقابل للاسم الحرفي. اسم مبني في متغير <code>const key: string</code> يفقد الضيق، فتجنب المفاتيح الديناميكية على هذه الخدمة.</p>
+<p><code>ConfigType</code> يشتق حقول المصنع من نوع رجوع <code>registerAs</code>، لذلك تغيير المصنع يحدّث المستهلكين عند الترجمة.</p>
+<h2>مثال عملي</h2>
+<p>بعد مخطط Zod الذي يجبر <code>PORT</code> ويطلب <code>DATABASE_URL</code>، انسخ شكل الناتج إلى <code>LibraryEnv</code>. <code>LibraryRuntime</code> يقرأ المنفذ لـ <code>app.listen</code> وعنوان القاعدة لدرس Prisma التالي. محاولة <code>get(&quot;DB_URL&quot;, { infer: true })</code> تفشل قبل التشغيل لأن الاسم ليس في الواجهة. هذا أرخص من اكتشاف الخطأ على الخادم.</p>
+<p>لا تكرر الواجهة يدويًا إن استطعت اشتقاقها من <code>z.infer&lt;typeof envSchema&gt;</code>. إن بقي المخطط مصدر الحقيقة، الواجهة لا تُكتب مرتين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>واجهة تقول <code>PORT: number</code> ومخطط يترك <code>z.string()</code>.</li>
+<li><code>true</code> كوسيط ثانٍ من غير تحقق إقلاع، ثم قراءة مفتاح غائب.</li>
+<li>تمرير مفتاح في متغير واسع فيتعطل <code>infer</code>.</li>
+<li>خلط <code>ConfigType</code> لكائن النطاق مع واجهة مسطحة ثم طلب <code>database.host</code> من واجهة لا تعلن <code>database</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين كثرت المفاتيح وظهر خطأ إملائي في مراجعة أو في التشغيل. الواجهة رخيصة بعد أن يوجد مخطط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل وجود قائمة مفاتيح ثابتة. خدمة بثلاثة <code>get</code> واضحة لا تحتاج وسيطين نوعيين في أول يوم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>get&lt;string&gt;(&quot;PORT&quot;)</code></th>
+<th><code>get(&quot;PORT&quot;, { infer: true })</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أنت تختار النوع</td>
+<td>الواجهة تختار النوع</td>
+</tr>
+<tr>
+<td>المفتاح أي نص</td>
+<td>المفتاح حرفي معروف</td>
+</tr>
+<tr>
+<td>لا علاقة له بالمخطط</td>
+<td>صادق إن طابق المخطط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفعل <code>{ infer: true }</code> إن كانت <code>TIMEOUT</code> في الواجهة من نوع <code>string</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يجعل نوع القيمة المرجعة <code>string</code>، أو <code>string | undefined</code> إن لم تمرّر <code>true</code> وسيطًا ثانيًا للخدمة ومع <code>strictNullChecks</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي الوسيط النوعي ليوقف الإقلاع عند غياب <code>DATABASE_URL</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الواجهة تُمحى بعد الترجمة. الإيقاف يتم في <code>validationSchema</code> أو <code>getOrThrow</code> أثناء التشغيل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تتجنب كتابة <code>LibraryEnv</code> و <code>envSchema</code> بشكلين مختلفين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اجعل <code>z.infer&lt;typeof envSchema&gt;</code> نوع البيئة، واستخدمه وسيطًا لـ <code>ConfigService</code>. المخطط يبقى مصدر التحويل والوجود، والنوع يبقى ظلًا له.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما دور الوسيط النوعي الثاني <code>true</code>؟</li>
+<li>لماذا يكذب <code>PORT: number</code> إن لم يوجد <code>coerce</code>؟</li>
+<li>أين يعيش النوع المشتق من <code>registerAs</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Typed Config عقد ترجمة على أسماء المفاتيح وأنواعها. اربطه بمخطط التحقق حتى يطابق التشغيل ما يراه المترجم.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./08-for-root-async-preview.html">forRootAsync: أول استخدام حقيقي</a> يمرّر هذه القيم إلى وحدة تُبنى خياراتها أثناء الإقلاع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

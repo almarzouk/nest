@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Posts</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-posts-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Posts</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء مورد المنشور: إنشاء مقال لمؤلف موجود، وجلب مقال واحد، من غير قائمة بعد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>POST /posts</code> بجسم فيه <code>authorId</code> قد يشير إلى مستخدم محذوف. كتابة المنشور داخل <code>UsersController</code> تجعل مسار المستخدم يعرف أعمدة المقال. القائمة ستحتاج تصفية وترتيبًا، فتُفصل عن الإنشاء حتى لا يكبر المتحكم دفعة واحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>PostsService.create</code> تتأكد أن المؤلف موجود ثم تدرج <code>Post</code>. <code>findOne</code> تجلب المقال أو ترمي <code>404</code>. الحقول العامة: <code>id</code> و <code>title</code> و <code>body</code> و <code>published</code> و <code>authorId</code>. جسم الإنشاء لا يحدّد <code>published</code> في هذا الدرس: المقال يبدأ مسودة. النشر دالة <code>publish</code> لاحقًا أو حقل في تحديث منفصل.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@Controller(&quot;posts&quot;)
+export class PostsController {
+  constructor(private readonly posts: PostsService) {}
+
+  @Post()
+  create(@Body() dto: CreatePostDto) {
+    return this.posts.create(dto);
+  }
+
+  @Get(&quot;:id&quot;)
+  findOne(@Param(&quot;id&quot;, ParseIntPipe) id: number) {
+    return this.posts.findOne(id);
+  }
+}
+</code></pre>
+<p><code>CreatePostDto</code>: <code>title</code> نص غير فارغ، <code>body</code> نص، <code>authorId</code> عدد صحيح. الخدمة:</p>
+<pre><code class="language-ts">await this.users.findOne(input.authorId);
+return this.prisma.post.create({
+  data: {
+    title: input.title,
+    body: input.body,
+    authorId: input.authorId,
+    published: false,
+  },
+  select: { id: true, title: true, body: true, published: true, authorId: true },
+});
+</code></pre>
+<p><code>UsersModule</code> مصدّرة لـ <code>UsersService</code>، و <code>PostsModule</code> تستوردها مع <code>PrismaModule</code>.</p>
+<p>مسار بديل <code>GET /users/:userId/posts</code> قراءة فقط، ويمكن أن يعيش في <code>PostsController</code> بمسار أو في متحكم فرعي. الإنشاء يبقى <code>POST /posts</code> حتى يكون للمنشور معرّف مورد واضح. كلا التصميمين REST مقبول إن ثبتّ واحدًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreatePostDto
+   -&gt; UsersService.findOne(authorId)   404 إن غاب
+   -&gt; prisma.post.create               published false
+GET /posts/3
+   -&gt; findUnique أو 404
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, NotFoundException } from &quot;@nestjs/common&quot;;
+import { PrismaService } from &quot;../prisma/prisma.service.js&quot;;
+import { UsersService } from &quot;../users/users.service.js&quot;;
+
+@Injectable()
+export class PostsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly users: UsersService,
+  ) {}
+
+  async create(input: { title: string; body: string; authorId: number }) {
+    await this.users.findOne(input.authorId);
+    return this.prisma.post.create({
+      data: { ...input, published: false },
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        published: true,
+        authorId: true,
+      },
+    });
+  }
+
+  async findOne(id: number) {
+    const post = await this.prisma.post.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        body: true,
+        published: true,
+        authorId: true,
+      },
+    });
+    if (!post) {
+      throw new NotFoundException(&quot;Post not found&quot;);
+    }
+    return post;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>findOne</code> على المستخدم ترمي <code>404</code> برسالة المستخدم إن غاب المؤلف، قبل <code>INSERT</code>. يمكن تضييق الرسالة إلى «المؤلف غير موجود» بدالة <code>requireAuthor</code> حتى لا يظن العميل أن المسار خطأ. <code>published: false</code> قرار الخدمة لا حقل يثق بالعميل.</p>
+<p>انتشار الكائن <code>input</code> آمن هنا لأن النوع يضم ثلاثة حقول فقط. لو كان <code>dto</code> صنفًا فيه حقول زائدة، عدّد الحقول في <code>data</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>استعلامان في الإنشاء: قراءة مؤلف ثم إدراج. هذا أوضح من الاعتماد على خطأ المفتاح الأجنبي وحده، ويثمن رحلة إضافية. تحت تزامن حذف المؤلف بين الخطوتين، القيد ما زال يرفض الإدراج. امسك ذلك الخطأ إن ظهر وحوّله إلى <code>404</code> أو <code>409</code> حسب ما تعد به.</p>
+<p><code>GET</code> لا يكتب. إعادة الطلب لا تغيّر صفًا.</p>
+<h2>مثال عملي</h2>
+<p>أنشئ مستخدم <code>1</code> ثم <code>POST /posts</code> بعنوان <code>Nest modules</code> و <code>authorId: 1</code>. الاستجابة <code>201</code> من <code>@Post</code> افتراضيًا في Nest، وفيها <code>published: false</code>. <code>authorId: 404040</code> يعيد <code>404</code> من خدمة المستخدم. <code>GET /posts/1</code> يعيد المقال. القائمة العامة تأتي في درس الترقيم على نفس الخدمة بدالة <code>list</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قبول <code>published: true</code> من الجسم في مسار المسودة.</li>
+<li>SQL المنشور داخل <code>UsersController</code>.</li>
+<li>نسيان استيراد <code>UsersModule</code>.</li>
+<li>إرجاع تعليقات المقال في كل <code>GET</code> قبل أن يوجد عقد لذلك.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل مقال له مؤلف صف في <code>User</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لنشر عام بلا مسودة. أضف عملية نشر صريحة حين يكون للفعل معنى مختلف عن التعديل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>فحص المؤلف في الخدمة</th>
+<th>انتظار خطأ القاعدة فقط</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>رسالة يمكن تسميتها</td>
+<td><code>P2003</code> خام إن لم تترجمه</td>
+</tr>
+<tr>
+<td>استعلام إضافي</td>
+<td>رحلة واحدة قد تفشل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يضبط <code>published</code> عند الإنشاء؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>PostsService</code> تضعه <code>false</code>. العميل لا يرسله في <code>CreatePostDto</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُدرج المقالات من <code>UsersService.create</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إنشاء الحساب ليس إنشاء مقال. كل مورد يبقى في وحدته، والرابط <code>authorId</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>احذف المستخدم بين <code>findOne</code> و <code>create</code>. أي حاجز يمنع مقالًا يتيمًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المفتاح الأجنبي <code>authorId</code>. ترجم خطأ Prisma إن وصل إلى مسار شائع، ولا تعتمد على النافذة الزمنية وحدها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما حقول الاستجابة للمنشور؟</li>
+<li>لماذا تُستورد <code>UsersModule</code>؟</li>
+<li>ماذا يرجع مسار جلب مقال غير موجود؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المنشور مورد في وحدته، المؤلف يُفحص عبر خدمة المستخدمين، والمسودة قرار خدمة لا حقل حر في الجسم.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-comments-module.html">Comments</a> يعلّق على منشور موجود.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

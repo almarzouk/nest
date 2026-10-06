@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ملف ثابت مقابل API</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-static-vs-api.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ملف ثابت مقابل API</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>الفصل بين بايتات جاهزة على القرص (أصل عام) وبين مسار يسأل المجال عن كتاب أو صلاحية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد رفع الغلاف يُغري وضع مجلد <code>var/covers</code> تحت خادم ملفات ثابت. عندها يكفي معرفة الاسم لفتح الصورة، و <code>GET /books/:id/cover</code> الذي يفحص الصف لم يعد الباب. في الجهة الأخرى، كتابة متحكم لكل <code>app.js</code> و <code>favicon.ico</code> تعيد اختراع <code>express.static</code> بلا داعٍ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الملف الثابت لا يتغير بسبب من طلبه: شعار، CSS، بناء واجهة نُشر مع الإصدار. الـ API يحسب الرد: JSON كتاب، أو غلاف بعد التحقق من الصف. Nest تخدم النوع الأول بـ <code>ServeStaticModule</code> أو <code>useStaticAssets</code>. النوع الثاني يبقى متحكمًا.</p>
+<h2>التعريف التقني</h2>
+<p>حزمة <code>@nestjs/serve-static</code> مذكورة لملفات مثل تطبيق صفحة واحدة. إن كان المطلوب أصول واجهة MVC أو صورًا مرفقة بالمشروع، التوثيق يحيل إلى <code>useStaticAssets()</code> على تطبيق Express. كلاهما يقرأ من مجلد ولا يمر على خدمة كتب.</p>
+<p>خصائص تميّز الأصل العام:</p>
+<ul>
+<li>العنوان مسار ملف، مثل <code>/assets/logo.svg</code>.</li>
+<li>لا <code>Authorization</code> خاص بكل مستخدم، ما لم تضف وسيطًا بنفسك.</li>
+<li>التخزين المؤقت في المتصفح قرار <code>Cache-Control</code>، لا قرار قاعدة.</li>
+<li>غياب الملف <code>404</code> من الطبقة الثابتة، لا <code>NotFoundException</code> من خدمة.</li>
+</ul>
+<p>الغلاف الخاص يفشل الاختبارات الثلاثة: الاسم مفتاح في جدول، والاطلاع قد يُمنع، والمسار يُبنى في الخدمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">/assets/logo.svg          قرص عام  -&gt;  ServeStaticModule
+/books/42                 قاعدة    -&gt;  BooksController
+/books/42/cover           قرص بعد صف  -&gt;  StreamableFile
+</code></pre>
+<p>ثلاثة أبواب. الخلط هو فتح الباب الأول على مجلد الباب الثالث.</p>
+<h2>أبسط مثال</h2>
+<p>شعار المتجر ملف في المستودع. لا خدمة له.</p>
+<pre><code class="language-text">public/logo.svg
+</code></pre>
+<p>عنوانه بعد ضبط <code>serveRoot: &#39;/assets&#39;</code> و <code>rootPath</code> على <code>public</code>:</p>
+<pre><code class="language-text">GET /assets/logo.svg
+</code></pre>
+<p>غلاف الكتاب عنوان آخر، حتى لو كانت البايتات على القرص أيضًا:</p>
+<pre><code class="language-text">GET /books/42/cover
+</code></pre>
+<p>الثاني يمر على <code>CoversService.resolve</code> ثم <code>StreamableFile</code>. الأول لا يعرف رقم 42.</p>
+<h2>شرح المثال</h2>
+<p><code>logo.svg</code> يتغير عندما تنشر إصدارًا جديدًا، لا عندما يشتري أحد كتابًا. يمكن للمتصفح والـ CDN تخزينه طويلًا. غلاف الكتاب يتغير عندما يستبدل المالك الصورة، وقد يكون الكتاب غير منشور. خادم الملفات الثابت لا يفتح جدول <code>Book</code> ليتأكد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>وسيط الملفات الثابتة يطابق المسار بملف تحت الجذر. إن وُجد، يكتب الترويسات ويضخ الملف. إن لم يوجد، إما يمرر الطلب لمن بعده (<code>fallthrough</code>) وإما يُنهي بـ <code>404</code>. متحكمات Nest تُسجَّل على المسارات التي أعلنتها. طلب <code>/books/42</code> لا يبحث عن ملف اسمه <code>books/42</code> إلا إذا كان جذر الملفات هو جذر الموقع بلا استثناء. ذلك باب درس الاستضافة لا هذا التمييز.</p>
+<h2>مثال عملي</h2>
+<p>صناديق مجلدات النشر:</p>
+<pre><code class="language-text">public/            logo.svg  main.css     عام مع الإصدار
+client/dist/       index.html وأصول الواجهة
+var/covers/        مفاتيح UUID               خلف المتحكم فقط
+</code></pre>
+<p>انسخ إلى <code>public</code> ما يقبل أن يراه أي عميل بلا جلسة. اترك <code>var/covers</code> خارج <code>rootPath</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>خدمة الغلاف عبر URL مباشر تحت <code>/uploads</code>.</li>
+<li>متحكم يعيد <code>sendFile</code> لكل CSS.</li>
+<li>افتراض أن الملف الثابت «آمن» لأن الاسم UUID. السرية قرار باب، لا قرار عشوائية الاسم.</li>
+<li>وضع أسرار <code>.env</code> داخل مجلد يُخدم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>هذا التمييز قبل إضافة الحزمة: إن كان الرد يعتمد على صف أو مستخدم فهو API. إن كان ملف إصدار فهو ثابت.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخدم بناء الواجهة من متحكم JSON، ولا تخدم إيصال الدفع من مجلد عام.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ملف ثابت</th>
+<th>مسار API</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المصدر</td>
+<td>قرص النشر</td>
+<td>خدمة ومجال</td>
+</tr>
+<tr>
+<td>الاختلاف بين المستخدمين</td>
+<td>لا</td>
+<td>غالبًا نعم</td>
+</tr>
+<tr>
+<td>أداة Nest</td>
+<td><code>ServeStaticModule</code> أو <code>useStaticAssets</code></td>
+<td><code>@Controller</code></td>
+</tr>
+<tr>
+<td>مثال المتجر</td>
+<td><code>/assets/logo.svg</code></td>
+<td><code>/books/42</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يعيش <code>logo.svg</code> الذي يراه كل زائر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في مجلد عام مثل <code>public</code>، ويُخدم كملف ثابت لا عبر <code>BooksService</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الغلاف على القرص. لماذا يبقى <code>GET /books/:id/cover</code> مسار API؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الخدمة تترجم معرف الكتاب إلى مفتاح مخزّن بعد التحقق من الصف. المجلد العام يتخطى هذا الباب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى يصبح UUID في اسم الملف غير كافٍ كحماية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يُعرض المجلد نفسه على الإنترنت. معرفة الرابط أو تسريبه يفتح الملف بلا المرور على الصلاحية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما سؤال «هل الرد يعتمد على صف؟».</li>
+<li>لماذا <code>var/covers</code> خارج <code>rootPath</code>؟</li>
+<li>ماذا يخدم <code>useStaticAssets</code> مقابل متحكم لكل أصل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الثابت بايتات إصدار بلا مجال. الـ API يحسب الرد. القرص وحده لا يجعل الغلاف ملفًا عامًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>تسجيل <code>ServeStaticModule.forRoot</code>: <code>rootPath</code> و <code>serveRoot</code> وخيارات <code>express.static</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Serve Static: <a href="https://github.com/nestjs/serve-static">https://github.com/nestjs/serve-static</a></li>
+<li>NestJS — File upload (التنزيل عبر المتحكم): <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

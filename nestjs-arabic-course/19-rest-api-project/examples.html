@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>مشروع المنشورات على Prisma. المسارات الثلاثة تعمل معًا. لا مصادقة في هذه الأمثلة.</p>
+<h2>مثال 1 — مستخدم ثم مقال ثم تعليق</h2>
+<pre><code class="language-http">POST /users
+{&quot;email&quot;:&quot;ada@example.com&quot;,&quot;name&quot;:&quot;Ada&quot;,&quot;password&quot;:&quot;correct-horse&quot;}
+</code></pre>
+<p>الاستجابة بلا <code>passwordHash</code>:</p>
+<pre><code class="language-json">{&quot;id&quot;:1,&quot;email&quot;:&quot;ada@example.com&quot;,&quot;name&quot;:&quot;Ada&quot;}
+</code></pre>
+<pre><code class="language-http">POST /posts
+{&quot;title&quot;:&quot;حدود الوحدة&quot;,&quot;body&quot;:&quot;كل مورد في وحدته&quot;,&quot;authorId&quot;:1}
+</code></pre>
+<pre><code class="language-json">{&quot;id&quot;:3,&quot;title&quot;:&quot;حدود الوحدة&quot;,&quot;body&quot;:&quot;كل مورد في وحدته&quot;,&quot;published&quot;:false,&quot;authorId&quot;:1}
+</code></pre>
+<pre><code class="language-http">POST /posts/3/comments
+{&quot;body&quot;:&quot;المسودة واضحة&quot;}
+</code></pre>
+<p><code>authorId</code> غائب يعيد <code>404</code> قبل الإدراج. تعليق على <code>/posts/999/comments</code> يعيد <code>404</code>.</p>
+<h2>مثال 2 — قائمة</h2>
+<pre><code class="language-http">GET /posts?published=false&amp;authorId=1&amp;sort=title&amp;order=asc&amp;page=1&amp;pageSize=20
+</code></pre>
+<p><code>where</code> يجمع المسودة والمؤلف. الترتيب عنوان ثم <code>id</code>. <code>pageSize=500</code> يعيد <code>400</code>. <code>&quot;published&quot;:&quot;false&quot;</code> كنص استعلام يجب أن يبقى <code>false</code> لا <code>true</code>.</p>
+<h2>مثال 3 — أخطاء</h2>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>الرمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بريد مكرر</td>
+<td><code>409</code></td>
+</tr>
+<tr>
+<td>عنوان مقال فارغ</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>GET /posts/404040</code></td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>sort=body</code></td>
+<td><code>400</code></td>
+</tr>
+</tbody></table>
+<p>انقطاع القاعدة يبقى <code>500</code> بلا نص SQL في الجسم.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>ثلاث وحدات، و <code>PrismaModule</code> مشتركة.</li>
+<li><code>select</code> بلا <code>passwordHash</code>.</li>
+<li>الأنبوب العام يعمل على الجسم وعلى استعلام القائمة.</li>
+<li>لا حارس هوية بعد، فلا يُنشر المشروع كما هو خارج جهازك.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

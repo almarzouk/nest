@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>أربعة مسارات على نفس التطبيق: بناء يُشغَّل، بيئة تُحقَّق، سجل بلا سر، ووكيل ينهي TLS. الاستيراد في TypeScript ينتهي بـ <code>.js</code>.</p>
+<h2>بناء ثم تشغيل</h2>
+<pre><code class="language-bash">npm ci
+npx prisma generate
+npm run build
+node dist/main.js
+</code></pre>
+<p><code>start:dev</code> يبقى على جهازك. الصورة والأمر في المنصة يشيران إلى <code>dist/main.js</code>. لا تُودِع مجلد <code>dist</code> في Git.</p>
+<h2>إقلاع يقرأ البيئة ويرفض الناقص</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { Logger } from &#39;@nestjs/common&#39;;
+import helmet from &#39;helmet&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap(): Promise&lt;void&gt; {
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  app.useLogger(new Logger());
+  app.use(helmet());
+  app.enableCors({ origin: [&#39;https://shop.example&#39;] });
+  app.enableShutdownHooks();
+  app.getHttpAdapter().getInstance().set(&#39;trust proxy&#39;, 1);
+  await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+}
+
+void bootstrap();
+</code></pre>
+<p><code>ConfigModule.forRoot</code> في الجذر يتحقق من <code>DATABASE_URL</code> قبل أن يصل الطلب. في الإنتاج <code>ignoreEnvFile: true</code> حتى لا يُقرأ <code>.env</code> نُسخ بالخطأ داخل الصورة. <code>.env.example</code> بلا كلمات سر.</p>
+<h2>سجل عند الفشل</h2>
+<pre><code class="language-ts">this.logger.error(`database unreachable requestId=${requestId}`);
+</code></pre>
+<p>لا تطبع <code>DATABASE_URL</code> ولا جسم تسجيل الدخول. المكدس في السجل على الخادم. العميل يرى رسالة عامة ورمز الحالة.</p>
+<h2>Nginx أمام المنفذ الداخلي</h2>
+<pre><code class="language-nginx">server {
+  listen 443 ssl;
+  server_name shop.example;
+  client_max_body_size 10m;
+
+  location / {
+    proxy_pass http://api:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+
+  location /health/ {
+    proxy_pass http://api:3000;
+    proxy_set_header Host $host;
+    add_header Cache-Control &quot;no-store&quot;;
+  }
+}
+</code></pre>
+<p>الضغط في <code>gzip</code> هنا أو عبر <code>compression</code> على محول Express، لا الاثنين. اسم <code>api</code> هو خدمة Compose لا <code>localhost</code>.</p>
+<h2>ماذا تتأكد منه قبل أول نشر</h2>
+<ol>
+<li>الأمر <code>node dist/main.js</code> والمستخدم ليس root داخل الصورة.</li>
+<li><code>enableShutdownHooks()</code> و <code>onModuleDestroy</code> يقطع Prisma و Redis.</li>
+<li>أصل CORS واحد تعرفه، و <code>ValidationPipe</code> مع <code>whitelist</code>.</li>
+<li><code>trust proxy</code> يساوي عدد الوكلاء الفعلي، هنا <code>1</code>.</li>
+<li>نسختان أو أكثر لا تشاركان جلسة في مصفوفة داخل العملية.</li>
+<li>مسار الصحة بلا كاش في الوكيل، والفصل التالي يفصل الحياة عن الجاهزية.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

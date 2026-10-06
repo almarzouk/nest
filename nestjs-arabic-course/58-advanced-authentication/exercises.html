@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — سمِّ الرمز</h2>
+<ol>
+<li>رمز في عنوان العودة يعيش ثواني ويُستبدل على الخادم.</li>
+<li>JWT من Google فيه <code>sub</code>.</li>
+<li>سر لجوال رف يُستهلك عند <code>refresh</code>.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 authorization code. 2 ID token. 3 refresh token الخاص برف، وليس access token الخاص بـ Google.</p>
+</details>
+
+<h2>تمرين متوسط — بريد غير مثبت</h2>
+<p><code>reader@raf.example</code> مسجّل بكلمة مرور ولم يُتحقق من بريده. دخل صاحبه عبر Google والبريد عند Google مثبت. ما قرار <code>resolveUser</code>، وما المسار الذي يعلّق Google بالحساب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يرفض الدمج (<code>null</code>) حتى لا يلتصق Google بحساب أنشأه من عرف البريد أولًا. المسار الصحيح: دخول بكلمة المرور، ثم <code>login?link=true</code> من تلك الجلسة. إن كان <code>sub</code> مربوطًا بغيره فـ 409.</p>
+</details>
+
+<h2>تمرين متقدم — هاتف مسروق بعد تدوير</h2>
+<p>السارق جدّد مرة فصار يملك <code>R1</code>، والتطبيق الشرعي أعاد إرسال <code>R0</code>. ماذا يحدث، وماذا يفعل صاحب الحساب بعد ذلك إن نجا <code>R1</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إعادة <code>R0</code> المستهلك تبطل العائلة كلها فيسقط <code>R1</code> أيضًا. إن لم تحدث الإعادة وبقي <code>R1</code> عند السارق، صاحب الحساب يستدعي الإبطال على العائلة أو خروج كل الأجهزة حتى لا يستمر التجديد، وينتظر انتهاء access القصير أو يفرض فحصًا فوريًا إن كانت السياسة تطلب ذلك.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

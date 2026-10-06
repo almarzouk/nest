@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لمحة: Schema Objects و Standard Schema</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-schema-objects-preview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لمحة: Schema Objects و Standard Schema</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية شكل ثانٍ للعقد: كائن مخطط يصف القيم ويُستنتج منه نوع TypeScript، من غير فتح الأنبوب الذي يفحصه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد أن صار الصنف مرجعًا، يظهر في التوثيق مسار آخر: مخطط Zod أو Valibot أو ArkType. من يقرأ الفصل التالي من غير هذه اللمحة يظن أن المخطط يستبدل الأصناف أو أن <code>class-validator</code> أُلغي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المخطط قيمة وقت تشغيل تصف الشكل، والنوع يُشتق منها بـ <code>z.infer</code>. الفحص يتم لاحقًا بـ <code>StandardSchemaValidationPipe</code> حين تعلّق المخطط على <code>@Body({ schema })</code>. هذا الدرس يكتب المخطط فقط ويقارنه بالصنف.</p>
+<h2>التعريف التقني</h2>
+<p>Standard Schema مواصفة صغيرة يتفق عليها مكتبات المخططات. Nest 12 يوثّق <code>StandardSchemaValidationPipe</code> لمخطط يطبّقها. الأمثلة الرسمية تستخدم Zod، وتذكر Valibot و ArkType.</p>
+<p>الصنف بزينة و المخطط كائن طريقتان لعقد الدخل. الصفحة تقول إن الأنبوبين يمكن تسجيلهما معًا: <code>ValidationPipe</code> يفحص معاملًا نوعه صنف، و <code>StandardSchemaValidationPipe</code> يفحص معاملًا يعلن مخططًا. لا ترحيل إجباري.</p>
+<p>في هذا الدرس لا نضع <code>schema</code> على <code>@Body</code>. ذلك أول درس تفصيلي في الفصل التالي. هنا شكل المخطط بجانب الصنف حتى ترى أن مصدر الحقيقة واحد في كل أسلوب، لا الاثنان للعملية نفسها.</p>
+<p><code>class-validator</code> تبقى مدعومة. المخطط ليس بديلًا فرضته الصفحة عن حذف الزينة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">أسلوب الصنف     CreateMemberDto + زينة     يفحصه ValidationPipe
+أسلوب المخطط    createMemberSchema         يفحصه StandardSchemaValidationPipe لاحقًا
+العملية الواحدة تختار أسلوبًا واحدًا حتى لا تزدوج القاعدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { z } from &#39;zod&#39;;
+
+export const createMemberSchema = z.object({
+  fullName: z.string().min(3),
+  email: z.email(),
+  city: z.string().optional(),
+});
+
+export type CreateMemberInput = z.infer&lt;typeof createMemberSchema&gt;;
+</code></pre>
+<p>هذا الملف لا يستورد <code>class-validator</code>. النوع <code>CreateMemberInput</code> يُحسب من المخطط. إن غيّرت <code>min(3)</code> يتغير النوع والاستدلال معًا عند إعادة البناء، والفحص الحقيقي يتم حين يمر الطلب على الأنبوب المناسب لاحقًا.</p>
+<p>الصنف المكافئ ما زال صالحًا في ملف آخر لعملية أخرى:</p>
+<pre><code class="language-ts">export class CreateMemberDto {
+  fullName: string;
+  email: string;
+}
+</code></pre>
+<p>لا تملأ الزينة والمخطط معًا لنفس الـ <code>POST</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>z.object</code> قيمة. هي العقد وقت التشغيل في أسلوب المخططات.</li>
+<li><code>z.infer</code> نوع مترجم. هو ليس صنفًا، لذلك <code>ValidationPipe</code> لا يفحصه. هذا مقصود.</li>
+<li><code>z.email()</code> شكل يظهر في توثيق Nest الحالي لـ Zod.</li>
+<li><code>city</code> اختياري على المخطط يقابل <code>@IsOptional()</code> على الصنف، من غير أن تخلط الأسلوبين في عملية واحدة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>من غير أنبوب مخطط، <code>createMemberSchema</code> مجرد قيمة في الذاكرة. طلب HTTP لا يمر عليها وحدها. تعليقها على المعامل هو ما يفعله الفصل التالي عبر خيار <code>schema</code> في <code>@Body()</code> أو <code>@Query()</code> أو <code>@Param()</code>.</p>
+<p>المخطط يستطيع وصف التحويل، مثل عدد من نص استعلام، داخل تعريف الحقل. ذلك أيضًا سلوك الأنبوب اللاحق لا سلوك <code>z.infer</code>.</p>
+<p><code>PartialType</code> على الأصناف يقابله في Zod <code>schema.partial()</code> كما ستذكر صفحة التحقق. اللمحة تتوقف عند وجود هذه المراسلة حتى لا تُفاجأ في الفصل التالي.</p>
+<p>حقول غير المعرّفة في <code>z.object</code> تُسقط افتراضيًا في Zod، وهو شبه <code>whitelist</code>. الرفض الصريح شكل آخر من المخطط مثل <code>strictObject</code>. القرار داخل المخطط لا داخل خيار أنبوب <code>forbidNonWhitelisted</code>. ستقارن ذلك عند دراسة الأنبوب.</p>
+<h2>مثال عملي</h2>
+<p>فريق النادي يبقي تسجيل العضو على <code>CreateMemberDto</code> لأن Swagger CLI عندهم يقرأ الزينة. مسار دعوة داخلي جديد يُكتب <code>inviteSchema</code> بـ Zod لأن المؤلف يريد سلسلة <code>min</code> و <code>email</code> في قيمة واحدة. المساران يتعايشان. لا يُنقل التسجيل القديم في الأسبوع نفسه. الأنبوب العام للمخططات، حين يُضاف، يمرر معامل الصنف كما هو لأن ذلك المعامل لا يعلن <code>schema</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حذف <code>class-validator</code> من المشروع لأن مخططًا واحدًا جُرّب.</li>
+<li>وضع <code>@IsEmail()</code> و <code>z.email()</code> على العملية نفسها فيصيران قاعدتين قد تفترقان.</li>
+<li>تمرير <code>createMemberSchema</code> إلى <code>ValidationPipe</code>. ذلك الأنبوب يقرأ أصنافًا مزيّنة.</li>
+<li>شرح <code>StandardSchemaValidationPipe</code> كاملًا هنا. العنوان لمحة، والتسجيل والأخطاء في الفصل 12.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تريد أن ترى شكل المخطط قبل فصل التحقق، أو حين تختار أسلوب عملية جديدة من غير أن تمس العقود الحالية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدل عقد إنتاج عامل في هذا الدرس. لا تكتب الأنبوب العام هنا. لا تضع المخطط على صنف الرد الذي تبنيه يدويًا ما لم يكن التوثيق اللاحق يطلب ذلك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>صنف بزينة</th>
+<th>كائن مخطط</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وقت التشغيل</td>
+<td>دالة بناء</td>
+<td>قيمة <code>z.object</code></td>
+</tr>
+<tr>
+<td>النوع</td>
+<td>الحقول على الصنف</td>
+<td><code>z.infer</code></td>
+</tr>
+<tr>
+<td>الفحص</td>
+<td><code>ValidationPipe</code></td>
+<td>أنبوب المخطط في الفصل التالي</td>
+</tr>
+<tr>
+<td>اشتقاق التحديث</td>
+<td><code>PartialType</code></td>
+<td><code>.partial()</code> على المخطط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>z.infer</code> ينتج صنفًا يفحصه <code>ValidationPipe</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. ينتج نوعًا مترجمًا. الفحص الذي يطابق المخطط أنبوب Standard Schema، لا أنبوب الزينة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يمكن أن يبقى <code>CreateMemberDto</code> في المشروع نفسه مع <code>inviteSchema</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل عملية تختار مصدر حقيقة واحدًا. الأنبوبان، حين يُسجَّلان معًا، يفحص كل منهما ما يخصه. الصفحة لا تطلب ترحيلًا شاملًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>زميل وضع قاعدة الطول في الزينة وفي <code>z.string().min(8)</code> على المسار نفسه ثم خفّض واحدة منهما. ما العطل الذي تتوقعه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قاعدتان قد تفترقان: طلب يمر في أسلوب ويفشل في الآخر حسب الأنبوب الذي يعمل. العملية الواحدة تُبقي مصدرًا واحدًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يبقى وقت التشغيل في أسلوب Zod: النوع أم المخطط؟</li>
+<li>هل <code>class-validator</code> ملغاة؟</li>
+<li>أي أنبوب يفحص المخطط، وفي أي فصل؟</li>
+<li>لماذا لا تزدوج القاعدة على <code>POST</code> واحد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المخطط كائن عقد، والنوع يُشتق منه. الأصناف المزيّنة تبقى مسارًا مدعومًا. فحص المخطط وتسجيله على <code>@Body({ schema })</code> يبدأ في فصل التحقق، لا في هذه اللمحة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تضع عقد دخل وعقد خرج بجانب مخطط لم يُربَط بعد، ثم التمارين، ثم فصل التحقق حيث تُفتح خيارات الأنبوب.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

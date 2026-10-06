@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Validation كطبقة أمن</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-validation-as-security.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Validation كطبقة أمن</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل <code>ValidationPipe</code> حدًا يرفض الشكل الزائد والحقول التي لا يملك العميل حق كتابتها، مع معرفة ما لا يفحصه الأنبوب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>POST /users</code> يقبل الجسم كاملًا. عميل يضيف <code>role: &quot;editor&quot;</code> أو <code>passwordHash</code> فيُحفظان إن نسخ المعالج <code>dto</code> إلى <code>create</code>. هذا تعيين جماعي: حقل لم تصممه في العقد يغيّر صلاحية أو يكتب تجزئة جاهزة. أنبوب بلا <code>whitelist</code> يمرّر الحقول الزائدة إلى الخدمة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الأنبوب يتحقق من DTO قبل المعالج. <code>whitelist</code> يحذف ما لا مزخرف له. <code>forbidNonWhitelisted</code> يرفض الطلب بدل الحذف الصامت. الحقول الحساسة لا تُعلن في DTO الإنشاء أصلًا: الدور يحدده الخادم، والتجزئة ناتج <code>PasswordHasher</code>. الأنبوب لا يهرّب HTML ولا يربط معاملات SQL ولا يثبت الهوية.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }),
+);
+</code></pre>
+<p>من صفحة التحقق. DTO التسجيل:</p>
+<pre><code class="language-ts">import { IsEmail, IsString, MaxLength, MinLength } from &quot;class-validator&quot;;
+
+export class RegisterDto {
+  @IsEmail()
+  @MaxLength(254)
+  email: string;
+
+  @IsString()
+  @MinLength(10)
+  @MaxLength(200)
+  password: string;
+}
+</code></pre>
+<p>لا <code>role</code> ولا <code>passwordHash</code> ولا <code>id</code>. الخدمة:</p>
+<pre><code class="language-ts">const passwordHash = await this.passwordHasher.hash(dto.password);
+return this.prisma.user.create({
+  data: { email: dto.email, passwordHash, role: &quot;reader&quot; },
+});
+</code></pre>
+<p><code>role: &quot;reader&quot;</code> ثابت هنا أو من قاعدة دعوة، لا من الجسم. تحديث الدور مسار آخر بصلاحية <code>editor</code> أو إدارة، مع سياسة.</p>
+<p><code>transform: true</code> يحوّل الاستعلام النصي إلى أرقام حين يوجد <code>@Type</code>. من غير ذلك قد تفشل مقارنة <code>page</code> أو تُمرَّر كنص إلى Prisma.</p>
+<p>الحد الأقصى للطول يحد الذاكرة. <code>PasswordHasher.hash</code> يرفض الفارغ وما فوق 4KiB بـ <code>RangeError</code>. الحد في DTO أوضح للعميل كـ <code>400</code> قبل التجزئة.</p>
+<p>فشل الأنبوب <code>400</code>. ذلك ليس <code>401</code> ولا <code>403</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">جسم JSON
+  pipe: شكل مسموح فقط
+  خدمة: تقرر الدور والتجزئة
+  سياسة: هل هذا المستخدم يكتب
+  SQL: معاملات منفصلة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Post(&quot;users&quot;)
+@Public()
+register(@Body() dto: RegisterDto) {
+  return this.users.register(dto);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>@Public()</code> يعني أن التسجيل بلا جلسة، لا أن كل حقل مباح. الأنبوب يرفض <code>{ email, password, role: &quot;editor&quot; }</code> لأن <code>role</code> غير مزخرف و <code>forbidNonWhitelisted</code> مفعّل. مع <code>whitelist</code> وحده قد يُحذف <code>role</code> بصمت ويعود <code>201</code>، فيظن العميل أنه صار محررًا. الرفض الصريح أوضح.</p>
+<p><code>password</code> لا يُحفظ. الخدمة تجزئ ثم تنسى النص. الاستجابة لا تعيد التجزئة، والتفاصيل في فصل التسلسل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأنبوب يقرأ النوع من <code>@Body()</code> عبر <code>class-transformer</code> ثم <code>class-validator</code>. الحقول بلا مزخرفات زائدة. عند المنع يُرمى <code>BadRequestException</code> قبل المتحكم. الحراس يعملون حسب ترتيب Nest. إن سبق الحارس الأنبوب، قد تُرفض الهوية قبل الشكل. الشكل الزائد ما زال لا يصل إلى Prisma.</p>
+<p>الأنبوب لا يرى سلسلة تُبنى لاحقًا في <code>$queryRawUnsafe</code>. ولا يغيّر <code>title</code> إلى نص مهرَّب.</p>
+<p>مخطط Zod على <code>@Body({ schema })</code> مسار بديل موثّق للتحقق. الفكرة واحدة: عقد إدخال ضيق. هذه الدورة تبقي <code>class-validator</code> على موارد المقالات.</p>
+<h2>مثال عملي</h2>
+<p>اختبار <code>POST /users</code> بجسم فيه <code>role</code> يتوقع <code>400</code> وغياب صف محرر. اختبار ثانٍ بجسم نظيف يتوقع <code>role</code> في القاعدة <code>reader</code> حتى لو أُعيد إرسال الطلب. اختبار ثالث يمرّر <code>password</code> بطول 3 ويتوقع <code>400</code> قبل <code>hash</code>. لا تختبر الأمن بتعطيل الأنبوب في e2e.</p>
+<p>حدّث <code>CreatePostDto</code> بلا <code>authorId</code>، كما في فصل المستخدم الحالي. المؤلف من <code>@CurrentUser()</code>. وجود <code>authorId</code> في DTO يعيد التعيين الجماعي حتى مع whitelist، لأن الحقل «مسموح» بالخطأ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>whitelist</code> بلا <code>forbid</code> ثم تجاهل أن الحقول اختفت بصمت في عميل قديم.</li>
+<li>نسخ <code>...dto</code> إلى <code>data</code> وفيها حقل نُسي.</li>
+<li>اعتبار <code>400</code> إثباتًا أن المستخدم موثّق.</li>
+<li>الاعتماد على الأنبوب ضد SQL أو XSS.</li>
+<li>إيقاف الأنبوب على مسار webhook بلا عقد بديل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل جسم واستعلام عام يدخله عميل، كحد أول للشكل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كسياسة ملكية المقال. الأنبوب لا يعرف هل Ada تملك <code>post/3</code>. ذلك <code>@Can</code> أو <code>authorize</code>. ولا كتشفير لكلمة المرور.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>DTO التسجيل</th>
+<th>جسم حر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بريد وكلمة فقط</td>
+<td><code>role</code> يصل إلى الخدمة</td>
+</tr>
+<tr>
+<td><code>400</code> عند حقل زائد</td>
+<td>التعيين الجماعي</td>
+</tr>
+<tr>
+<td>الدور في الخدمة</td>
+<td>الدور من العميل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيار يرفض الحقل غير المزخرف بدل حذفه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>forbidNonWhitelisted: true</code> مع <code>whitelist: true</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يبقى <code>authorId</code> في <code>CreatePostDto</code> مشكلة حتى مع الأنبوب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحقل المزخرف مسموح. العميل يختار المؤلف. المصدر الصحيح <code>@CurrentUser()</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>التحقق نجح و <code>title</code> سليم، ثم الخدمة تبني SQL بلصق <code>title</code>. أي طبقة فشلت؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طبقة الاستعلام. الأنبوب فحص الشكل فقط. القيمة تذهب بمعامل أو <code>findMany</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>whitelist</code>؟</li>
+<li>من يكتب <code>role</code> عند التسجيل؟</li>
+<li>هل <code>400</code> يعني فشل الهوية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأنبوب يضيق العقد ويرفض التعيين الجماعي للحقول التي لم تعلنها. الدور والتجزئة وشرط الملكية تبقى في الخدمة والسياسة. التهريب ومعاملات SQL تبقى في طبقاتهما.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./08-encryption-and-hashing.html">Encryption و Hashing</a> متى تُستعاد البيانات ومتى تُقارن فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

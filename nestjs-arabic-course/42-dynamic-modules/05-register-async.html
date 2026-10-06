@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>registerAsync</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-register-async.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>registerAsync</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمرير خيار <code>register</code> عندما يُبنى الخيار من مزود آخر، بمصنع أو صنف <code>create</code>، مع إبقاء التكوين عند المستورد لا في الجذر فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سابقة المعرف ليست ثابتة في المصدر وقد تأتي من <code>ConfigService</code> لهذه الميزة فقط: <code>USER_ID_PREFIX</code> مقابل <code>ORDER_ID_PREFIX</code>. <code>register({ prefix })</code> يحتاج القيمة الآن. <code>registerAsync</code> ينتظر المصنع كما يفعل <code>forRootAsync</code>، والفرق في الاصطلاح: النداء يبقى داخل وحدة الميزة لأن الخيار ليس إعداد التطبيق كله.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>registerAsync</code> يستقبل كائنًا فيه <code>imports</code> وواحد من <code>useFactory</code> أو <code>useClass</code> أو <code>useExisting</code>. المصنع يعيد خيارات هذه الوحدة. الإطار يحقن ما في <code>inject</code> بالترتيب وينتظر الوعد. الناتج يُسجل رمزًا تقرأه الخدمة.</p>
+<h2>التعريف التقني</h2>
+<p>حقول التوثيق لـ <code>registerAsync</code>:</p>
+<ul>
+<li><code>imports</code>: وحدات يرى المصنع أو صنف الخيارات مصدَّراتها.</li>
+<li><code>useFactory</code>: يعيد الخيارات أو <code>Promise</code>.</li>
+<li><code>inject</code>: اعتماديات المصنع بالترتيب.</li>
+<li><code>useClass</code>: صنف يُنشأ ويطبّق <code>ConfigurableModuleOptionsFactory</code>، والدالة الافتراضية <code>create()</code>.</li>
+<li><code>useExisting</code>: يعيد مزودًا موجودًا يطبّق الواجهة نفسها بدل نسخة جديدة.</li>
+<li><code>provideInjectionTokensFrom</code>: مع المصنع، قائمة مزودات يلتقط منها الإطار ما ذُكر في <code>inject</code> لتسجيله داخل الوحدة الديناميكية. يفيد عندما تمرر وحدة خياراتها إلى وحدة متداخلة.</li>
+</ul>
+<p>واحد فقط من <code>useFactory</code> و <code>useClass</code> و <code>useExisting</code>.</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ConfigModule, ConfigService } from &#39;@nestjs/config&#39;;
+import { IdGeneratorModule } from &#39;../id-generator/id-generator.module.js&#39;;
+import { UsersService } from &#39;./users.service.js&#39;;
+
+@Module({
+  imports: [
+    IdGeneratorModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =&gt; ({
+        prefix: config.getOrThrow&lt;string&gt;(&#39;USER_ID_PREFIX&#39;),
+      }),
+    }),
+  ],
+  providers: [UsersService],
+})
+export class UsersModule {}
+</code></pre>
+<p>تنفيذ <code>registerAsync</code> على الصنف يرجع <code>DynamicModule</code> يسجل مزود الخيارات من المصنع ثم <code>IdGenerator</code>، مثل <code>forRootAsync</code>، من غير <code>global</code>.</p>
+<p>صنف خيارات بدل المصنع:</p>
+<pre><code class="language-ts">import { ConfigurableModuleOptionsFactory, Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class UserIdOptions implements ConfigurableModuleOptionsFactory&lt;{ prefix: string }, &#39;create&#39;&gt; {
+  create(): { prefix: string } {
+    return { prefix: &#39;usr&#39; };
+  }
+}
+</code></pre>
+<p>الاستدعاء <code>registerAsync({ useClass: UserIdOptions })</code>. <code>useExisting</code> يشير إلى المزود نفسه إن كان مسجّلًا عند المستورد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">UsersModule
+  registerAsync -&gt; ConfigService -&gt; { prefix: &#39;usr&#39; } -&gt; IdGenerator هنا
+OrdersModule
+  registerAsync -&gt; { prefix: &#39;ord&#39; } -&gt; IdGenerator هناك
+</code></pre>
+<p>الاسم <code>Async</code> يعني أن بناء الخيار قد ينتظر، لا أن كل طلب أصبح غير متزامن.</p>
+<h2>أبسط مثال</h2>
+<p>مقطع <code>UsersModule</code> أعلاه. الطلبات تكرر النداء بمفتاح <code>ORDER_ID_PREFIX</code>. لا تضع النداءين في الجذر باسم <code>forRootAsync</code> إن كان المقصود خيارين متعايشين.</p>
+<h2>شرح المثال</h2>
+<p><code>imports: [ConfigModule]</code> يفتح <code>ConfigService</code> للمصنع. <code>getOrThrow</code> يفشل إقلاع هذه الوحدة إن غاب المفتاح، والأوراق تُهيأ قبل الجذر فالفشل يظهر قبل <code>listen</code>. الخدمة ما زالت تحقن رمز الخيارات الذي تسجله دالتك <code>registerAsync</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>بناء <code>UsersModule</code> يرى كائن <code>registerAsync</code>.</li>
+<li>تُستورد وحدات <code>imports</code>.</li>
+<li>يُحل <code>inject</code> ويُستدعى المصنع ويُنتظر.</li>
+<li>تُسجل المزودات في الوحدة الديناميكية الناتجة.</li>
+<li><code>UsersService</code> تحقن <code>IdGenerator</code> الخاص بهذا الاستيراد.</li>
+<li>ميزة أخرى لها مصنعها. لا مشاركة خيار عبر <code>global</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>useClass</code> عندما بناء السابقة فيه شرط أكثر من سطر: قراءة ملف مناطق أو اختيار حسب <code>NODE_ENV</code> داخل <code>create()</code>. الصنف قابل للاختبار وحده. <code>useExisting</code> عندما <code>AppModule</code> يملك <code>UserIdOptions</code> أصلًا وتريد الوحدة الديناميكية أن تستعمله لا أن تنشئ ثانيًا. <code>provideInjectionTokensFrom</code> عندما هذه الوحدة تبني وحدة متداخلة وتريد تمرير رموز من مزوداتها إلى <code>inject</code> الخاص بالنداء الداخلي من غير إعادة تسجيل زائدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>جمع <code>useFactory</code> مع <code>useClass</code>.</li>
+<li>ترتيب <code>inject</code> لا يطابق المعاملات.</li>
+<li><code>registerAsync</code> في الجذر لكل المفاتيح ثم افتراض عزل الميزات.</li>
+<li>نسيان أن <code>create</code> هو الاسم الافتراضي حتى يغيّره <code>ConfigurableModuleBuilder</code>.</li>
+<li>مصنع يرجع <code>prefix</code> بينما الخدمة تنتظر كائن <code>{ prefix }</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>خيار لكل مستورد يعتمد على الإعداد أو على وعد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قيمة معروفة في سطر الاختبار: <code>register({ prefix: &#39;usr&#39; })</code>. إعداد واحد للتطبيق: <code>forRootAsync</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>register</code></th>
+<th><code>registerAsync</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الخيار</td>
+<td>كائن جاهز</td>
+<td>مصنع أو <code>create</code></td>
+</tr>
+<tr>
+<td><code>ConfigService</code></td>
+<td>تقرأه قبل النداء</td>
+<td>داخل <code>inject</code></td>
+</tr>
+<tr>
+<td>العزل بين الميزات</td>
+<td>نداء لكل وحدة</td>
+<td>نداء لكل وحدة</td>
+</tr>
+<tr>
+<td>الحقول المتنافية</td>
+<td>—</td>
+<td><code>useFactory</code> / <code>useClass</code> / <code>useExisting</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الدالة الافتراضية التي يجب أن يوفّرها <code>useClass</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>create()</code>، وتعيد كائن الخيارات، إلا إذا غيّر البنّاء اسمها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا نداء المستخدم ونداء الطلب لا يُجمعان في <code>forRootAsync</code> واحد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل ميزة لها سابقة. <code>registerAsync</code> يبني خيارًا عند المستورد. <code>forRootAsync</code> تكوين مرة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار <code>useExisting</code> بدل <code>useClass</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما المزود الذي يبني الخيارات مسجّل أصلًا وتريد النسخة نفسها، لا نسخة ثانية من الصنف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الحقول الثلاثة المتنافية؟</li>
+<li>ماذا يفعل <code>imports</code> داخل الكائن؟</li>
+<li>أين يعيش النداء: الجذر أم الميزة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>registerAsync</code> هو <code>register</code> عندما يُصنع الخيار بحقن وانتظار. نداء لكل مستورد، ومصنع واحد من ثلاثة أساليب.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>ConfigurableModuleBuilder</code> يولّد <code>register</code> و <code>registerAsync</code> حتى لا تكتبهما يدويًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

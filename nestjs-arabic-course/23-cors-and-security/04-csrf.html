@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CSRF</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-csrf.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>CSRF</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>منع موقع آخر من إرسال طلب يغيّر حالة المكتبة باستخدام كعكة الضحية، عبر حماية Nest المدمجة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المتصفح يرفق <code>__Host-sid</code> حسب صفاتها. صفحة <code>https://evil.example</code> تعرض نموذجًا يرسل <code>POST</code> إلى API. إن قُبلت الكعكة ونُفّذ النشر أو تغيير البريد، فالزائر فعل ما لم يقصده. <code>SameSite=Lax</code> يضيّق ذلك ولا يشرح كل الحالات التي تغطيها الصفحة، مثل أصول موثوقة ومتصفحات وقدماء.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>app.enableCsrfProtection()</code> يرفض طلبات تغيير الحالة التي يقول المتصفح إنها من أصل آخر، بالاعتماد على <code>Sec-Fetch-Site</code> ثم <code>Origin</code> مقارنة بـ <code>Host</code>. <code>GET</code> و <code>HEAD</code> و <code>OPTIONS</code> تمر. لا كعكة CSRF إضافية في هذا التصميم، ولا تغيير إلزامي على عميل حديث. الواجهة على أصل آخر تُذكر في <code>trustedOrigins</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة CSRF، منذ Nest 12.1، على Express و Fastify بلا حزمة:</p>
+<pre><code class="language-ts">app.enableCsrfProtection({
+  trustedOrigins: [&quot;https://library.example&quot;],
+});
+</code></pre>
+<p>النداء قبل <code>listen</code>. تكراره يرمي. الطلب المرفوض <code>403</code> برسالة عن الأصل، ويمر على مرشحات الاستثناء العامة لا مرشحات المتحكم لأن الفحص قبل التوجيه.</p>
+<p>القواعد المختصرة من الصفحة:</p>
+<ul>
+<li><code>GET</code> و <code>HEAD</code> و <code>OPTIONS</code> مسموحة دائمًا، فلا تغيّر حالة في هذه الطرق.</li>
+<li><code>Sec-Fetch-Site</code> بقيمة <code>same-origin</code> أو <code>none</code> مسموح. غير ذلك، بما فيه <code>same-site</code>، مرفوض ما لم يوجد استثناء.</li>
+<li>بلا <code>Sec-Fetch-Site</code> وبلا <code>Origin</code> يُسمح، لأن الطلب ليس من متصفح.</li>
+<li>غير ذلك يجب أن يطابق مضيف <code>Origin</code> مضيف <code>Host</code>.</li>
+</ul>
+<p><code>trustedOrigins</code> قائمة <code>scheme://host[:port]</code> بلا مسار ولا <code>*</code>. CORS لا يملأ هذه القائمة.</p>
+<p><code>exclude</code> لمسار يجب أن يقبل أصلًا أجنبيًا، مثل webhook، بنفس أسلوب استثناء الوسيط: <code>{ path, method }</code>. المسار من غير البادئة العامة. المطابقة دقيقة.</p>
+<p>حزمة المصادقة تتجاهل كعكة الجلسة على الطلبات المغيّرة من أصل آخر، وتذكر استدعاء <code>enableCsrfProtection</code> أيضًا منذ 12.1 حتى تُحمى المسارات العامة التي لا جلسة لها بعد.</p>
+<p>من يحتاج رموز CSRF كلاسيكية لمتصفحات قديمة جدًا يجد في الصفحة <code>csrf-csrf</code> على Express و <code>@fastify/csrf-protection</code> على Fastify، بعد وسيط الكعكة أو الجلسة. المسار الافتراضي للدورة هو الفحص المدمج.</p>
+<p>الجوال و <code>curl</code> بلا تلك الرؤوس ليسا هدف الهجوم: لا يرفقون كعكة الضحية تلقائيًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST من evil.example
+  Sec-Fetch-Site: cross-site
+  enableCsrfProtection -&gt; 403
+POST من نفس واجهة الأصل
+  same-origin -&gt; مرور
+جوال بلا Origin -&gt; مرور
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+app.useSecurityHeaders();
+app.enableCsrfProtection({
+  trustedOrigins: [&quot;http://localhost:4200&quot;],
+});
+await app.listen(3000);
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الرأسان معًا: الصفحة تقول إن الرؤوس تُكتب قبل فحص CSRF مهما كان ترتيب النداءين. أصل الواجهة التطويرية موثوق للطلبات التي تغيّر حالة. في الإنتاج استبدله بنطاق HTTPS من الإعداد. لا تضع <code>https://evil.example</code>.</p>
+<p><code>POST /posts</code> من الصفحة الموثوقة يمر إلى الحارس. من أصل آخر يأخذ <code>403</code> قبل Prisma.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الفحص في أول الخطاف، قبل تحليل الجسم والحراس. لذلك لا تعتمد على <code>@Can</code> لمنع CSRF. الاستثناء إن لزم يُعلن في <code>exclude</code> لا بشرط داخل الخدمة. <code>X-Forwarded-Host</code> يُتجاهل حتى لا يزوّر المضيف. خلف وكيل غيّر <code>Host</code> قد تفشل المقارنة لمتصفح بلا <code>Sec-Fetch-Site</code>. الصفحة تقترح الحفاظ على <code>Host</code> أو إضافة الأصل العام إلى <code>trustedOrigins</code>.</p>
+<p>ترقية WebSocket لا تُفحص هنا. إن كانت بوابتك بالكعكة، افحص <code>Origin</code> في المصافحة بنفسك.</p>
+<h2>مثال عملي</h2>
+<p>نموذج على موقع آخر يرسل <code>POST /posts</code> بينما Ada داخلة في المكتبة. مع الحماية ترى <code>403</code> ولا يُنشأ مقال. <code>GET /posts</code> من ذلك الموقع قد يمر كقراءة، لذلك <code>GET</code> لا يحذف. <code>curl -X POST</code> بلا <code>Origin</code> يصل إلى المصادقة ثم يفشل بـ <code>401</code> إن لم توجد كعكة، لا بسبب CSRF. هذا صحيح: <code>curl</code> لا يمثل متصفح الضحية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تغيير كلمة المرور في <code>GET</code>.</li>
+<li>ظن أن CORS يكفي.</li>
+<li><code>trustedOrigins</code> فيها مسار أو نجمة.</li>
+<li>استثناء بشرط <code>startsWith</code> واسع يفتح مسارات لم تقصدها. الصفحة تفضّل قائمة مسارات.</li>
+<li>إهمال الحماية لأن <code>SameSite=Lax</code> موجود. الاثنان معًا في تصميم الحزمة والصفحة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على أي API يغيّر حالة وتصل إليه كعكة من متصفح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحماية لرمز <code>Bearer</code> الذي لا يرفقه المتصفح تلقائيًا. السرقة هناك XSS أو جهاز مخترق، لا نموذج موقع آخر. ما زال تفعيل الفحص على التطبيق الموحد رخيصًا ولا يكسر الجوال الذي لا يرسل <code>Origin</code> مع <code>Sec-Fetch-Site</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>SameSite=Lax</code></th>
+<th><code>enableCsrfProtection</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قرار المتصفح بإرفاق الكعكة</td>
+<td>قرار الخادم برفض الأصل</td>
+</tr>
+<tr>
+<td>لا يغطي كل تصميم عبر الأصول</td>
+<td><code>trustedOrigins</code> صريحة</td>
+</tr>
+<tr>
+<td>لا يرى webhook</td>
+<td><code>exclude</code> لمسار التوقيع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي طرق لا تُفحص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>GET</code> و <code>HEAD</code> و <code>OPTIONS</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا سماح CORS لا يوثّق الأصل لـ CSRF؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القائمتان مختلفتان في الصفحة. أصل يقرأ الاستجابة ليس تلقائيًا مسموحًا له بطلب يغيّر الحالة بالكعكة. أضف الأصل إلى <code>trustedOrigins</code> إن لزم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>POST /webhooks/stripe</code> يأتي من خدمة تضع <code>Origin</code> أجنبيًا. كيف تمرّره من غير فتح كل الأصول؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>exclude</code> لذلك المسار والطريقة فقط، وتحقق من توقيع webhook داخل المعالج. لا تضف أصل المزود إلى <code>trustedOrigins</code> لكل التطبيق إن كان المسار واحدًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفحص <code>Sec-Fetch-Site</code> هنا؟</li>
+<li>لماذا لا يتغير البريد في <code>GET</code>؟</li>
+<li>من لا يحتاج رمز CSRF كلاسيكيًا في هذا التصميم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>enableCsrfProtection</code> يرفض تغيير الحالة من أصل لا تثق به، قبل الحراس. الكعكة وحدها ليست إذنًا من أي صفحة. الجوال بلا رؤوس المتصفح ليس سيناريو هذا الهجوم.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-xss.html">XSS</a> حين تُعرض مدخلات المستخدم كـ HTML.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CSRF Protection: <a href="https://docs.nestjs.com/security/csrf">https://docs.nestjs.com/security/csrf</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

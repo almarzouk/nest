@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>كلفة Request Scope</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-request-scope-cost.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>كلفة Request Scope</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة متى يُنشئ Nest نسخة جديدة من المزوّد لكل طلب، ولماذا تنتشر هذه الكلفة في الشجرة حتى لو وضعت <code>Scope.REQUEST</code> على صنف واحد في القاع.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>متجر رف يقرأ المستأجر أو المستخدم من الطلب، فيضع أحدهم <code>scope: Scope.REQUEST</code> على خدمة القاعدة «حتى يحمل كل طلب اتصاله». تحت الضغط يرتفع تخصيص الذاكرة وزمن الاستجابة، لأن المتحكم وكل من يحقن تلك الخدمة يُعاد بناؤه ثم يُجمع كقمامة بعد كل <code>GET /books</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الافتراضي في Nest نسخة واحدة طول عمر التطبيق. هذا آمن على خيط JavaScript الواحد. النطاق <code>REQUEST</code> يقول: ابنِ النسخة مع الطلب وأتلفها بعده. أي مستهلك يحقن مزوّدًا بهذا النطاق يصير هو أيضًا لكل طلب.</p>
+<h2>التعريف التقني</h2>
+<p><code>Scope</code> من <code>@nestjs/common</code>: <code>DEFAULT</code> مشترك، <code>REQUEST</code> لكل طلب، <code>TRANSIENT</code> لكل مستهلك من غير أن يرفع نطاق المستهلك. حقن <code>REQUEST</code> من <code>@nestjs/core</code> يجعل المزوّد طلبيًا ولو لم تكتب النطاق. في GraphQL الرمز المقابل للطلب هو <code>CONTEXT</code>. التوثيق يذكر أن تطبيقًا مصممًا بعناية لا يُفترض أن يزيد التأخير أكثر من نحو 5٪، وأن الفقاعة هي الخطر: مزوّد مشترك في جذر الشجرة يحوّل أغلب التطبيق إلى نسخ سريعة الزوال. للقيم التي تتكرر بين طلبات (مستأجر، لا معرّف فريد لكل طلب) توجد مزودات durable مع <code>ContextIdFactory</code>. لقراءة المستخدم أو المستأجر مع إبقاء الجميع singleton، المخزن المناسب هو <code>AsyncLocalStorage</code>، وصفحة النطاقات تشير إليه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksController  →  BooksService  →  TenantConnection (REQUEST)
+       ↑ يُنشأ لكل طلب          ↑ يُنشأ لكل طلب
+CatalogReader لا يحقن الاتصال          يبقى DEFAULT
+</code></pre>
+<p><code>TRANSIENT</code> لا يصعد. <code>REQUEST</code> يصعد إلى من يحقنه.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Inject, Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { REQUEST } from &#39;@nestjs/core&#39;;
+import type { Request } from &#39;express&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class TenantContext {
+  constructor(@Inject(REQUEST) private readonly request: Request) {}
+
+  id() {
+    const value = this.request.header(&#39;x-tenant-id&#39;);
+    if (!value) throw new Error(&#39;missing tenant&#39;);
+    return value;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>كل طلب يحصل على <code>TenantContext</code> خاص به، لأن العنوان يتغير.</li>
+<li><code>BooksService</code> إن حقنت <code>TenantContext</code> أصبحت طلبية ولو كان <code>@Injectable()</code> بلا خيار.</li>
+<li><code>BooksController</code> يُعاد إنشاؤه لنفس السبب. هذا ثمن القراءة المباشرة للطلب عبر الحقن.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>عند الإقلاع تُبنى المزودات <code>DEFAULT</code> مرة واحدة.</li>
+<li>يصل طلب. Nest ينشئ سياقًا (<code>contextId</code>) لذلك الطلب.</li>
+<li>أي مزود <code>REQUEST</code> في سلسلة المتحكم يُبنى داخل هذا السياق.</li>
+<li>بعد انتهاء الرد، النسخ الطلبية قابلة للجمع.</li>
+<li>إن وُسم المزوّد <code>durable: true</code> مع استراتيجية <code>ContextIdStrategy</code>، تُعاد شجرة المستأجر نفسه بدل بناء شجرة لكل طلب. الاستراتيجية تُسجَّل بـ <code>ContextIdFactory.apply</code> قبل وصول الطلبات. التوثيق يحذّر أنها لا تناسب عددًا كبيرًا من المستأجرين.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>قراءة المستأجر من غير هدم الشجرة. المخزن يُملأ في حارس، والخدمة تبقى singleton:</p>
+<pre><code class="language-ts">import { AsyncLocalStorage } from &#39;node:async_hooks&#39;;
+import { Injectable } from &#39;@nestjs/common&#39;;
+
+export interface ShelfStore {
+  tenantId: string;
+}
+
+export const shelfStorage = new AsyncLocalStorage&lt;ShelfStore&gt;();
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: { book: { findMany: Function } }) {}
+
+  list() {
+    const store = shelfStorage.getStore();
+    if (!store) throw new Error(&#39;no tenant store&#39;);
+    return this.prisma.book.findMany({
+      where: { tenantId: store.tenantId },
+    });
+  }
+}
+</code></pre>
+<p>الحارس يستدعي <code>shelfStorage.run({ tenantId }, () =&gt; next.handle())</code> عبر interceptor يغلّف التنفيذ، أو يدخل المتجر في بداية سلسلة تعرف كيف تبقي <code>run</code> محيطًا ببقية الـ async. الخدمة لا تُحقن بـ <code>REQUEST</code>. فصل المستأجرين يفصّل عقد هذا المخزن؛ هنا المقصد هو الكلفة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وسم مزوّد القاعدة المركزي بـ <code>REQUEST</code> لأن حقلًا واحدًا يختلف بين الطلبات.</li>
+<li>توقع أن <code>TRANSIENT</code> يعزل الطلبات. هو يعزل المستهلكين داخل نفس العمر.</li>
+<li>وضع <code>Scope.REQUEST</code> على WebSocket gateway. البوابة يجب أن تبقى نسخة واحدة لأنها تمسك المقبس.</li>
+<li>قياس الإقلاع فقط. الكلفة تظهر لكل طلب، لا عند <code>bootstrap</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما الحالة لا تُختصر إلى مفتاح تعيد استخدامه: ذاكرة تخزين مؤقت خاصة بالطلب في GraphQL، أو تتبع يموت مع الطلب، ولم يكفِ مخزن <code>AsyncLocalStorage</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقراءة <code>user</code> أو <code>tenantId</code> فقط. لذلك يوجد مخزن الطلب أو مزود durable إن كانت الشجرة تعتمد على مصدر بيانات لكل مستأجر وعدد المستأجرين صغير.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النطاق</th>
+<th>عمر النسخة</th>
+<th>هل يصعد؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DEFAULT</code></td>
+<td>عمر التطبيق</td>
+<td>لا حاجة</td>
+</tr>
+<tr>
+<td><code>REQUEST</code></td>
+<td>طلب واحد</td>
+<td>نعم، إلى من يحقنه</td>
+</tr>
+<tr>
+<td><code>TRANSIENT</code></td>
+<td>لكل مستهلك</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>REQUEST</code> + <code>durable</code></td>
+<td>شجرة تُعاد لمفتاح مشترك</td>
+<td>حسب الاستراتيجية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>BooksService</code> بلا نطاق تحقن <code>AuditLogger</code> الموسوم <code>Scope.REQUEST</code>. ما عمر <code>BooksService</code> الفعلي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طلبي. الفقاعة تصعد من المسجّل إلى الخدمة ثم إلى أي متحكم يحقن الخدمة. <code>AuditLogger</code> لم يبقَ استثناءً معزولًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>عشرة مستأجرين، ومصدر البيانات يعتمد على المستأجر لا على معرّف الطلب. لماذا يذكر التوثيق المزودات الدائمة هنا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الطلبات تتجمع في عشر شجرات لا في شجرة لكل طلب. <code>ContextIdFactory.apply</code> يختار <code>contextId</code> المستأجر عندما تكون الشجرة durable. هذا لا يناسب آلاف المستأجرين، والتوثيق يقول ذلك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ارسم شجرة <code>OrdersController → OrdersService → PaymentsClient (DEFAULT) → TenantContext (REQUEST)</code>. من يُنشأ لكل طلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>TenantContext</code> و <code>OrdersService</code> و <code>OrdersController</code>. <code>PaymentsClient</code> يبقى singleton إذا لم يحقن <code>TenantContext</code>. إن حقنه أحدهم لاحقًا، يصعد النطاق إليه أيضًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما النطاق الافتراضي، ولماذا هو آمن في Node؟</li>
+<li>ماذا يفعل حقن رمز <code>REQUEST</code> حتى من غير كتابة <code>scope</code>؟</li>
+<li>متى تبقى الخدمة <code>DEFAULT</code> رغم اختلاف المستأجر بين الطلبات؟</li>
+<li>ما حد التأخير الذي يذكره توثيق النطاقات لتطبيق مصمم بعناية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Scope.REQUEST</code> أداة عزل حقيقية وثمنها إعادة بناء الشجرة لكل طلب. اجعله قرارًا ضيقًا. لقراءة سياق الطلب، أبقِ الخدمات singleton وضع القيمة في مخزن يطلبه التنفيذ.</p>
+<h2>ماذا بعد؟</h2>
+<p>الشجرة رخيصة وما زال <code>GET /books?author=نجيب</code> بطيئًا. الدرس التالي عن الاستعلام والفهرس لا عن الإطار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+<li>NestJS — Async local storage: <a href="https://docs.nestjs.com/recipes/async-local-storage">https://docs.nestjs.com/recipes/async-local-storage</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bull في وضع الصيانة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-bull-maintenance-mode.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Bull في وضع الصيانة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة <code>@nestjs/bull</code> بما يكفي لعدم نسخها في مشروع جديد، ورؤية فرق الاتصال والزينة عن BullMQ.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>البحث يعرض دروسًا تعمل. كثير منها <code>@Processor</code> مع <code>@Process</code> و <code>forRoot({ redis })</code>. الصفحة الرسمية تقول إن الحزمتين من الفريق نفسه، وإن Bull في وضع الصيانة يُصلح فيها الخلل، بينما BullMQ هي التطوير النشط. نسخ الزينة القديمة على حزمة <code>@nestjs/bullmq</code> لا يترجم تلقائيًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>مشروع المتجر يبقى على <code>@nestjs/bullmq</code> كما في الدروس السابقة. هذا الدرس جدول ترجمة. إن وجدت مستودعًا قديمًا على <code>@nestjs/bull</code> فاقرأه بهذه الأسماء، ولا تضف الحزمة إلى <code>package.json</code> الجديد «للتوافق» بجانب BullMQ على الطابور نفسه.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة الطوابير، شكل Bull القديم الذي ما زال موثّقًا:</p>
+<pre><code class="language-ts">BullModule.forRoot({
+  redis: {
+    host: &#39;localhost&#39;,
+    port: 6379,
+  },
+});
+</code></pre>
+<p>المستهلك هناك دالة عليها <code>@Process()</code> لا صنف يمتد <code>WorkerHost</code>. الاسم في <code>registerQueue</code> ما زال موجودًا في الحزمتين، لكن كائن الاتصال ليس <code>connection</code>.</p>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>المسار النشط</th>
+<th>مسار الصيانة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حزمة Nest</td>
+<td><code>@nestjs/bullmq</code></td>
+<td><code>@nestjs/bull</code></td>
+</tr>
+<tr>
+<td>مكتبة</td>
+<td><code>bullmq</code></td>
+<td><code>bull</code></td>
+</tr>
+<tr>
+<td>الاتصال</td>
+<td><code>connection: { host, port }</code></td>
+<td><code>redis: { host, port }</code></td>
+</tr>
+<tr>
+<td>تنفيذ المهمة</td>
+<td><code>extends WorkerHost</code> ثم <code>process</code></td>
+<td><code>@Process()</code> على دالة</td>
+</tr>
+</tbody></table>
+<p>الصفحة تقول إن Bull يبقى خيارًا موثوقًا إن كان يلبي حاجتك. الدورة لا تبدأ به. لا تخلط <code>@Process</code> مع <code>WorkerHost</code> في الملف نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مقال قديم -&gt; redis + @Process -&gt; @nestjs/bull
+هذا الفصل -&gt; connection + WorkerHost -&gt; @nestjs/bullmq
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>علامة في مراجعة الشيفرة:</p>
+<pre><code class="language-ts">import { BullModule } from &#39;@nestjs/bullmq&#39;;
+
+BullModule.forRoot({
+  connection: { host: &#39;localhost&#39;, port: 6379 },
+});
+</code></pre>
+<p>أي استيراد من <code>@nestjs/bull</code> في تطبيق جديد يُرفض في هذه الدورة. الثابت ليس «الحزمة لا تعمل»، بل «ليست مسار المتجر».</p>
+<h2>شرح المثال</h2>
+<p><code>connection</code> كلمة BullMQ وعميل <code>ioredis</code> الذي تستخدمه. <code>redis</code> كلمة إعداد Bull. تمرير الشكل الخطأ يفشل عند الإقلاع أو يتجاهل المنفذ الذي ظننت أنك ضبطته. انسخ من الدرس 03 لا من نتيجة البحث الأولى.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحزمتان تكتبان في Redis بمفاتيح مختلفة النمط. تشغيل عامل Bull وعامل BullMQ على الاسم نفسه ليس مشاركة طابور. سترى مهامًا في جهة ومستهلكًا في جهة أخرى. لذلك «إضافة الحزمتين مؤقتًا» أثناء النقل خطر إن لم تُنهَ المهام القديمة أولًا. النقل مشروع بحد ذاته: أوقف المنتجين القدامى، فرّغ الطابور أو انتظره، ثم حوّل.</p>
+<h2>مثال عملي</h2>
+<p>عند فتح مستودع قديم:</p>
+<ol>
+<li>ابحث عن <code>from &#39;@nestjs/bull&#39;</code>.</li>
+<li>قابل <code>redis</code> بـ <code>connection</code> و <code>@Process</code> بـ <code>WorkerHost.process</code>.</li>
+<li>أبقِ حمولة المعرفات كما هي. هذا الفرق ليس عذرًا لتمرير كائن Prisma.</li>
+<li>لا تغيّر اسم الطابور في اليوم نفسه الذي تغيّر فيه الحزمة إن كان الاسم جزءًا من تشغيل قائم، إلا بخطة تفريغ.</li>
+</ol>
+<p>المتعلم على الدورة الجديدة لا ينفّذ هذه الخطة. يكفيه ألا يبدأ على الحزمة الراكدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار وضع الصيانة يعني أن الكود الحالي في الإنتاج سيتعطل غدًا. الصفحة تتحدث عن مستوى التطوير لا عن إيقاف فوري.</li>
+<li>نسخ <code>@Process</code> إلى ملف يستورد <code>@nestjs/bullmq</code>.</li>
+<li>تشغيل المكتبتين على Redis واحد بلا تمييز ثم توقع أن <code>covers</code> مشترك.</li>
+<li>تأجيل BullMQ «حتى نقرأ المقال القديم كاملًا».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>هذا التمييز عند قراءة وثائق خارجية وأثناء مراجعة <code>package.json</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تثبّت <code>@nestjs/bull</code> في تمرين الفصل. المنتج والمستهلك اللذان كتبتهما يكفيان لقص الغلاف.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>تراه في مقال</th>
+<th>تكتبه هنا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>redis: { host, port }</code></td>
+<td><code>connection: { host, port }</code></td>
+</tr>
+<tr>
+<td><code>@Process(&#39;resize&#39;)</code></td>
+<td><code>process(job)</code> وتفحص <code>job.name</code></td>
+</tr>
+<tr>
+<td><code>from &#39;@nestjs/bull&#39;</code></td>
+<td><code>from &#39;@nestjs/bullmq&#39;</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حزمة مسار الصيانة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@nestjs/bull</code> فوق مكتبة Bull.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي تبديل سطر الاستيراد مع الإبقاء على <code>@Process</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن نموذج المستهلك في BullMQ هو <code>WorkerHost.process</code>، وكائن الاتصال <code>connection</code> لا <code>redis</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تشغيل الحزمتين معًا على طابور <code>covers</code> لا يشارك المهام تلقائيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل مكتبة تخزن الحالة بمفاتيحها. الاسم المتشابه في الكود ليس قائمة Redis واحدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تقول صفحة Nest عن نشاط كل مكتبة؟</li>
+<li>أي حقل اتصال ترفضه في مشروع الدورة؟</li>
+<li>هل وضع الصيانة يبرر بدء متجر جديد عليه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Bull موثّق وفي الصيانة. المتجر على BullMQ: <code>connection</code> و <code>WorkerHost</code>. لا تخلط الزينتين ولا تثبّت الحزمتين على الطابور نفسه بلا خطة نقل.</p>
+<h2>ماذا بعد؟</h2>
+<p>عمل يشتغل بالساعة لا بمهمة قادمة من طلب: الجدولة مقابل الطابور.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

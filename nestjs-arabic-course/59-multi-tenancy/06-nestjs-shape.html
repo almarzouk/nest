@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>شكل ذلك داخل NestJS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-nestjs-shape.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>شكل ذلك داخل NestJS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تركيب عزل رف داخل Nest: حارس يحل المكتبة، سياق يعيش مع الطلب، وخدمة singleton تستقبل <code>tenantId</code> أو تقرأه من المخزن، مع استعلام مقيّد دائمًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل خدمة تحقن <code>REQUEST</code> لتقرأ الترويسة، فتصبح الشجرة طلبية كما في درس كلفة النطاق. ومسار جديد يستدعي <code>prisma.book.findMany()</code> بلا وسيط فينسى العزل. لا مكان واحد يراجع فيه الفريق الشكل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحارس أو الـ interceptor يحل المستأجر مرة ويضعه في <code>AsyncLocalStorage</code> أو في خاصية الطلب. الخدمات تبقى <code>DEFAULT</code>. دالة مستودع واحدة تغلف Prisma وتفرض <code>tenantId</code>. نموذج pool يضيف <code>where</code>. نموذج silo يختار العميل من الخريطة. الديكورات لا تعزل وحدها.</p>
+<h2>التعريف التقني</h2>
+<p><code>@Injectable()</code> بلا <code>Scope.REQUEST</code> للخدمات العادية. المخزن من <code>node:async_hooks</code> يُفتح حول تنفيذ الطلب. إن احتجتم شجرة DI لكل مستأجر وعدد المكتبات صغير، المزودات الدائمة في صفحة Injection scopes خيار موثّق لا الخطوة الأولى. <code>APP_GUARD</code> يشغّل الحل بعد المصادقة حتى يوجد <code>user</code>. الدالة العامة <code>books.list(tenantId)</code> تجعل نسيان المعرّف خطأ TypeScript. لا تقرأوا <code>@Body(&#39;tenantId&#39;)</code> في المتحكم. الاختبار يستدعي الخدمة بمعرّفين ويتوقع العزل من غير HTTP إن أمكن، ثم e2e يثبت أن الجسم المخالف لا يغيّر السياق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Guard: resolve + membership → shelfStorage.run({ tenantId })
+Controller → BooksService.list()
+BooksService يقرأ المخزن ويضعه في where أو يختار عميل القاعدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { AsyncLocalStorage } from &#39;node:async_hooks&#39;;
+
+export const tenantStorage = new AsyncLocalStorage&lt;{ tenantId: string }&gt;();
+
+export function currentTenantId() {
+  const store = tenantStorage.getStore();
+  if (!store) throw new Error(&#39;tenant context missing&#39;);
+  return store.tenantId;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الغياب استثناء. الصمت يعيد كل الصفوف.</li>
+<li>الحارس هو من يستدعي <code>run</code>. خدمة تعمل في مهمة بلا <code>run</code> تفشل فورًا فتربطون المهمة بمستأجر صريح.</li>
+<li>المخزن يتبع السلسلة async داخل نفس الطلب.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المصادقة تملأ المستخدم.</li>
+<li>الحارس يحل المستأجر ويفحص العضوية ويرفض الجسم المخالف.</li>
+<li><code>tenantStorage.run({ tenantId }, callback)</code> يغلّف بقية السلسلة.</li>
+<li>المتحكم يستدعي الخدمة بلا تمرير المكتبة من <code>@Body</code>.</li>
+<li>المستودع يضع <code>currentTenantId()</code> في كل استعلام pool، أو يختار عميل silo.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { CanActivate, ExecutionContext, Injectable, BadRequestException, ForbiddenException } from &#39;@nestjs/common&#39;;
+import { tenantStorage } from &#39;./tenant.storage.js&#39;;
+
+@Injectable()
+export class TenantGuard implements CanActivate {
+  canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest&lt;{ user?: { memberships: { tenantId: string }[] }; headers: Record&lt;string, string&gt;; body?: { tenantId?: string } }&gt;();
+    const tenantId = req.headers[&#39;x-tenant-id&#39;];
+    if (!tenantId) throw new ForbiddenException(&#39;tenant missing&#39;);
+    if (req.body?.tenantId &amp;&amp; req.body.tenantId !== tenantId) throw new BadRequestException(&#39;tenant in body is ignored source&#39;);
+    if (!req.user?.memberships.some((item) =&gt; item.tenantId === tenantId)) throw new ForbiddenException(&#39;not a member&#39;);
+    tenantStorage.enterWith({ tenantId });
+    return true;
+  }
+}
+</code></pre>
+<p><code>enterWith</code> مناسب إن بقي التنفيذ على نفس السلسلة التي يكملها Nest بعد الحارس. إن انكسر السياق في اختبار، غلّفوا بالـ interceptor و <code>run</code> حول <code>next.handle()</code>. لا تعتمدوا على الجسم لملء الفراغ عندما تغيب الترويسة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>Scope.REQUEST</code> على <code>PrismaService</code> لأن «كل مكتبة اتصال» في نموذج pool. اتصال واحد مشترك والعمود يكفي.</li>
+<li>قراءة الترويسة داخل الخدمة فتتعدد مصادر الحل.</li>
+<li>مهمة طابور تستدعي <code>currentTenantId()</code> بلا الدخول إلى <code>run</code> فتسقط، أو أسوأ: ترث سياق طلب سابق إن أسأتم استخدام <code>enterWith</code> خارج الطلب.</li>
+<li>كاش بمفتاح المسار فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كالشكل القياسي لرف: حارس واحد، مخزن، مستودع مقيّد، خدمات singleton.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنوا <code>TenantModule</code> ديناميكيًا لكل طلب. ولا تستبدلوا الحارس بفلتر استثناءات؛ الفلتر يترجم الأخطاء ولا يختار المكتبة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القطعة</th>
+<th>الدور</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Guard</td>
+<td>حل + عضوية + رفض الجسم</td>
+</tr>
+<tr>
+<td>AsyncLocalStorage</td>
+<td>إيصال المعرّف بلا REQUEST على كل الشجرة</td>
+</tr>
+<tr>
+<td>مستودع</td>
+<td><code>where</code> أو عميل القاعدة</td>
+</tr>
+<tr>
+<td>Durable providers</td>
+<td>بديل عندما مصادر قليلة وشجرة DI تعتمد عليها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا تبقى <code>BooksService</code> بلا <code>Scope.REQUEST</code> في نموذج العمود؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن لا حالة فيها خاصة بالطلب سوى المعرّف، وهو في المخزن. النطاق الطلبي يعيد بناء الشجرة بلا عزل إضافي.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>مهمة ترحيل ليلية تستدعي <code>list()</code>. ماذا يحدث مع <code>currentTenantId()</code>، وما التعديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترمي <code>tenant context missing</code> وهذا أسلم من قراءة كل المكتبات. شغّلوا <code>tenantStorage.run({ tenantId }, () =&gt; list())</code> لكل مكتبة في الحلقة، أو مرروا المعرّف وسيطًا صريحًا في دالة المهمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ارسم اختبارين: وحدة للمستودع، و e2e للجسم المخالف.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الوحدة تستدعي <code>find(tenantA, idOfB)</code> وتتوقع <code>null</code>. الـ e2e يرسل ترويسة <code>lib-a</code> وجسم <code>tenantId: lib-b</code> ويتوقع 400، ثم طلبًا صحيحًا ويتوقع كتب <code>lib-a</code> فقط. فشل الثاني يعني أن المتحكم قرأ الجسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُحل المستأجر مرة واحدة؟</li>
+<li>كيف يصل المعرّف إلى خدمة singleton؟</li>
+<li>ماذا يرفض الحارس في الجسم؟</li>
+<li>متى تُذكر المزودات الدائمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>شكل Nest لعزل رف: حارس يملأ سياق الطلب بعد العضوية، خدمات singleton، ومستودع لا ينفّذ استعلامًا بلا <code>tenantId</code> أو بلا عميل تلك القاعدة. الجسم لا يملأ السياق.</p>
+<h2>ماذا بعد؟</h2>
+<p>المكتبة معزولة. الفصل التالي يرسم ما حولها في منتج SaaS: عضوية وأدوار واشتراك وسجل تدقيق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+<li>NestJS — Async local storage: <a href="https://docs.nestjs.com/recipes/async-local-storage">https://docs.nestjs.com/recipes/async-local-storage</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

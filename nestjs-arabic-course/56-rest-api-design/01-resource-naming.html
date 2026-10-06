@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تسمية الموارد</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-resource-naming.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تسمية الموارد</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية عناوين متجر رف بأسماء أشياء لا بأسماء أفعال، حتى يُقرأ <code>GET /books/b1</code> قبل فتح الكود.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المسارات نمت كدوال: <code>/createBook</code>، <code>/getBookById</code>، <code>/doPublish</code>. كل فعل أسلوب جديد، والعميل لا يستنتج الحذف من الإنشاء. التوثيق يعيد شرح كل عنوان كأنه مشروع مستقل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المورد اسم مجموعة: <code>books</code>، <code>authors</code>، <code>orders</code>. المعرّف يحدد فردًا. فعل HTTP يقول ماذا نفعل به. العملية التي ليست شيئًا يُخزَّن تُسمّى كمورد فرعي أو كفعل آخر في المجموعة عندما تضيق الأفعال الخمسة، لا كجملة إنجليزية في المسار.</p>
+<h2>التعريف التقني</h2>
+<p>المسار في <code>@Controller(&#39;books&#39;)</code> و <code>@Get(&#39;:id&#39;)</code> يبني <code>/books/:id</code>. الأسماء جمع، أحرف صغيرة، كلمات مفصولة بشرطة إن لزم: <code>/shelf-sections</code>. لا فعل في المسار طالما <code>POST</code> و <code>PATCH</code> و <code>DELETE</code> كافية. العلاقات التي يملكها الكتاب تُعلَّق تحته: <code>/books/b1/reviews</code>. المعرّف في المسار لا في الاستعلام للفرد الواحد. الاستعلام للتصفية على المجموعة، ودرسه لاحقًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مجموعة   /books
+فرد      /books/b1
+ملكية    /books/b1/reviews
+فعل HTTP فوق الاسم، لا داخل الاسم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Param, Post, Body, Patch, Delete } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;books&#39;)
+export class BooksController {
+  @Get()
+  list() {
+    return [];
+  }
+
+  @Post()
+  create(@Body() body: { title: string }) {
+    return { id: &#39;b1&#39;, title: body.title };
+  }
+
+  @Get(&#39;:id&#39;)
+  find(@Param(&#39;id&#39;) id: string) {
+    return { id };
+  }
+
+  @Patch(&#39;:id&#39;)
+  update(@Param(&#39;id&#39;) id: string) {
+    return { id };
+  }
+
+  @Delete(&#39;:id&#39;)
+  remove(@Param(&#39;id&#39;) id: string) {
+    return { id };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>خمسة عناوين لا خمسة أفعال في النص.</li>
+<li><code>create</code> اسم الدالة داخلي. العميل يرى <code>POST /books</code>.</li>
+<li>المعرّف <code>:id</code> فرد. القائمة بلا معرّف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Nest يدمج مسار المتحكم مع مسار الدالة.</li>
+<li><code>POST /books</code> ينشئ فردًا في المجموعة.</li>
+<li><code>PATCH /books/b1</code> يغير حقولًا في الفرد.</li>
+<li><code>POST /books/b1/publish</code> مقبول عندما «النشر» عملية لا تُختصر في حقل، ويُوثَّق كمورد عملية. إن كان النشر مجرد <code>status</code>، فـ <code>PATCH</code> على الكتاب أوضح.</li>
+<li>الاسم الداخلي للجدول في Prisma لا يلزم أن يساوي المسار، لكن التباعد الكبير يربك الفريق. اكتب التعيين في مكان واحد.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مراجعات كتاب في رف، لا مسار <code>/addReview</code>:</p>
+<pre><code class="language-ts">@Controller(&#39;books/:bookId/reviews&#39;)
+export class ReviewsController {
+  @Get()
+  list(@Param(&#39;bookId&#39;) bookId: string) {
+    return [{ bookId, id: &#39;r1&#39;, body: &#39;واضح&#39; }];
+  }
+
+  @Post()
+  create(@Param(&#39;bookId&#39;) bookId: string, @Body() body: { body: string }) {
+    return { id: &#39;r2&#39;, bookId, body: body.body };
+  }
+}
+</code></pre>
+<p>القراءة <code>GET /books/b1/reviews</code>. الإنشاء <code>POST</code> على المجموعة الفرعية. حذف مراجعة <code>DELETE /books/b1/reviews/r1</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>/getBooks</code> و <code>/api/book</code> مفردًا مرة وجمعًا مرة.</li>
+<li>فعل في المسار مع <code>POST</code> فيتكرر المعنى: <code>POST /createBook</code>.</li>
+<li>تعليق معرّف الأب في الجسم فقط: <code>POST /reviews</code> مع <code>bookId</code> مخفي، بينما العنوان لا يقول لمن المراجعة.</li>
+<li>خلط لغة المسارات بين العربية والإنجليزية. المسارات في هذه الدورة إنجليزية ثابتة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>من أول متحكم في رف. أي قدرة جديدة تُسمّى مجموعة أو فردًا قبل كتابة الدالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحوّل كل عملية إلى اسم مورد إن كان <code>PATCH</code> لحقل واحد يكفي ويبقى المفهوم أوضح. ولا تسمِّ مسارات داخلية للمهام بأسماء عامة «لأن REST».</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المطلوب</th>
+<th>مسار أوضح</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كل الكتب</td>
+<td><code>GET /books</code></td>
+</tr>
+<tr>
+<td>كتاب</td>
+<td><code>GET /books/b1</code></td>
+</tr>
+<tr>
+<td>مراجعاته</td>
+<td><code>GET /books/b1/reviews</code></td>
+</tr>
+<tr>
+<td>إنشاء كتاب</td>
+<td><code>POST /books</code></td>
+</tr>
+<tr>
+<td>تغيير السعر</td>
+<td><code>PATCH /books/b1</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اقترح بديلًا لـ <code>POST /publishBook</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>POST /books/b1/publish</code> إن كان النشر عملية ذات أثر واسع، أو <code>PATCH /books/b1</code> بجسم <code>{ &quot;status&quot;: &quot;published&quot; }</code> إن كان انتقال حالة فقط. لا تُبقِ الفعل الإنجليزي بلا معرّف في جذر الـ API.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>/books/b1/reviews</code> أوضح من <code>/reviews?bookId=b1</code> لمراجعة يملكها كتاب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العنوان يعلن الملكية: لا مراجعة في هذا المسار بلا كتاب. التصفية بالاستعلام تناسب البحث عبر الكتب، لا الكيان الابن الدائم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رف تريد «إعارة» تربط كتابًا بعميل لمدة. هل المسار فعل أم مورد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مورد <code>loans</code>: <code>POST /loans</code> بجسم فيه <code>bookId</code> و <code>userId</code>، ثم <code>GET /loans/l1</code>. الإعارة شيء يُتتبّع (تاريخ، إعادة)، ليست دالة تختفي. <code>POST /lendBook</code> يخفي هذا الشيء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يعيش الفعل: في المسار أم في طريقة HTTP؟</li>
+<li>متى تضع المعرّف في المسار؟</li>
+<li>كيف تُسمّى مجموعة تابعة لكتاب؟</li>
+<li>ما عيب <code>/getBooks</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>عنوان رف اسم مجموعة أو فرد أو ملكية. الطريقة تحمل الفعل. العملية التي تُتتبّع تصبح موردًا لا جملة في المسار.</p>
+<h2>ماذا بعد؟</h2>
+<p>الأسماء ثابتة. الدرس التالي يربط كل اسم برمز حالة، ومنها أن القائمة الفارغة 200 وأن الإنشاء 201.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>MDN — HTTP request methods: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Methods</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

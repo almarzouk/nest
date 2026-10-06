@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب عن مسارات الفواتير من غير فتح الدرس.</p>
+<h2>سهل</h2>
+<ol>
+<li>ما الواجهة التي يطبّقها أي أنبوب؟</li>
+<li>أي أنبوب مدمج يملأ استعلامًا غائبًا قبل التحليل؟</li>
+<li>ماذا يرجع <code>ParseIntPipe</code> عند النجاح؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>PipeTransform</code> ودالتها <code>transform</code>.</li>
+<li><code>DefaultValuePipe</code>.</li>
+<li>عددًا صحيحًا، أو يرمي <code>400</code> إن فشل.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم توقيع <code>GET /invoices/:ref</code> و <code>GET /invoices</code>:</p>
+<ul>
+<li><code>ref</code> يجب أن يكون UUID إصدار 4.</li>
+<li><code>page</code> غيابها يساوي <code>1</code>، وحضورها عدد صحيح.</li>
+<li><code>open</code> منطق إجباري في الاستعلام.</li>
+</ul>
+<p>اذكر الأنابيب بالترتيب على كل معامل.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>@Param(&#39;ref&#39;, new ParseUUIDPipe({ version: &#39;4&#39; }))</code>.</li>
+<li><code>@Query(&#39;page&#39;, new DefaultValuePipe(1), ParseIntPipe)</code>.</li>
+<li><code>@Query(&#39;open&#39;, ParseBoolPipe)</code>.</li>
+<li>لا <code>ValidationPipe</code> لهذه القيم الثلاث. هي تحليل قيم لا صنف جسم.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>الدالة:</p>
+<pre><code class="language-ts">update(
+  @Body() body: UpdateInvoiceDto,
+  @Param(&#39;id&#39;) id: string,
+  @Query(&#39;echo&#39;) echo: string,
+)
+</code></pre>
+<p>عليها <code>@UsePipes(TracePipe)</code> وعلى التطبيق <code>ValidationPipe</code> عام. <code>id</code> أيضًا عليه <code>HoldCodePipe</code>.</p>
+<ol>
+<li>من يعمل أولًا على <code>echo</code>؟</li>
+<li>متى يعمل <code>HoldCodePipe</code> بالنسبة إلى <code>TracePipe</code>؟</li>
+<li>لماذا لا يرى <code>try/catch</code> في أول سطر من <code>update</code> فشل <code>HoldCodePipe</code>؟</li>
+<li>جسم زائد فيه <code>role</code>. هل يمنعه هذا التمرين؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>ValidationPipe</code> العام، لأنه قبل <code>@UsePipes</code> على الدالة. داخل كل منهما تُزار المعاملات من الأخير: <code>echo</code> ثم <code>id</code> ثم <code>body</code>.</li>
+<li>بعد أنابيب المسار والمتحكم والعام، ضمن أنابيب المعاملات، وما زال اتجاه المعاملات من الأخير إلى الأول.</li>
+<li>الرمي يحدث قبل استدعاء الدالة.</li>
+<li>لا. <code>whitelist</code> غير مفعّل في هذا التمرين. الحذف أو الرفض فصل التحقق.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

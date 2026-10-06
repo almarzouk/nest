@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاث نبضات. القص نفسه يبقى في BullMQ.</p>
+<h2>مثال 1 — التسجيل</h2>
+<pre><code class="language-ts">@Module({
+  imports: [ScheduleModule.forRoot(), CoversModule],
+  providers: [CleanupService, QueueWatchService],
+})
+export class AppModule {}
+</code></pre>
+<p><code>forRoot</code> مرة واحدة.</p>
+<h2>مثال 2 — تقويم ومنطقة</h2>
+<pre><code class="language-ts">@Cron(&#39;0 0 1 * * *&#39;, { timeZone: &#39;Asia/Amman&#39; })
+async queueDailySales() {
+  const day = this.clock.dayIn(&#39;Asia/Amman&#39;);
+  await this.reports.add(&#39;daily-sales&#39;, { day }, { jobId: `sales:${day}` });
+}
+</code></pre>
+<h2>مثال 3 — تباعد ومرة إقلاع</h2>
+<pre><code class="language-ts">@Interval(30_000)
+async logWaiting() {
+  const counts = await this.covers.getJobCounts(&#39;waiting&#39;);
+  if (counts.waiting &gt; 100) this.logger.warn(`covers waiting ${counts.waiting}`);
+}
+
+@Timeout(5_000)
+logReady() {
+  this.logger.log(&#39;scheduler up&#39;);
+}
+</code></pre>
+<p><code>logReady</code> ليس مهلة ISBN. تذكير المسودات يجمع معرفات ويستدعي منتج البريد، ولا يرسل حلقة بريد داخل <code>@Cron</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>الاختبار ينادي الدالة ولا ينتظر الدقيقة 15.</li>
+<li>نسختان لا ترسلان تقريرين بفضل <code>jobId</code>.</li>
+<li>لا <code>@Cron</code> يقص الأغلفة ملفًا ملفًا.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

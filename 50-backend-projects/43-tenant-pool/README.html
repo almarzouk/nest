@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>43 — عزل المستأجر في كل استعلام</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>43 — عزل المستأجر في كل استعلام</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new tenant-pool</code></p>
+<h2>ماذا تبني</h2>
+<p>منتجات في مخطط مشترك. tenantId من مطالبة الرمز بعد العضوية، لا من الجسم ولا من ترويسة يختارها العميل بحرية.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>ترويسة المشروع 31 كانت تدريبًا. هنا المصدر هوية وقّعتها.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>مطالبة</li>
+<li>قيد في where</li>
+<li>اختبار تسريب</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>قاعدة لكل مستأجر</li>
+<li>تشفير صف</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الحسابات والكتالوج على Prisma.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/59-multi-tenancy/README.html">59-multi-tenancy</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>كل جدول عمل فيه tenantId.</li>
+<li>الخدمة لا تملك مسارًا ينسى القيد.</li>
+<li>جسم فيه tenantId 400.</li>
+<li>اختبار يحاول قراءة معرف مستأجر آخر ويتوقع 404.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/products</code></td>
+<td>200</td>
+<td>منتجات هذا المستأجر</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/products/:id</code></td>
+<td>404</td>
+<td>إن كان لغيره</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new tenant-pool</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ضع tenantId في الرمز عند الدخول بعد اختيار عضوية.</li>
+<li>مرّره من الحارس إلى الخدمة وسيطًا.</li>
+<li>راجع كل دالة find في الوحدة.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/products/products.service.ts
+src/auth/tenant.guard.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">return this.prisma.product.findFirst({
+  where: { id, tenantId },
+});
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>findUnique على id وحده.</li>
+<li>الثقة بترويسة بعد أن صار الرمز موجودًا.</li>
+<li>عمود بلا قيد في تقرير المدير العام. إن وُجد مسار عام فسمِّه وافصله.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>اختبار التسريب أخضر.</li>
+<li>الجسم الذي يحدد المستأجر يُرفض.</li>
+<li>لا استعلام منتجات بلا tenantId في الكود.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف فهرسًا مركبًا (tenantId, id).</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 43» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../42-sales-report/README.html">42. تقرير مبيعات</a></li>
+<li>التالي: <a href="../44-organizations/README.html">44. منظمات ودعوات</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

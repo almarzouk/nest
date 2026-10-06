@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>User و Organization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-users-and-organizations.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>User و Organization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل الشخص عن مكتبة رف: <code>User</code> حساب دخول، و <code>Organization</code> المستأجر الذي يملك الكتب والفاتورة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>جدول <code>users</code> فيه <code>libraryName</code> و <code>plan</code>. الموظف الثاني لا يُضاف إلا بنسخ كلمة مرور الأول. انتقال الشخص إلى مكتبة أخرى ينسخ كتالوجًا أو يترك فواتير على بريده الشخصي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المستخدم يُوثَّق مرة. المنظمة كيان له اسم وحالة. العلاقة بينهما عضوية في الدرس التالي، لا عمود وحيد <code>user.organizationId</code> إن كان الشخص قد يعمل في مكتبتين. الكتب تشير إلى <code>organizationId</code> وهذا هو <code>tenantId</code> في فصل العزل.</p>
+<h2>التعريف التقني</h2>
+<p><code>User</code>: <code>id</code>, <code>email</code>, أسرار الدخول في المخزن الذي لا يخرج من مستودع المصادقة. <code>Organization</code>: <code>id</code>, <code>name</code>, <code>slug</code> للنطاق <code>slug.raf.example</code>. لا تضعوا <code>stripeCustomerId</code> على المستخدم إن كانت الفاتورة على المكتبة. إنشاء أول مكتبة مع أول مدير عملية واحدة: صف منظمة وصف عضوية. حذف المستخدم لا يحذف المنظمة إن بقي أعضاء أو فواتير.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">User ── Membership ── Organization ── Books / Subscription
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model User {
+  id    String @id
+  email String @unique
+}
+
+model Organization {
+  id   String @id
+  name String
+  slug String @unique
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>البريد فريد على الشخص لا على المكتبة.</li>
+<li><code>slug</code> فريد لأنه مضيف. اسم العرض قد يتكرر.</li>
+<li>لا علاقة <code>books</code> على <code>User</code>. الكتالوج للمنظمة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>التسجيل ينشئ <code>User</code> فقط، أو ينشئ منظمة إن كان عقد المنتج «مكتبة فورًا».</li>
+<li>اختيار المكتبة في الجلسة يكتب سياق المستأجر.</li>
+<li><code>POST /organizations</code> للشخص الذي يملك أكثر من مكتبة، مع عضوية مالك.</li>
+<li>الاستعلامات التشغيلية تستخدم <code>organizationId</code> من السياق.</li>
+<li>لوحة المنصة، لا API المكتبة، هي التي تسرد كل المنظمات.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Injectable()
+export class OrganizationsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  createFor(ownerId: string, input: { name: string; slug: string }) {
+    return this.prisma.organization.create({
+      data: {
+        id: input.slug,
+        name: input.name,
+        slug: input.slug,
+        memberships: { create: { userId: ownerId, role: &#39;owner&#39; } },
+      },
+    });
+  }
+}
+</code></pre>
+<p><code>memberships</code> ستُفصَّل لاحقًا. هنا القصد أن المنظمة لا تُولد بلا مالك. <code>id</code> في المثال يساوي <code>slug</code> للتبسيط؛ في الإنتاج المعرّف ثابت حتى لو تغيّر الاسم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مكتبة = مستخدم.</li>
+<li>كتالوج على <code>userId</code> ثم مشاركة الحساب بين الموظفين.</li>
+<li>slug من الجسم بلا نمط آمن يذهب إلى DNS.</li>
+<li>حذف User يتسلسل إلى حذف كتب مكتبة فيها موظفون آخرون.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>منذ تصميم الجداول. إعادة التسمية لاحقًا من مستخدم-مكتبة إلى منظمة أغلى من العمود.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تنشئوا منظمة لكل جلسة. المنظمة كيان يعيش. ولا تضعوا كل إعدادات الفوترة في هذا الدرس؛ جدول الاشتراك منفصل حتى لا يصبح صف المنظمة فاتورة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>User</th>
+<th>Organization</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يثبت</td>
+<td>من دخل</td>
+<td>أي مكتبة</td>
+</tr>
+<tr>
+<td>الفاتورة</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>الكتب</td>
+<td>لا يملكها مباشرة</td>
+<td><code>organizationId</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>شخص في مكتبتين. كم صف <code>User</code> وكم صف <code>Organization</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صف مستخدم واحد وصفان منظمة، وبينهما عضويتان.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>email</code> الفريد على المنظمة يفشل موظفَين بنفس عنوان العمل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن البريد عندها مفتاح المكتبة لا مفتاح الشخص. البريد على <code>User</code>، والمنظمة تُشار إليها بالعضوية. عنوان الفوترة حقل على المنظمة غير مفتاح الدخول.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أول تسجيل في رف. ما الذي يُنشأ في معاملة واحدة، وما الذي يُؤجَّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المستخدم والمنظمة وعضوية المالك في معاملة حتى لا تبقى مكتبة بلا مالك. اشتراك Stripe ورسالة البريد بعد الالتزام، لا داخل نفس المعاملة كاستدعاء شبكة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يملك الكتب؟</li>
+<li>لماذا slug ليس اسم العرض؟</li>
+<li>أين لا يُخزَّن عميل Stripe؟</li>
+<li>ماذا يبقى إن غادر المالك وبقي موظف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>User</code> هوية و <code>Organization</code> مكتبة مستأجرة. الكتالوج والفاتورة على المنظمة. الشخص يتصل بها بعضوية لا بعمود وحيد إن تعددت المكتبات.</p>
+<h2>ماذا بعد؟</h2>
+<p>الربط بين الشخص والمكتبة يحتاج دورًا. الدرس التالي العضوية والصلاحيات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

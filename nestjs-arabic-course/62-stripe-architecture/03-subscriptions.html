@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Subscriptions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-subscriptions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Subscriptions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمثيل اشتراك مكتبة رف كصف محلي يطابق كائن Stripe، وتحديثه من أحداث لا من صفحة العودة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يخزّن «مدفوع حتى» يحسبه المتصفح. أو ينسخ كل فاتورة إلى جدول الكتب. عند <code>past_due</code> يستمر النشر لأن الحقل المحلي لم يُحدَّث منذ Checkout. إلغاء المكتبة في بوابة Stripe لا يصل إلى رف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صف واحد لكل منظمة: معرّف العميل، معرّف الاشتراك، <code>price</code>/<code>plan</code>, <code>status</code> من مجموعة تفهمونها. الأحداث <code>customer.subscription.updated</code> و <code>invoice.paid</code> و <code>invoice.payment_failed</code> هي التي تكتب الصف. النشر يقرأ <code>status</code> فقط.</p>
+<h2>التعريف التقني</h2>
+<p>اربطوا <code>customer</code> بـ <code>organizationId</code> عند أول Checkout. عند الحدث، جدوا المنظمة بهذا المعرّف لا بحقل JSON يختاره المرسل من غير ربط. الحالات التي تكفي رف: <code>trialing</code> إن بقي عند المزود، <code>active</code>, <code>past_due</code>, <code>canceled</code>. لا تحفظوا وسيلة الدفع. التجديد الناجح يبقي <code>active</code>. فشل التحصيل يضع <code>past_due</code> ويمنع النشر حسب السياسة. الإلغاء <code>canceled</code> ويبقي الصف للمراجعة لا <code>DELETE</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Stripe subscription.id  ↔  Subscription.providerSubscriptionId
+status على الكائن        ↔  Subscription.status
+كتب                      →  تقرأ status فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function mapStripeStatus(status: string) {
+  if (status === &#39;active&#39; || status === &#39;trialing&#39;) return status === &#39;trialing&#39; ? &#39;trial&#39; : &#39;active&#39;;
+  if (status === &#39;past_due&#39; || status === &#39;unpaid&#39;) return &#39;past_due&#39;;
+  if (status === &#39;canceled&#39; || status === &#39;incomplete_expired&#39;) return &#39;canceled&#39;;
+  return &#39;incomplete&#39;;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الخريطة صريحة حتى لا يمر <code>unpaid</code> كسلسلة غريبة تسمح بالنشر.</li>
+<li><code>trialing</code> عند Stripe يقابل <code>trial</code> محليًا إن هذا اسم عقدكم.</li>
+<li>أي حالة مجهولة <code>incomplete</code> تمنع النشر إلى أن تفهموها. الفشل المغلق أسلم من السماح.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Checkout ينشئ اشتراكًا عند Stripe بحالة قد تكون <code>incomplete</code> حتى تُدفع الفاتورة.</li>
+<li>الحدث يحمل <code>customer</code> و <code>status</code>.</li>
+<li>المعالج يجد المنظمة ويكتب <code>mapStripeStatus</code>.</li>
+<li><code>PlanPolicy</code> في الطلب التالي ترى القيمة.</li>
+<li>لا مسار success يكتب هذه الدالة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">async syncFromStripe(customerId: string, stripeStatus: string, subscriptionId: string) {
+  const row = await this.prisma.subscription.findFirst({ where: { providerCustomerId: customerId } });
+  if (!row) throw new Error(&#39;unknown customer&#39;);
+  return this.prisma.subscription.update({
+    where: { organizationId: row.organizationId },
+    data: { status: mapStripeStatus(stripeStatus), providerSubscriptionId: subscriptionId },
+  });
+}
+</code></pre>
+<p>الاستدعاء من معالج الويب هوك بعد التوقيع والقيد، لا من المتحكم الذي يعيد <code>{ url }</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>DELETE</code> الصف عند الإلغاء فيضيع من كانت مكتبته.</li>
+<li>السماح بالنشر لكل حالة غير <code>canceled</code>.</li>
+<li>تحديث المنظمة التي في <code>metadata</code> حتى لو خالفت <code>customer</code> المخزن.</li>
+<li>حساب <code>past_due</code> في الواجهة من تاريخ محلي بلا حدث.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>طوال عمر المكتبة المدفوعة. الصف يعيش مع المنظمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعكسوا كل <code>invoice.line</code> في جدول الكتب. الفاتورة تبقى عند Stripe وتُعرض برابط البوابة إن لزم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>حدث</th>
+<th>حالة محلية تقريبية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>اشتراك <code>active</code></td>
+<td><code>active</code></td>
+</tr>
+<tr>
+<td><code>past_due</code> / <code>unpaid</code></td>
+<td><code>past_due</code></td>
+</tr>
+<tr>
+<td><code>canceled</code></td>
+<td><code>canceled</code></td>
+</tr>
+<tr>
+<td>فتح success URL</td>
+<td>بلا كتابة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين تُكتب <code>providerSubscriptionId</code> أول مرة بشكل موثوق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من حدث Stripe بعد التوقيع، أو من استجابة إنشاء تعرفون أنها من SDK الخادم، لا من استعلام success في المتصفح.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>unpaid</code> لا يبقى نصًا خامًا في السياسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا تنسوه في شرط <code>=== &#39;active&#39;</code>. الخريطة تضعهم في <code>past_due</code> والسياسة ترفض النشر بقائمة قصيرة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>metadata.organizationId</code> يقول <code>lib_b</code> و <code>customer</code> المخزن لـ <code>lib_a</code>. أي صف يُحدَّث؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صف <code>lib_a</code> المرتبط بالعميل، أو ترفضون الحدث وتسجلونه إن كان التعارض غير متوقع. لا تحدّثون <code>lib_b</code> من metadata وحدها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُنسخ من كائن الاشتراك؟</li>
+<li>أي حالات تمنع النشر في هذا التصميم؟</li>
+<li>لماذا لا يُحذف الصف عند الإلغاء؟</li>
+<li>أي مسار لا يستدعي <code>syncFromStripe</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاشتراك صف منظمة يطابق حالة Stripe عبر خريطة صريحة. التحديث من معرّف العميل المخزن بعد حدث موقّع. النشر يقرأ الخريطة المحلية لا لوحة Stripe.</p>
+<h2>ماذا بعد؟</h2>
+<p>الخريطة لا تعمل بلا مسار يستقبل الحدث. الدرس التالي ويب هوك Stripe على الجسم الخام.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Stripe — Subscriptions: <a href="https://docs.stripe.com/billing/subscriptions/overview">https://docs.stripe.com/billing/subscriptions/overview</a></li>
+<li>NestJS — Webhooks: <a href="https://docs.nestjs.com/http/webhooks">https://docs.nestjs.com/http/webhooks</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

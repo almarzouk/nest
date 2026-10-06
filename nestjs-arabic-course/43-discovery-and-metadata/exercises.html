@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>ماذا تضعه أولًا في مصفوفة <code>getAllAndOverride</code> حتى تغلب الدالة الصنف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>context.getHandler()</code> ثم <code>context.getClass()</code>. أول قيمة معرّفة تفوز.</p>
+</details>
+
+<h2>متوسط</h2>
+<p><code>@FeatureFlag(&#39;experimental&#39;)</code> على خدمة غير مذكورة في أي <code>providers</code>. هل يراها <code>getProviders({ metadataKey })</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الاكتشاف يعدد المسجّل في الرسم. الملف الذي لم يُسجل لا يدخل الحاوية ولو لصق المزخرف.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>حارس واحد على HTTP و <code>@MessagePattern</code>. اكتب من أين يأتي معرف الفاعل في كل قناة، وماذا لا تستقبل <code>BillingService</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>switchToHttp().getRequest().user.id</code> عندما <code>getType()</code> هو <code>http</code>، ومن <code>switchToRpc().getData().userId</code> عندما يكون <code>rpc</code>. الخدمة تستقبل <code>userId: string</code> ولا تستقبل <code>ExecutionContext</code> ولا <code>Request</code>.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

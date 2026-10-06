@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب عن مكتبة الكتب. المسار التطبيقي Prisma.</p>
+<h2>سهل</h2>
+<ol>
+<li>ماذا تضيع مصفوفة <code>books</code> عند إيقاف العملية؟</li>
+<li>ما معنى <code>$1</code> في استعلام <code>pg</code>؟</li>
+<li>في أي خطاف تتصل <code>PrismaService</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>كل الكتب التي لم تُكتب إلى قاعدة. العملية الجديدة تبدأ بمصفوفة فارغة.</li>
+<li>موضع معامل مربوط، والقيمة تُرسل منفصلة عن نص SQL.</li>
+<li><code>onModuleInit</code> عبر <code>$connect</code>، والقطع في <code>onModuleDestroy</code> عبر <code>$disconnect</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا <code>prisma generate</code> لا يكفي لزميل على قاعدة فارغة؟</li>
+<li><code>findUnique</code> رجعت <code>null</code>. هل هذا <code>404</code> تلقائيًا؟</li>
+<li>أين تضع فحص «الكتاب غير متاح» نسبة إلى <code>$transaction</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>التوليد يحدّث العميل. الجداول تأتي من <code>migrate dev</code> أو <code>migrate deploy</code>.</li>
+<li><code>null</code> غياب صف. طبقة HTTP تحوّله إلى <code>NotFoundException</code> إن كان العقد كذلك.</li>
+<li>داخل الدالة على عميل <code>tx</code>، مع الكتابة، لا قبل استدعاء المعاملة فقط.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>فريق يريد إضافة <code>@nestjs/typeorm</code> بجانب <code>PrismaModule</code> على جدول <code>Book</code>، مع <code>synchronize: true</code> لتسريع التجربة، ويقترح MongoDB للمنشورات لأن الشكل «مرن».</p>
+<ol>
+<li>ما خطر <code>synchronize: true</code>؟</li>
+<li>ما خطر الأداتين على الجدول نفسه؟</li>
+<li>لماذا تبقى الإعارة على PostgreSQL في هذه الدورة؟</li>
+<li>ماذا تكتب في قرار الوحدة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>توثيق TypeORM يحذّر من فقدان بيانات الإنتاج لأن الإقلاع قد يغيّر الجداول.</li>
+<li>ملكيتان للمخطط ومجمعان وترحيلان متداخلان.</li>
+<li>المفتاح الأجنبي بين الكتاب والعضو قيد تحتاجه الإعارة. MongoDB و Sequelize و MikroORM موثّقة وليست مسار هذا المشروع.</li>
+<li>«القاعدة عبر <code>PrismaModule</code> فقط. الترحيل بمجلد <code>prisma/migrations</code>. لا <code>synchronize</code>.»</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Type Aliases و Union Types</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-type-aliases-and-unions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Type Aliases و Union Types</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية نوع، ووصف قيمة قد تكون أحد احتمالين، مثل كتاب موجود أو غياب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>find</code> أحيانًا ترجع الكتاب وأحيانًا لا تجد شيئًا. إذا كان النوع <code>Book</code> فقط، الكود يعامل <code>null</code> ككتاب وينكسر على <code>book.title</code>. الاتحاد يجبرك على التفريق.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>type</code> اسم لنوع. الإشارة <code>|</code> تعني &quot;هذا أو ذاك&quot;.</p>
+<h2>التعريف التقني</h2>
+<p>Type alias يسمي أي نوع: كائنًا، أو اتحادًا، أو دالة. Union type قيمة من أحد الأطراف. المترجم يضيّق النوع (narrowing) بعد فحص <code>typeof</code> أو مقارنة <code>null</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Book | null
+   |-- إن فحصت book !== null أصبح Book
+   |-- قبل الفحص لا يسمح بقراءة title تحت strictNullChecks
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">interface Book {
+  id: string;
+  title: string;
+}
+
+type BookId = string;
+type FindResult = Book | null;
+
+function titleOf(result: FindResult): string {
+  if (result === null) {
+    return &#39;missing&#39;;
+  }
+  return result.title;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>BookId</code> اسم أوضح من تكرار <code>string</code> في توقيعات المعرّفات.</li>
+<li><code>FindResult</code> يعلن الاحتمالين.</li>
+<li>داخل <code>if</code> يضيّق المترجم <code>result</code> إلى <code>null</code>، وبعدها إلى <code>Book</code>.</li>
+<li>قراءة <code>result.title</code> قبل الفحص خطأ في <code>strict</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الاتحاد فحص وقت ترجمة فقط. <code>null</code> وقت التشغيل قيمة عادية. التضييق يتحول إلى <code>if</code> كتبتها أنت، ويبقى في JavaScript. لا يُضاف فحص سحري.</p>
+<p>الاتحاد المميّز (discriminated union) يستخدم حقلًا مشتركًا مثل <code>status: &#39;ok&#39;</code> و <code>status: &#39;error&#39;</code> حتى يضيّق المترجم بقية الحقول. ستراه في أشكال أخطاء لاحقًا.</p>
+<h2>مثال عملي</h2>
+<p>دور مستخدم كما ستمر في المصادقة، من غير بناء نظام أدوار:</p>
+<pre><code class="language-ts">type Role = &#39;customer&#39; | &#39;staff&#39; | &#39;admin&#39;;
+
+function canEditPrice(role: Role): boolean {
+  return role === &#39;staff&#39; || role === &#39;admin&#39;;
+}
+</code></pre>
+<p><code>&#39;guest&#39;</code> لا تُقبل في النداء. هذا أضيق من <code>string</code>. وقت التشغيل، نص قادم من JSON ما زال <code>string</code> حتى تفحص أنه أحد الثلاثة. النوع لا يغلّف الطلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>type Book = { ... }</code> و Interface بالمعنى نفسه ثم الحيرة. للكائنات البسيطة الاثنان يصلحان. اختر Interface لأشكال الكائنات القابلة للتمديد في هذه الدورة، و <code>type</code> للاتحادات والأسماء.</li>
+<li>اتحاد بلا فحص ثم استخدام حقل موجود في طرف واحد.</li>
+<li>تمثيل الغياب بسلسلة فارغة <code>&#39;&#39;</code> بدل <code>null</code> أو نوع نتيجة واضح. الفراغ يختلط بعنوان فارغ فعلًا.</li>
+</ul>
+<h2>متى نستخدم alias؟</h2>
+<p>عندما يتكرر اتحاد أو اسم دالة أو اسم معرّف في أكثر من توقيع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تحتاج القيمة أن تعيش وقت التشغيل مع وسوم تحقق. هناك صنف. Alias يُمحى مثل Interface.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Interface</th>
+<th>Type alias</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>اتحاد <code>A | B</code></td>
+<td>لا يعبّر عنه مباشرة كاتحاد قيم</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>تمديد أشكال</td>
+<td><code>extends</code></td>
+<td>تقاطع <code>&amp;</code> وأنواع أخرى</td>
+</tr>
+<tr>
+<td>وقت التشغيل</td>
+<td>يُمحى</td>
+<td>يُمحى</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما نوع متغير يمكن أن يكون <code>number</code> أو <code>string</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>number | string</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اكتب نوع نتيجة لحفظ كتاب: إما <code>{ ok: true; id: string }</code> أو <code>{ ok: false; reason: string }</code>، ودالة تقرأ <code>id</code> فقط في حالة النجاح.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">type SaveResult = { ok: true; id: string } | { ok: false; reason: string };
+
+function savedId(result: SaveResult): string | null {
+  if (!result.ok) return null;
+  return result.id;
+}
+</code></pre>
+<p>بعد <code>result.ok</code> يضيّق المترجم الطرف الناجح فيظهر <code>id</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>Role</code> لا تمنع قاعدة البيانات من إرجاع نص <code>&#39;superuser&#39;</code> إذا غيّر أحد الصفوف يدويًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الاتحاد فحص على قيم مكتوبة في TypeScript. صف قاعدة البيانات يدخل كقيمة وقت تشغيل. تحتاج فحصًا أو قيدًا في قاعدة البيانات. النوع يمسك الأخطاء في الكود الذي يمر بالمترجم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني <code>|</code>؟</li>
+<li>متى يضيّق المترجم الاتحاد؟</li>
+<li>لماذا Alias لا يصلح مكان DTO مُتحقق منه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>type</code> يسمي نوعًا، والاتحاد يجبر التفريق بين الاحتمالات في الكود. الأثر وقت التشغيل هو الفحص الذي تكتبه أنت.</p>
+<h2>ماذا بعد؟</h2>
+<p>حقول قد تغيب، وحقول لا تُعاد كتابتها: Optional و Readonly.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Unions: <a href="https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#union-types">https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#union-types</a></li>
+<li>TypeScript — Narrowing: <a href="https://www.typescriptlang.org/docs/handbook/2/narrowing.html">https://www.typescriptlang.org/docs/handbook/2/narrowing.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

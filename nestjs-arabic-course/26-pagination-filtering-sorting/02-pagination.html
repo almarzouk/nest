@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pagination</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-pagination.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Pagination</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار ترقيم بالإزاحة أو بالمؤشر، وربط كل خيار باستعلام Prisma يطابق عقد المكتبة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>skip</code> بمقدار آلاف الصفوف يجعل القاعدة تمشي الصفوف المتجاوَزة ثم ترميها. الواجهة تريد زر «صفحة 12» في لوحة صغيرة، وتريد تمريرًا لانهائيًا لتعليقات مقال طويل. مؤشر مبني على <code>id</code> ينكسر إن تغيّر الترتيب إلى <code>title</code> من غير أن يدخل العنوان في المؤشر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الإزاحة: <code>page</code> و <code>pageSize</code> ثم <code>skip = (page - 1) * pageSize</code> و <code>take = pageSize</code>. واضحة وتدعم القفز إلى رقم صفحة، وتثقل حين يكبر <code>skip</code>. المؤشر: العميل يرسل موضع آخر عنصر رآه، والاستعلام يطلب «ما بعد هذا الموضع» بحد. لا يقفز بسهولة إلى صفحة بعيدة، ويبقى رخيصًا مع فهرس يطابق الترتيب. المكتبة تبقي الإزاحة على قوائم الإدارة القصيرة، وتستخدم المؤشر لخيط تعليقات طويل.</p>
+<h2>التعريف التقني</h2>
+<p>إزاحة، كما في الفصل 19، مع دالة مشتركة:</p>
+<pre><code class="language-ts">export function toSkipTake(page: number, pageSize: number) {
+  return { skip: (page - 1) * pageSize, take: pageSize };
+}
+</code></pre>
+<p>مؤشر على تعليقات مرتبة بـ <code>id</code> تصاعديًا. Prisma يدعم <code>cursor</code> مع <code>skip: 1</code> لتجاوز الصف الذي يشير إليه المؤشر:</p>
+<pre><code class="language-ts">await prisma.comment.findMany({
+  where: { postId },
+  orderBy: { id: &quot;asc&quot; },
+  take: limit + 1,
+  ...(cursorId
+    ? { cursor: { id: cursorId }, skip: 1 }
+    : {}),
+});
+</code></pre>
+<p><code>take: limit + 1</code> يكشف وجود تالٍ. إن عاد أكثر من <code>limit</code> فهناك صفحة أخرى، وتقطع الزيادة، وتضع معرّف الأخير في <code>nextCursor</code>. المؤشر سلسلة معتمة، مثل Base64 لمعرّف، حتى لا تبني الواجهة ترتيبًا خاصًا بها.</p>
+<pre><code class="language-ts">nextCursor: hasMore ? Buffer.from(String(last.id)).toString(&quot;base64url&quot;) : null
+</code></pre>
+<p>فك المؤشر الفاسد <code>400</code>. الغياب يعني أول صفحة.</p>
+<p>المؤشر يجب أن يطابق <code>orderBy</code>. ترتيب بالعنوان ثم فاصل <code>id</code> يحتاج مؤشرًا فيه الاثنين، أو يبقى الترتيب على <code>id</code> فقط في خيط التعليقات. تغيير الفرز مع مؤشر قديم يعطي نافذة بلا معنى. ارفض المؤشر حين يتغير <code>sort</code>، أو ابدأ من الأول.</p>
+<p><code>count</code> مع الإزاحة يغذّي <code>total</code>. تمرير المؤشر غالبًا بلا <code>total</code> لأن الواجهة تسأل «هل يوجد تالٍ» عبر <code>nextCursor</code>. إن لزِم العدد، فهو استعلام منفصل بنفس <code>where</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إزاحة: ارمِ N ثم خذ 20 — رقم صفحة واضح
+مؤشر: من بعد هذا id خذ 20 — عمق رخيص
+ترتيب بلا مفتاح المؤشر = نافذة كاذبة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const { skip, take } = toSkipTake(query.page, query.pageSize);
+const [items, total] = await Promise.all([
+  prisma.post.findMany({ where, orderBy, skip, take }),
+  prisma.post.count({ where }),
+]);
+</code></pre>
+<h2>شرح المثال</h2>
+<p>هذا مسار المقالات الإداري. <code>Promise.all</code> يشغّل الجلب والعدد معًا. <code>where</code> واحد للمتغيرين حتى لا يختلف <code>total</code> عن العناصر. على جدول مكتبتك الحالي الإزاحة مقبولة. حين يصل <code>skip</code> إلى عشرات الآلاف انتقل بذلك المسار إلى مؤشر أو ضيّق المرشح.</p>
+<p>لا تجمع <code>skip</code> الكبير مع <code>cursor</code> في الطلب نفسه. العقد يختار أسلوبًا واحدًا لكل مسار.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>PostgreSQL في <code>OFFSET</code> يقرأ الصفوف حتى موضع البداية وفق الخطة، ثم يعيد <code>LIMIT</code>. الفهرس قد يسرّع الترتيب وما زال العدّ حتى الإزاحة قائمًا. استعلام المؤشر يتحول إلى مدى على المفتاح، مثل <code>id</code> أكبر من آخر قيمة، فيبدأ من موضع الفهرس.</p>
+<p>إدراج تعليق جديد بـ <code>id</code> أكبر لا يكرر عناصر المؤشر القديم في ترتيب تصاعدي. حذف عنصر في الوسط يغيّر صفحات الإزاحة: الصف الذي كان أول الصفحة التالية يصبح آخر الحالية. لذلك الإزاحة تهتز تحت الكتابة المتزامنة. المؤشر على مفتاح متزايد أثبت لخيط زمني.</p>
+<p><code>skip: 1</code> مع <code>cursor</code> في Prisma يتخطى الصف المطابق حتى لا يتكرر آخر عنصر في الصفحة التالية.</p>
+<h2>مثال عملي</h2>
+<p><code>GET /posts</code> يبقى <code>page</code> للوحة التي فيها أرقام. <code>GET /posts/:postId/comments</code> يقبل <code>cursor</code> و <code>limit</code> بسقف <code>50</code> ويعيد <code>{ items, nextCursor }</code>. اختبار: أنشئ 3 تعليقات، اطلب <code>limit=2</code>، تحقق أن الثالث فقط في الصفحة التالية وأن الأول لا يتكرر. مؤشر مكسور يعيد <code>400</code>. وثّق المسارين في OpenAPI بشكلين مختلفين حتى لا يولّد العميل <code>page</code> على التعليقات.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>skip</code> بلا سقف على <code>page</code>.</li>
+<li>مؤشر فيه <code>id</code> والترتيب على <code>title</code> فقط.</li>
+<li>نسيان <code>skip: 1</code> فيتكرر آخر تعليق.</li>
+<li><code>total</code> من جدول كامل مع <code>where</code> على العناصر.</li>
+<li>صفحة عميقة بإزاحة على جدول يكبر كل يوم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الإزاحة لصفحات مرقّمة على مجموعة مضيّقة. المؤشر لتمرير طويل مرتّب بمفتاح فريد مفهرس.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>المؤشر حين يحتاج المنتج قفزًا عشوائيًا إلى صفحة رقم 40. الإزاحة حين يكون العمق كبيرًا والكتابة متزامنة وتكره تكرار الصفوف. اختر حسب الشاشة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>skip</code> / <code>take</code></th>
+<th><code>cursor</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>page</code> ظاهرة</td>
+<td><code>nextCursor</code> معتم</td>
+</tr>
+<tr>
+<td>قفز إلى رقم</td>
+<td>تقدم للأمام</td>
+</tr>
+<tr>
+<td>يكلف مع عمق كبير</td>
+<td>مدى على الفهرس</td>
+</tr>
+<tr>
+<td><code>total</code> طبيعي</td>
+<td>وجود تالٍ يكفي غالبًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>كيف تُحسب <code>skip</code> إذا بدأت الصفحة من <code>1</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>(page - 1) * pageSize</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>take: limit + 1</code> في المؤشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لتعرف أن هناك عنصرًا زائدًا فتملأ <code>nextCursor</code>، ثم تقطع العرض إلى <code>limit</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الترتيب <code>title</code> ثم <code>id</code>، والمؤشر يخزن <code>id</code> فقط. ماذا يختل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الموضع لا يحدد مكان العنوان في الترتيب. المؤشر يحمل الحقول التي تُرتّب بها، أو يُرفض عند تغيير الفرز.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>skip: 1</code> مع <code>cursor</code> في Prisma؟</li>
+<li>أي مسار في المكتبة يبقى على أرقام الصفحات؟</li>
+<li>لماذا تهتز الإزاحة عند الحذف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإزاحة عقد الصفحة المرقّمة. المؤشر عقد «التالي» على مفتاح الترتيب. السقف <code>50</code> في الاثنين. لا تبنِ مؤشرًا أضيق من <code>orderBy</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-filtering.html">Filtering</a> شروط مسموحة تُضاف إلى <code>where</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Prisma — Pagination: <a href="https://www.prisma.io/docs/orm/prisma-client/queries/pagination">https://www.prisma.io/docs/orm/prisma-client/queries/pagination</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مرحلة Middleware</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-middleware-stage.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مرحلة Middleware</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد ماذا يجري في مرحلة Middleware: <code>app.use</code> أولًا، ثم ربط الوحدات بترتيب <code>@Global()</code> ثم الجذر ثم البعد عن الجذر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرف تتبع يُضاف في Module بعيدة قد يُسجَّل بعد أن وحدة أخرى قرأت الرأس ووجدته فارغًا. ترتيب Middleware هو ترتيب Express: من رُبط أولًا يعمل أولًا، مع قاعدة إضافية بين الوحدات. خلط هذا مع Guard يضع كودًا قبل اختيار المسار في مكان يتوقع معالجًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Middleware دالة أو صنف يرى الطلب وينادي <code>next()</code> ليكمل السلسلة. العام عبر <code>app.use()</code> يعمل قبل أي Middleware ربَطتها Module. ثم وحدات <code>@Global()</code>، ثم <code>AppModule</code>، ثم الوحدات الأخرى الأقرب إلى الجذر فالأبعد. داخل الوحدة الترتيب هو ترتيب الربط.</p>
+<p>كتابة <code>configure</code> و <code>NestMiddleware</code> فصل Middleware التالي. هنا موضع المرحلة فقط.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق: أولًا المربوط عامًا مثل <code>app.use()</code>، ثم المربوط بالوحدة والمطابق للمسار. التشغيل تسلسلي كـ Express. بين الوحدات: <code>@Global()</code> أولًا، ثم الجذر، ثم الباقي مرتبًا حسب المسافة من الجذر في رسم الاستيراد.</p>
+<p>المطابقة بالمسار تعني أن Middleware وحدة قد لا تعمل على كل URL. هذا ما زال قبل Guards و Interceptors و Pipes وقبل المعالج.</p>
+<p>استثناء يُرمى من Middleware تصل إليه طبقة الاستثناءات، وينطبق Exception Filter العام فقط. مرشح Controller ومرشح المسار لا يريان هذا الاستثناء لأن المعالج لم يُختر.</p>
+<p>عدم مناداة <code>next()</code> وعدم إنهاء الرد يعلق الطلب. إنهاء الرد من Middleware من غير <code>next()</code> يوقف بقية الدورة، بما فيها المعالج. ذلك سلوك السلسلة، لا اختصارًا داخل Nest بعد اختيار المسار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">1 app.use(requestId)
+2 Middleware من كل Module عليها @Global()
+3 Middleware مربوطة في AppModule
+4 Middleware الوحدات الأبعد، الأقرب إلى الجذر قبل الأبعد
+5 ثم Guards
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import type { NextFunction, Request, Response } from &#39;express&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+
+app.use((req: Request, _res: Response, next: NextFunction) =&gt; {
+  req.headers[&#39;x-request-id&#39;] = req.headers[&#39;x-request-id&#39;] ?? &#39;generated&#39;;
+  next();
+});
+
+await app.listen(3000);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>هذا البند 2.1. أي Middleware وحدة سترى الرأس إن أكملت <code>next()</code>.</li>
+<li><code>import type</code> هنا لأن <code>Request</code> نوع Express لا رمز حقن.</li>
+<li>المعالج لاحقًا يقرأ الرأس بـ <code>@Headers(&#39;x-request-id&#39;)</code> إن احتاج. المرحلة لا تعرف اسم الدالة.</li>
+<li>الرمز الذي يولَّد هنا مشترك في الشكل لكل الطلبات التي تدخل التطبيق، لا لمسار الإعارة فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد <code>app.use</code> تمشي Nest على Middleware الوحدات المطابقة للمسار. وحدة <code>AuditModule</code> إن كانت <code>@Global()</code> تسبق ربطًا على <code>AppModule</code> حتى لو استورد الجذر ميزات أخرى أولًا في الملف. ميزة <code>LoansModule</code> المستوردة من الجذر أقرب من وحدة يستوردها <code>LoansModule</code> نفسها، فالأقرب يعمل قبل الأبعد.</p>
+<p>داخل الوحدة الواحدة الترتيب هو ترتيب إضافتك لها، كسلسلة Express. لا تعكس Nest هذا الجزء.</p>
+<p>عند <code>next()</code> ينتقل التحكم إلى عنصر Middleware التالي ثم إلى Guards. رمي خطأ قبل <code>next()</code> يغادر المرحلة نحو المرشح العام.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-text">@Global() AuditModule     -&gt; stamp
+AppModule                 -&gt; accessLog
+LoansModule               -&gt; loansMark
+InventoryModule           -&gt; يستوردها LoansModule -&gt; inventoryMark
+</code></pre>
+<p>طلب <code>GET /loans</code> المطابق لكل الروابط يمر: <code>app.use</code>، ثم <code>stamp</code>، ثم <code>accessLog</code>، ثم <code>loansMark</code>، ثم <code>inventoryMark</code> لأن المخزون أبعد عن الجذر. بعدها تبدأ Guards. <code>inventoryMark</code> لا يرى نتيجة Pipe لأن Pipes لم تبدأ، ولا يغير جسمًا لم يُتحقق منه بعد.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>توقع Guard قبل <code>app.use</code></td>
+<td>العام في Middleware يسبق Guards كلها</td>
+</tr>
+<tr>
+<td>ربط التتبع على وحدة بعيدة وقراءته في وحدة <code>@Global()</code></td>
+<td>القارئ يعمل أولًا والحقل ما زال فارغًا</td>
+</tr>
+<tr>
+<td>رمي خطأ وتوقع مرشح على <code>@Patch</code></td>
+<td>المرشح العام فقط</td>
+</tr>
+<tr>
+<td>إنهاء الرد من غير قصد مع <code>next()</code> أيضًا</td>
+<td>السلسلة قد تكتب مرتين؛ اختر الإنهاء أو <code>next()</code></td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لشيء يخص الطلب قبل معرفة المعالج: معرف تتبع، ختم زمني، أو رفض مبكر على مسار عريض لا يحتاج Decorator المسار. الربط العام بـ <code>app.use</code> عندما يجب أن يسبق كل الوحدات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لصلاحية عضو على <code>PATCH /loans/:id</code>. ذلك Guard بعد اختيار المسار. لتحويل <code>id</code> إلى عدد. ذلك Pipe. لا تضع قاعدة الإعارة هنا؛ الخدمة لم تُستدعَ بعد والمعالج لم يبدأ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الربط</th>
+<th>متى يعمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.use</code></td>
+<td>قبل Middleware كل الوحدات</td>
+</tr>
+<tr>
+<td>وحدة <code>@Global()</code></td>
+<td>بعد العام وقبل الجذر</td>
+</tr>
+<tr>
+<td><code>AppModule</code></td>
+<td>بعد <code>@Global()</code> وقبل الوحدات الأبعد</td>
+</tr>
+<tr>
+<td>وحدة مستوردة بعمق أكبر</td>
+<td>بعد الوحدة التي استوردتها</td>
+</tr>
+<tr>
+<td>Guard</td>
+<td>بعد انتهاء مرحلة Middleware</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا ينادي Middleware ليصل الطلب إلى Guards؟</p>
+<details><summary>الحل</summary>
+
+<p><code>next()</code>. إنهاء الرد من غير <code>next()</code> يوقف بقية الدورة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>رتّب: <code>loansMark</code> على <code>LoansModule</code>، <code>stamp</code> على وحدة <code>@Global()</code>، <code>requestId</code> في <code>app.use</code>، <code>accessLog</code> على الجذر.</p>
+<details><summary>الحل</summary>
+
+<p><code>requestId</code>، ثم <code>stamp</code>، ثم <code>accessLog</code>، ثم <code>loansMark</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا مرشح مكتوب على <code>LoansController</code> لا يصيغ استثناء <code>stamp</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>stamp</code> Middleware وقد تكون على وحدة عامة قبل اختيار Controller. استثناء هذه المرحلة يراه Exception Filter العام فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما البندان الرئيسيان داخل مرحلة Middleware؟</li>
+<li>كيف تُرتَّب الوحدات بعد <code>app.use</code>؟</li>
+<li>أي مرشح يرى استثناء المرحلة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Middleware تبدأ بـ <code>app.use</code> ثم بربط الوحدات: <code>@Global()</code> ثم الجذر ثم الأبعد حسب رسم الاستيراد، وتسلسل داخل الوحدة كـ Express. بعدها Guards. استثناء المرحلة للمرشح العام.</p>
+<h2>ماذا بعد؟</h2>
+<p>المرحلة 3: مرحلة Guards.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle (Middleware): <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

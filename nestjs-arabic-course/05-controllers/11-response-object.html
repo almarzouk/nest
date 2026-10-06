@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Response Object و Library-specific Mode</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-response-object.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Response Object و Library-specific Mode</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة متى يحقن <code>@Res()</code> كائن استجابة المنصة، وما الذي يتغير في من يكتب الاستجابة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تصدير CSV أو ضبط cookie يحتاج API المنصة: <code>res.send</code> أو <code>res.cookie</code>. استخدام ذلك في كل المسارات يعطل الأسلوب الذي يعيد قيمة ويترك Nest تكتب JSON. Nest تميّز الوضعين حتى لا يختلط «أنا أكتب الرد» مع «أنا أعيد قيمة».</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Res()</code> أو <code>@Response()</code> يضع المعالج في وضع المكتبة. أنت تستدعي <code>res.send</code> أو <code>res.json</code>، وإلا يبقى الطلب معلقًا. <code>@Res({ passthrough: true })</code> يتيح لمس الكائن مع إبقاء Nest هي من ترسل القيمة المعادة.</p>
+<p>من غير <code>passthrough</code> تفقد سلوك Interceptors والتسلسل القياسي على هذا المسار.</p>
+<h2>التعريف التقني</h2>
+<p>وجود <code>@Res()</code> أو <code>@Next()</code> في التوقيع يعطل الأسلوب القياسي لذلك المعالج. التوثيق يحذّر من الجمع بينهما وبين <code>return</code> من غير <code>passthrough</code>: القيمة المعادة لا تُرسل كما تتوقع.</p>
+<pre><code class="language-ts">@Get(&#39;catalog.csv&#39;)
+csv(@Res() res: Response) {
+  res.type(&#39;text/csv&#39;);
+  res.send(&#39;isbn,title\n&#39;);
+}
+</code></pre>
+<pre><code class="language-ts">@Post(&#39;ready&#39;)
+ready(@Res({ passthrough: true }) res: Response) {
+  res.cookie(&#39;report&#39;, &#39;ready&#39;);
+  return { ok: true };
+}
+</code></pre>
+<p><code>@Res()</code> اسم مختصر لـ <code>@Response()</code>. النوع من المنصة: <code>import type { Response } from &#39;express&#39;</code> مع <code>@types/express</code>. على Fastify استخدم نوع رد Fastify.</p>
+<p><code>passthrough: true</code> للإعداد الضيق: cookie أو رأس، ثم <code>return</code> حتى تكمل Nest الرمز والتسلسل والـ Interceptors التي تعتمد على القيمة.</p>
+<p><code>@Next()</code> نادر في Controller ويقلب الوضع نفسه. تمرير التحكم بأسلوب Express middleware داخل المعالج يخرج عن مسار هذا الفصل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Res()                         أنت تكتب النهاية
+@Res({ passthrough: true })    أنت تضبط تفصيلًا، وNest تكمل
+return value                   Nest تكتب، من غير حقن res
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Res } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+
+@Controller(&#39;reports&#39;)
+export class CsvReportsController {
+  @Get(&#39;catalog.csv&#39;)
+  csv(@Res() res: Response) {
+    res.type(&#39;text/csv&#39;);
+    res.send(&#39;isbn,title\n9780001,أطلس\n&#39;);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا <code>return</code> يُعتمد عليه. <code>res.send</code> هو نهاية الاستجابة.</li>
+<li><code>res.type</code> يضبط <code>Content-Type</code> قبل الإرسال.</li>
+<li>نسيان <code>send</code> أو <code>json</code> أو <code>end</code> يترك الاتصال مفتوحًا.</li>
+<li>هذا المسار يناسب ملفًا خامًا، لا كائنًا تريد Nest أن تسلسله.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تكشف <code>@Res()</code> أو <code>@Next()</code> عند بناء المعالج وتوقف <code>RouterResponseController</code> عن إرسال القيمة المعادة. Interceptors التي تغلف القيمة المعادة أو تعتمد على التسلسل القياسي لا ترى المسار المعتاد، لأن الرد خرج من <code>res.send</code> خارج ذلك التعاقد.</p>
+<p>مع <code>passthrough: true</code> يبقى الإرسال القياسي. يمكنك ضبط cookie أو رأس، ثم تعيد كائنًا فيصبح JSON، أو تعيد نصًا فيُرسل كما هو، ويبقى رمز POST الافتراضي 201 قابلًا للتعديل بـ <code>@HttpCode</code>.</p>
+<p>كتابة <code>res.status(200).json(...)</code> من غير passthrough تعني أن الرمز والجسم قرارك، بما في ذلك POST الذي لم يعد يأخذ 201 تلقائيًا.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, Post, Res } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { ReportsService } from &#39;./reports.service.js&#39;;
+
+@Controller(&#39;reports&#39;)
+export class ReportDownloadsController {
+  constructor(private readonly reports: ReportsService) {}
+
+  @Get(&#39;stock.csv&#39;)
+  stock(@Res() res: Response) {
+    const csv = this.reports.stockCsv();
+    res.type(&#39;text/csv&#39;);
+    res.send(csv);
+  }
+
+  @Post(&#39;ready&#39;)
+  ready(@Res({ passthrough: true }) res: Response) {
+    res.cookie(&#39;report&#39;, &#39;ready&#39;, { httpOnly: true });
+    return { ok: true };
+  }
+}
+</code></pre>
+<p><code>stock</code> وضع مكتبة: الخدمة تجهز النص، و <code>res.send</code> يكتبه. <code>ready</code> يضبط cookie ثم يعيد <code>{ ok: true }</code> فترسله Nest JSON مع رمز 201.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Res() res</code> مع <code>return { ok: true }</code> من غير passthrough</td>
+<td>الكائن لا يُرسل بالأسلوب القياسي وقد يعلق الطلب إن لم يُستدعَ <code>send</code></td>
+</tr>
+<tr>
+<td>نسيان <code>res.send</code> في وضع المكتبة</td>
+<td>العميل ينتظر إلى أن تنتهي المهلة</td>
+</tr>
+<tr>
+<td><code>@Res()</code> على مسار JSON عادي</td>
+<td>تفقد التسلسل و Interceptors ذلك المسار</td>
+</tr>
+<tr>
+<td>توقع 201 بعد <code>res.status(200).json</code> على POST</td>
+<td>الرمز الذي كتبته على <code>res</code> هو الذي يخرج</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p><code>@Res()</code> لرد خام تبنيه API المنصة: CSV أو بث تكتبه بنفسك. <code>passthrough: true</code> عندما تحتاج cookie أو رأسًا ثم تُكمل Nest إرسال القيمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكائن أو مصفوفة JSON معتادة. أعد القيمة. لرمز ثابت أو تحويل، <code>@HttpCode</code> و <code>@Redirect</code> يبقيان في الأسلوب القياسي. رأس ثابت مثل <code>Cache-Control</code> يُكتب بـ <code>@Header</code> من غير حقن <code>res</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التوقيع</th>
+<th>من يكتب الجسم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>return value</code></td>
+<td>Nest، مع التسلسل و Interceptors</td>
+</tr>
+<tr>
+<td><code>@Res() res</code> ثم <code>res.send</code></td>
+<td>معالجك، والأسلوب القياسي متوقف</td>
+</tr>
+<tr>
+<td><code>@Res({ passthrough: true })</code> ثم <code>return</code></td>
+<td>أنت تضبط الكائن، وNest ترسل القيمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحدث لـ <code>GET</code> يستخدم <code>@Res()</code> ولا يستدعي طريقة إرسال؟</p>
+<details><summary>الحل</summary>
+
+<p>الطلب يبقى معلقًا. في وضع المكتبة إرسال الجسم مسؤوليتك.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>تريد cookie <code>report=ready</code> وجسم <code>{ ok: true }</code> كـ JSON. أي شكل لـ <code>@Res</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Res({ passthrough: true })</code> ثم <code>res.cookie(...)</code> ثم <code>return { ok: true }</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يفقد مسار <code>@Res()</code> من غير passthrough سلوك Interceptors القياسي؟</p>
+<details><summary>الحل</summary>
+
+<p>Nest تعطّل أسلوبها لهذا المعالج عندما ترى <code>@Res()</code> أو <code>@Next()</code>. الجسم يخرج عبر كائن المنصة، فسلسلة التسلسل والـ Interceptors التي تعتمد على القيمة المعادة لا تعمل على هذا المسار كما في <code>return</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مرادف <code>@Res()</code>؟</li>
+<li>ماذا يفعل <code>passthrough: true</code>؟</li>
+<li>أي Decorator آخر يضع المعالج في وضع المكتبة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Res()</code> يعني أنك تكتب الاستجابة بأدوات المنصة. <code>passthrough: true</code> يعيد الإرسال إلى Nest بعد لمسة على الكائن. مسارات JSON العادية تعيد قيمة وتترك الوضع القياسي.</p>
+<h2>ماذا بعد؟</h2>
+<p>ماذا تفعل Nest عندما تعيد القيمة: Standard Nest Response Handling.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers (Library-specific): <a href="https://docs.nestjs.com/controllers#routing">https://docs.nestjs.com/controllers#routing</a></li>
+<li>NestJS — Status code: <a href="https://docs.nestjs.com/controllers#status-code">https://docs.nestjs.com/controllers#status-code</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

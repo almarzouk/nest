@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Pipe</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-a-pipe.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Pipe</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف الأنبوب: صنف يطبّق <code>PipeTransform</code> ويعمل على معامل المعالج قبل استدعائه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المسار يصل والمعامل ما زال نصًا من عنوان URL، أو جسمًا بلا فحص. وضع <code>parseInt</code> داخل كل دالة يكرر القاعدة ويجعل الخدمة ترى قيمًا لم تُراجع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الأنبوب دالة <code>transform(value, metadata)</code>. القيمة التي يرجعها تحل محل المعامل. إن رمى، المعالج لا يُستدعى.</p>
+<h2>التعريف التقني</h2>
+<p>الصنف <code>@Injectable()</code> ويطبّق <code>PipeTransform</code>. التوقيع:</p>
+<pre><code class="language-ts">transform(value: T, metadata: ArgumentMetadata): R | Promise&lt;R&gt;;
+</code></pre>
+<p><code>value</code> هو المعامل الحالي. <code>metadata</code> يصف من أين أتى. الحقول التي تهم هذا الدرس: <code>type</code> تكون <code>body</code> أو <code>query</code> أو <code>param</code> أو <code>custom</code>، و <code>metatype</code> نوع TypeScript المنعكس، و <code>data</code> النص الممرَّر إلى الزينة مثل <code>&#39;id&#39;</code> في <code>@Param(&#39;id&#39;)</code>. حقل <code>schema</code> يخص مخططات الفصل 12.</p>
+<p>الأنبوب يعمل داخل منطقة الاستثناءات. الاستثناء يصل إلى الفلاتر المرتبطة بالسياق الحالي، عالميًا وعلى المتحكم وعلى المسار. هذا يختلف عن استثناء Middleware الذي تراه الفلاتر العامة فقط.</p>
+<p>موضعه في الدورة، بعد Interceptors التي تسبق المعالج، وقبل جسم المتحكم: أنابيب عامة، ثم أنابيب المتحكم، ثم أنابيب المسار، ثم أنابيب المعاملات. تفصيل الربط درس في آخر هذا الفصل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المعامل الخام  →  transform  →  المعامل الذي يراه المتحكم
+                     ↘ رمي استثناء → المعالج لا يعمل
+</code></pre>
+<p>الأنبوب لا يرى الطلب كله كموضوع له. موضوعه قيمة واحدة ذاهبة إلى معامل واحد، أو كل المعاملات إذا رُبط على المسار. الظرف العام بقي في Middleware.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type ArgumentMetadata,
+  Injectable,
+  type PipeTransform,
+} from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class PassThroughPipe implements PipeTransform {
+  transform(value: unknown, metadata: ArgumentMetadata): unknown {
+    void metadata;
+    return value;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">@Get(&#39;:code&#39;)
+findOne(@Param(&#39;code&#39;, PassThroughPipe) code: string): string {
+  return code;
+}
+</code></pre>
+<p>تمرير الصنف لا النسخة يترك البناء للإطار ويسمح بالحقن. النسخة <code>new PassThroughPipe()</code> تصلح حين لا تحتاج الحاوية.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>transform</code> ترجع القيمة كما هي. هذا أنبوب هوية لرؤية العقد.</li>
+<li><code>metadata</code> متاح حتى لو تجاهلته. الأنابيب المفيدة تقرأ <code>type</code> أو <code>data</code>.</li>
+<li>الربط هنا على معامل <code>@Param</code>. المعالج يستلم ما رجعه الأنبوب.</li>
+<li>لا <code>next()</code>. هذا ليس Middleware.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>بعد الحراس و Interceptors السابقة، يجمع Nest معاملات الدالة.</li>
+<li>يشغّل الأنابيب المرتبطة بهذا المعامل.</li>
+<li>ناتج <code>transform</code> يصبح قيمة المعامل.</li>
+<li>إن اكتملت الأنابيب، تُستدعى الدالة.</li>
+<li>إن رمى أنبوب، تتوقف الدورة عند الاستثناء وتذهب إلى الفلتر المناسب للسياق. الخدمة لا تُستدعى.</li>
+</ol>
+<p><code>try/catch</code> داخل المتحكم لا يرى هذا الرمي، لأن الرمي حدث قبل الدخول إلى الدالة.</p>
+<p>الأنبوب يستطيع أن يكون <code>async</code>. الإطار ينتظر الوعد. الوعد المرفوض يُعامل كاستثناء.</p>
+<h2>مثال عملي</h2>
+<p><code>GET /invoices/18</code> يصل والمعامل نص. أنبوب لاحق يحوّله إلى عدد. في هذا الدرس الأنبوب يعيد النص حتى ترى أن الربط وحده لا يغيّر النوع. الدالة <code>findOne</code> تطبع <code>typeof code</code> وتجد <code>string</code>. التحويل قرار تكتبه داخل <code>transform</code>، وهو موضوع الدرس التالي، لا أثر جانبي للربط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>انتظار أن الأنبوب يعمل قبل الحارس. الدورة تضعه بعد Interceptor السابق للحارس.</li>
+<li>إرجاع <code>undefined</code> سهوًا فيضيع المعامل.</li>
+<li>وضع ختم ترويسة داخل <code>transform</code>. الأنبوب لا يُستدعى على مسار بلا معامل مرتبط به بهذه الطريقة، ومكان الترويسة Middleware.</li>
+<li>اعتبار أن <code>metadata.metatype</code> حاضر للواجهات. الواجهة تُمسح، و <code>metatype</code> للأصناف والقيم المنعكسة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تكون القاعدة عن قيمة داخلة إلى المعالج: تحويل أو رفض، قبل أول سطر في المتحكم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكتابة ترويسة على كل طلب، أو للسماح حسب دور الدالة، أو لتغليف JSON الراجع. تلك الطبقات السابقة واللاحقة في الدورة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Middleware</th>
+<th>Pipe</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المدخل</td>
+<td><code>req</code>, <code>res</code>, <code>next</code></td>
+<td><code>value</code>, <code>metadata</code></td>
+</tr>
+<tr>
+<td>المخرج</td>
+<td><code>next()</code> أو إنهاء الرد</td>
+<td>قيمة أو استثناء</td>
+</tr>
+<tr>
+<td>متى</td>
+<td>قبل الحارس</td>
+<td>قبل جسم المتحكم وبعد Interceptor السابق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يصبح معامل المتحكم إن رجعت <code>transform</code> العدد <code>18</code> بينما الأصل نص <code>&quot;18&quot;</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العدد <code>18</code>. القيمة المرجعة تستبدل القيمة السابقة للمعامل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أنبوب رمى <code>BadRequestException</code>. هل تعمل <code>InvoicesService</code>؟ وأي منطقة تلتقط الخطأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخدمة لا تُستدعى. الاستثناء داخل منطقة الاستثناءات، فتراه فلاتر المسار ثم المتحكم ثم العام، لا الفلاتر العامة وحدها كما في Middleware.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يكفي <code>try/catch</code> في أول سطر من <code>findOne</code> لالتقاط فشل الأنبوب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأنبوب يعمل قبل استدعاء الدالة. الرمي لا يدخل جسم المتحكم، فالـ <code>catch</code> لا يرى شيئًا. التقاط الشكل للعميل عمل الفلتر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الواجهة التي يطبّقها الأنبوب؟</li>
+<li>ما الحقول الأساسية في <code>ArgumentMetadata</code>؟</li>
+<li>أين يقع الأنبوب بالنسبة إلى المتحكم؟</li>
+<li>ماذا يحدث للمعالج حين يرمي <code>transform</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Pipe صنف <code>transform</code> على قيمة المعامل قبل الدالة. الإرجاع يستبدل القيمة، والرمي يمنع الاستدعاء ويذهب إلى فلاتر السياق. الظرف العام ليس عمله.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفرّق الوظيفتين: تحويل القيمة، أو التحقق منها وتمريرها أو رمي استثناء.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

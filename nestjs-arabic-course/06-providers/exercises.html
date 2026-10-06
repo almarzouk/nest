@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس، ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>ما المعادل الطويل لـ <code>providers: [FineService]</code>؟</li>
+<li>ماذا يغيّر <code>@Optional()</code> على معامل مُنشئ عندما يكون الرمز غير مسجّل؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>{ provide: FineService, useClass: FineService }</code>.</li>
+<li>Nest تمرر <code>undefined</code> بدل إيقاف الإقلاع. الصنف يوفّر البديل. الـ Decorator لا يسجل الرمز.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p><code>VisitContext</code> عليها <code>Scope.REQUEST</code> وتقرأ رأس العضو. <code>LoansService</code> افتراضية في الكتابة لكنها تطلب <code>VisitContext</code>. <code>StampClock</code> عليها <code>Scope.TRANSIENT</code> وتُحقن في <code>AuditService</code> الافتراضية. ما عمر كل من <code>LoansService</code> و <code>AuditService</code>، وكم نسخة ساعة لطلبين؟</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>LoansService</code> تصبح <code>REQUEST</code> لأن العدوى تصعد ممن تحقن.</li>
+<li><code>AuditService</code> تبقى Singleton. <code>TRANSIENT</code> لا يغيّر عمر المستهلك.</li>
+<li>ساعة واحدة: تُنشأ عندما تُنشأ <code>AuditService</code> عند الإقلاع، والطلبان يريانها.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>التسجيل الآتي يجعل عدّاد <code>AuditLog</code> يتفرع رغم أن الفريق أراد نسخة واحدة. أصلح الوصفة الثانية فقط.</p>
+<pre><code class="language-ts">providers: [
+  AuditLog,
+  { provide: &#39;DeskAudit&#39;, useClass: AuditLog },
+]
+</code></pre>
+<p>ثم اشرح كيف تحقن واجهة <code>FeatureFlags</code> إن أصبح جدول الأعلام <code>useValue</code> بدل صنف.</p>
+<details>
+<summary>الحل</summary>
+
+<p>استبدل الوصفة الثانية بـ <code>{ provide: &#39;DeskAudit&#39;, useExisting: AuditLog }</code>. <code>useClass</code> كان يبني نسخة في خانة النص منفصلة عن خانة الصنف.</p>
+<p>لجدول الأعلام: أعلن <code>const FEATURE_FLAGS = Symbol(&#39;FEATURE_FLAGS&#39;)</code> في ملف مشترك، وسجّل <code>{ provide: FEATURE_FLAGS, useValue: flags }</code>، واحقن <code>@Inject(FEATURE_FLAGS) flags: FeatureFlags</code>. الواجهة وصف فقط. لا تعِد نداء <code>Symbol(...)</code> في ملف الخدمة. الصنف المجرد بديل إن أردت مفتاحًا يُستنتج من نوع المعامل من غير <code>@Inject</code>.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

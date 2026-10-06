@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forRoutes و exclude</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-for-routes-and-exclude.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>forRoutes و exclude</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد المسارات التي يجري عليها Middleware، واستثناء ما يجب أن يبقى خارج السلسلة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ختم التتبع على <code>GET /health</code> يلوّث فحص الحياة، وختم الإعارات على كل التطبيق يضيف ترويسة لا تعني شيئًا لمسار الأعضاء. التقييد جزء من التسجيل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد <code>apply</code> تنادي <code>forRoutes</code> بما يجب تغطيته، و <code>exclude</code> بما يُطرح من تلك التغطية. <code>exclude</code> تأتي في السلسلة قبل <code>forRoutes</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>forRoutes</code> يقبل:</p>
+<ul>
+<li>نص مسار مثل <code>&#39;loans&#39;</code>.</li>
+<li>عدة نصوص.</li>
+<li>كائن <code>RouteInfo</code>: <code>{ path, method }</code> مع <code>RequestMethod</code>.</li>
+<li>صنف متحكم، أو عدة أصناف. هذا الشكل الذي تقوله الصفحة في أغلب الحالات.</li>
+</ul>
+<p><code>exclude</code> يقبل نصًا، أو عدة نصوص، أو كائنات <code>RouteInfo</code>. الاستثناء يُطرح من مجموعة <code>forRoutes</code>.</p>
+<p>المسارات النمطية تستخدم معاملًا باسم، كما في الصفحة:</p>
+<pre><code class="language-ts">{ path: &#39;loans/*rest&#39;, method: RequestMethod.ALL }
+</code></pre>
+<p>الاسم <code>rest</code> مثال. أي اسم يصلح، مثل <code>*splat</code> في مثال التوثيق. النص <code>loans/*rest</code> يطابق <code>loans/1</code> و <code>loans/abc</code> ولا يطابق <code>loans</code> وحده. لجعل الذيل اختياريًا:</p>
+<pre><code class="language-ts">{ path: &#39;loans/{*rest}&#39;, method: RequestMethod.ALL }
+</code></pre>
+<p>تلميح الصفحة لربط صنف بكل المسارات من الوحدة يستخدم <code>forRoutes(&#39;*&#39;)</code>. النمط المسمّى أعلاه هو شكل الجزء من الشجرة.</p>
+<p><code>RequestMethod.GET</code> و <code>POST</code> و <code>ALL</code> تميّز الفعل. نص <code>&#39;loans&#39;</code> من غير كائن يشمل أفعال ذلك المسار حسب سلوك الربط بالنص.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">apply(Trace)
+  exclude  GET /health
+  forRoutes LoansController
+الناتج = مسارات المتحكم ناقص ما استثنيت
+</code></pre>
+<p>الاستثناء لا يسجّل Middleware آخر. هو ثقب في المجموعة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type MiddlewareConsumer,
+  type NestModule,
+  RequestMethod,
+} from &#39;@nestjs/common&#39;;
+import { LoansController } from &#39;./loans.controller.js&#39;;
+import { traceLoan } from &#39;./trace-loan.middleware.js&#39;;
+
+export class LoansModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(traceLoan)
+      .exclude(
+        { path: &#39;health&#39;, method: RequestMethod.GET },
+        { path: &#39;loans&#39;, method: RequestMethod.POST },
+      )
+      .forRoutes(LoansController);
+  }
+}
+</code></pre>
+<p><code>GET /loans</code> يمر على <code>traceLoan</code> إن كان داخل <code>LoansController</code>. <code>GET /health</code> و <code>POST /loans</code> لا يمران بهذه السلسلة، بشرط أن تلك المسارات أصلًا ضمن ما يغطيه <code>forRoutes</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>exclude</code> قبل <code>forRoutes</code> كما في مثال الصفحة. السلسلة: طبّق، اطرح، ثم ثبّت المجموعة.</li>
+<li>استثناء <code>POST /loans</code> يعني أن إنشاء الإعارة بلا ترويسة التتبع. افعل ذلك بقرار واضح.</li>
+<li>تمرير <code>LoansController</code> أوضح من سرد النصوص، لأن مسارًا جديدًا على المتحكم يدخل المجموعة وحدها.</li>
+</ul>
+<p>الاستثناء لازم حين يكون المسار داخل المجموعة، مثل <code>forRoutes(&#39;*&#39;)</code>. مسار على متحكم لم يُمرَّر أصلًا لا يحتاج <code>exclude</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تتحول القيم إلى قواعد مطابقة. الصفحة تقول إن <code>exclude</code> يعتمد path-to-regexp. عند الطلب تُختبر القواعد قبل تشغيل <code>use</code> أو الدالة. عدم التطابق يعني أن هذه السلسلة تُتخطى. سلاسل أخرى، و <code>app.use</code>، قد تظل تعمل.</p>
+<p><code>forRoutes(&#39;loans&#39;)</code> يطابق مسارًا بهذا الاسم. صنف المتحكم يطابق ما أعلنه <code>@Controller</code> ودواله. إن انتقلت البادئة إلى <code>circulation/loans</code>، الربط بالصنف يتبعها. الربط بالنص <code>&#39;loans&#39;</code> قد يفوته.</p>
+<p>النقطة <code>{*rest}</code> اختيارية. من غير الأقواس، المسار الأب وحده لا يطابق النمط ذا النجمة.</p>
+<h2>مثال عملي</h2>
+<p>فحص <code>GET /health</code> يبقى رخيصًا وبلا ترويسات تتبع. الوحدة الجذر تربط <code>traceLoan</code> بـ <code>forRoutes(&#39;*&#39;)</code> وتستثني <code>{ path: &#39;health&#39;, method: RequestMethod.GET }</code>. مسار <code>GET /loans</code> يبقى مختومًا. هذا سبب <code>exclude</code> بجانب النجمة، لا بجانب متحكم لا يملك الصحة أصلًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استثناء مسار خارج <code>forRoutes</code> ثم الاعتقاد أنه يحمي مسار وحدة أخرى. الطرح من هذه السلسلة فقط.</li>
+<li>كتابة نجمة بلا اسم داخل نمط جزئي. الصفحة الحالية تستخدم اسمًا: <code>*splat</code> أو <code>{*splat}</code>.</li>
+<li>نسيان <code>RequestMethod</code> حين تريد فعلًا واحدًا.</li>
+<li>ربط نص <code>&#39;loans&#39;</code> بينما المتحكم معلّق على <code>&#39;circulation/loans&#39;</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>forRoutes</code> في كل ربط. <code>exclude</code> حين تكون المجموعة أوسع من المسارات المرغوبة: نجمة، أو متحكم فيه مسار صحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستخدم <code>exclude</code> بدل تقسيم الوحدات. إن كانت الإعارات والأعضاء عالمين مختلفين، اربط كل Middleware بمتحكمه. الاستثناء أداة طرح صغيرة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوسيط</th>
+<th>يقبل</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>forRoutes(&#39;loans&#39;)</code></td>
+<td>نص</td>
+<td>ذلك المسار</td>
+</tr>
+<tr>
+<td><code>forRoutes({ path, method })</code></td>
+<td><code>RouteInfo</code></td>
+<td>مسار وفعل</td>
+</tr>
+<tr>
+<td><code>forRoutes(LoansController)</code></td>
+<td>صنف</td>
+<td>كل مساراته</td>
+</tr>
+<tr>
+<td><code>exclude(...)</code></td>
+<td>نص أو <code>RouteInfo</code></td>
+<td>طرح من المجموعة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يقع <code>exclude</code> في السلسلة بالنسبة إلى <code>forRoutes</code> في مثال التوثيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قبله: <code>apply(...).exclude(...).forRoutes(...)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>تريد <code>traceLoan</code> على كل <code>LoansController</code> ما عدا <code>DELETE /loans/:id</code>. ماذا تضع في <code>exclude</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ path: &#39;loans/:id&#39;, method: RequestMethod.DELETE }</code> مع ضبط <code>path</code> ليطابق البادئة الفعلية للمتحكم، ثم <code>forRoutes(LoansController)</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>النمط <code>reports/*rest</code> لم يعمل على <code>GET /reports</code>. ما تعديل المسار الذي تذكره الصفحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>reports/{*rest}</code> حتى يصبح الذيل اختياريًا فيطابق المسار الأب والابن معًا. من غير الأقواس يُشترط وجود تتمة بعد الشرطة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الأشكال التي يقبلها <code>forRoutes</code>؟</li>
+<li>ماذا يفعل <code>exclude</code> إن كان المسار أصلًا خارج المجموعة؟</li>
+<li>كيف تكتب نمطًا يطابق بادئة وأي ذيل، بما فيه الذيل الفارغ؟</li>
+<li>لماذا ربط صنف المتحكم أمتن من سرد النصوص؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forRoutes</code> تبني المجموعة و <code>exclude</code> تطرح منها. الصنف أفضل من النص حين تتغير المسارات مع المتحكم. النمط المسمّى <code>*splat</code> وشكله الاختياري <code>{*splat}</code> هما نحو الصفحة الحالية.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يرتّب هذه السلاسل مع <code>app.use</code> ومع وحدات عدة: من يعمل أولًا حين يجتمع الجميع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

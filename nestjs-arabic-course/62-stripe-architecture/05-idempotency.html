@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Idempotency</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-idempotency.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Idempotency</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>منع تكرار أثر الدفع في رف: مفتاح على إنشاء جلسة Checkout عند إعادة الطلب، وقيد على <code>event.id</code> عندما تعيد Stripe التسليم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الموظف يضغط «ادفع» مرتين فتفتح جلستان وعميلان. أو <code>evt_1</code> يصل مرتين فتُمدَّد الفترة أو يُرسل بريد «تم الدفع» مرتين. شبكة انقطعت بعد ما أنشأت Stripe الجلسة وقبل ما وصل الرابط، وإعادة الطلب بلا مفتاح تنشئ جلسة ثانية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>لأوامر API إلى Stripe مرّروا <code>idempotencyKey</code> ثابتًا لنفس محاولة المكتبة. لإعادة الحدث، أدرجوا <code>event.id</code> بقيد فريد قبل الأثر كما في ويب هوك رف. المفتاحان ليسا مفتاح الجوال الذي ينشئ كتابًا، لكن القاعدة واحدة: إعادة نفس العملية لا أثرًا ثانيًا.</p>
+<h2>التعريف التقني</h2>
+<p>عميل Stripe يقبل <code>{ idempotencyKey }</code> في خيارات الطلب. المفتاح سلسلة ثابتة لمحاولة Checkout هذه (مثل <code>checkout:${organizationId}:${plan}</code> خلال نافذة قصيرة، أو UUID يولّده العميل في <code>Idempotency-Key</code> ويُخزَّن). إعادة نفس المفتاح خلال مدة Stripe تعيد نفس الجلسة لا جلسة جديدة. أحداث الويب هوك لها <code>id</code> مثل <code>evt_...</code> يبقى في الإعادات. قيد فريد عليه. 200 على المكرر. لا تضعوا <code>active</code> في المسار الذي يعيد الجلسة حتى لو كان المفتاح جديدًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نفس idempotencyKey → نفس Checkout Session
+نفس event.id       → أثر محلي واحد
+success URL        → لا مفتاح ولا أثر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await this.stripe.checkout.sessions.create(params, {
+  idempotencyKey: `checkout:${organizationId}:pro`,
+});
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المفتاح من حقائق المحاولة لا من وقت <code>Date.now()</code> وإلا تغيّر كل ضغطة وصنع جلسة جديدة.</li>
+<li>إن غيّرتم السعر، غيّروا المفتاح حتى لا يعيد Stripe جلسة الخطة القديمة.</li>
+<li>هذا لا يحفظ <code>event.id</code>. ذلك جدول آخر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب الأول ينشئ الجلسة عند Stripe ويحفظ الرابط.</li>
+<li>الطلب الثاني بنفس المفتاح يستلم نفس الكائن.</li>
+<li>لاحقًا يصل <code>evt_1</code>. INSERT ينجح وتُحدَّث الحالة.</li>
+<li>إعادة <code>evt_1</code> تصطدم بالقيد وترد 200 بلا تحديث ثانٍ وبلا بريد ثانٍ.</li>
+<li>فتح success لا يولّد مفتاحًا ولا يكتب الصف.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export async function markEvent(tx: { event: { create: Function } }, eventId: string) {
+  try {
+    await tx.event.create({ data: { id: eventId, source: &#39;stripe&#39; } });
+    return true;
+  } catch (error) {
+    if (typeof error === &#39;object&#39; &amp;&amp; error &amp;&amp; &#39;code&#39; in error &amp;&amp; error.code === &#39;P2002&#39;) return false;
+    throw error;
+  }
+}
+</code></pre>
+<p><code>true</code> يعني طبّقوا المزامنة والبريد داخل نفس المعاملة. <code>false</code> يعني أرجعوا 200 وتوقفوا. أنشئوا الجلسة بمفتاحها في المسار الآخر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مفتاح من الطابع الزمني.</li>
+<li>معالجة الحدث المكرر بـ 500 فيعيد Stripe طويلًا.</li>
+<li>الاعتماد على مفتاح Checkout لمنع تكرار الويب هوك. هما طبقتان.</li>
+<li>تفعيل الاشتراك في فرع «أول مفتاح» داخل <code>startCheckout</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على <code>sessions.create</code> وأي أمر Stripe له أثر مالي، وعلى كل <code>event.id</code> وارد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تشاركوا مفتاحًا واحدًا لكل المكتبات. ولا تستعملوا مفتاح الجلسة كبديل عن توقيع الويب هوك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>المفتاح</th>
+<th>التكرار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء الجلسة</td>
+<td><code>idempotencyKey</code> لـ Stripe</td>
+<td>نفس <code>url</code></td>
+</tr>
+<tr>
+<td>الحدث</td>
+<td><code>event.id</code> محلي</td>
+<td>بلا مزامنة ثانية</td>
+</tr>
+<tr>
+<td>زر الواجهة success</td>
+<td>—</td>
+<td>بلا كتابة حالة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ضغطتان سريعتان بمفتاح <code>checkout:org_nile:pro</code>. كم جلسة جديدة يتوقع Stripe؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>واحدة. الثانية تعيد نفس الجلسة ما دام المفتاح والمعاملات ضمن سياسة Stripe.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مفتاح الجلسة لا يمنع بريدين عند إعادة <code>evt_1</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن البريد أثر معالج الحدث لا أثر إنشاء الجلسة. قيد <code>event.id</code> هو الذي يمنع الأثر الثاني.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>غيّرتم <code>price</code> وأبقيتم المفتاح. ما الخطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قد تعيد Stripe نتيجة الطلب الأول بالسعر القديم بدل إنشاء جلسة السعر الجديد. غيّروا المفتاح عندما تتغير المعاملات ذات المعنى.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُمرَّر مفتاح إنشاء الجلسة؟</li>
+<li>ما مفتاح تكرار الويب هوك؟</li>
+<li>لماذا ليس الطابع مفتاحًا؟</li>
+<li>هل success URL يدخل أيًا من الطبقتين؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Checkout يُنشأ بمفتاح idempotency ثابت للمحاولة. أحداث Stripe تُطبَّق مرة بقيد <code>event.id</code>. لا طبقة منهما تكتب <code>active</code> لأن المتصفح فتح صفحة النجاح.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدفع حدوده واضحة. الفصل التالي يوسّع ما بعد الطلب: أحداث نطاق داخل رف وأحداث تكامل بين الخدمات، واتساق يتأخر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Stripe — Idempotent requests: <a href="https://docs.stripe.com/api/idempotent_requests">https://docs.stripe.com/api/idempotent_requests</a></li>
+<li>NestJS — Webhooks: <a href="https://docs.nestjs.com/http/webhooks">https://docs.nestjs.com/http/webhooks</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

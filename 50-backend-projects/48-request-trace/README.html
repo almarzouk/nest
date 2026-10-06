@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>48 — أثر الطلب</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>48 — أثر الطلب</h1>
+<p><strong>المستوى:</strong> إنتاج<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new request-trace</code></p>
+<h2>ماذا تبني</h2>
+<p>كل طلب يأخذ x-request-id أو يولَّد له واحد. اللوج JSON يحمل المعرّف. نداء خارجي واحد على الأقل يمرر المعرّف.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>من غير معرّف لا تجمع سطر الدخول وسطر القاعدة وسطر الويب هوك.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>وسيط للمعرّف</li>
+<li>لوج منظم</li>
+<li>تمرير الترويسة</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>منصة مراقبة مدفوعة إلزامية</li>
+<li>كل حقول OpenTelemetry</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>أي مشروع فيه نداء HTTP خارج. يمكن نداء صحة وهمية.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/64-observability/README.html">64-observability</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>المعرّف في الرد كترويسة.</li>
+<li>اللوج لا يطبع أسرارًا.</li>
+<li>صيغة اللوج JSON في هذا المشروع.</li>
+<li>نداء HttpService يضيف الترويسة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/reports/ping-upstream</code></td>
+<td>200</td>
+<td>ينادي عنوانًا ويعيد المعرّف</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new request-trace</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>وسيط يضع المعرّف على الطلب.</li>
+<li>Interceptor أو Logger يطبعه.</li>
+<li>عميل HTTP داخلي يمرره.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/trace/request-id.middleware.ts
+src/reports/upstream.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">const requestId = req.header(&quot;x-request-id&quot;) ?? randomUUID();
+res.setHeader(&quot;x-request-id&quot;, requestId);
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>معرّف جديد في كل طبقة فينقطع الأثر.</li>
+<li>لوج فيه Authorization.</li>
+<li>نسيان المعرّف على نداء الويب هوك الصادر.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>الرد يحمل نفس المعرّف الذي في اللوج.</li>
+<li>النداء الخارج يرسله.</li>
+<li>لا أسرار في السطر.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف span بسيطًا باسم OpenTelemetry من غير إلزام بمنصّة.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 48» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../47-delivery-dispatch/README.html">47. توزيع التوصيل</a></li>
+<li>التالي: <a href="../49-library-graphql/README.html">49. فهرس GraphQL</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

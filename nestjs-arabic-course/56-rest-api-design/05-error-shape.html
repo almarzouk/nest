@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>شكل الخطأ</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-error-shape.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>شكل الخطأ</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت جسم واحد لأخطاء HTTP في رف، يربط الرمز الذي اختارته الاستراتيجية بحقول يقرأها كل عميل، بلا SQL وبلا شكل يختلف بين المسارات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>التحقق يعيد <code>message</code> كمصفوفة، وفلتر ISBN يعيد <code>error</code> نصًا، وفلتر 500 يعيد <code>msg</code>. الواجهة تفحص ثلاثة أشكال قبل أن تعرض جملة. أحيانًا يصل <code>stack</code> في الإنتاج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل خطأ على السلك كائن واحد: <code>statusCode</code> و <code>code</code> ثابت و <code>message</code> للإنسان. التفاصيل القابلة للعرض، مثل حقول التحقق، مصفوفة اختيارية. المعرّف الداخلي للسجل ليس سر القاعدة؛ يمكن تمرير <code>requestId</code> إن وُجد. لا <code>stack</code> ولا استعلام.</p>
+<h2>التعريف التقني</h2>
+<p>شكل Nest الافتراضي لـ <code>HttpException</code> غالبًا <code>{ statusCode, message, error }</code>. عقد رف يثبّت هذا الشكل أو يضيّقه، لكن لا يتركه يتفرع. <code>message</code> قد تكون نصًا. لحقول التحقق، أضف <code>details: { field, message }[]</code> بدل تغيير <code>message</code> مرة نصًا ومرة مصفوفة إن أردت عميلًا بسيطًا. <code>code</code> قيمة مغلقة مثل <code>book_not_found</code> يبرمج ضدها العميل، بينما <code>message</code> قد تُترجم لاحقًا. الفلتر من فصل الأخطاء هو المكان الذي يكتب هذا الكائن. المتحكم لا يجمع JSON خطأ يدويًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">{
+  statusCode: 404,
+  code: &quot;book_not_found&quot;,
+  message: &quot;Book not found&quot;
+}
+</code></pre>
+<p>النجاح لا يستخدم هذا الغلاف. كتاب ناجح يبقى تمثيل كتاب.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface ShelfErrorBody {
+  statusCode: number;
+  code: string;
+  message: string;
+  details?: { field: string; message: string }[];
+}
+
+export function shelfError(statusCode: number, code: string, message: string): ShelfErrorBody {
+  return { statusCode, code, message };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>code</code> لا يتغير عندما تُصاغ <code>message</code> بالعربية.</li>
+<li><code>statusCode</code> يكرر الرمز داخل الجسم لأن بعض العملاء يقرأون JSON فقط بعد أن ابتلع وسيط الرمز. الرمز على السطر الأول يبقى الأصل.</li>
+<li>لا حقل <code>debug</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الصنف أو الـ Pipe يحدد المعنى.</li>
+<li>الفلتر يختار <code>statusCode</code> و <code>code</code> من الجدول.</li>
+<li><code>message</code> جملة قصيرة بلا أسماء جداول.</li>
+<li>التحقق يملأ <code>details</code> من أخطاء الحقول.</li>
+<li>العطل غير المتوقع يستخدم <code>code: &quot;internal_error&quot;</code> ونفس الجملة الثابتة، والتفاصيل في السجل.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { type ArgumentsHost, Catch, type ExceptionFilter, HttpStatus } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { BookNotFound } from &#39;../books/books.errors.js&#39;;
+
+@Catch(BookNotFound)
+export class BookErrorShapeFilter implements ExceptionFilter {
+  catch(exception: BookNotFound, host: ArgumentsHost) {
+    const body = {
+      statusCode: HttpStatus.NOT_FOUND,
+      code: &#39;book_not_found&#39;,
+      message: &#39;Book not found&#39;,
+      bookId: exception.bookId,
+    };
+    host.switchToHttp().getResponse&lt;Response&gt;().status(404).json(body);
+  }
+}
+</code></pre>
+<p><code>bookId</code> مقبول إن كان العقد يعد به لصاحب الطلب. لا تضف <code>exception.stack</code>. تحقق DTO يمكن أن يعيد:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 400,
+  &quot;code&quot;: &quot;validation_failed&quot;,
+  &quot;message&quot;: &quot;Invalid book&quot;,
+  &quot;details&quot;: [{ &quot;field&quot;: &quot;title&quot;, &quot;message&quot;: &quot;title should not be empty&quot; }]
+}
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>message</code> مصفوفة في مسار ونص في آخر.</li>
+<li>وضع رسالة Prisma في <code>message</code>.</li>
+<li>غلاف خطأ حول <code>GET /books</code> الناجح: <code>{ data, error: null }</code> مع الإبقاء على أخطاء بلا غلاف. اختر: النجاح تمثيل، والفشل كائن الخطأ، والتزم.</li>
+<li><code>code</code> جملة عربية متغيرة فيتعطل فرع الواجهة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل 4xx و 500 يخرج من رف. وثّقه في OpenAPI كاستجابة مكوّن واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تلف 201 الناجح بهذا الشكل. ولا تضع أسرار التشخيص في <code>details</code> لأنها تذهب إلى جهاز العميل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحقل</th>
+<th>يثبت</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>statusCode</code></td>
+<td>يطابق سطر HTTP</td>
+</tr>
+<tr>
+<td><code>code</code></td>
+<td>فرع برمجي مستقر</td>
+</tr>
+<tr>
+<td><code>message</code></td>
+<td>جملة عرض</td>
+</tr>
+<tr>
+<td><code>details</code></td>
+<td>حقول التحقق عند الحاجة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>عميل يريد تلوين رسالة ISBN. على أي حقل يتفرع: <code>message</code> أم <code>code</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على <code>code</code> مثل <code>isbn_taken</code>. <code>message</code> للعرض وقد تتغير صياغتها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>التحقق يعيد <code>message: string[]</code> ومسار المجال يعيد <code>message: string</code>. ما التوحيد الأدنى؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>message</code> نص واحد في الحالتين، و <code>details</code> مصفوفة للحقول عند التحقق فقط. العميل يقرأ <code>message</code> دائمًا كنص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>500 من انقطاع القاعدة. اكتب الجسم الذي يجوز أن يخرج، واذكر سطرًا ممنوعًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ statusCode: 500, code: &quot;internal_error&quot;, message: &quot;Internal server error&quot; }</code>. الممنوع أي <code>stack</code> أو <code>meta</code> من Prisma أو سلسلة اتصال داخل <code>message</code> أو <code>details</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حقل ثابت للبرمجة وأي حقل للعرض؟</li>
+<li>لماذا لا يختلف شكل 404 عن شكل 400 في المفاتيح الأساسية؟</li>
+<li>أين يُكتب الشكل: في كل متحكم أم في الفلتر؟</li>
+<li>ماذا يغيب عن جسم 500 عمدًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>خطأ رف كائن بمفاتيح ثابتة: <code>statusCode</code> و <code>code</code> و <code>message</code>، و <code>details</code> للتحقق. النجاح يبقى تمثيل المورد. التشخيص الداخلي لا يدخل الجسم.</p>
+<h2>ماذا بعد؟</h2>
+<p>هذا الشكل جزء من العقد الذي قد يتغير يومًا. الدرس التالي يضع الإصدار داخل التصميم لا داخل الديكور فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — OpenAPI: <a href="https://docs.nestjs.com/openapi/introduction">https://docs.nestjs.com/openapi/introduction</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

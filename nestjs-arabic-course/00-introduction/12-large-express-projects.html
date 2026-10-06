@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مشاكل المشاريع الكبيرة في Express</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-large-express-projects.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مشاكل المشاريع الكبيرة في Express</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية الآلام التي تعالجها NestJS، كل ألم مع سببه، قبل أن نفتح صفحة الإطار الجديد كأنها قائمة Decorators.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>Express يحل التوجيه. المشروع الكبير يسأل أسئلة أخرى:</p>
+<ul>
+<li>أين أضع قاعدة &quot;لا يُشحن طلب غير مدفوع&quot;؟</li>
+<li>من ينشئ كائن الوصول إلى قاعدة البيانات، وكم نسخة منه تعمل؟</li>
+<li>كيف أختبر قاعدة السعر من غير فتح منفذ؟</li>
+<li>كيف أعرف أن مسارًا جديدًا نسي فحص الهوية؟</li>
+<li>كيف يبدأ مطور وصل هذا الأسبوع؟</li>
+</ul>
+<p>إذا أجاب كل شخص بجواب مختلف، المستودع يصبح عدة تطبيقات تشترك في <code>package.json</code>.</p>
+<p>توثيق Nest يضع هذا التشخيص في فقرة Philosophy: توجد مكتبات وأدوات كثيرة لـ Node، لكن مشكلة <strong>architecture</strong> تبقى من غير حل فعلي. Nest تقدم معمارية جاهزة لتطبيقات قابلة للاختبار، وقابلة للنمو، قليلة الارتباط، وقابلة للصيانة. المعمارية مستوحاة بشدة من Angular.</p>
+<p>هذا الدرس يترجم تلك الفقرة إلى مشاهد داخل Express.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحرية الكاملة في بداية المشروع تصبح تكلفة تنسيق عندما يكبر عدد المسارات والناس. الإطار ذو الرأي يضيّق أماكن وضع الكود حتى يتشابه عمل الفريق.</p>
+<h2>التعريف التقني</h2>
+<p>مشروع Express كبير، في هذا الدرس، تطبيق HTTP طال أمده حتى صارت مسؤوليات الطلب موزعة بشكل غير قابل للتنبؤ: قواعد داخل المعالجات، وإنشاء خدمات بـ <code>new</code> في كل ملف، وإعدادات تُقرأ من <code>process.env</code> في عمق المنطق، واختبارات قليلة لأن تشغيل قطعة واحدة يتطلب تشغيل البقية.</p>
+<p>لا يوجد حجم سطور يُعرّف &quot;كبير&quot;. العلامة: خوف من تعديل مسار لأنك لا تعرف ماذا يلمس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المطلوب في كل طلب                أين يعيش في Express حر؟
+
+مطابقة المسار                    واضح: app.get
+قواعد العمل                      غالبًا داخل المعالج
+قواعد البيانات                   أحيانًا داخل المعالج أيضًا
+الصلاحية                         middleware أحيانًا، و if أحيانًا
+التحقق من الجسم                  في كل معالج بأسلوب مختلف
+شكل الخطأ                        كل مسار يكتب JSON مختلف
+بناء الكائنات                    new في أقرب ملف احتاجها
+</code></pre>
+<p>Nest لا تلغي الصفوف. تعطي كل صف اسم مكان: Controller، Service، Pipe، Guard، Exception Filter، Module.</p>
+<h2>أبسط مثال</h2>
+<p>معالج يبدو بريئًا في الأسبوع الأول:</p>
+<pre><code class="language-ts">import express from &#39;express&#39;;
+import { db } from &#39;./db.js&#39;;
+
+const app = express();
+app.use(express.json());
+
+app.post(&#39;/orders&#39;, async (req, res) =&gt; {
+  const user = await db.query(&#39;select * from users where id = $1&#39;, [req.header(&#39;x-user-id&#39;)]);
+  if (!user.rows[0]) {
+    res.status(401).json({ error: &#39;nope&#39; });
+    return;
+  }
+  if (!req.body.bookId || req.body.quantity &lt; 1) {
+    res.status(400).json({ message: &#39;bad&#39; });
+    return;
+  }
+  const book = await db.query(&#39;select * from books where id = $1&#39;, [req.body.bookId]);
+  const total = book.rows[0].price * req.body.quantity;
+  await db.query(&#39;insert into orders(user_id, total) values ($1, $2)&#39;, [user.rows[0].id, total]);
+  res.status(201).json({ ok: true });
+});
+
+app.listen(3000);
+</code></pre>
+<p>الكود يشتغل كسيناريو سعيد. وهو مثال على ما سنفككه، لا نموذج ننسخه. الاستعلامات هنا مبسطة وليست درس قاعدة بيانات.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>المسار يعرف شكل جداول <code>users</code> و <code>books</code> و <code>orders</code>. تغيير اسم عمود يفتح هذا الملف وكل شبيه له.</li>
+<li>الهوية رأس اخترعه الفريق <code>x-user-id</code>. مسار آخر قد يقرأ <code>Authorization</code>. لا مكان واحد لقرار &quot;من هو المستخدم&quot;.</li>
+<li>التحقق <code>if</code> محلي. رسالة الخطأ <code>{ error: &#39;nope&#39; }</code> تختلف عن <code>{ message: &#39;bad&#39; }</code>. العميل يكتب حالتين.</li>
+<li>السعر يُحسب هنا. مسار الخصم سيعيد الحساب أو ينساه.</li>
+<li><code>db</code> مستورد من ملف عام. الاختبار يستبدل هذا الملف أو يتصل بقاعدة حقيقية. الاثنان أغلى من تمرير اعتماد وهمي إلى دالة.</li>
+<li><code>async</code> بلا <code>catch</code>. رفض الـ Promise قد لا يتحول إلى JSON موحّد.</li>
+<li>المعالج يفعل خمسة أعمال: هوية، تحقق، قراءة، حساب، كتابة. اسم <code>post /orders</code> لا يخبر قارئًا جديدًا أين يغيّر قاعدة الشحن عندما تُضاف.</li>
+</ul>
+<p>لا شيء من هذا خطأ من Express. Express لم يعدك بمكان لهذه الأعمال. أنت لم تبنِ المكان بعد.</p>
+<h2>ماذا يحدث داخليًا عندما يكبر هذا الأسلوب؟</h2>
+<p>بعد عشرات المسارات يظهر نمط ثابت:</p>
+<ol>
+<li><strong>Coupling</strong>: المعالج مربوط بالجدول وبالرأس وبالشكل الذي أرجعه. تغيير واحد يهز ثلاثة أشياء.</li>
+<li><strong>صعوبة الاختبار</strong>: لا توجد دالة <code>createOrder(input, deps)</code> تستقبل اعتمادياتها. الاختبار يمر عبر HTTP و <code>db</code> الحقيقي، أو عبر حيل استبدال الاستيراد.</li>
+<li><strong>نسخ متعددة من غير قصد</strong>: كل ملف يعمل <code>new PaymentClient()</code> فيفتح إعداداته وأسرار الاتصال بأسلوبه. لا حاوية تقول &quot;هذه نسخة واحدة للتطبيق&quot;.</li>
+<li><strong>نسيان العرضي</strong>: فحص المدير نُسخ في اثني عشر مسارًا وغاب عن الثالث عشر. لا يفشل البناء. يفشل الأمن في الإنتاج.</li>
+<li><strong>لغة معمارية خاصة بالفريق</strong>: مجلد <code>helpers</code> و <code>utils</code> و <code>services</code> و <code>lib</code> من غير تعريف ما الذي يجوز أن يستورد ماذا.</li>
+<li><strong>قراءة الإعداد في عمق القاعدة</strong>: <code>process.env.TAX_RATE</code> داخل الحساب. اختبار السعر يعتمد على بيئة المطوّر.</li>
+</ol>
+<p>فقرة Nest تتحدث عن loosely coupled و testable. الكلمتان تصفان عكس هذه القائمة. Loose coupling: القطعة تعرف عقد جارتها لا تفاصيل جداولها. Testable: تستطيع تشغيل القطعة بمدخلات مصنوعة.</p>
+<h2>مثال عملي</h2>
+<p>شكل مجلد تراه بعد سنة إذا لم يتفق الفريق. الأسماء مألوفة وليست &quot;خطأ إملائيًا&quot;، والمشكلة التداخل:</p>
+<pre><code class="language-text">src/
+  routes/
+    orders.js          يستورد db و stripe و mail
+    ordersV2.js        نسخة لم يجرؤ أحد على حذفها
+    books.js           فيه حساب الخصم أيضًا
+  controllers/
+    orderController.js يعيد نصف ما في routes/orders.js
+  services/
+    order.js
+    orderService.js
+  helpers/
+    auth.js
+    checkAuth.js
+  utils/
+    db.js
+    price.js
+  middleware/
+    auth.js            غير موصول على كل الراوترات
+</code></pre>
+<p>مطور جديد يسأل: أين أضيف &quot;إلغاء الطلب&quot;؟ يوجد مرشحان أو ثلاثة. هذا هو ألم المعمارية، لا ألم <code>app.get</code>.</p>
+<p>شكل Nest المقابل، كخريطة سنبررها لاحقًا لا كقالب تنسخه اليوم:</p>
+<pre><code class="language-text">src/
+  orders/
+    orders.module.ts
+    orders.controller.ts
+    orders.service.ts
+  books/
+    books.module.ts
+    books.controller.ts
+    books.service.ts
+</code></pre>
+<p>المجلد حدود ميزة. الـ Controller يستقبل HTTP. الـ Service يملك القاعدة. الـ Module يصرح من يحق له استخدام من. حذف <code>ordersV2</code> يصبح قرارًا لأن المكان الشرعي واحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>لوم Express كأنه لا يصلح للإنتاج. يصلح، وكثير من الأنظمة عليه. الألم يظهر عندما لا يبني الفريق معمارية ويظن أن الإطار الرقيق سيوفرها.</li>
+<li>القفز إلى Nest ونقل المعالج الضخم إلى جسد <code>@Post</code> كما هو. غيرت الزي وبقي الخلط. الدورة ستفصل الطبقات قبل مشروع REST.</li>
+<li>إضافة طبقات Nest كلها في الأسبوع الأول (CQRS، و Microservices، وأحداث) هربًا من ملف كبير. هذا استبدال فوضى بفوضى أثقل. الفصول المتقدمة تقول متى تستحق كل أداة.</li>
+<li>اعتبار الاختبار ترفًا يؤجَّل حتى &quot;الاستقرار&quot;. الكود غير القابل للاختبار هو غالبًا الكود المرتبط بـ <code>db</code> و <code>req</code> معًا. الفصل بينهما يخدم الإنتاج قبل أن يخدم Jest أو Vitest.</li>
+</ul>
+<h2>متى نبقى على Express؟</h2>
+<p>خدمة حدودها مسار أو اثنان، وفريق يعرف الملف كله، ولا قواعد مخفية. أو مكتبة middleware تُستهلك داخل تطبيق آخر. Nest تستطيع أن تلف Express، لكن إدخالها له تكلفة تعلم. التكلفة تستحق عندما تظهر أعراض هذا الدرس.</p>
+<h2>متى تصبح Nest قرارًا مناسبًا؟</h2>
+<p>عندما تتكرر الأعراض: منطق داخل المسارات، إنشاء خدمات بـ <code>new</code>، اختبارات عالقة بالشبكة، وصلاحية تُنسى، ومجلدات بلا عقد. توثيق Nest يصف الناتج المطلوب: تطبيق قابل للاختبار، قابل للتوسع، ارتباطه ضعيف، وقابل للصيانة. هذه صفات هدف، لا سحر يحصل لأنك شغّلت <code>nest new</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>Express يتركه لك</th>
+<th>ما ستتعلمه في Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين HTTP؟</td>
+<td>المعالج</td>
+<td>Controller</td>
+</tr>
+<tr>
+<td>أين القاعدة؟</td>
+<td>حيث تشاء</td>
+<td>Service / Provider</td>
+</tr>
+<tr>
+<td>من ينشئ الكائنات؟</td>
+<td><code>new</code> أو استيراد عام</td>
+<td>حاوية DI</td>
+</tr>
+<tr>
+<td>من يرى من؟</td>
+<td>أي ملف يستورد أي ملف</td>
+<td>Module يصرح بـ exports</td>
+</tr>
+<tr>
+<td>أين التحقق؟</td>
+<td>middleware أو if</td>
+<td>Pipe</td>
+</tr>
+<tr>
+<td>أين المنع؟</td>
+<td>middleware أو if</td>
+<td>Guard</td>
+</tr>
+<tr>
+<td>أين شكل الخطأ؟</td>
+<td>كل <code>res.status</code></td>
+<td>Exception Filter</td>
+</tr>
+<tr>
+<td>أين الالتفاف حول التنفيذ؟</td>
+<td>دوال تغلف المعالج</td>
+<td>Interceptor</td>
+</tr>
+</tbody></table>
+<p>الجدول وعد دروس، لا اختصار لها.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في معالج <code>POST /orders</code> أعلاه، سمِّ ثلاث مسؤوليات مختلفة يعيش بعضها فوق بعض.</p>
+<details>
+<summary>الحل</summary>
+
+<p>إثبات هوية المستخدم، والتحقق من المدخلات، وحساب السعر مع الكتابة في الجداول. أي ثلاث من هذه تفي. تسجيل الخطأ غير الموجود مسؤولية غائبة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يصعب اختبار حساب <code>total</code> وحده في هذا الملف؟ ماذا تغيّر لو كانت الدالة <code>priceOf(book, quantity)</code> نقية لا ترى <code>req</code> ولا <code>db</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحساب داخل المعالج بعد استعلامين. تشغيله يحتاج طلب HTTP وقاعدة تُرجع صفوفًا. دالة نقية تأخذ سعرًا وكمية وتعيد رقمًا تُختبر بأرقام، من غير منفذ ولا SQL. هذا فصل المسؤولية الذي سيصبح Service.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الفريق أضاف <code>app.use(requireAdmin)</code> مرة واحدة قبل كل المسارات، فانكسرت صحة <code>GET /books</code> للزوار. ثم نقلوا الفحص إلى داخل بعض المعالجات فعاد النسيان. صف التوتر بين &quot;مكان واحد&quot; و &quot;ليس كل المسارات&quot;. لا تكتب حل Nest؛ سمِّ فقط نوع الأداة التي ستبحث عنها لاحقًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الفحص العام يحمي المسارات الجديدة وينكسر على المسارات العامة. الفحص اليدوي يسمح بالاستثناء وينسى الحماية. نحتاج إعلانًا على المسار: هذا عام، وهذا يتطلب دورًا، مع أداة يناديها الإطار لا المطور في أول السطر. في Nest الاسم Guard، مربوط على مستوى التطبيق أو المتحكم أو المسار. تفاصيل الربط في فصل Guards، والترتيب في Request Lifecycle.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما المشكلة التي يقول توثيق Nest إن مكتبات Node لم تحلها جيدًا؟</li>
+<li>لماذا <code>new</code> داخل كل مسار يصعّب الاختبار؟</li>
+<li>ما العلامة العملية لمشروع Express صار &quot;كبيرًا&quot; بهذا المعنى؟</li>
+<li>لماذا نقل المعالج كما هو إلى Nest لا يحل الازدواج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Express يكفي للتوجيه ويترك المعمارية للفريق. عندما تتوزع القواعد والهوية والإنشاء على أسلوب كل ملف، التعديل والاختبار يصبحان تخمينًا. NestJS وُجدت لتعطي أماكن ثابتة لهذه المسؤوليات.</p>
+<h2>ماذا بعد؟</h2>
+<p>التشخيص جاهز. الدرس التالي يقرأ وعد Nest بكلمات التوثيق: ماذا تدّعي، وماذا لا تدّعي، وأي أفكار برمجة تجمعها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Introduction (Philosophy): <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>Express — Guide: <a href="https://expressjs.com/en/guide/routing.html">https://expressjs.com/en/guide/routing.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

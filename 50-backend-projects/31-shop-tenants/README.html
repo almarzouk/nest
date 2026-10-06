@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>31 — ملاحظات لكل متجر</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>31 — ملاحظات لكل متجر</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new shop-tenants</code></p>
+<h2>ماذا تبني</h2>
+<p>كل طلب يحمل x-tenant-id. الملاحظات تُعزل. المعرّف لا يُؤخذ من الجسم.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>أول عزل قبل الفوترة والمنظمات. الخطأ هنا خلط بيانات زبونين.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>مصدر المستأجر</li>
+<li>كل استعلام مقيّد</li>
+<li>400 عند غياب الترويسة</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>قاعدة لكل زبون</li>
+<li>نطاقات DNS</li>
+<li>فوترة</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الملاحظات. أعد الفكرة مع العزل.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/59-multi-tenancy/README.html">59-multi-tenancy</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>غياب الترويسة 400.</li>
+<li>جسم فيه tenantId 400.</li>
+<li>ملاحظة متجر لا تظهر لمتجر آخر حتى لو عُرف id. الرد 404 لا بيانات الغير.</li>
+<li>قائمة كل المتاجر بلا قيد غير موجودة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/notes</code></td>
+<td>201</td>
+<td>تُحفظ تحت الترويسة</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/notes/:id</code></td>
+<td>200</td>
+<td>فقط إن طابقت الترويسة</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new shop-tenants</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>استخرج المستأجر في حارس أو وسيط مرة واحدة.</li>
+<li>الخدمة تأخذ tenantId وسيطًا إلزاميًا لا تقرأه من جسم.</li>
+<li>اختبر نفس id بترويستين.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/tenant/tenant.guard.ts
+src/notes/notes.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">findOne(tenantId: string, id: string) {
+  const note = this.notes.find((item) =&gt; item.id === id &amp;&amp; item.tenantId === tenantId);
+  if (!note) throw new NotFoundException();
+  return note;
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>قراءة tenant من body.</li>
+<li>نسيان القيد في مسار واحد.</li>
+<li>إرجاع 403 يكشف أن الملاحظة موجودة لغيرك. استخدم 404 هنا.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>ترويستان لا تتقاسمان قائمة.</li>
+<li>الجسم الذي يحمل tenantId يُرفض.</li>
+<li>مسار بلا قيد غير موجود في الكود.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>انقل المعرّف إلى مطالبة في الرمز عندما تدمج الحسابات.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 31» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../30-audit-trail/README.html">30. سجل تدقيق</a></li>
+<li>التالي: <a href="../32-notes-versioning/README.html">32. إصداران للملاحظات</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

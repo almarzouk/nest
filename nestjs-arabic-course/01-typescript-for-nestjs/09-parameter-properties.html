@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Parameter Properties</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-parameter-properties.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Parameter Properties</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فك السطر <code>constructor(private readonly usersService: UsersService) {}</code> كلمة كلمة. هذا هو السطر الذي وعدت به المقدمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الشكل المطول يكرر الاسم ثلاث مرات: حقل، ومعامل، وإسناد. التكرار يفتح اختلافًا في الإملاء. TypeScript يسمح بإعلان الخاصية من مكان المعامل.</p>
+<p>والمشكلة المعمارية التي يخدمها السطر: الصنف يعلن ماذا يحتاج، ولا ينشئه بـ <code>new</code> داخل الدوال.</p>
+<h2>الفكرة ببساطة</h2>
+<p>معامل constructor مسبوق بمعدّل وصول يصبح خاصية على الكائن، وتُسند إليه قيمة المعامل تلقائيًا.</p>
+<h2>التعريف التقني</h2>
+<p>Parameter property ميزة TypeScript: في constructor، المعامل المعلّم بـ <code>public</code> أو <code>private</code> أو <code>protected</code> (ومعها <code>readonly</code> إن شئت) يصرّح بحقل صنف ويهيئه من الوسيط. الأنواع تُمسح، وMetadata التصميم يمكن أن تسجل نوع المعامل إذا اجتمعت Decorator على الصنف مع <code>emitDecoratorMetadata</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وسيط قادم من new أو من الحاوية
+        |
+        v
+constructor(private readonly usersService: UsersService)
+        |
+        +-- ينشئ this.usersService
+        +-- يجعله private و readonly
+        +-- يسند الوسيط إليه
+        |
+        v
+this.usersService داخل دوال الصنف
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">class UsersService {
+  findName(): string {
+    return &#39;Ada&#39;;
+  }
+}
+
+class UsersController {
+  constructor(private readonly usersService: UsersService) {}
+
+  show(): string {
+    return this.usersService.findName();
+  }
+}
+
+const controller = new UsersController(new UsersService());
+controller.show();
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>UsersService</code> صنف بسيط بلا حالة. في Nest سيكون <code>@Injectable()</code> ومسجّلًا. الوسوم مؤجلة حتى الدرس 14 و 15، والحاوية حتى فصل الحقن. هنا نرى اللغة فقط.</li>
+<li><code>constructor(private readonly usersService: UsersService)</code> خمسة قرارات:<ol>
+<li><code>constructor</code> تهيئة عند إنشاء المتحكم.</li>
+<li><code>usersService</code> اسم الوسيط واسم الخاصية.</li>
+<li><code>private</code> الخاصية غير متاحة كـ <code>controller.usersService</code> من ملف آخر في فحص TypeScript.</li>
+<li><code>readonly</code> دوال الصنف لا تعيد <code>this.usersService = ...</code>.</li>
+<li><code>: UsersService</code> نوع الوسيط. من ينادي <code>new</code> يجب أن يمرر كائنًا متوافقًا.</li>
+</ol>
+</li>
+<li>جسم الـ constructor فارغ <code>{}</code> لأن الإسناد تولّد عنك. الناتج يشبه الإسناد الصريح <code>this.usersService = usersService</code>.</li>
+<li><code>show</code> تستخدم <code>this.usersService</code>. من غير الخاصية لما وُجد <code>this.usersService</code> بعد انتهاء الـ constructor.</li>
+<li>السطر الأخير ينشئ الخدمة ثم المتحكم. هذا ما ستوقفه Nest عنك: الحاوية ترى النوع وتنشئ الخدمة أولًا ثم تمررها. شرط ذلك التسجيل في Module ووجود Metadata، لا هذا السطر وحده.</li>
+</ul>
+<p>الشكل المطول المكافئ لغويًا:</p>
+<pre><code class="language-ts">class UsersController {
+  private readonly usersService: UsersService;
+
+  constructor(usersService: UsersService) {
+    this.usersService = usersService;
+  }
+}
+</code></pre>
+<p>اختر المختصر في كود Nest لأنه شكل التوثيق الرسمي في كل الأمثلة تقريبًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المترجم يولد الحقل والإسناد في JavaScript. شيء قريب من:</p>
+<pre><code class="language-js">class UsersController {
+  constructor(usersService) {
+    this.usersService = usersService;
+  }
+}
+</code></pre>
+<p>لا <code>private</code> في الناتج. نوع <code>UsersService</code> ليس موجودًا كفحص شبكة.</p>
+<p>عندما تضيف Decorator على الصنف وتفعّل إصدار Metadata، يضيف المترجم تصميم أنواع المعاملات: الموضع الأول نوعه <code>UsersService</code>. Nest تقرأ ذلك وتبحث في الحاوية عن مزوّد بهذا الرمز (الصنف نفسه مفتاحًا افتراضيًا). إذا لم توجد Metadata، المعامل بلا نوع محفوظ، والحقن بالاعتماد على النوع لا يعمل حتى تمرر <code>@Inject</code> صراحة. هذا سبب الدرس 15، لا تفصيل إضافي هنا.</p>
+<p><code>readonly</code> لا يظهر في JavaScript. هو رفض لإعادة التعيين أثناء الترجمة.</p>
+<h2>مثال عملي</h2>
+<p>متحكم يحتاج خدمتين. الترتيب في المعاملات هو ترتيب الوسائط:</p>
+<pre><code class="language-ts">class OrdersController {
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly mailer: Mailer,
+  ) {}
+}
+</code></pre>
+<p>افترض صنفين <code>OrdersService</code> و <code>Mailer</code> موجودين. <code>new OrdersController(orders, mailer)</code> يملأ الحقلين. عكس الترتيب خطأ نوعي إذا اختلفت الأنواع. الحاوية لاحقًا تطابق بالاسم النوعي لا بترتيب يدوي في مكان النداء، لأنك لا تكتب النداء. الترتيب داخل constructor ما زال ترتيب الحقول.</p>
+<p>اعتماد دائري: كل صنف يطلب الآخر في constructor. اللغة تسمح بالإعلان، والتشغيل قد يرى أحدهما غير مهيأ. Nest لها <code>forwardRef</code> في فصل لاحق. تجنب الدورة أولى من حفظ الأداة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة المعامل من غير معدّل: <code>constructor(usersService: UsersService) {}</code> ثم استخدام <code>this.usersService</code>. الخاصية غير موجودة. المعدّل هو الذي يصرح بها، أو تصرح أنت بالحقل في الشكل المطول.</li>
+<li><code>new UsersService()</code> داخل constructor &quot;حتى يعمل&quot;. تلغي إمكانية تمرير بديل في الاختبار وتعيد الارتباط.</li>
+<li>الظن أن <code>private readonly</code> يسجّل الصنف في حاوية Nest. اللغة تهيئ حقلًا فقط. التسجيل <code>@Module({ providers })</code> و <code>@Injectable</code> دروس الإطار.</li>
+<li>وضع منطق ثقيل في constructor: نداء شبكة أو فتح قاعدة. البناء يصير بطيئًا وصعب الاختبار. التهيئة المؤجلة لها خطافات دورة حياة لاحقًا (<code>OnModuleInit</code>).</li>
+</ul>
+<h2>متى نستخدم المختصر؟</h2>
+<p>في كل constructor حقن في هذه الدورة، كما في التوثيق.</p>
+<h2>متى نكتب الشكل المطول؟</h2>
+<p>عندما تحتاج جسم constructor يحسب شيئًا من الوسيط قبل الإسناد، أو عندما يكون الوسيط غير المخزَّن على الحقل. يمكنك خلط: معامل بخاصية، ومعامل عادي تستخدمه داخل الجسم فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الكتابة</th>
+<th>ماذا يتولد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>constructor(usersService: UsersService) {}</code></td>
+<td>وسيط بلا خاصية</td>
+</tr>
+<tr>
+<td><code>constructor(private readonly usersService: UsersService) {}</code></td>
+<td>خاصية + إسناد</td>
+</tr>
+<tr>
+<td><code>constructor(private readonly usersService: UsersService) {}</code> داخل Nest مع Metadata</td>
+<td>الخاصية نفسها + قدرة الحاوية على معرفة النوع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في المثال الأول، من أين تأتي قيمة <code>this.usersService</code> داخل <code>show</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من الوسيط الذي مُرر إلى <code>new UsersController(...)</code>، وأُسند تلقائيًا إلى الخاصية بسبب <code>private readonly</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أصلح الكود:</p>
+<pre><code class="language-ts">class Desk {
+  constructor(books: BooksService) {}
+  count(): number {
+    return this.books.count();
+  }
+}
+</code></pre>
+<p>افترض <code>BooksService</code> فيها <code>count(): number</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">class Desk {
+  constructor(private readonly books: BooksService) {}
+  count(): number {
+    return this.books.count();
+  }
+}
+</code></pre>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يريد <code>show()</code> من غير قاعدة بيانات. كيف يساعد السطر المختصر، وما الذي ما زال ينقص حتى تفعل Nest ذلك تلقائيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاختبار يمرر كائنًا فيه <code>findName</code> يرجع نصًا ثابتًا إلى <code>new UsersController(fake)</code>. السطر لا ينشئ الخدمة بنفسه. الذي ينقص لأتمتة Nest: وسم الخدمة، وتسجيلها، وMetadata النوع، وحاوية تبني المتحكم. اللغة توفر مكان الحقن فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي كلمة في السطر تصرح بالخاصية؟</li>
+<li>ماذا يفعل <code>readonly</code> هنا، وأين لا يظهر؟</li>
+<li>لماذا جسم constructor فارغ وليس ناقصًا؟</li>
+<li>هل السطر وحده يسجّل مزوّدًا في Nest؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>constructor(private readonly usersService: UsersService)</code> يصرح بحقل خاص غير قابل لإعادة التعيين، ويسند إليه ما يُمرَّر عند الإنشاء، ويعلن النوع الذي ستقرأه الحاوية لاحقًا من Metadata. هو إعلان احتياج، لا نداء <code>new</code> داخلي.</p>
+<h2>ماذا بعد؟</h2>
+<p>أحيانًا خدمة تبني على صنف آخر. الوراثة تشرح <code>extends</code> قبل أن تقابل أصنافًا جاهزة توسّعها، مثل استراتيجيات لاحقة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Parameter properties: <a href="https://www.typescriptlang.org/docs/handbook/2/classes.html#parameter-properties">https://www.typescriptlang.org/docs/handbook/2/classes.html#parameter-properties</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>TypeScript — <code>emitDecoratorMetadata</code>: <a href="https://www.typescriptlang.org/tsconfig/emitDecoratorMetadata.html">https://www.typescriptlang.org/tsconfig/emitDecoratorMetadata.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Unit Testing</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-unit-testing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Unit Testing</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختبار صنف واحد بقيم تدخل وتخرج، مع استبدال كل اعتماد خارجي، بلا HTTP وبلا قاعدة حقيقية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تجربة النشر من الواجهة تمر على الحارس والتحقق وPrisma. عندما تفشل لا تعرف أي طبقة. اختبار الوحدة يثبت قاعدة «بعد التحديث نعلن <code>book.published</code>» في جزء من الثانية. هو لا يثبت أن المسار <code>POST</code> مربوط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ابنِ الخدمة بكائنات وهمية في الباني. نادِ الدالة. افحص القيمة ونداءات الوهم. لا <code>listen</code> ولا Redis. إن احتجت الشبكة فالاختبار لم يعد وحدة.</p>
+<h2>التعريف التقني</h2>
+<p>وحدة في هذا الفصل تعني: دالة أو صنف، اعتماداته ممررة، ولا I/O حقيقي. مثال النشر:</p>
+<pre><code class="language-ts">const prisma = {
+  book: {
+    update: async () =&gt; ({ id: &#39;42&#39;, status: &#39;PUBLISHED&#39; }),
+  },
+};
+const events = { emitAsync: async () =&gt; [] };
+const service = new BooksService(prisma as never, events as never);
+await service.publish(&#39;42&#39;);
+</code></pre>
+<p><code>as never</code> اختصار للتمرين حتى لا نبني نوع Prisma كاملًا. في المشروع استخرج واجهة صغيرة <code>BooksStore</code> فيها <code>update</code> إن كبر العدد. التوقع:</p>
+<pre><code class="language-ts">expect(events.emitAsync).toHaveBeenCalledWith(bookPublished, { bookId: &#39;42&#39; });
+</code></pre>
+<p>شكل <code>expect</code> واحد في Jest و Vitest. الاستيراد يختلف في درس المشغّلين. هنا السلوك.</p>
+<p>لا تستدعِ <code>IsbnService.lookup</code> الحقيقي. إما تختبر خريطة الأخطاء بدالة <code>mapAxios</code> المستخرجة، وإما تمرر <code>HttpService</code> وهميًا يعيد تيار <code>throwError</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وهم -&gt; BooksService.publish -&gt; توقع update و emit
+</code></pre>
+<p>بلا <code>TestingModule</code> إن كان البناء <code>new</code> يكفي. الوحدة عندما تحتاج الحاوية درس لاحق.</p>
+<h2>أبسط مثال</h2>
+<p>خريطة ISBN بلا شبكة:</p>
+<pre><code class="language-ts">expect(mapStatus(404)).toBeNull();
+expect(() =&gt; mapStatus(503)).toThrow(BadGatewayException);
+</code></pre>
+<p>إن كانت الخريطة دالة نقية، فالوحدة لا تحتاج حتى وهمًا. هذا أفضل أشكال الاختبار. استخرجها من <code>catch</code> إن كانت مدفونة.</p>
+<h2>شرح المثال</h2>
+<p><code>mapStatus</code> لا تعرف Axios. الاختبار يمرر رقمًا. بذلك تثبت العقد: الغياب <code>null</code> والعطل <code>502</code>. مهلة <code>ECONNABORTED</code> دالة ثانية أو فرع في الدالة النقية نفسها. لا تشغّل <code>lookup</code> كاملًا لتثبت جدولًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المشغّل ينفّذ الملف في عملية الاختبار. <code>new BooksService</code> لا يمر على Nest، فلا حراس ولا أنابيب. هذا مقصود. إن كان الخطأ في <code>@UseGuards</code> فلن يظهر هنا وسيظهر في رحلة HTTP. لا تضف <code>Test.createTestingModule</code> لكل دالة نقية. الحاوية تكلفة وسببها الحقن والزينة لا <code>if</code>.</p>
+<h2>مثال عملي</h2>
+<p>حالات <code>publish</code>:</p>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>التوقع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تحديث ينجح</td>
+<td><code>emitAsync</code> بـ <code>{ bookId: &#39;42&#39; }</code></td>
+</tr>
+<tr>
+<td>تحديث يرمي</td>
+<td>لا <code>emitAsync</code></td>
+</tr>
+<tr>
+<td>المعرف فارغ</td>
+<td>رمي قبل Prisma إن كان ذلك عقد الخدمة</td>
+</tr>
+</tbody></table>
+<p>الحالة الثانية تمنع إعلانًا بعد فشل الحفظ. اكتبها صراحة لأن ترتيب الأسطر سهل كسره.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تشغيل Redis «لأن الوحدة تحتاج الطابور». استبدل المنتج.</li>
+<li>توقع نص السجل بدل الأثر.</li>
+<li>تغطية كل فروع المتحكم بنداء الخدمة فقط.</li>
+<li><code>any</code> يخفي أن الوهم لم يعد يطابق الباني.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لقواعد الخدمة والمستمع وخريطة الأخطاء. هو أغلب عدد الاختبارات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإثبات أن <code>ValidationPipe</code> يرفض الجسم. ذلك مستوى أعلى. ولا لترتيب middleware المعرف. الوحدة لا تشغّل الوسيط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>يثبت</th>
+<th>لا يثبت</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ترتيب الحفظ ثم الإعلان</td>
+<td>ربط <code>POST</code></td>
+</tr>
+<tr>
+<td>خريطة 404 إلى <code>null</code></td>
+<td>مهلة Axios الحقيقية</td>
+</tr>
+<tr>
+<td>أن المستمع ينادي <code>enqueue</code></td>
+<td>أن الاسم في <code>registerQueue</code> مطابق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل اختبار الوحدة يفتح منفذًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. لا HTTP ولا <code>listen</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تثبت حالة «التحديث يرمي»؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أن <code>emitAsync</code> لا يُستدعى إن فشل الحفظ، حتى لا يُعلن نشر لم يحدث.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تستخرج <code>mapStatus</code> بدل اختبار <code>lookup</code> مع وهم Axios لكل رمز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الجدول نقي وأوضح. وهم Axios يبقى لاختبار أن <code>lookup</code> تستدعي الخريطة، لا لتكرار الجدول كله.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يُستبدل في الباني؟</li>
+<li>أي خطأ لا يظهر في هذا المستوى؟</li>
+<li>متى <code>new</code> أفضل من الحاوية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوحدة صنف بلا I/O: وهم، نداء، توقع. خريطة الأخطاء تستحق دالة نقية. الربط على HTTP مستوى آخر.</p>
+<h2>ماذا بعد؟</h2>
+<p>اختبار التكامل عندما تجتمع وحدتان حقيقيتان، مثل الخدمة مع قاعدة اختبار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا تظهر RxJS داخل Nest</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-rxjs-appears.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا تظهر RxJS داخل Nest</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة المواضع التي يعيد فيها Nest تيارًا، حتى لا تُستورد المكتبة كلها بحثًا عن دالة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معترض يغلّف الرد، أو عميل HTTP في الفصل التالي، يعيد <code>Observable</code> لا وعدًا. من يعامل القيمة كأنها <code>Promise</code> ينادي <code>then</code> على كائن بلا <code>then</code>، أو يشترك مرتين فيبدأ الطلب الخارجي مرتين. العكس أيضًا وارد: تحويل كل شيء إلى وعد ثم فقدان سبب وجود <code>pipe</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Observable</code> يمثل قيمًا قد تصل لاحقًا، صفر مرة أو أكثر، ويمكن إلغاؤها. Nest تشترك في التيار الذي يعيده المعالج أو المعترض عندما يكون من هذا النوع. المواضع التي تهم هذه الدورة: معترض يحوّل الرد، و <code>HttpService</code> في <code>@nestjs/axios</code> الذي يعيد تيارًا لكل طلب. الباقي من RxJS ليس فرضًا.</p>
+<h2>التعريف التقني</h2>
+<p>مكتبة <code>rxjs</code> مدمجة مع Nest. ما سنستعمله:</p>
+<table>
+<thead>
+<tr>
+<th>الاسم</th>
+<th>دوره هنا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Observable</code></td>
+<td>التيار الذي تعيده دالة</td>
+</tr>
+<tr>
+<td><code>pipe</code></td>
+<td>تركيب معاملات على التيار</td>
+</tr>
+<tr>
+<td><code>map</code></td>
+<td>تحويل القيمة</td>
+</tr>
+<tr>
+<td><code>tap</code></td>
+<td>أثر جانبي بلا تغيير القيمة</td>
+</tr>
+<tr>
+<td><code>catchError</code></td>
+<td>استبدال الخطأ أو إعادة رميه</td>
+</tr>
+<tr>
+<td><code>timeout</code></td>
+<td>فشل إن تأخرت القيمة</td>
+</tr>
+<tr>
+<td><code>firstValueFrom</code></td>
+<td>أخذ أول قيمة كوعد عندما تريد <code>await</code></td>
+</tr>
+</tbody></table>
+<p><code>HttpClient</code> في حزمة <code>@nestjs/http-client</code> الحالية يعيد وعودًا مبنية على <code>fetch</code>. الفصل التالي يدرس <code>HttpModule</code> و <code>HttpService</code> من <code>@nestjs/axios</code> لأنهما يعيدان <code>Observable</code>، والحزمة ما زالت متاحة. لا تفترض أن كل عميل HTTP في التوثيق تيار.</p>
+<p>المعترض الذي يعيد <code>next.handle().pipe(...)</code> هو المثال الداخلي الأشهر. Nest تشترك مرة واحدة في الناتج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دالة تعيد Observable
+  Nest تشترك
+    قيم -&gt; الرد أو الطلب الخارجي
+    خطأ -&gt; طبقة الاستثناء إن لم يُلتقط
+  اكتمال -&gt; نهاية الاشتراك
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>معترض يسجّل زمن المعالجة بلا تغيير الجسم. التفاصيل في <code>tap</code> لاحقًا. هنا شكل الإرجاع فقط:</p>
+<pre><code class="language-ts">import { CallHandler, ExecutionContext, NestInterceptor } from &#39;@nestjs/common&#39;;
+import { Observable } from &#39;rxjs&#39;;
+
+export class TimingInterceptor implements NestInterceptor {
+  intercept(_context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    return next.handle();
+  }
+}
+</code></pre>
+<p><code>next.handle()</code> تيار الرد القادم من المتحكم. إرجاعه كما هو يعني «لا تحويل». التحويل يكون <code>pipe</code> في الدرس الثالث.</p>
+<h2>شرح المثال</h2>
+<p>التوقيع يعيد <code>Observable&lt;unknown&gt;</code> لا <code>Promise</code>. لو كتبت <code>async intercept</code> ثم <code>return await next.handle()</code> فأنت تنتظر كائن تيار لا جسم الرد. الاشتراك مسؤولية الإطار عندما تمرر التيار له. اشتراك يدوي داخل <code>intercept</code> بالإضافة إلى الإرجاع يشغّل السلسلة مرتين.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المتحكم قد يعيد قيمة عادية. Nest تغلّفها في تيار قيمة واحدة حتى تمر المعترضات على الشكل نفسه. المعترض الخارجي يشترك في تيار المعترض الداخلي. عند الإكمال تُسلسَل القيمة إلى HTTP. خطأ في التيار يدخل المرشحات إن لم يلتقطه <code>catchError</code>. لهذا تظهر RxJS في مسار الطلب حتى في تطبيق لا يستدعي <code>HttpService</code>.</p>
+<h2>مثال عملي</h2>
+<p>قرار المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>الشكل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>خدمة الكتب</td>
+<td><code>async</code> ووعد، لأن Prisma وعد</td>
+</tr>
+<tr>
+<td>معترض زمن أو غلاف رد</td>
+<td><code>Observable</code> عبر <code>next.handle().pipe</code></td>
+</tr>
+<tr>
+<td>استدعاء API غلاف خارجي لاحقًا</td>
+<td>تيار <code>HttpService</code> أو <code>firstValueFrom</code> إن أردت <code>await</code></td>
+</tr>
+</tbody></table>
+<p>لا تحوّل <code>BooksService</code> إلى تيار حتى «تشبه المعترض».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>subscribe</code> داخل المعترض وإرجاع التيار نفسه.</li>
+<li>استيراد عشرات المعاملات لنسخ مثال لوحة.</li>
+<li>معاملة كل عميل HTTP في توثيق Nest 12 كأنه <code>HttpService</code>.</li>
+<li>تجاهل التيار وتحويله دائمًا إلى وعد داخل المعترض، فتصعب سلسلة المعترضات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تعيد الدالة تيارًا يكمّله الإطار: معترض، أو طلب Axios المغلف الذي ستدرسه بعد هذا الفصل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في خدمة مجال ترجع صفًا واحدًا بـ <code>async</code>. الوعد أوضح. ولا في بوابة WebSocket التي كتبناها بأحداث Socket.IO.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الإرجاع</th>
+<th>من يشغّل العمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قيمة عادية</td>
+<td>Nest تغلفها</td>
+</tr>
+<tr>
+<td><code>Promise</code></td>
+<td>Nest تنتظره</td>
+</tr>
+<tr>
+<td><code>Observable</code></td>
+<td>Nest تشترك فيه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد <code>next.handle()</code> في المعترض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Observable</code> يمثل الرد بعد بقية السلسلة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تنتظر <code>next.handle()</code> بـ <code>await</code> مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الناتج تيار لا جسم الرد. الاشتراك هو الذي يسحب القيمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أي طبقة في المتجر تبقى على الوعود رغم هذا الفصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خدمة المجال التي تتحدث إلى Prisma. التيار لمعترض أو لعميل HTTP الذي يعيده.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يشترك في تيار المعترض؟</li>
+<li>أي ستة أسماء ستكفي هذا الفصل؟</li>
+<li>أي حزمة HTTP تعيد تيارًا وأي حزمة حديثة تعيد وعدًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>RxJS تظهر لأن Nest تمرر الرد كتيار في المعترضات، ولأن <code>HttpService</code> يعيد تيارًا. لا تحوّل المجال كله إلى مكتبة تيارات.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما الذي يمثله <code>Observable</code> عند الاشتراك والإلغاء، بمثال أصغر من المعترض.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>RxJS — Observable: <a href="https://rxjs.dev/guide/observable">https://rxjs.dev/guide/observable</a></li>
+<li>NestJS — Interceptors: <a href="https://docs.nestjs.com/interceptors">https://docs.nestjs.com/interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

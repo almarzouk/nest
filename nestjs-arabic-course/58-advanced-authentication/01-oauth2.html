@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OAuth 2.0</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-oauth2.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OAuth 2.0</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز التفويض في رف: العميل يطلب إذنًا محدودًا من مالك حساب، ويحصل على رمز وصول إلى مورد، من غير أن يقرأ كلمة مرور المالك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>شريك شحن يريد إنشاء طلبات كتب نيابة عن مكتبة وافقت، لا أن تخزّن المكتبة كلمة مرور رف عند الشريك. نسخ كلمة المرور إلى تطبيق الشريك يجعل التسريب عند الشريك تسريبًا لحساب رف كله.</p>
+<h2>الفكرة ببساطة</h2>
+<p>OAuth 2.0 إطار تفويض. الأطراف: مالك المورد (المكتبة)، العميل (تطبيق الشريك)، وخادم التفويض الذي يصدر الرمز، وخادم المورد الذي يقبل الرمز. العميل لا يرى كلمة المرور. الرمز يحمل نطاقًا (scopes) لا «كل الحساب».</p>
+<h2>التعريف التقني</h2>
+<p>التدفق المناسب لتطبيق خادم مع متصفح هو Authorization Code: المتصفح يذهب إلى خادم التفويض، يعود برمز قصير العمر (code) إلى عنوان إعادة توجيه مسجّل، والخادم يستبدله بـ access token. PKCE يمتد إلى عملاء لا يضمنون سرًا ثابتًا. سر العميل يبقى على خادم رف لا في صفحة أو جوال. الرمز الذي يظهر في رابط المتصفح ليس جلسة API دائمة. صفحة المصادقة في Nest تبني OpenID Connect فوق هذه الأفكار بحزمة <code>@nestjs/authentication</code>؛ وصفة Passport ما زالت في Recipes ولم تُحذف. هذا الدرس يثبت المصطلح قبل Google.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مكتبة توافق في المتصفح
+→ code إلى خادم رف
+→ خادم رف يستبدل code برمز وصول
+→ الشريك ينادي /orders بالرمز لا بكلمة المرور
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">client_id     تطبيق الشريك المسجّل
+redirect_uri  https://partner.example/callback  مطابق حرفيًا للمسجّل
+scope         orders:create
+code          يُستبدل مرة على الخادم
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>redirect_uri</code> غير المسجّل يُرفض حتى لا يذهب الرمز إلى موقع المهاجم.</li>
+<li><code>scope</code> يحد ما سيفعله الرمز. إنشاء الطلبات لا يعني قراءة كلمات المرور.</li>
+<li><code>code</code> في عنوان المتصفح مكشوف لسجل المتصفح، لذلك عمره قصير والاستبدال يتم من الخادم.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تطبيق الشريك يوجّه المتصفح إلى خادم التفويض مع <code>client_id</code> و <code>redirect_uri</code> و <code>state</code>.</li>
+<li>المكتبة توافق على النطاق.</li>
+<li>المتصفح يعود إلى <code>redirect_uri</code> ومعه <code>code</code> و <code>state</code>.</li>
+<li>خادم الشريك يتحقق أن <code>state</code> هو الذي أرسله، ثم يستبدل <code>code</code> بسر العميل.</li>
+<li>access token الناتج يُستخدم على API المورد. تجديده أو إبطاله درس لاحق؛ هنا يكفي أنه ليس كلمة المرور.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>رفض إعادة التوجيه المفتوحة في رف إن أصبح هو خادم التفويض لشركائه:</p>
+<pre><code class="language-ts">export function assertRedirect(registered: string[], candidate: string) {
+  if (!registered.includes(candidate)) {
+    throw new Error(&#39;redirect_uri is not registered&#39;);
+  }
+  return candidate;
+}
+</code></pre>
+<p>المقارنة حرفيّة. <code>https://partner.example/callback</code> لا يطابق <code>https://partner.example/callback/evil</code> ولا <code>https://partner.example.evil/callback</code>. لا تبنِ خوارزمية توقيع رمز من الصفر؛ الإصدار يتم بمكوّن مصادقة راجعتم توثيقه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع سر العميل في تطبيق الجوال أو في صفحة.</li>
+<li>اعتبار OAuth «تسجيل دخول» فقط. التسجيل هوية، وقد تُبنى فوقه بـ OpenID Connect في الدرس التالي.</li>
+<li>تخزين <code>code</code> كجلسة أسبوعية.</li>
+<li>نطاق <code>*</code> غير مكتوب في العقد ثم استخدام الرمز لكل المسارات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يصل برنامج آخر إلى موارد مكتبة بموافقة صاحبها، أو عندما يفوّض المتصفح خادم رف لدى مزود خارجي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتسجيل موظف رف بكلمة مرور تملكونها أصلًا على قاعدتكم. هناك مسار الجلسة أو رمز الوصول الخاص بكم. ولا كذريعة لتخزين كلمة مرور Google.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>كلمة مرور منسوخة</th>
+<th>OAuth 2.0</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ماذا يرى الشريك</td>
+<td>سر الحساب</td>
+<td>رمز بنطاق</td>
+</tr>
+<tr>
+<td>الإلغاء</td>
+<td>تغيير كلمة المرور</td>
+<td>إبطال الرمز</td>
+</tr>
+<tr>
+<td>مكان السر</td>
+<td>عند الشريك</td>
+<td>سر العميل على خادم مسجّل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُستبدل <code>code</code>: في المتصفح أم على الخادم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على الخادم، مع سر العميل إن كان العميل سريًا. المتصفح ينقل <code>code</code> فقط إلى عنوان إعادة التوجيه.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>state</code> جزء من التدفق لا زينة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يربط العودة بالمحاولة التي بدأها نفس المتصفح. من غيره يمكن إنهاء تدفق لم يبدأه الضحية إن تسرّب رابط العودة. تحقق الخادم أن القيمة التي رجعَت هي التي أصدرها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>شريك يطلب نطاق <code>orders:create</code> ثم يستخدم الرمز على <code>DELETE /books</code>. أين يُرفض ذلك؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عند خادم المورد: الرمز بلا هذا النطاق. رفض الخادم التفويض عند الإصدار لا يكفي إن لم يفحص المورد النطاق على كل مسار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفوّض OAuth 2.0: الهوية أم الوصول إلى مورد؟</li>
+<li>لماذا لا يُخزَّن سر العميل في الصفحة؟</li>
+<li>ما دور <code>redirect_uri</code> المسجّل؟</li>
+<li>هل اختفاء Passport شرط لفهم OAuth هنا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>OAuth 2.0 يعطي العميل رمز وصول بنطاق بعد موافقة المالك، عبر code يُستبدل على الخادم. هو ليس نسخ كلمة المرور، وليس بذاته إثبات «من الشخص».</p>
+<h2>ماذا بعد؟</h2>
+<p>رف تريد معرفة من الشخص لا إذنًا على بريده فقط. الدرس التالي يضع طبقة الهوية OpenID Connect فوق هذا التفويض.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>OAuth 2.0 — RFC 6749: <a href="https://www.rfc-editor.org/rfc/rfc6749">https://www.rfc-editor.org/rfc/rfc6749</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

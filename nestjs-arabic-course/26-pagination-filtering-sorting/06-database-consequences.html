@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أثر النمط على الاستعلام</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-database-consequences.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أثر النمط على الاستعلام</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل عقد القائمة يطابق فهرسًا وخطة تنفيذ، حتى لا يصبح <code>skip</code> أو المرشح مسحًا للجدول.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>where</code> صحيح و<code>orderBy</code> آمن، والطلب يبطؤ عند <code>page=400</code> أو عند <code>published=true</code> مع فرز <code>title</code>. PostgreSQL يقرأ صفوفًا كثيرة ليرميها في <code>OFFSET</code>، أو يرتّب الناتج في الذاكرة لأن الفهرس على <code>id</code> فقط لا يخدم الشرط. <code>count</code> على نفس الجدول يضيف رحلة ثانية تبدو بريئة في التطوير.</p>
+<h2>الفكرة ببساطة</h2>
+<p>فهرس القائمة يغطي أعمدة المساواة في <code>WHERE</code> ثم أعمدة <code>ORDER BY</code>. الإزاحة العميقة تبقى مكلفة حتى مع فهرس، لأن المحرك يعدّ حتى موضع البداية. المؤشر يحوّل الطلب إلى مدى على ذلك الفهرس. <code>count</code> اختياري حين تكتفي الواجهة بـ <code>nextCursor</code>. لا تُنشأ فهرسًا لكل عمود «احتياطًا». كل فهرس يبطئ الكتابة.</p>
+<h2>التعريف التقني</h2>
+<p>في <code>schema.prisma</code> لمسار المنشورات الشائع: زائر يطلب <code>published = true</code> مرتبًا بـ <code>id</code>.</p>
+<pre><code class="language-prisma">model Post {
+  id        Int     @id @default(autoincrement())
+  title     String
+  published Boolean @default(false)
+  authorId  Int
+  @@index([published, id])
+  @@index([authorId, id])
+}
+
+model Comment {
+  id     Int @id @default(autoincrement())
+  postId Int
+  @@index([postId, id])
+}
+</code></pre>
+<p>الهجرة عبر <code>prisma migrate</code>. الفهرس يُراجع في الهجرة مثل أي عمود. استعلام الزائر <code>findMany</code> مع <code>where: { published: true }</code> و <code>orderBy</code> على <code>id</code> يطابق <code>[published, id]</code>. فرز <code>title</code> بعد ذلك الشرط يحتاج فهرسًا يبدأ بـ <code>published</code> ثم <code>title</code> ثم <code>id</code> إن صار المسار شائعًا. من غير قياس لا تضف فهرسًا إضافيًا.</p>
+<p>مؤشر التعليقات: <code>where: { postId }</code> و <code>orderBy</code> على <code>id</code> و <code>cursor</code> مع <code>skip: 1</code> و <code>take: limit + 1</code>. الفهرس <code>[postId, id]</code> يخدم المساواة والمدى.</p>
+<p><code>count({ where })</code> يبقى في لوحة الأرقام ويُترك حين يكفي <code>nextCursor</code>. <code>select</code> يقتصر على حقول <code>PostResponse</code>. <code>EXPLAIN</code> على حجم يشبه الإنتاج يميّز <code>Index Scan</code> من <code>Seq Scan</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">WHERE مساواة ثم ORDER BY
+  = ترتيب أعمدة الفهرس
+OFFSET العميق يعدّ الصفوف
+المؤشر يقفز في الفهرس
+count رحلة إضافية
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-sql">EXPLAIN ANALYZE
+SELECT id, title, published
+FROM &quot;Post&quot;
+WHERE published = true
+ORDER BY id ASC
+OFFSET 0 LIMIT 20;
+</code></pre>
+<h2>شرح المثال</h2>
+<p>شغّل الاستعلام الذي يولّده Prisma لا استعلامًا تخيلته. إن رأيت فرزًا منفصلًا عن المسح، الفهرس لا يطابق الترتيب. إن رأيت <code>Index Scan</code> على <code>Post_published_id_idx</code> فالعقد والخطة متفقان على الصفحة الأولى. كرّر بـ <code>OFFSET 10000</code> وقارن الزمن. الفرق هو سبب المؤشر على الخيوط الطويلة.</p>
+<p>أسماء الفهارس عند Prisma قد تختلف. المهم الأعمدة والترتيب.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المخطط يقدّر الصفوف. فهرس مركّب يُستخدم من اليسار: شرط <code>authorId</code> يستخدم <code>[authorId, id]</code>، وشرط <code>published</code> يستخدم الفهرس الآخر. شرط على <code>title</code> فقط لا يستخدم <code>[published, id]</code> كبداية مساواة. لذلك مفتاح فرز جديد في الخريطة سؤال فهرس لا سؤال DTO فقط.</p>
+<p><code>OFFSET</code> يطلب تخطي N صفوف مطابقة. الفهرس يسرّع إيجادها وما زال يزورها. المؤشر مع ترتيب تصاعدي يبدأ بعد المفتاح. قِس بعد تحديث إحصاءات الجدول على نسخة كبيرة، لا على عشرين صفًا فقط.</p>
+<h2>مثال عملي</h2>
+<p>بعد هجرة الفهرسين، قائمة الزائر ولوحة «مقالاتي» بـ <code>authorId</code> من الجلسة. تعليق على مقال يستخدم <code>[postId, id]</code>. اختبار لا يثبت زمنًا هشًا. يثبت وجود الهجرة. قياس <code>EXPLAIN</code> مرة على نسخة فيها آلاف الصفوف وتُسجَّل الملاحظة في وصف الهجرة إن تغيّر الفهرس.</p>
+<p>أزل فهرسًا تجريبيًا لم يظهر في خطة المسارات الحقيقية حتى لا تدفع كل <code>INSERT</code> ثمنه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فهرس على <code>id</code> وحده وتوقع أنه يخدم <code>published = true ORDER BY title</code>.</li>
+<li><code>OFFSET</code> عميق مع الإصرار على أرقام الصفحات في خيط ضخم.</li>
+<li><code>count</code> في كل طلب مؤشر.</li>
+<li><code>select</code> لكل الأعمدة في قائمة.</li>
+<li><code>synchronize: true</code> لإنشاء الفهرس على الإنتاج.</li>
+<li>فهرس لكل مرشح نادر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند تثبيت عقد قائمة سيُستدعى كثيرًا، وبعد أي مفتاح فرز أو مرشح جديد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل أن يوجد استعلام حقيقي. فهرس بلا <code>WHERE</code> يطابقه يبطئ الكتابة. والقياس على عشرين صفًا لا يبرر قرار الإنتاج وحده.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>إزاحة مع فهرس</th>
+<th>مؤشر مع الفهرس نفسه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صفحة قريبة رخيصة</td>
+<td>العمق يبقى مدى</td>
+</tr>
+<tr>
+<td>رقم صفحة</td>
+<td><code>nextCursor</code></td>
+</tr>
+<tr>
+<td><code>count</code> للوحة</td>
+<td>غالبًا بلا <code>count</code></td>
+</tr>
+<tr>
+<td>تهتز مع الحذف</td>
+<td>أثبت على مفتاح متزايد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ترتيب أعمدة يخدم <code>published = true</code> ثم <code>ORDER BY id</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@@index([published, id])</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يبقى <code>OFFSET</code> الكبير مكلفًا مع فهرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المحرك ما زال يزور الصفوف المطابقة حتى موضع البداية ثم يتخلص منها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أضفت <code>sort=title</code> للزائر على المنشورات. ماذا تراجع قبل الإطلاق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خطة <code>EXPLAIN</code> لـ <code>published</code> ثم <code>title</code> ثم <code>id</code>. إن صار المسار شائعًا، فهرس بهذا الترتيب عبر هجرة. المؤشر يجب أن يحمل <code>title</code> و <code>id</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي فهرس لتعليقات مقال؟</li>
+<li>متى تُسقط <code>count</code>؟</li>
+<li>كيف تُضاف الفهارس في هذه الدورة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>العقد والفهجرة متلازمان: مساواة ثم ترتيب في الفهرس، إزاحة للصفحات القريبة، مؤشر للعمق، و<code>count</code> حين تحتاج الواجهة الرقم. الإنتاج بلا <code>synchronize</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> قائمة مقالات وخيط تعليقات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Prisma — Pagination: <a href="https://www.prisma.io/docs/orm/prisma-client/queries/pagination">https://www.prisma.io/docs/orm/prisma-client/queries/pagination</a></li>
+<li>Prisma — Indexes: <a href="https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes">https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

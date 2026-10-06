@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>عندما يصبح الخادم Client</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-when-the-server-is-a-client.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>عندما يصبح الخادم Client</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز طلب يدخل Nest من طلب تخرجه Nest إلى خدمة أخرى، قبل تسجيل <code>HttpModule</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بحث ISBN يبدو دالة داخل <code>BooksService</code> حتى تتوقف شبكة الناشر. عندها يتعطل مسار كتبك مع أن القاعدة سليمة. من غير حد فاصل تُنسخ عناوين URL والمفاتيح داخل المتحكم، ويصعب استبدال النداء في الاختبار. العميل هنا عملية Node، لا المتصفح.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المتحكم يستقبل زائر المتجر. خدمة التطبيق، عندما تحتاج بيانات لا تملكها، تصبح عميل HTTP تجاه ناشر أو خدمة غلاف. العقد الخارجي ليس عقد <code>Book</code> عندك. تترجم الحقول في الخدمة، وتفشل بوضوح إن صمت المنبع أو أعاد رمزًا لا تعرفه.</p>
+<p>توثيق Nest الحالي يقدّم <code>@nestjs/http-client</code> على <code>fetch</code> ويعيد وعودًا. <code>@nestjs/axios</code> يبقى متاحًا ويعيد <code>Observable</code> عبر <code>HttpService</code>. هذا الفصل يدرس الثاني لأن الفصل السابق جهّز <code>pipe</code>. لا تقدّم المسارين كأنه أحدهما نسخة قديمة من نفس الدالة.</p>
+<h2>التعريف التقني</h2>
+<p>اتجاهان على العملية نفسها:</p>
+<table>
+<thead>
+<tr>
+<th>الاتجاه</th>
+<th>من يبدأ</th>
+<th>مثال المتجر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وارد</td>
+<td>متصفح أو خدمة أخرى</td>
+<td><code>GET /books/42</code></td>
+</tr>
+<tr>
+<td>صادر</td>
+<td><code>BooksService</code> أو خدمة غلاف</td>
+<td><code>GET https://isbn.example/v1/978...</code></td>
+</tr>
+</tbody></table>
+<p>الصادر يحتاج: عنوان أساس، مهلة، ترجمة خطأ، وعدم تسريب مفتاح الناشر إلى JSON الزائر. الرمز الوارد <code>404</code> يعني أن كتابك غير موجود. الرمز نفسه من الناشر يعني أن ISBN غير معروف عنده. ترجمته قد تكون <code>null</code> اختياريًا أو <code>BadGatewayException</code> إن كان الغلاف مطلوبًا لإتمام البيع. القرار منتج، والمكان الخدمة لا المتحكم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">زائر -&gt; BooksController -&gt; BooksService
+                              |
+                              +-&gt; قاعدتك
+                              +-&gt; عميل ISBN (صادر)
+</code></pre>
+<p>فشل الفرع الثاني لا يفسد اتصال Prisma تلقائيًا. أنت تختار إن كان الغلاف حرجًا.</p>
+<h2>أبسط مثال</h2>
+<p>دالة تصف النية بلا حزمة بعد:</p>
+<pre><code class="language-ts">export interface IsbnClient {
+  lookup(isbn: string): Promise&lt;{ title: string } | null&gt;;
+}
+</code></pre>
+<p><code>BooksService</code> تعتمد على <code>IsbnClient</code>. الاختبار يمرر كائنًا يعيد <code>{ title: &#39;NestJS&#39; }</code> أو <code>null</code>. التنفيذ الحقيقي سيغلف <code>HttpService</code> في الدرس الثالث. الواجهة تبقى بالوعد حتى لا تنتشر <code>Observable</code> في المجال.</p>
+<h2>شرح المثال</h2>
+<p>المجال يسأل «ما عنوان هذا ISBN؟» ولا يعرف Axios. <code>null</code> هنا يعني «الناشر لا يعرف الرقم» بعد أن قررت ذلك في المترجم، لا أن الطلب انقطع. انقطاع الشبكة استثناء. الخلط بينهما يجعل الرف يظن أن الكتاب بلا عنوان بينما الخدمة معطلة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>طلب الزائر يشغل سلسلة Nest الواردة. أثناء <code>await lookup</code> العملية تنتظر مقبسًا صادرًا. إن لم توجد مهلة، انتظر الزائر مرتبط بانتظار الناشر. خيط Node لا يُحجب بالحساب، لكن الطلب الوارد يبقى مفتوحًا. لذلك المهلة جزء من كونك عميلًا لا تفصيل زينة. المفتاح يذهب في ترويسة الصادر فقط. سجّل رمز المنبع ومعرف الطلب، لا الترويسة كاملة.</p>
+<h2>مثال عملي</h2>
+<p>إنشاء كتاب مع إثراء اخت opcional:</p>
+<ol>
+<li>تحقق من DTO الوارد.</li>
+<li>اسأل <code>IsbnClient</code> بمهلة قصيرة.</li>
+<li>إن أعاد عنوانًا، اقترحه. إن أعاد <code>null</code>، أكمل بعنوان المستخدم.</li>
+<li>إن انقطع الناشر، أكمل الإنشاء أيضًا إن كان ISBN تجميليًا، وسجّل <code>502</code> داخليًا لا ترميه للزائر.</li>
+<li>احفظ في Prisma.</li>
+</ol>
+<p>إن كان شراء الكتاب ممنوعًا بلا بيانات الناشر، ارمِ استثناء واردًا مفهومًا وتوقف قبل الحفظ. اكتب القرار بجانب الاستدعاء.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>fetch</code> داخل المتحكم مع عنوان مثبّت.</li>
+<li>اعتبار <code>404</code> الخارجي غيابًا لكتابك في القاعدة.</li>
+<li>تمرير جسم الناشر الخام إلى زائرك.</li>
+<li>وضع مفتاح API في الاستعلام حيث يظهر في السجلات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يملك فريق آخر مصدر الحقيقة: ISBN، دفع، بريد، تحويل غلاف.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقراءة <code>Book</code> من قاعدتك. ذلك Prisma. ولا تستدعِ خدمتك الواردة عبر HTTP من نفس العملية بدل استدعاء الدالة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>وارد</th>
+<th>صادر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العقد</td>
+<td>مساراتك أو GraphQL</td>
+<td>وثيقة الناشر</td>
+</tr>
+<tr>
+<td>المهلة</td>
+<td>قرار الزائر أيضًا</td>
+<td>قرارك أنت</td>
+</tr>
+<tr>
+<td>الاختبار</td>
+<td>Supertest لاحقًا</td>
+<td>وهم <code>IsbnClient</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من هو العميل في نداء ISBN؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تطبيق Nest، عبر خدمة تغلف HTTP. الزائر عميل لمسارك الوارد فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يُعاد جسم الناشر كما وصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه عقد خارجي قد يحوي حقولًا لا تريد كشفها، وقد يتغير. ترجم إلى شكل <code>{ title }</code> أو ما يحتاجه المجال.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تتابع إنشاء الكتاب رغم فشل الناشر، ومتى تتوقف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تتابع إن كانت بيانات ISBN تحسينًا. تتوقف إن كان البيع أو الحفظ يشترط جواب الناشر. القرار مكتوب في الخدمة لا في المتحكم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين <code>404</code> عندك و <code>404</code> عند الناشر؟</li>
+<li>لماذا الواجهة <code>Promise</code> رغم أن Axios تيار؟</li>
+<li>أي حزمة توثيق تعيد وعود <code>fetch</code> اليوم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الخادم يصبح عميلًا عندما يخرج إلى عقد لا يملكه. ترجم الرد والخطأ، وافصل المجال عن اسم الحزمة.</p>
+<h2>ماذا بعد؟</h2>
+<p>تسجيل <code>HttpModule.register</code> من <code>@nestjs/axios</code> على وحدة الغلاف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — HTTP client (<code>fetch</code>): <a href="https://docs.nestjs.com/application/http-client">https://docs.nestjs.com/application/http-client</a></li>
+<li>NestJS — Axios module (ما زال متاحًا): <a href="https://docs.nestjs.com/techniques/http-module">https://docs.nestjs.com/techniques/http-module</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

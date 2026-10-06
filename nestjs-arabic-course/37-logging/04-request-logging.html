@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request Logging</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-request-logging.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Request Logging</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل كل طلب وارد بسطر واحد فيه الطريقة والمسار ورمز الحالة والمدة، بلا جسم التسجيل أو الترويسة السرية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سجلات الخدمات تقول «نُشر 42» ولا تقول إن <code>POST /books/42/publish</code> أعاد <code>403</code> في 12ms أو <code>201</code> في 800ms. من غير سطر الطلب لا ترى المسارات الصامتة التي لا تصل إلى <code>log</code> داخل الخدمة، مثل فشل أنبوب التحقق.</p>
+<h2>الفكرة ببساطة</h2>
+<p>معترض بعد المسار يقيس الوقت من دخوله حتى اكتمال الرد. <code>tap</code> من RxJS يسجّل عند <code>next</code> وعند <code>error</code> من غير تغيير الجسم. لا تقرأ <code>body</code> كاملًا. المسار والمعرفات من <code>req</code> كافية. <code>StreamableFile</code> يُسجَّل كتنزيل لا كـ JSON.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@Injectable()
+export class RequestLogInterceptor implements NestInterceptor {
+  private readonly logger = new Logger(&#39;HTTP&#39;);
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    if (context.getType() !== &#39;http&#39;) return next.handle();
+    const http = context.switchToHttp();
+    const req = http.getRequest&lt;{ method: string; originalUrl: string }&gt;();
+    const started = Date.now();
+    return next.handle().pipe(
+      tap({
+        next: () =&gt; this.finish(req, http.getResponse&lt;{ statusCode: number }&gt;().statusCode, started),
+        error: () =&gt; this.finish(req, http.getResponse&lt;{ statusCode: number }&gt;().statusCode, started),
+      }),
+    );
+  }
+
+  private finish(req: { method: string; originalUrl: string }, statusCode: number, started: number) {
+    this.logger.log({
+      message: &#39;request&#39;,
+      method: req.method,
+      path: req.originalUrl.split(&#39;?&#39;)[0],
+      statusCode,
+      durationMs: Date.now() - started,
+    });
+  }
+}
+</code></pre>
+<p>قص الاستعلام من <code>originalUrl</code> حتى لا يدخل <code>?token=</code> في السجل إن أخطأ عميل ووضع سرًا في الاستعلام. لا تسجّل <code>req.body</code>.</p>
+<p>ركّب المعترض على التطبيق لا على مسار واحد حتى ترى <code>404</code> أيضًا. إن كان الرمز عند <code>error</code> ما زال <code>200</code> لأن المرشح لم يكتب بعد، سجّل <code>statusCode</code> داخل مرشح استثناءات بعد <code>status</code>. للتمرين، المعترض يكفي للنجاح، والمرشح يسجّل الفشل إن سبقه الرد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دخول intercept
+  next.handle()
+    tap next أو error
+      سطر method path status durationMs
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>سطر ناجح:</p>
+<pre><code class="language-json">{&quot;level&quot;:&quot;log&quot;,&quot;context&quot;:&quot;HTTP&quot;,&quot;message&quot;:&quot;request&quot;,&quot;method&quot;:&quot;POST&quot;,&quot;path&quot;:&quot;/books/42/publish&quot;,&quot;statusCode&quot;:201,&quot;durationMs&quot;:40}
+</code></pre>
+<p>سطر تحقق:</p>
+<pre><code class="language-json">{&quot;message&quot;:&quot;request&quot;,&quot;method&quot;:&quot;POST&quot;,&quot;path&quot;:&quot;/books&quot;,&quot;statusCode&quot;:400,&quot;durationMs&quot;:3}
+</code></pre>
+<p>الثاني قد يأتي من المرشح إن لم يتحدث رمز الاستجابة لحظة <code>tap.error</code>. اقبل مصدرًا واحدًا حتى لا يتكرر السطر مرتين للطلب نفسه.</p>
+<h2>شرح المثال</h2>
+<p><code>getType() !== &#39;http&#39;</code> يترك GraphQL والمقبس لمعترضاتهم إن احتجتها لاحقًا. خلط <code>originalUrl</code> لطلب HTTP مع سياق <code>ws</code> يعطي قيمًا فارغة. المدة تشمل الخدمة والطابور فقط إن انتظرت <code>add</code>، وهو ما تريده: بطء Redis يظهر في <code>durationMs</code>. المدة لا تشمل القص في العامل. ذلك سطر <code>process</code> منفصل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المعترض يغلّف التيار كما في فصل RxJS. <code>tap</code> لا يغيّر القيمة، لذلك <code>StreamableFile</code> يكمل. تسجيل <code>data</code> في <code>tap</code> قد يقرأ الملف أو يطبع كتابًا كاملًا. لذلك <code>finish</code> لا يأخذ <code>data</code>. رمز <code>201</code> يأتي من إطار Nest بعد المعالج. إن غيّرت الرمز في مرشح لاحق، قد يسجّل المعترض الرقم قبل التعديل. للتوحيد، مرشح الاستثناء يسجّل حالات الخطأ والمعترض حالات النجاح فقط، بشرط ألا يسجلا معًا على المسار السعيد.</p>
+<h2>مثال عملي</h2>
+<p>استثناءات لا تُسجَّل كأجسام:</p>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>ماذا في السطر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /auth/login</code></td>
+<td><code>path</code> و <code>statusCode</code> فقط</td>
+</tr>
+<tr>
+<td><code>POST /books/:id/cover</code></td>
+<td>المسار والرمز والمدة، لا حجم الملف ولا <code>originalname</code></td>
+</tr>
+<tr>
+<td><code>GET /books/42/cover</code></td>
+<td><code>statusCode</code> 200 وعبارة <code>stream</code> إن شئت، لا البايتات</td>
+</tr>
+</tbody></table>
+<p><code>originalname</code> قد يحتوي بيانات شخص. تجاهله.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسجيل <code>req.body</code> على مسار الدخول.</li>
+<li>الإبقاء على <code>?access_token</code> في <code>path</code>.</li>
+<li><code>console.log</code> ثانٍ داخل المعترض فيتكرر كل طلب.</li>
+<li>اعتبار مدة الطلب مدة القص في BullMQ.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على HTTP الوارد دائمًا في الإنتاج، بمستوى <code>log</code> للنجاح و <code>warn</code> إن زاد <code>durationMs</code> عن حد تضعه للمسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على كل حدث Socket.IO إن كان ذلك يملأ المجمع. هناك سطر اتصال وقطع يكفي. ولا تسجّل صحة Redis كل 30 ثانية بهذا المعترض. تلك نبضة <code>@Interval</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>ماذا يقيس</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المعترض</td>
+<td>الطلب الوارد حتى الرد</td>
+</tr>
+<tr>
+<td><code>IsbnService</code></td>
+<td>نداء الناشر</td>
+</tr>
+<tr>
+<td><code>CoversConsumer</code></td>
+<td>مهمة القص</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي أربعة حقول تصف الطلب في السطر؟</p>
+<details>
+<summary>الحل</summary>
+`method` و `path` و `statusCode` و `durationMs`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُقص الاستعلام من <code>originalUrl</code>؟</p>
+<details>
+<summary>الحل</summary>
+حتى لا يُحفظ سر وُضع في الاستعلام مثل رمز دخول.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يقيس هذا السطر زمن <code>resize</code> في العامل؟</p>
+<details>
+<summary>الحل</summary>
+لأن الرد يعود بعد `add` لا بعد القص. زمن العامل سطر داخل `process`.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا <code>tap</code> لا <code>map</code>؟</li>
+<li>ماذا تفعل لسياق ليس <code>http</code>؟</li>
+<li>أي جسم لا يدخل السطر أبدًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>سطر طلب واحد: طريقة ومسار بلا استعلام، ورمز، ومدة. بلا جسم وبلا ترويسة. زمن الطابور بعد الرد سطر آخر.</p>
+<h2>ماذا بعد؟</h2>
+<p>معرف يربط سطر الطلب بسطر الناشر وسطر المهمة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Interceptors: <a href="https://docs.nestjs.com/interceptors">https://docs.nestjs.com/interceptors</a></li>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/techniques/logger">https://docs.nestjs.com/techniques/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

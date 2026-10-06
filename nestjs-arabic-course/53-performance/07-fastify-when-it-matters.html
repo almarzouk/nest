@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متى يهم Fastify</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-fastify-when-it-matters.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متى يهم Fastify</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة ما يقوله توثيق Nest عن Fastify حرفيًا: أسرع في معيارهم بنحو الضعف، ويبقى Express هو الافتراضي حتى يبرر القياس غير ذلك، مع شرط الاستماع على <code>0.0.0.0</code> خارج الجهاز المحلي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق رف يبدّل المحول لأن مقالًا وعد بثلاثة أضعاف. الوصفات التي تعتمد على وسيط Express تتوقف، والنشر يصمت لأن العملية تستمع على <code>localhost</code> فقط. لم يُقاس مسار الكتب أصلًا، وكان الزمن في Postgres.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nest يفصل تطبيقك عن مكتبة HTTP بمحول. Express هو المحول الذي يولّده <code>nest new</code> لأن وسطاءه كثيرة ومعروفة. Fastify محول آخر، ومعيار التوثيق يضعه قرب ضعف نتيجة Express. التبديل قرار بعد قياس لمسار سقفه إطار الـ HTTP، لا قبل ذلك.</p>
+<h2>التعريف التقني</h2>
+<p><code>NestFactory.create</code> بلا محول يستخدم Express. مع Fastify:</p>
+<p><code>NestFactory.create&lt;NestFastifyApplication&gt;(AppModule, new FastifyAdapter())</code>.</p>
+<p>صفحة Performance تقول إن Fastify يحل مشكلات تصميم بطريقة قريبة من Express وإنه أسرع بشكل ملحوظ، بنتيجة معيار تقارب الضعف، وإن Nest يبقي Express افتراضيًا لأنه واسع الاستخدام ومعه مجموعة ضخمة من الوسطاء. الوصفات المعتمدة على Express قد لا تعمل؛ استبدلها بحزم Fastify. افتراضيًا Fastify يستمع على واجهة <code>localhost</code> فقط. لقبول الاتصالات من خارج الجهاز مرّر <code>&#39;0.0.0.0&#39;</code> إلى <code>listen</code>. وسطاء Nest على Fastify ترى <code>req</code> و <code>res</code> الخام عبر <code>@fastify/middie</code>، لا أغلفة Fastify.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كود المتحكمات والخدمات يبقى
+المحول يتغير: ExpressAdapter أو FastifyAdapter
+القياس يقول إن كان الفرق يظهر في مسار رف
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { FastifyAdapter, type NestFastifyApplication } from &#39;@nestjs/platform-fastify&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create&lt;NestFastifyApplication&gt;(AppModule, new FastifyAdapter());
+  await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+}
+bootstrap();
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الوسيط الثاني هو المحول، لا خيارات التطبيق. خيارات مثل <code>rawBody</code> تأتي وسيطًا ثالثًا.</li>
+<li><code>&#39;0.0.0.0&#39;</code> يعني كل الواجهات. من غيره قد يعمل <code>curl</code> من الجهاز نفسه ويفشل موازن الحمل أو منصة تستدعي المنفذ من خارج الحاوية.</li>
+<li>الحزمة <code>@nestjs/platform-fastify</code> تُثبَّت صراحة. المشروع الافتراضي لا يجلبها.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>FastifyAdapter</code> يبني خادم Fastify ويمرر إليه توجيه Nest.</li>
+<li>المسارات التي سجّلتها بالديكورات تُربط على Fastify لا على <code>express()</code>.</li>
+<li><code>app.use</code> الخاص بوسطاء Express غير مضمون. الضغط مثلًا يصبح <code>app.register</code> لإضافة Fastify.</li>
+<li><code>listen(port, &#39;0.0.0.0&#39;)</code> يفتح المقبس على كل الواجهات.</li>
+<li>فرق المعيار official يظهر في مسارات خفيفة يغلب عليها إطار HTTP. مسار ينتظر القاعدة 40ms لن يتحول إلى 20ms لأن المحول تغيّر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>قياس مسار خفيف قبل أي تبديل في الإنتاج. على بيئة تشبه النشر، قارن نفس <code>GET /books/featured</code> من الكاش في الذاكرة:</p>
+<pre><code class="language-text">nest start            # Express
+# ثم بناء ثانٍ بالمحول، نفس الجهاز ونفس الحمل
+autocannon -c 50 -d 10 http://127.0.0.1:3000/books/featured
+</code></pre>
+<p>سجّل الطلبات في الثانية و p95 لا متوسطًا واحدًا. إن كان الفارق ضئيلًا أمام زمن SQL، أبقِ Express. إن كان المسار الساخن يلمس الإطار فقط (رد من كاش، جسم صغير) وظهرت نسبة قريبة مما يذكره التوثيق، عندها برر التبديل وقائمة الوسطاء التي ستُستبدل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قراءة «ضعف» كوعد لكل تطبيق فيه Prisma و Stripe.</li>
+<li>نشر Fastify بلا <code>0.0.0.0</code> ثم اعتبار المنصة لا تمرر المنفذ.</li>
+<li>إبقاء <code>import compression from &#39;compression&#39;</code> بعد التبديل.</li>
+<li>تمرير المحول في موضع خيارات التطبيق، فيُتجاهل العنوان أو يفشل النوع.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بعد قياس يُظهر أن سقف المسار الساخن هو محول HTTP، وأن وسطاء Express التي تعتمد عليها إما لها بديل Fastify أو لم تعُد لازمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كخطوة أولى في فصل الأداء، أو عندما تعتمد الوصفات الحالية على Express ولم يُحسب وقت استبدالها. الافتراضي يبقى Express.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Express</th>
+<th>Fastify</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الافتراضي في <code>nest new</code></td>
+<td>نعم</td>
+<td>يُضاف بالمحول</td>
+</tr>
+<tr>
+<td>معيار التوثيق</td>
+<td>خط الأساس</td>
+<td>قرابة الضعف</td>
+</tr>
+<tr>
+<td>الاستماع</td>
+<td>مناسب للنشر الشائع على المنفذ</td>
+<td><code>localhost</code> حتى تمرر <code>0.0.0.0</code></td>
+</tr>
+<tr>
+<td>الوسطاء</td>
+<td>نظام Express</td>
+<td>إضافات Fastify، والوسيط الخام عبر middie</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>التطبيق يعمل محليًا بـ Fastify ويفشل فحص الصحة من خارج الحاوية. ما السطر الناقص غالبًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>await app.listen(port, &#39;0.0.0.0&#39;)</code>. من دون العنوان يستمع Fastify على localhost داخل الحاوية، ولا يصل إليه فحص المنصة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>معيار التوثيق يقول «نحو الضعف». مسار رف p95 فيه 12ms إطار و 90ms SQL. ماذا تتوقع بعد التبديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أثرًا على جزء الإطار فقط، فلن يقترب المسار من النصف. 90ms تبقى. بدّل فقط إذا كان هذا الجزء هو شكوى المستخدم وبعد قياس، وإلا أصلح SQL.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اكتب شرط قبول التبديل لفريق رف في ثلاث جمل تشغيلية.</p>
+<details>
+<summary>الحل</summary>
+
+<p>نقيس المسار الساخن على المحولين بنفس البيانات والحمل. نقبل التبديل إذا تحسن p95 بنسبة تستحق صيانة الوسطاء، لا لأن المقال وعد بذلك. ننشر مع <code>0.0.0.0</code> وقائمة بالإضافات التي حلت محل وسطاء Express، ومنها الضغط إن بقي داخل العملية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا Express ما زال الافتراضي رغم رقم المعيار؟</li>
+<li>أين يمر عنوان <code>0.0.0.0</code>؟</li>
+<li>ماذا يحدث لوصفة تعتمد على وسيط Express؟</li>
+<li>أي مسار لا يظهر عليه رقم «الضعف»؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Fastify في توثيق Nest خيار سرعة معياره يقارب الضعف، بعد أن تقيس. Express يبقى الافتراضي. على Fastify، الاستماع خارج الجهاز يمر عبر <code>0.0.0.0</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>فصل الأداء أعطى أدوات القياس. الفصل التالي يبني استراتيجية أخطاء واحدة حتى لا يتحول البطء والعطل إلى <code>500</code> بلا شكل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Performance (Fastify): <a href="https://docs.nestjs.com/http/performance">https://docs.nestjs.com/http/performance</a></li>
+<li>NestJS — HTTP adapter: <a href="https://docs.nestjs.com/faq/http-adapter">https://docs.nestjs.com/faq/http-adapter</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

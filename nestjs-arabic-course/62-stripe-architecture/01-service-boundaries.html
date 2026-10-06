@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>حدود الخدمة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-service-boundaries.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>حدود الخدمة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>عزل Stripe عن كتالوج رف: وحدة فوترة تتحدث إلى المزود، ووحدة كتب تقرأ حالة محلية فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>BooksService.publish</code> يستدعي <code>stripe.subscriptions.retrieve</code> في كل طلب. تعطل Stripe يوقف القراءة والكتابة. مفاتيح API تظهر في وحدة الواجهة لأن «الدفع صفحة». رقم البطاقة يُطلب في DTO عندكم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>رف تملك المنظمات والكتب والحالة <code>trial | active | past_due</code>. Stripe تملك العميل والبطاقة والفواتير. الحدود: أوامر مثل «ابدأ Checkout» و«فسّر حدثًا موقّعًا». لا استعلام شبكة داخل مسار الكتاب. السر <code>STRIPE_SECRET_KEY</code> وسر الويب هوك على الخادم فقط.</p>
+<h2>التعريف التقني</h2>
+<p>وحدة <code>BillingModule</code> تصدّر <code>BillingService</code> تغلّف SDK. <code>BooksModule</code> تستورد سياسة تقرأ <code>Subscription</code> من Prisma لا عميل Stripe. <code>success_url</code> صفحة في الواجهة. معالجها في API لا يكتب <code>active</code>. الحقول المحلية: <code>providerCustomerId</code>, <code>providerSubscriptionId</code>, <code>plan</code>, <code>status</code>. لا PAN. idempotency لاحقًا على إنشاء الجلسة حتى لا تفتح جلستين عند إعادة الطلب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كتب  →  SELECT subscription.status
+فوترة →  Stripe API + webhook
+لا سهم من الكتب إلى SDK
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Injectable()
+export class PlanPolicy {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async canPublish(organizationId: string) {
+    const sub = await this.prisma.subscription.findUnique({ where: { organizationId } });
+    return sub?.status === &#39;active&#39; || sub?.status === &#39;trial&#39;;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا import لـ <code>stripe</code> في هذا الملف.</li>
+<li>الغياب أو الحالة الأخرى تمنع النشر على الحد.</li>
+<li>الاختبار يزرع صفًا محليًا ولا يحاكي شبكة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>أمر الدفع يذهب إلى <code>BillingService</code>.</li>
+<li>Stripe يعيد معرّفات تُحفظ محليًا.</li>
+<li>الحدث الموقّع لاحقًا يحدّث <code>status</code>.</li>
+<li><code>publish</code> يقرأ الصف.</li>
+<li>انقطاع Stripe بعد ذلك لا يغيّر قرار النشر إلا عندما تتغير الحالة المخزنة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export interface BillingPort {
+  startCheckout(organizationId: string): Promise&lt;{ url: string }&gt;;
+}
+
+export interface ClockPolicy {
+  allowsPublish(organizationId: string): Promise&lt;boolean&gt;;
+}
+</code></pre>
+<p>الواجهتان تمنعان استيراد SDK في الكتب. وحدة الفوترة تنفّذ الأولى. سياسة بسيطة تنفّذ الثانية. اختبار الكتب يستبدل الثانية بذاكرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مفتاح سري في حزمة الواجهة.</li>
+<li>تفعيل الخطة من مسار success.</li>
+<li>خلط سعر الكتاب <code>priceCents</code> مع <code>price_...</code> في Stripe.</li>
+<li>جعل كل مسار <code>await stripe</code> «ليبقى متزامنًا مع الحقيقة». الحقيقة التشغيلية نسختكم بعد الحدث.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>من أول مفتاح Stripe. الوحدة حد مراجعة: لا SDK خارج <code>billing/</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعزلوا حتى يختفي معرّف العميل؛ الكتب تحتاج الحالة لا الفاتورة. ولا تبنوا محفظة بطاقات داخل رف.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>داخل رف</th>
+<th>داخل Stripe</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الكتب</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>رقم البطاقة</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>حالة الخطة للعمل</td>
+<td>نسخة محلية</td>
+<td>المصدر الذي يصل عبر حدث</td>
+</tr>
+<tr>
+<td>مفتاح API</td>
+<td>خادم الفوترة</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>GET /books</code> يتصل بـ Stripe؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. يقرأ القاعدة. Stripe يُستدعى من وحدة الفوترة عند بدء الدفع وعند الحدث.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يوقف تعطل Stripe النشر إن كان داخل <code>BooksService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل نشر ينتظر الشبكة. الحالة المحلية تجعل النشر يعمل ما دامت النسخة كافية، وتتأخر عن المزود فقط حتى يصل الحدث.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ارسموا ما يُمنع استيراده في <code>books.module.ts</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p>حزمة <code>stripe</code> ومفتاح السر. المسموح: <code>PlanPolicy</code> أو منفذ يقرأ الحالة. إنشاء الجلسة يبقى في <code>BillingModule</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يملك البطاقة؟</li>
+<li>ماذا تستورد وحدة الكتب؟</li>
+<li>أين يعيش المفتاح السري؟</li>
+<li>ما النسخة التي يقرأها النشر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Stripe خلف وحدة فوترة. الكتالوج يقرأ حالة محلية. المفاتيح على الخادم، وصفحة النجاح ليست أمر تفعيل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أول أمر عبر الحد: إنشاء جلسة Checkout. الدرس التالي ماذا تعيدون للمتصفح وماذا لا تكتبونه بعد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Stripe — Checkout: <a href="https://docs.stripe.com/payments/checkout">https://docs.stripe.com/payments/checkout</a></li>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

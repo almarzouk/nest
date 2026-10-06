@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@nestjs/schedule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-schedule-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@nestjs/schedule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفعيل الجدولة في التطبيق مرة واحدة عبر <code>ScheduleModule.forRoot</code>، وربط الدوال المزينة كمزودات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كتابة <code>@Cron</code> على صنف غير مسجّل لا توقظ شيئًا. واستيراد الوحدة في كل ميزة مرتين قد يكرر التسجيل. المؤقتات تحتاج أن تبدأ مع الإقلاع من وحدة واحدة تعرفها Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>npm i @nestjs/schedule</code> ثم <code>ScheduleModule.forRoot()</code> في الجذر أو في وحدة مستوردة مرة. الدوال تعيش على <code>@Injectable()</code> مذكور في <code>providers</code>. الزينة <code>@Cron</code> و <code>@Interval</code> و <code>@Timeout</code> من الحزمة نفسها. بلا <code>forRoot</code> الزينة صامتة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ScheduleModule } from &#39;@nestjs/schedule&#39;;
+import { CleanupService } from &#39;./cleanup.service.js&#39;;
+
+@Module({
+  imports: [ScheduleModule.forRoot()],
+  providers: [CleanupService],
+})
+export class AppModule {}
+</code></pre>
+<p><code>forRoot</code> بلا خيارات يكفي للبدء. الصنف:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { Cron, CronExpression } from &#39;@nestjs/schedule&#39;;
+
+@Injectable()
+export class CleanupService {
+  @Cron(CronExpression.EVERY_HOUR)
+  async dropOldTempFiles() {
+    await this.files.dropOlderThan(&#39;var/tmp&#39;, 24 * 60 * 60 * 1000);
+  }
+}
+</code></pre>
+<p><code>CronExpression.EVERY_HOUR</code> ثابت مقروء بدل نمط تصعب مراجعته. تفاصيل النمط في الدرس التالي. هنا المطلوب أن الصنف مزوّد والوحدة مستوردة.</p>
+<p>لا تضع <code>forRoot</code> في <code>CoversModule</code> و <code>MailModule</code> معًا إن كان الاثنان يُستوردان دائمًا، حتى لا تتتبع أين بدأت الجدولة. مكان واحد في الجذر أوضح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الإقلاع
+  ScheduleModule.forRoot
+    يقرأ @Cron على المزودات
+      مؤقت لكل دالة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>خدمة بلا حقن للطابور عندما يكون العمل مسح ملفات محلية قصيرة:</p>
+<pre><code class="language-ts">@Cron(CronExpression.EVERY_HOUR)
+async dropOldTempFiles() {
+  await this.files.dropOlderThan(&#39;var/tmp&#39;, 86_400_000);
+}
+</code></pre>
+<p><code>files</code> خدمة قرص تُحقن في الباني. الاختبار يستدعي <code>dropOldTempFiles()</code> مباشرة ولا ينتظر الساعة.</p>
+<h2>شرح المثال</h2>
+<p>الزينة تسجل الدالة عند إنشاء المزود. الاسم <code>dropOldTempFiles</code> يظهر في السجلات إن أضفت سجلًا في أول السطر. العمل نفسه يبقى في <code>files</code> حتى تستطيع اختبار الحذف بمعيار العمر من غير Nest. الساعة ليست جزءًا من صحة «الملف أقدم من يوم».</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تمسح Nest المزودات بحثًا عن البيانات الوصفية للجدولة وتبدأ المؤقتات في العملية. إيقاف العملية يوقف المؤقتات. لا توجد قائمة في Redis من هذا التسجيل وحده. إن أعدت التشغيل في منتصف الساعة، النبضة التالية حسب النمط لا «تعوّض» النبضة التي فاتت إلا إذا كتبت ذلك. لا تفترض أن <code>@Cron</code> اللحظي سيعيد تشغيل ما سقط.</p>
+<p>الدالة <code>async</code> التي ترمي ترفض الوعد. المكتبة لا تعيد المحاولة كـ BullMQ. سجّل الخطأ داخل الدالة أو دع مرشحًا يراه، ولا تترك رفضًا صامتًا إن كان التنظيف حرجًا. إن استمر العمل أطول من الفترة، قد تتداخل نبضتان. امنع التداخل بعلم <code>running</code> في الخدمة أو بالإدراج إلى طابور.</p>
+<h2>مثال عملي</h2>
+<p>الجذر يستورد الجدولة والميزات:</p>
+<pre><code class="language-ts">@Module({
+  imports: [ScheduleModule.forRoot(), CoversModule, BooksModule],
+  providers: [CleanupService],
+})
+export class AppModule {}
+</code></pre>
+<p><code>CoversModule</code> لا تستورد <code>ScheduleModule</code> مرة ثانية. إن احتاجت تذكير المسودات، ضع <code>@Cron</code> على مزوّد في وحدة تُحمَّل مع الجذر، أو انقل المزود إلى الجذر حتى ترى التسجيل في ملف واحد أثناء التعلم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Cron</code> على صنف في <code>controllers</code> أو على صنف غير مذكور في <code>providers</code>.</li>
+<li><code>forRoot</code> في كل وحدة ميزة.</li>
+<li>توقع إعادة المحاولة من الحزمة بعد الرمي.</li>
+<li>انتظار الساعة في اختبار الوحدة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يظهر أول عمل زمني حقيقي: تنظيف أو تقرير. التسجيل مرة في جذر التطبيق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل وجود دالة تستحق الوقت. <code>forRoot</code> وحده لا ينظف شيئًا. ولا تستورده لحل إعادة محاولة القص.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشرط</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>forRoot</code> + مزوّد مزين</td>
+<td>المؤقت يعمل</td>
+</tr>
+<tr>
+<td>زينة بلا تسجيل المزود</td>
+<td>لا شيء</td>
+</tr>
+<tr>
+<td><code>forRoot</code> مرتين في شجرتين</td>
+<td>تتبع أصعب وتكرار محتمل</td>
+</tr>
+<tr>
+<td>رمي من الدالة</td>
+<td>لا <code>attempts</code> تلقائية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استدعاء يفعّل زينة الجدولة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>ScheduleModule.forRoot()</code> من <code>@nestjs/schedule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تختبر الحذف دون انتظار ساعة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استدعِ الدالة أو <code>files.dropOlderThan</code> مباشرة في الاختبار. الزينة ليست موضوع الاختبار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا التداخل خطر إن طال التنظيف أكثر من الفترة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النبضة التالية تبدأ بينما الأولى ما زالت تمشي على المجلد نفسه. علم تشغيل أو نقل العمل إلى طابور يمنع مسارين متوازيين.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يوضع <code>forRoot</code>؟</li>
+<li>هل فشل الدالة يُعاد كسياسة طابور؟</li>
+<li>ماذا يختبر الاختبار: النمط أم الحذف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ScheduleModule.forRoot</code> مرة، والمزوّد المسجّل يحمل الزينة. الحذف يُختبر بنداء مباشر، والتداخل والفشل مسؤوليتك لا سياسة <code>attempts</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>نمط <code>@Cron</code> الذي يشغّل التنظيف في ساعة معروفة لا كل 60 ثانية فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Task scheduling: <a href="https://docs.nestjs.com/techniques/task-scheduling">https://docs.nestjs.com/techniques/task-scheduling</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

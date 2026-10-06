@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>createParamDecorator</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-create-param-decorator.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>createParamDecorator</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء زينة معامل بدالة مصنع تستخرج قيمة من <code>ExecutionContext</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Req()</code> يمرر الطلب كله. استخراج ترويسة المكتب أو اسم الشباك يتكرر مع فحص أن الطلب HTTP. المصنع يضع الاستخراج في ملف واحد والوسيط في الدالة يصبح القيمة فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>createParamDecorator((data, ctx) =&gt; value)</code> من <code>@nestjs/common</code>. <code>data</code> ما بين القوسين عند الاستخدام، مثل <code>&#39;name&#39;</code>. <code>ctx</code> سياق التنفيذ. القيمة الراجعة تصل إلى المعامل بعد الحارس، مثل <code>@Body()</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export const DeskName = createParamDecorator(
+  (data: unknown, ctx: ExecutionContext) =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ headers: Record&lt;string, string | undefined&gt; }&gt;();
+    return request.headers[&#39;x-desk-name&#39;];
+  },
+);
+</code></pre>
+<p>الاستخدام <code>@DeskName() name: string</code>. الصفحة تقول إن <code>createParamDecorator</code> عام، فتستطيع تثبيت نوع <code>data</code>: <code>createParamDecorator((data: string, ctx) =&gt; ...)</code>.</p>
+<p><code>data</code> هنا غير مستخدم. الدرس عن <code>@CurrentUser</code> سيمرر اسم حقل. هذا الدرس يثبت المصنع نفسه على ترويسة واحدة.</p>
+<p>الأنابيب تعمل على زينة المعامل المخصصة كما على <code>@Body</code>، لكن <code>ValidationPipe</code> يتخطاها ما لم تضع <code>validateCustomDecorators: true</code>. <code>StandardSchemaValidationPipe</code> كذلك يحتاج <code>validateCustomDecorators</code> وخيار <code>{ schema }</code> على الزينة، كما في صفحة التحقق. لا تفتح ذلك هنا. الاستخراج فقط.</p>
+<p>لا تلصق <code>request.user</code> داخل المصنع كأثر جانبي على كل قراءة. اللصق للحارس. المصنع يقرأ.</p>
+<p>المصنع يعمل عند بناء الوسائط لكل طلب. لا تغلق على طلب سابق في متغير في الملف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@DeskName() name
+    ↓ مصنع
+ctx.switchToHttp().getRequest()
+    ↓
+headers[&#39;x-desk-name&#39;] → المعامل name
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { createParamDecorator, type ExecutionContext } from &#39;@nestjs/common&#39;;
+
+export const DeskName = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string | undefined =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{
+      headers: Record&lt;string, string | undefined&gt;;
+    }&gt;();
+    return request.headers[&#39;x-desk-name&#39;];
+  },
+);
+</code></pre>
+<pre><code class="language-ts">@Post(&#39;refund&#39;)
+refund(@DeskName() desk: string | undefined): { desk: string | undefined } {
+  return { desk };
+}
+</code></pre>
+<p>إن لصق الحارس الاسم على الترويسة أو أرسلها العميل، تصل السلسلة إلى المعامل. الغياب <code>undefined</code> ما زال ممكنًا إن لم يرفض الحارس. الزينة لا ترمي <code>401</code> في هذا الدرس.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>_data</code> حاضر لأن التوقيع ثنائي حتى لو لم تستخدم الوسيط.</li>
+<li><code>switchToHttp</code> لأن الشباك HTTP. سياق RPC لا يملك هذه الترويسة بالشكل نفسه.</li>
+<li>لا <code>@Injectable</code> على الثابت. هو دالة زينة لا صنف.</li>
+<li>الاستيراد في المتحكم قيمة لا <code>import type</code>، وإلا تختفي الزينة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد نجاح الحراس تبني Nest وسائط الدالة. لكل معامل زينة تستدعي المصنع بـ <code>data</code> والسياق. الناتج يُمرَّر إلى أنابيب ذلك المعامل إن وُجدت، ثم إلى الدالة. فشل أنبوب على الزينة يمنع الدالة مثل <code>@Param</code>.</p>
+<p><code>ExecutionContext</code> هنا هو نفسه الذي رآه الحارس، بعد أن يكون اللصق على <code>request</code> قد تم. لذلك القراءة ترى <code>user</code> الذي وضعه <code>IdentifyDeskGuard</code>. إن استُدعيت الزينة في اختبار من غير سياق، تمرر سياقًا مزيفًا إلى المصنع عبر الدالة التي يصدرها Nest للاختبار، أو تستخرج الدالة الداخلية. لا تشغّل الخادم لقراءة ترويسة.</p>
+<p>المصنع المتزامن يكفي للترويسة. عمل غير متزامن ثقيل لا يعيش هنا. الحارس <code>async</code> مكان الانتظار على رمز، والقيمة الجاهزة تُقرأ في الزينة.</p>
+<h2>مثال عملي</h2>
+<p><code>refund</code> و <code>audit</code> كانتا تقرآن <code>x-desk-name</code> من <code>@Req()</code>. بعد <code>DeskName</code> التوقيعان يعرضان <code>desk: string | undefined</code>. اختبار المتحكم يمرر الزينة بقيمة <code>&#39;lead&#39;</code> عبر طبقة الاختبار الخاصة بـ Nest أو يستدعي المصنع على سياق فيه الترويسة. تغيير اسم الترويسة يتم في ملف واحد. الحارس الذي يرفض الغياب يبقى على المسار حتى لا تعتمد الدالة على <code>undefined</code> في الإنتاج.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>رمي <code>UnauthorizedException</code> من المصنع ومن الحارس معًا برسالتين.</li>
+<li>قراءة <code>ctx</code> وتخزين الطلب في <code>let</code> على مستوى الملف.</li>
+<li>توقع الفحص بـ <code>ValidationPipe</code> العام من غير <code>validateCustomDecorators</code>.</li>
+<li>وضع <code>@DeskName</code> على الصنف. هي زينة معامل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لاستخراج يتكرر من طلب HTTP إلى وسيط، باسم يوضح العقد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقيمة استُخرجت مرة. ولبيانات على الدالة يقرأها الحارس قبل الاستدعاء. تلك <code>SetMetadata</code> لا معامل. ولا لاستعلام قاعدة. تلك خدمة بعد أن يصل المعرف وسيطًا عاديًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>@Req()</code></th>
+<th><code>createParamDecorator</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نوع الوسيط</td>
+<td>الطلب</td>
+<td>ما ترجع المصنع</td>
+</tr>
+<tr>
+<td>مكان الاستخراج</td>
+<td>جسم الدالة</td>
+<td>ملف الزينة</td>
+</tr>
+<tr>
+<td>الأنابيب</td>
+<td>نعم</td>
+<td>نعم، وفحص الزينة يحتاج خيارًا</td>
+</tr>
+<tr>
+<td>الإذن</td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الوسيطان اللذان يستلمهما المصنع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>data</code> من قوس الزينة، و <code>ExecutionContext</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد يبقى <code>desk</code> قيمته <code>undefined</code> رغم وجود الزينة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الترينسة غائبة والحارس لم يرفض. الزينة تقرأ فقط. الرفض <code>401</code> في <code>canActivate</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد أن يرفض <code>ValidationPipe</code> اسم مكتب فارغًا على <code>@DeskName</code>. ما الخيار الذي تفوّته الزينة المخصصة افتراضيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>validateCustomDecorators: true</code> على <code>ValidationPipe</code>. من غيره يتخطى الأنبوب زينة <code>createParamDecorator</code>. ويمكن تمرير الأنبوب على المعامل نفسه كما في صفحة الزينة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أي حزمة يُستورد <code>createParamDecorator</code>؟</li>
+<li>متى يُستدعى المصنع بالنسبة إلى الحارس؟</li>
+<li>هل الزينة تثبت الهوية؟</li>
+<li>ماذا يفعل <code>_data</code> إن لم تستخدمه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المصنع يحول السياق إلى قيمة معامل. <code>data</code> وسيط اختياري عند الاستخدام. الإذن والفحص الثقيل يبقيان في الحارس والأنبوب، مع تفعيل صريح إن أردت فحص الزينة المخصصة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>SetMetadata</code>: لصق قيمة على الدالة أو الصنف بمفتاح، لا استخراج معامل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

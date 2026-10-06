@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>CQRS الذي أبقيناه يعيش داخل عملية واحدة: <code>CommandBus</code> و <code>QueryBus</code> ينتظران، و <code>EventBus</code> يخبر معالجات في نفس الذاكرة. عندما يجب أن يُنشر الإلغاء في عملية أخرى لها إصدار مستقل وحد فشل مستقل، تغادر الحافلة المحلية إلى ناقل.</p>
+<p>الفصل التالي يبدأ من الـ Monolith الذي أنت فيه، ثم الـ Modular monolith الذي بنيته بالوحدات، ثم متى تصبح الخدمة الصغيرة عملية ثانية. بعدها أساليب الطلب والحدث، وحياد المنصة، ثم <code>@MessagePattern</code> و <code>@EventPattern</code> و <code>ClientProxy</code>، ثم النواقل TCP و Redis و RabbitMQ و Kafka و NATS و gRPC و MQTT. <code>RpcException</code> لخطأ يعبر الناقل لا كـ <code>HttpException</code> فقط.</p>
+<p>جملة العبور: حدث CQRS ليس رسالة شبكة. رسالة الشبكة لها ناقل ونمط وحد فشل.</p>
+<p><a href="../49-microservices/README.html">Microservices</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

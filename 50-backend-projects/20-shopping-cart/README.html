@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>20 — سلة لا تثق بالسعر</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>20 — سلة لا تثق بالسعر</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new shopping-cart</code></p>
+<h2>ماذا تبني</h2>
+<p>سلة تُعرف بترويسة x-cart-id. العميل يرسل معرف المنتج والكمية. السعر والإجمالي من الكتالوج لا من الجسم.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>تختم المتوسط الأول بقاعدة أمن: الرقم الذي يدفعه الناس لا يأتي من المتصفح.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>إنشاء سلة</li>
+<li>إعادة الحساب</li>
+<li>رفض كمية غير صالحة</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>دفع</li>
+<li>شحن</li>
+<li>حساب مستخدم</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الكتالوج. يمكن ربط السعر بذاكرة منتجات داخل هذا المشروع من غير نسخ المشروع 19 حرفيًا.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/23-cors-and-security/README.html">23-cors-and-security</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الكمية عدد صحيح من 1 إلى 20.</li>
+<li>total يُحسب من سعر الكتالوج الحالي.</li>
+<li>إن تغيّر سعر المنتج، القراءة التالية للسلة ترى السعر الجديد. وثّق ذلك.</li>
+<li>منتج غير موجود 404. كمية صفر تحذف السطر لا تبقيه.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/carts</code></td>
+<td>201</td>
+<td>سلة فارغة ومعرّف</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/carts/:id/items</code></td>
+<td>200</td>
+<td>يضيف أو يزيد الكمية</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/carts/:id</code></td>
+<td>200</td>
+<td>الأسطر والإجمالي</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new shopping-cart</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>منتجات بذور في الخدمة بأسعار ثابتة حتى لا تعتمد على مشروع آخر وقت التشغيل.</li>
+<li>احسب total في get() كل مرة.</li>
+<li>ارفض حقل price في الجسم عبر DTO بـ forbidNonWhitelisted.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/cart/cart.service.ts
+src/catalog/seed-products.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">addItem(cartId: string, productId: string, quantity: number) {
+  const product = this.catalog.findOne(productId);
+  const line = this.lines(cartId, product.id);
+  line.quantity = Math.min(20, line.quantity + quantity);
+  return this.view(cartId);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>حفظ total الذي أرسله العميل.</li>
+<li>الثقة بسعر داخل الجسم.</li>
+<li>كمية سالبة تزيد الرصيد.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>إرسال price في الجسم 400.</li>
+<li>الإجمالي يطابق حاصل السعر في الكمية.</li>
+<li>سلتان لا تتقاسمان الأسطر.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف DELETE للسطر.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 20» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../19-product-catalog/README.html">19. كتالوج بمنتجات مرقمة</a></li>
+<li>التالي: <a href="../21-accounts/README.html">21. حسابات وتجزئة</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

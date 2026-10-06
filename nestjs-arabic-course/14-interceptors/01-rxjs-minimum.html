@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>الحد الأدنى من RxJS قبل Interceptors</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-rxjs-minimum.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>الحد الأدنى من RxJS قبل Interceptors</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم <code>Observable</code> و <code>subscribe</code> و <code>pipe</code> و <code>map</code> و <code>tap</code> و <code>catchError</code> بما يكفي لقراءة معترض Nest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>next.handle()</code> في المعترض ترجع <code>Observable</code> لا القيمة نفسها. من يقرأ <code>pipe(map(...))</code> كأنها مصفوفة أو كأنها <code>Promise.then</code> يضع أثرًا جانبيًا في مكان لا يعمل، أو يبتلع خطأ المقعد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Observable</code> وصف لعمل لا يبدأ حتى يوجد مشترك. <code>subscribe</code> هو الاشتراك. <code>pipe</code> يركب عوامل على الوصف. <code>map</code> يبدّل القيمة. <code>tap</code> ينظر إليها من غير تبديل. <code>catchError</code> يلتقط خطأ التيار. في Nest أنت ترجع الوصف، والإطار هو من يشترك.</p>
+<h2>التعريف التقني</h2>
+<p>القيمة قد تصل لاحقًا، مرة واحدة في طلب HTTP المعتاد، أو تفشل. التيار كسول: بناء <code>of(1)</code> لا يطبع شيئًا حتى <code>subscribe</code>.</p>
+<pre><code class="language-ts">import { of } from &#39;rxjs&#39;;
+import { map, tap } from &#39;rxjs/operators&#39;;
+
+of(2)
+  .pipe(
+    tap((n) =&gt; console.log(&#39;seen&#39;, n)),
+    map((n) =&gt; n + 1),
+  )
+  .subscribe((n) =&gt; console.log(&#39;got&#39;, n));
+</code></pre>
+<p>الإخراج <code>seen 2</code> ثم <code>got 3</code>. <code>tap</code> لا تغيّر <code>2</code>. <code>map</code> ترجع <code>3</code> إلى المشترك التالي.</p>
+<p><code>catchError</code> تستلم الخطأ وترجع تيارًا بديلًا. إن أرجعت <code>throwError(() =&gt; err)</code> فالخطأ يكمل. إن أرجعت <code>of(value)</code> فالتيار ينجح بقيمة.</p>
+<pre><code class="language-ts">import { throwError } from &#39;rxjs&#39;;
+import { catchError } from &#39;rxjs/operators&#39;;
+
+throwError(() =&gt; new Error(&#39;seat&#39;))
+  .pipe(catchError(() =&gt; of({ seat: 0 })))
+  .subscribe((value) =&gt; console.log(value));
+</code></pre>
+<p>هذا يبتلع الخطأ ويعطي <code>{ seat: 0 }</code>. في معترض حقيقي نادرًا تريد ابتلاع خطأ أعمال. الدرس يوضح الأداة فقط.</p>
+<p>العوامل دوال ترجع دوال. <code>pipe</code> يمرر التيار من عامل إلى الذي يليه من اليسار إلى اليمين.</p>
+<p>لا حاجة هنا إلى <code>Subject</code> ولا إلى إلغاء معقّد. طلب HTTP في المعترض غالبًا قيمة واحدة ثم اكتمال، أو خطأ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وصف كسول  pipe(tap, map, catchError)  وصف جديد
+                 subscribe عند Nest
+                      ↓
+                 قيمة أو خطأ إلى الرد
+</code></pre>
+<p>إرجاع الوصف من دالة لا ينفّذ المعالج. الاشتراك ينفّذه حين يكون الوصف هو <code>next.handle()</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { of } from &#39;rxjs&#39;;
+import { map, tap } from &#39;rxjs/operators&#39;;
+
+export function previewTicket(seat: number) {
+  return of({ seat }).pipe(
+    tap((ticket) =&gt; console.log(&#39;before map&#39;, ticket.seat)),
+    map((ticket) =&gt; ({ data: ticket })),
+  );
+}
+</code></pre>
+<p>استدعاء <code>previewTicket(4)</code> لا يطبع وحده. الطباعة والقيمة <code>{ data: { seat: 4 } }</code> تظهران عند:</p>
+<pre><code class="language-ts">previewTicket(4).subscribe((body) =&gt; console.log(body));
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>of</code> تيار يصدر كائنًا ثم يكتمل. هو أبسط مصدر، لا علاقة له بـ HTTP بعد.</li>
+<li><code>tap</code> للنظر. وضع <code>{ data }</code> داخل <code>tap</code> لا يغيّر ما يراه <code>subscribe</code>.</li>
+<li><code>map</code> تبني كائنًا جديدًا. هذا شكل تغليف الرد الذي سيعاد في درس لاحق داخل معترض.</li>
+<li><code>subscribe</code> في هذا الملف تعليمي. داخل <code>intercept</code> لا تناديها أنت على <code>handle()</code> إن كنت ترجع التيار إلى Nest. الإطار يشترك مرة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند <code>subscribe</code> يشغّل المصدر إصدار القيمة. كل عامل يرى ناتج السابق. <code>tap</code> تستدعي دالتك وتمرر القيمة كما هي. <code>map</code> تستبدلها. إن رمت <code>map</code>، العوامل التالية لا ترى قيمة، و <code>catchError</code> إن وُجدت بعد الرمي في الـ <code>pipe</code> ترى الخطأ.</p>
+<p>ترتيب <code>pipe(tap, map)</code> يعني النظر ثم التبديل. <code>pipe(map, tap)</code> ينظر إلى القيمة الجديدة. هذا الترتيب من اليسار إلى اليمين داخل التيار الواحد.</p>
+<p>خطأ بعد <code>map</code> لا يرجع إلى <code>tap</code> السابقة. <code>catchError</code> تُوضع حيث تريد الالتقاط، غالبًا في آخر السلسلة أو بعد عامل قد يفشل مثل المهلة.</p>
+<p>لا تحوّل التيار إلى <code>Promise</code> في هذا الدرس. المعترض سيرجع <code>Observable</code>. الخلط مع <code>async/await</code> على <code>handle()</code> يضيع العوامل.</p>
+<h2>مثال عملي</h2>
+<p>تخيّل ناتج <code>GET /tickets/4</code> هو <code>{ seat: 4 }</code> من المتحكم. قبل كتابة معترض، جرّب في ملف صغير أن <code>map</code> تلفه إلى <code>{ data: { seat: 4 } }</code> وأن <code>tap</code> تعدّ المرات من غير أن تغيّر الجسم. حين تقرأ <code>return next.handle().pipe(...)</code> في الدرس التالي، <code>handle()</code> هي مصدر مثل <code>of</code> لكنها لا تصدر حتى يشترك Nest، والإصدار هو استدعاء المتحكم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان أن البناء كسول ثم القول إن <code>tap</code> لا تعمل. الاشتراك ناقص في تجربتك، أو أنك لم ترجع التيار إلى من يشترك.</li>
+<li>تغيير القيمة داخل <code>tap</code> بتعديل تتوقعه من <code>map</code>. <code>tap</code> للآثار.</li>
+<li><code>catchError</code> ترجع <code>of(null)</code> فتختفي أخطاء المقعد ويصير الرد <code>200</code>.</li>
+<li>استدعاء <code>subscribe</code> داخل المعترض على التيار نفسه الذي ترجعه. الاشتراك المزدوج قد يشغّل المعالج مرتين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قبل أي معترض، وحين تقرأ <code>pipe</code> في التوثيق. العوامل الأربعة تكفي لهذا الفصل: <code>map</code> و <code>tap</code> و <code>catchError</code>، مع معرفة أن <code>subscribe</code> يحدث في الإطار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنِ كل منطق الحجز داخل <code>map</code>. الخدمة ترجع قيمة عادية، والمعترض يغلّفها. لا تستبدل الحارس بـ <code>catchError</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>الأثر على القيمة</th>
+<th>الأثر الجانبي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>map</code></td>
+<td>يبدّلها</td>
+<td>لا يُقصد به</td>
+</tr>
+<tr>
+<td><code>tap</code></td>
+<td>يمررها</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>catchError</code></td>
+<td>تيار بديل أو خطأ جديد</td>
+<td>حسب ما ترجع</td>
+</tr>
+<tr>
+<td><code>subscribe</code></td>
+<td>يستهلك</td>
+<td>يبدأ العمل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يطبع <code>tap</code> عند استدعاء دالة ترجع التيار من غير <code>subscribe</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التيار كسول. الوصف لا يعمل حتى الاشتراك. في Nest الاشتراك داخل الإطار حين ترجع التيار من <code>intercept</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين تضع تغليف <code>{ data }</code> وأين تضع عدادًا لا يغيّر الجسم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التغليف في <code>map</code>. العداد في <code>tap</code>. <code>pipe(tap(...), map(...))</code> ينظر إلى الأصل ثم يغلّف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>catchError(() =&gt; of({ ok: true }))</code> بعد فشل حجز. ماذا يصبح رمز النجاح الظاهري، ولماذا هذا فخ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التيار ينجح بقيمة، فالإطار قد يكتب <code>200</code> وجسم <code>{ ok: true }</code> رغم فشل الحجز. التقاط الخطأ يجب أن يعيد رمي <code>HttpException</code> مناسبًا أو يترك الخطأ يكمل، لا أن يخترع نجاحًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى يبدأ <code>Observable</code> العمل؟</li>
+<li>ما الفرق بين <code>map</code> و <code>tap</code>؟</li>
+<li>ماذا يجب أن ترجع <code>catchError</code> حتى لا يختفي الخطأ؟</li>
+<li>من ينادي <code>subscribe</code> على تيار المعترض في Nest؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التيار وصف كسول. <code>pipe</code> يركب <code>tap</code> للنظر و <code>map</code> للتبديل و <code>catchError</code> للخطأ. الاشتراك يشغّل الوصف. المعترض التالي سيرجع هذا الوصف إلى Nest بدل أن يشترك بنفسه.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يسمي المعترض: طبقة تلتف حول الدالة بعد الحارس وقبل الأنبوب في طريق الدخول، وترى الناتج في طريق الخروج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://rxjs.dev/guide/observable">RxJS — Observable</a></li>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

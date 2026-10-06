@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Response DTOs</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-response-dtos.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Response DTOs</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل صنف الاستجابة عن نموذج الجدول حتى يكون عقد الخروج صريحًا في Nest وفي OpenAPI.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كيان واحد <code>User</code> يُستخدم في <code>create</code> وفي الاستجابة. مزخرفات التحقق تطلب <code>password</code>، ومزخرفات الإخراج تخفي <code>passwordHash</code>، وإضافة Swagger على ملف <code>.entity.ts</code> تنشر الاثنين. العميل يرى حقلًا لا يرسله في <code>GET</code> وحقلًا لا يقبله في <code>POST</code>. التعديل على الكيان يكسر اتجاهًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>CreateUserDto</code> للداخل. <code>UserResponse</code> للخارج. الخدمة تقبل صف Prisma وتعيد <code>UserResponse</code> بحقول مختارة. الاعتراض والمخطط يطبَّقان على صنف الخروج. وثيقة <code>@ApiOkResponse({ type: UserResponse })</code> تشير إليه. الجدول يبقى أوسع من العقد.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export class UserResponse {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty({ example: &quot;ada@library.test&quot; })
+  email: string;
+
+  @ApiProperty({ enum: [&quot;reader&quot;, &quot;editor&quot;] })
+  role: string;
+
+  constructor(partial: Partial&lt;UserResponse&gt;) {
+    Object.assign(this, partial);
+  }
+}
+</code></pre>
+<pre><code class="language-ts">toResponse(row: { id: number; email: string; role: string }): UserResponse {
+  return new UserResponse({ id: row.id, email: row.email, role: row.role });
+}
+</code></pre>
+<p>لا معامل <code>passwordHash</code> في <code>toResponse</code>. TypeScript يمنع النسخ العرضي إن لم تضف الحقل إلى الصنف. هذا أدق من <code>@Exclude</code> وحده على كيان مشترك، ويمكن الجمع: الصنف الضيق زائد اعتراض إن رغبت بطبقة ثانية.</p>
+<p><code>PostResponse</code> يحمل <code>id</code> و <code>title</code> و <code>published</code> و <code>authorId</code>. <code>CommentResponse</code> يحمل <code>id</code> و <code>body</code> و <code>postId</code>. لا كائن <code>author</code> كاملًا.</p>
+<p>مع <code>@SerializeOptions({ type: UserResponse })</code> يستطيع المعالج إرجاع الكائن الضيق العادي. إن أعاد الصف الواسع، التحويل إلى <code>UserResponse</code> عبر <code>plainToInstance</code> قد ينسخ الخصائص الزائدة إلى النسخة إن سمح <code>excludeExtraneousValues</code> بخلاف ذلك. في <code>class-transformer</code>، <code>@Exclude</code> على الصنف مع <code>@Expose</code> على الحقول، أو خيار <code>excludeExtraneousValues: true</code>، يسقط الزائد. صفحة Nest تمرّر خيارات <code>@SerializeOptions</code> إلى <code>instanceToPlain</code>. لضبط التحويل من كائن عادي، المسار الموثّق هو <code>type</code>. أبقِ <code>toResponse</code> ينسخ ثلاثة حقول فقط حتى لا تعتمد على خيار تنساه.</p>
+<p>مخطط Zod <code>userResponseSchema</code> قائمة سماح مكافئة. <code>StandardSchemaSerializerInterceptor</code> مع <code>@SerializeOptions({ schema })</code> يحذف <code>passwordHash</code> حتى من صف كامل. مصفوفة المستخدمين: مرّر مخطط العنصر. عدم تطابق النوع <code>500</code>. الدورة تستخدم الأصناف على المقالات. المخطط خيار حين يكون التحقق أصلًا بـ Zod.</p>
+<p><code>@ApiHideProperty</code> على كيان مشترك يخفي الوثيقة فقط. <code>UserResponse</code> يلغي الحاجة إليه لأن الحقل غير موجود.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">صف Prisma واسع
+  toResponse يختار
+  UserResponse هو JSON والعقد
+CreateUserDto لا يُعاد في GET
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Get(&quot;:id&quot;)
+@ApiOkResponse({ type: UserResponse })
+@SerializeOptions({ type: UserResponse })
+findOne(@Param(&quot;id&quot;) id: string) {
+  return this.users.findOne(id);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الخدمة تعيد كائنًا يطابق <code>UserResponse</code>. الخيار <code>type</code> يحمي إن تسرب حقل إضافي عليه مزخرف استبعاد. <code>@ApiOkResponse</code> يربط الوثيقة بالصنف نفسه. اختبار العقد يقارن مفاتيح JSON بمفاتيح الصنف.</p>
+<p>لا تعيد <code>CreateUserDto</code> من <code>GET</code>. ذلك الصنف فيه <code>password</code> وقد يخلو من <code>id</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المعالج يرجّع القيمة. الاعتراض يطبّق <code>type</code> إن وُجد ثم <code>instanceToPlain</code>. Swagger يقرأ الصنف عند بناء الوثيقة لا عند الطلب. لذلك يمكن أن تصدق الوثيقة ويكذب JSON إن رجعت كيانًا آخر بلا اعتراض. الاختبار الذي يطلب المسار يثبت الاثنين معًا.</p>
+<p>تداخل <code>posts</code> داخل مستخدم يعيد مصفوفة مقالات. إن كان النوع <code>UserResponse</code> بلا علاقة، لا تضمّن <code>posts</code> في النسخ. نقطة <code>GET /users/:id/posts</code> تعيد <code>PostResponse[]</code> بعقدها.</p>
+<h2>مثال عملي</h2>
+<p>التسجيل يعيد <code>UserResponse</code> بـ <code>201</code> من غير كلمة ومن غير تجزئة. <code>GET /me</code> يعيد الصنف نفسه. <code>PATCH</code> للبريد يعيد الصنف بعد التحديث. ثلاث استجابات ودالة <code>toResponse</code> واحدة. فرق OpenAPI: الإنشاء <code>@ApiCreatedResponse</code> والقراءة <code>@ApiOkResponse</code>، والنوع واحد.</p>
+<p>علّق اختبارًا يفشل إن وُجد المفتاح <code>password</code> أو <code>passwordHash</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كيان واحد للداخل والخارج.</li>
+<li><code>toResponse</code> بنسخ <code>{ ...row }</code>.</li>
+<li>توثيق <code>User</code> المولَّد من Prisma كـ <code>type</code> في Swagger.</li>
+<li>مخطط استجابة يصف المصفوفة بينما الاعتراض ينتظر مخطط العنصر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل نموذج يغادر API نحو عميل، حتى لو تطابق مع الجدول اليوم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل معاملة Prisma بين خدمات. الخدمة الداخلية قد تحتاج التجزئة لـ <code>verify</code>. الحد على المعالج الذي يواجه الشبكة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>UserResponse</code></th>
+<th>كيان الجدول</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حقول العقد</td>
+<td>أعمدة التخزين</td>
+</tr>
+<tr>
+<td>بلا <code>passwordHash</code></td>
+<td>العمود موجود</td>
+</tr>
+<tr>
+<td><code>type</code> في OpenAPI</td>
+<td>إضافة CLI قد تنشر الأسرار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي صنف توثّقه في <code>@ApiOkResponse</code> لـ <code>GET /me</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>UserResponse</code>، لا <code>CreateUserDto</code> ولا كيان الجدول.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا ينسخ <code>toResponse</code> من صف المستخدم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>id</code> و <code>email</code> و <code>role</code>. التجزئة لا تُمرَّر إلى البناء.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>{ ...row }</code> داخل <code>new UserResponse</code> يعيد الخطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ينسخ <code>passwordHash</code> إلى النسخة. من غير <code>@Exclude</code> و اعتراض يخرج في JSON. النسخ المسمى للحقول الثلاثة يمنع ذلك في النوع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا يُفصل DTO الدخول عن صنف الخروج؟</li>
+<li>ماذا يحدث إن خالف الصف مخطط Zod للاستجابة؟</li>
+<li>هل <code>@ApiHideProperty</code> يحذف الحقل من الشبكة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>صنف استجابة ضيق هو العقد. <code>toResponse</code> يختار الحقول. الوثيقة تشير إلى الصنف نفسه الذي يسلسله الاعتراض.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-what-must-never-leak.html">ما لا يجوز أن يخرج</a> قائمة أسرار المكتبة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Serialization: <a href="https://docs.nestjs.com/application/serialization">https://docs.nestjs.com/application/serialization</a></li>
+<li>NestJS — OpenAPI types: <a href="https://docs.nestjs.com/openapi/types-and-parameters">https://docs.nestjs.com/openapi/types-and-parameters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

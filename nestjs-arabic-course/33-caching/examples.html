@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>عنوان ISBN في Redis مشترك. صلاحية المسودة تبقى استعلامًا.</p>
+<h2>مثال 1 — التسجيل</h2>
+<pre><code class="language-ts">CacheModule.registerAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) =&gt; ({
+    stores: [createKeyv(config.getOrThrow&lt;string&gt;(&#39;REDIS_URL&#39;))],
+  }),
+});
+</code></pre>
+<p>في اختبار الوحدة لا تضع <code>createKeyv</code>. حقن <code>{ get: async () =&gt; undefined, set: async () =&gt; undefined, del: async () =&gt; undefined }</code>.</p>
+<h2>مثال 2 — lookup</h2>
+<pre><code class="language-ts">async lookup(isbn: string): Promise&lt;{ title: string } | null&gt; {
+  const key = `isbn:${isbn}`;
+  const cached = await this.cache.get&lt;{ title: string } | null&gt;(key);
+  if (cached !== undefined) return cached;
+  const fresh = await this.fetchFromPublisher(isbn);
+  const ttl = fresh === null ? 60_000 : 10 * 60 * 1000;
+  await this.cache.set(key, fresh, ttl);
+  return fresh;
+}
+</code></pre>
+<p><code>fetchFromPublisher</code> ترمي عند المهلة، فلن يُستدعى <code>set</code>.</p>
+<h2>مثال 3 — ما لا يُكتب</h2>
+<pre><code class="language-ts">async canReadDraft(bookId: string, userId: string) {
+  return this.membership.has(bookId, userId);
+}
+</code></pre>
+<p>بلا <code>cache.set</code>. مفتاح <code>draft:${bookId}</code> مرفوض في المراجعة.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>ttl</code> بالميلي ثانية.</li>
+<li><code>null</code> المخزّن لا يُعاد جلبه في كل ضغطة.</li>
+<li>فشل Redis حول <code>get</code> فقط لا يبتلع <code>GatewayTimeoutException</code>.</li>
+<li>الاستيراد من <code>@nestjs/cache-manager</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

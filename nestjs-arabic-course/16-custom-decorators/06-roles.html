@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Roles</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-roles.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Roles</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعليم الدالة بالأدوار المطلوبة ومنع من لا يحملها، عبر زينة <code>Reflector.createDecorator</code> وحارس يقرأها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>refund</code> للدور <code>refund</code> و <code>cancel</code> للدور <code>cancel</code>. شرط <code>if (user.name === &#39;lead&#39;)</code> داخل الخدمة يخفي السياسة عن المراجعة ويكسر حين يتغير اسم الشخص لا دوره.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Roles([&#39;refund&#39;])</code> تلصق المصفوفة بالدالة بالشكل الذي يولّده CLI. الحارس يحقن <code>Reflector</code>، يقرأ الزينة، ويقارنها بـ <code>request.user.roles</code>. غياب الزينة في هذا التصميم يعني أن المسار لا يطلب دورًا إضافيًا فيرجع <code>true</code> بعد أن تكون الهوية قد لُصقت في حارس أسبق. وجود الزينة مع نقص الدور يرجع <code>false</code> فيصبح <code>403</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Reflector } from &#39;@nestjs/core&#39;;
+
+export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+</code></pre>
+<pre><code class="language-ts">@Roles([&#39;refund&#39;])
+@Post(&#39;refund&#39;)
+refund() {}
+</code></pre>
+<p>القراءة كما في صفحة الحراس:</p>
+<pre><code class="language-ts">const roles = this.reflector.getAllAndOverride(Roles, [
+  context.getHandler(),
+  context.getClass(),
+]);
+if (!roles) {
+  return true;
+}
+</code></pre>
+<p>ثم مطابقة مع <code>user.roles</code>. الصفحة تترك <code>matchRoles</code> لكم. هنا المطابقة: يكفي أن يحمل المستخدم أحد الأدوار المطلوبة.</p>
+<p>الحارس يُربط بعد حارس الهوية في <code>@UseGuards(IdentifyDeskGuard, RolesGuard)</code> أو بتسجيل <code>APP_GUARD</code> للهوية أولًا. <code>false</code> يعني <code>403</code> لا <code>401</code>. الهوية الناقصة تُعالج في الحارس الأول.</p>
+<p>لا تضع <code>@Roles</code> على معامل. هي زينة دالة أو صنف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">هوية تلصق user.roles
+@Roles([&#39;refund&#39;]) على الدالة
+RolesGuard: تقاطع غير فارغ → true
+            لا تقاطع → false → 403
+            لا زينة → true
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type CanActivate, type ExecutionContext, Injectable } from &#39;@nestjs/common&#39;;
+import { Reflector } from &#39;@nestjs/core&#39;;
+import { Roles } from &#39;./roles.decorator.js&#39;;
+
+type DeskRequest = { user?: { name: string; roles: string[] } };
+
+@Injectable()
+export class RolesGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const required = this.reflector.getAllAndOverride(Roles, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (!required || required.length === 0) {
+      return true;
+    }
+    const request = context.switchToHttp().getRequest&lt;DeskRequest&gt;();
+    const owned = request.user?.roles ?? [];
+    return required.some((role) =&gt; owned.includes(role));
+  }
+}
+</code></pre>
+<pre><code class="language-ts">@Controller(&#39;tickets&#39;)
+@UseGuards(IdentifyDeskGuard, RolesGuard)
+export class TicketsController {
+  @Roles([&#39;refund&#39;])
+  @Post(&#39;refund&#39;)
+  refund(@CurrentUser(&#39;name&#39;) name: string): { name: string } {
+    return { name };
+  }
+}
+</code></pre>
+<p><code>IdentifyDeskGuard</code> يجب أن يلصق <code>roles</code> لا الاسم فقط حتى تنجح المطابقة. إن كان اللصق القديم <code>{ name }</code> فقط فالمصفوفة فارغة والاسترداد <code>403</code> دائمًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>some</code> تعني «أحد الأدوار يكفي». إن كانت السياسة «كل الأدوار» فالاستبدال <code>every</code>.</li>
+<li><code>getAllAndOverride</code> يجعل <code>@Roles([&#39;cancel&#39;])</code> على الدالة تغلب <code>@Roles([&#39;audit&#39;])</code> على الصنف.</li>
+<li><code>@CurrentUser</code> في الدالة يعمل بعد <code>true</code> فقط.</li>
+<li>الزينة <code>[&#39;refund&#39;]</code> مصفوفة كما في مثال التوثيق، لا <code>@Roles(&#39;refund&#39;)</code> إلا إذا غيّرت نوع <code>createDecorator</code> إلى معمل بقية. التوثيق الحالي وسيط واحد هو <code>string[]</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند التحميل تُخزن <code>[&#39;refund&#39;]</code> على <code>refund</code>. عند الطلب يعمل حارس الهوية ثم <code>RolesGuard</code>. القراءة لا تستدعي الدالة. <code>false</code> يرمي <code>ForbiddenException</code> قبل الأنبوب. <code>true</code> يكمل وقد يصل إلى <code>@CurrentUser</code>.</p>
+<p>غياب <code>@Roles</code> يرجع <code>true</code> حتى لا تُغلق كل دوال المتحكم إن نسيت الزينة. إن أردت الإغلاق الافتراضي فاعكس الشرط: الغياب <code>false</code>، وعلّم الدوال العامة بـ <code>@Public</code> في الدرس التالي لا بغياب الأدوار. لا تخلط العلمين في شرط واحد غامض.</p>
+<p>حارس عام <code>RolesGuard</code> بلا هوية قبله يرى <code>roles</code> فارغة فيرفض كل مسار معلّم ويمرر غير المعلم. الترتيب جزء من صحة <code>@Roles</code>.</p>
+<h2>مثال عملي</h2>
+<p>شباك <code>lead</code> يحمل <code>roles: [&#39;refund&#39;, &#39;audit&#39;]</code> فيسترد. شباك <code>guest</code> يحمل <code>[&#39;audit&#39;]</code> فيأخذ <code>403</code> على <code>refund</code> ويمضي على <code>GET</code> بلا <code>@Roles</code>. اختبار الحارس بسياق <code>refund</code> ومستخدم <code>guest</code> يتوقع <code>false</code>. اختبار بلا زينة على <code>list</code> يتوقع <code>true</code>. لا تختبر اسم الشخص.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Roles(&#39;refund&#39;)</code> بينما النوع <code>string[]</code> فيصبح المخزون سلسلة والمطابقة <code>some</code> على المحارف.</li>
+<li>مقارنة <code>user.name</code> داخل <code>RolesGuard</code>.</li>
+<li>تسجيل الحارس قبل حارس اللصق.</li>
+<li>اعتبار الغياب منعًا ثم الدهشة أن <code>list</code> مفتوحة. هذا الدرس يفتح غير المعلم عمدًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تختلف الدوال في الدور المطلوب، والدور قائمة على المستخدم لا اسم شخص.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمسار بلا تمييز دور. لا تضع <code>@Roles([&#39;audit&#39;])</code> على الصحة. ولإثبات الهوية. ذلك الحارس السابق ورمزه <code>401</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>لا <code>@Roles</code></td>
+<td><code>true</code> في هذا الحارس</td>
+</tr>
+<tr>
+<td>المستخدم يحمل دورًا مطلوبًا</td>
+<td><code>true</code></td>
+</tr>
+<tr>
+<td>لا يحمل أيًا منها</td>
+<td><code>false</code> ثم <code>403</code></td>
+</tr>
+<tr>
+<td>لا <code>user</code> لأن الهوية لم تلصق</td>
+<td><code>false</code> على المسار المعلم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تضع فوق <code>refund</code> حتى يُطلب دور الاسترداد بالشكل الموثّق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Roles([&#39;refund&#39;])</code> والثابت من <code>Reflector.createDecorator&lt;string[]&gt;()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>GET</code> بلا زينة يمر من <code>RolesGuard</code> بينما <code>guest</code> يُمنع من <code>refund</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>غياب الزينة يرجع <code>true</code>. <code>refund</code> تحمل <code>[&#39;refund&#39;]</code> و <code>guest</code> لا يملكها فالناتج <code>false</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الصنف <code>@Roles([&#39;audit&#39;])</code> والدالة <code>@Roles([&#39;refund&#39;])</code>. أي مصفوفة تُقارَن، وما ترتيب أهداف <code>getAllAndOverride</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>[&#39;refund&#39;]</code> لأن الدالة تُفحص قبل الصنف: <code>[context.getHandler(), context.getClass()]</code>. عكس المصفوفة يقارن <code>audit</code> ويخطئ الاستثناء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما نوع وسيط <code>@Roles</code> في هذا الفصل؟</li>
+<li>متى يرجع الحارس <code>true</code> بلا فحص مستخدم؟</li>
+<li>لماذا الترتيب بعد حارس الهوية؟</li>
+<li>ماذا يرى العميل عند نقص الدور؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Roles([&#39;...&#39;])</code> سياسة على الدالة يقرأها <code>RolesGuard</code> من <code>Reflector</code> ويطابقها مع <code>user.roles</code>. الغياب هنا سماح إضافي لا منع. النقص <code>403</code> بعد أن تكون الهوية معروفة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>@Public</code>: علامة تفتح مسارًا أمام حارس عام يغلق الصحة وتسجيل الدخول.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>دار النيل تضغط «ترقية» ولا تصبح <code>active</code> إلا بحدث.</p>
+<h2>المثال 1 — الحد</h2>
+<p><code>BooksService</code> تستدعي <code>PlanPolicy</code> التي تقرأ <code>trial</code>. لا استيراد لـ <code>stripe</code> في وحدة الكتب. <code>STRIPE_SECRET_KEY</code> في بيئة وحدة الفوترة.</p>
+<h2>المثال 2 — الجلسة</h2>
+<p><code>POST /billing/checkout</code> للمالك ينشئ جلسة <code>mode: &#39;subscription&#39;</code> بمفتاح <code>checkout:org_nile:pro</code> ويعيد <code>{ url }</code>. فتح <code>success_url</code> يستدعي <code>GET /billing</code> فيرى <code>trial</code> أو <code>incomplete</code>. لا كتابة.</p>
+<h2>المثال 3 — الحدث</h2>
+<p><code>constructEvent(req.rawBody, header, STRIPE_WEBHOOK_SECRET)</code> ثم <code>customer.subscription.updated</code> بحالة <code>active</code>. <code>markEvent</code> يدرج <code>evt_1</code> و <code>syncFromStripe</code> يكتب <code>active</code> لمنظمة عميل Stripe المخزن. إعادة <code>evt_1</code> ترد 200 بلا بريد ثانٍ. <code>past_due</code> لاحقًا يوقف النشر ويترك القراءة.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

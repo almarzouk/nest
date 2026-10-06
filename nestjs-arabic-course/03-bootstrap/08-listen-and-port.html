@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>listen والمنفذ</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-listen-and-port.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>listen والمنفذ</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فتح المنفذ بعد البناء، وفهم <code>PORT</code> و <code>0.0.0.0</code> من غير خلطهما.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>البناء بلا استماع يعني عملية صحيحة لا يقبل أحد الاتصال بها. الاستماع على الواجهة الخطأ يعني أن الحاوية في Docker لا ترى الخادم رغم أنه يعمل على localhost داخلها.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>await app.listen(port)</code> يطلب من المنصة قبول الاتصالات. القالب يمرر <code>process.env.PORT ?? 3000</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>listen</code> على <code>INestApplication</code> يفوض إلى المنصة. Express يستمع افتراضيًا بما يسمح بالوصول المحلي. توثيق Fastify يقول إن الاستماع الافتراضي هناك على localhost فقط، وإن أردت واجهات أخرى تمرر <code>&#39;0.0.0.0&#39;</code> في <code>listen</code>. لا تخلط هذا بمشروع Express الافتراضي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">port        رقم الباب
+hostname    أي واجهة شبكة
+localhost   الجهاز نفسه فقط
+0.0.0.0     كل الواجهات على الجهاز
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await app.listen(process.env.PORT ?? 3000);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الوسيط الأول المنفذ.</li>
+<li><code>PORT</code> نص قادم من البيئة. <code>listen</code> يقبل الرقم أو النص الرقمي الذي تمرره المنصة. أبقِ القالب كما هو حتى فصل الإعداد.</li>
+<li>بعد النجاح، <code>http://localhost:3000/</code> يصل إلى العملية إن كان المنفذ 3000 وعلى جهازك.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>listen</code> يستدعي نظام التشغيل لحجز المنفذ. إن كان محجوزًا تفشل الـ Promise ويرى الإقلاع خطأ. العملية التي نجحت تبقى لأن مقبض الاستماع مفتوح، كما في درس Node. إيقاف الطرفية يغلق العملية. الإغلاق المهذب خطافات لاحقة.</p>
+<h2>مثال عملي</h2>
+<p>منفذ مشغول لأن <code>start:dev</code> يعمل ثم شغّلت <code>start:prod</code>. أوقف الأول. لا تغيّر المنفذ في الكود لتهرب من نسختين؛ ستنسى أيهما يجيب المتصفح.</p>
+<p>في Docker لاحقًا، إن وصل الحاوية المنفذ ولم يفتح المتصفح على الجهاز المضيف، راجع ربط المنافذ في Compose وعنوان الاستماع. هذا ملف الإنتاج، والقاعدة هنا: الاستماع قرار إقلاع لا قرار Controller.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>listen</code> قبل <code>useGlobalPipes</code> ثم الاعتقاد أن الأنبوب عام. ركّب الإعداد ثم استمع.</li>
+<li>تشغيل نسختين على المنفذ نفسه.</li>
+<li>تمرير <code>0.0.0.0</code> عشوائيًا على Express لأن مثال Fastify فعل ذلك، من غير معرفة الفرق.</li>
+</ul>
+<h2>متى نضبط PORT من البيئة؟</h2>
+<p>عندما تختلف بيئة التطوير عن منصة الاستضافة. القالب جاهز لذلك.</p>
+<h2>متى نثبّت 3000؟</h2>
+<p>في مثال محلي بلا بيئة. حتى هناك القالب يستخدم <code>??</code> وهذا أفضل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>استدعاء</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>listen(3000)</code></td>
+<td>منفذ ثابت</td>
+</tr>
+<tr>
+<td><code>listen(process.env.PORT ?? 3000)</code></td>
+<td>بيئة ثم افتراض</td>
+</tr>
+<tr>
+<td>Fastify مع مضيف</td>
+<td>قد تحتاج <code>0.0.0.0</code> كما يقول التوثيق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي سطر يفتح المنفذ؟</p>
+<details><summary>الحل</summary>
+
+<p><code>await app.listen(...)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تفشل العملية الثانية فورًا على الجهاز نفسه؟</p>
+<details><summary>الحل</summary>
+
+<p>المنفذ محجوز للأولى. نظام التشغيل يرفض الحجز الثاني.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين تضع <code>app.useGlobalPipes</code> بالنسبة إلى <code>listen</code> حتى تُطبق على أول طلب؟</p>
+<details><summary>الحل</summary>
+
+<p>بعد <code>create</code> وقبل <code>listen</code>، حتى لا يُقبل طلب قبل تركيب الأنبوب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>?? 3000</code>؟</li>
+<li>لماذا لا نضع listen داخل Controller؟</li>
+<li>ما الفرق الذي يذكره التوثيق عن استماع Fastify؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>listen</code> آخر خطوة في إقلاع HTTP. المنفذ من البيئة أو 3000. حرر المنفذ قبل نسخة ثانية.</p>
+<h2>ماذا بعد؟</h2>
+<p>ماذا لو فشل <code>create</code> نفسه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Performance (Fastify listen): <a href="https://docs.nestjs.com/http/performance">https://docs.nestjs.com/http/performance</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

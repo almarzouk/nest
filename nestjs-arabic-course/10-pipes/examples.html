@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة مسارات فواتير. كل مثال مستوى ربط مختلف. الاستيراد المحلي بلاحقة <code>.js</code>.</p>
+<h2>مثال 1 — صفحة بقيمة افتراضية</h2>
+<p><code>GET /invoices?page=2</code> عدد. الغياب يعني <code>1</code>. النص <code>abc</code> لا يدخل الخدمة.</p>
+<pre><code class="language-ts">import { Controller, Get, ParseIntPipe, Query, DefaultValuePipe } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;invoices&#39;)
+export class InvoicesController {
+  @Get()
+  list(
+    @Query(&#39;page&#39;, new DefaultValuePipe(1), ParseIntPipe) page: number,
+  ): { page: number } {
+    return { page };
+  }
+}
+</code></pre>
+<p><code>DefaultValuePipe</code> يسار <code>ParseIntPipe</code> حتى تُملأ القيمة قبل التحليل. لا أنبوب مخصص.</p>
+<h2>مثال 2 — قيد حجز بصنف نطاق</h2>
+<pre><code class="language-ts">import { BadRequestException, Injectable, type PipeTransform } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class HoldCodePipe implements PipeTransform&lt;string, string&gt; {
+  transform(value: string): string {
+    const code = value.trim().toUpperCase();
+    if (!/^HLD-\d{3,}$/.test(code)) {
+      throw new BadRequestException(&#39;hold must look like HLD-240&#39;);
+    }
+    return code;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">@Get(&#39;holds/:hold&#39;)
+findHold(@Param(&#39;hold&#39;, HoldCodePipe) hold: string): { hold: string } {
+  return { hold };
+}
+</code></pre>
+<p><code>hld-15</code> يُرفض لقصر الأرقام. <code>hld-240</code> يصبح <code>HLD-240</code>. الغياب في القاعدة <code>404</code> من الخدمة لاحقًا.</p>
+<h2>مثال 3 — جسم مع أنبوب عام ومعامل مسار</h2>
+<pre><code class="language-ts">import { IsInt, IsString, Min } from &#39;class-validator&#39;;
+
+export class CreateInvoiceDto {
+  @IsString()
+  customer: string;
+
+  @IsInt()
+  @Min(1)
+  cents: number;
+}
+</code></pre>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { ValidationPipe } from &#39;@nestjs/common&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.useGlobalPipes(new ValidationPipe());
+await app.listen(3000);
+</code></pre>
+<pre><code class="language-ts">@Post(&#39;:desk&#39;)
+create(
+  @Param(&#39;desk&#39;, ParseIntPipe) desk: number,
+  @Body() dto: CreateInvoiceDto,
+): CreateInvoiceDto {
+  void desk;
+  return dto;
+}
+</code></pre>
+<p><code>ParseIntPipe</code> على <code>desk</code> مستقل عن فحص الجسم. جسم بلا <code>customer</code> يرجع <code>400</code> من <code>ValidationPipe</code>. <code>desk=north</code> يرجع <code>400</code> من أنبوب التحليل. الحقول الزائدة ما زالت تمر لأن <code>whitelist</code> ليس في هذا المثال.</p>
+<p>ترتيب الزيارة لمعاملَي <code>create</code>: أنابيب المستوى الأعلى ترى <code>dto</code> ثم <code>desk</code> لأن الأخير في التوقيع يُعالَج أولًا داخل ذلك المستوى، ثم أنابيب المعاملات بالاتجاه نفسه. <code>ParseIntPipe</code> مربوط بـ <code>desk</code> فقط.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>التحليل المدمج قبل أي صنف محلي يحمل الاسم نفسه.</li>
+<li>الافتراضي مكتوب قبل <code>Parse*</code>.</li>
+<li>DTO صنف مُستورَد استيراد قيمة لا <code>import type</code>.</li>
+<li>فشل الأنبوب لا يُلتقط بـ <code>try/catch</code> داخل الدالة.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

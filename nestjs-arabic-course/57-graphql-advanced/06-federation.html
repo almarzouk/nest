@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أساسيات Federation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-federation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أساسيات Federation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم كيف يتوزع نوع <code>Book</code> بين خدمة كتالوج وخدمة مراجعات في رف، عبر بوابة ومخططات فرعية، باستخدام ما توثقه صفحة Federation: <code>@key</code> و <code>resolveReference</code> و <code>ApolloFederationDriver</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق المراجعات يريد نشر حقول تقييم الكتاب من غير انتظار نشر الكتالوج. دمج المخططات يدويًا في ملف SDL واحد يعيد الاقتران الذي أرادوا كسره. العميل ما زال يريد استعلامًا واحدًا: عنوان الكتاب وآخر مراجعة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل خدمة تملك جزءًا من النوع وتعلن مفتاحًا يجد به الكيان. البوابة تدمج المخططات وتسأل الخدمة المالكة عندما يحتاج حقلًا من خدمة أخرى. Nest في الخدمة الفرعية يشغّل المحرك الاتحادي. البوابة طبقة أخرى. هذا ليس <code>@Federation()</code> على <code>BooksModule</code> ينهي القصة.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تصف مكوّنين: gateway وخدمات متحدة. المبادئ من Apollo: التكوين تصريحي، والنوع الواحد قد يتوزع على فرق، والعميل يرى مخططًا واحدًا، والأدوات ضمن مواصفات GraphQL. الاشتراكات غير مدعومة في هذا الأسلوب حسب تحذير الصفحة. على الخدمة: ثبّت <code>@apollo/subgraph</code>. في النهج schema first، <code>type Book @key(fields: &quot;id&quot;)</code> يعلن المفتاح. الدالة <code>resolveReference</code> مُعلَّمة بـ <code>@ResolveReference()</code> من <code>@nestjs/graphql</code> وتعيد الكيان عندما تسأل البوابة عنه. <code>GraphQLModule.forRoot</code> يستخدم <code>ApolloFederationDriver</code> و <code>ApolloFederationDriverConfig</code> من <code>@nestjs/apollo</code>. البوابة تركّب المخططات؛ حقول المراجعات تعيش في خدمتها وتشير إلى <code>Book</code> بالمفتاح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل → بوابة → كتالوج: Book.id + title
+                 مراجعات: Book.reviews عبر id
+resolveReference في الكتالوج يعيد الكتاب عندما تأتي المراجعات بمفتاح
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Directive, ObjectType, Field, ID } from &#39;@nestjs/graphql&#39;;
+
+@ObjectType()
+@Directive(&#39;@key(fields: &quot;id&quot;)&#39;)
+export class Book {
+  @Field(() =&gt; ID)
+  id!: string;
+}
+</code></pre>
+<p>في schema first يكون نفس الإعلان داخل SDL كما في الصفحة. في code first، <code>@Directive(&#39;@key(fields: &quot;id&quot;)&#39;)</code> يضع المفتاح على النوع. اختر نهجًا واحدًا للخدمة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>id</code> هو ما ترسله البوابة لتطلب هذا الكتاب من مالكه.</li>
+<li>الحقول التي لا تملكها الخدمة لا تُنسخ إليها «للراحة».</li>
+<li><code>@Resolver</code> يحتاج <code>resolveReference</code> إن كانت الخدمة مرجعًا يُسأل بالمفتاح.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>البوابة تجلب مخطط كل خدمة.</li>
+<li>استعلام العميل يُقسَّم إلى أجزاء حسب مالك الحقل.</li>
+<li>عندما تحتاج المراجعات كتابًا، البوابة تستدعي <code>_entities</code> ومعه <code>{ __typename: &quot;Book&quot;, id }</code>.</li>
+<li><code>resolveReference</code> في الكتالوج تستدعي <code>books.findById(reference.id)</code>.</li>
+<li>البوابة تجمع الأجزاء في رد واحد. فشل الكتالوج يفشل الحقول التي تعتمد عليه.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { ResolveReference, Resolver } from &#39;@nestjs/graphql&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+@Resolver(&#39;Book&#39;)
+export class BooksFederationResolver {
+  constructor(private readonly books: BooksService) {}
+
+  @ResolveReference()
+  resolveReference(reference: { __typename: string; id: string }) {
+    return this.books.findById(reference.id);
+  }
+}
+</code></pre>
+<p>التسجيل من الصفحة:</p>
+<pre><code class="language-ts">import { ApolloFederationDriver, type ApolloFederationDriverConfig } from &#39;@nestjs/apollo&#39;;
+import { GraphQLModule } from &#39;@nestjs/graphql&#39;;
+
+GraphQLModule.forRoot&lt;ApolloFederationDriverConfig&gt;({
+  driver: ApolloFederationDriver,
+  typePaths: [&#39;**/*.graphql&#39;],
+});
+</code></pre>
+<p><code>typePaths</code> للنهج schema first كما تبدأ الصفحة. البوابة ليست هذا السطر؛ هي عملية تركّب عناوين الخدمات. DataLoader ما زال لازمًا داخل <code>resolveReference</code> إن سألت البوابة عن عشرات الكتب دفعة واحدة، وإلا عاد N+1 عبر حدود الخدمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ نوع <code>Book</code> كاملًا في كل خدمة فتتباعد الحقول.</li>
+<li>بوابة بلا <code>resolveReference</code> في المالك، فالحقول الممتدة فارغة أو تفشل.</li>
+<li>توقع subscriptions عبر Federation. الصفحة تقول إنها غير مدعومة حاليًا.</li>
+<li>تقديم الاتحاد قبل أن يثبت مخطط العملية الواحدة. التوزيع يضيف شبكة لا يلغي تعقيد الاستعلام.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تمتلك فرقًا مختلفة حقولًا مختلفة على نفس الكيان وتريد نشرًا مستقلًا وعميلًا باستعلام واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمتجر رف في عملية واحدة بفريق واحد. المخطط الواحد أبسط. ولا كبديل عن حدود REST إن كان العميل أصلًا لا يستخدم GraphQL.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>مخطط واحد</th>
+<th>Federation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>النشر</td>
+<td>معًا</td>
+<td>كل خدمة على حدة</td>
+</tr>
+<tr>
+<td>استعلام العميل</td>
+<td>مباشر</td>
+<td>عبر البوابة</td>
+</tr>
+<tr>
+<td>ما يضاف في Nest</td>
+<td><code>GraphQLModule</code> المعتاد</td>
+<td><code>ApolloFederationDriver</code> و <code>@ResolveReference</code> و <code>@apollo/subgraph</code></td>
+</tr>
+<tr>
+<td>الاشتراكات</td>
+<td>حسب إعدادك</td>
+<td>غير مدعومة هنا حسب الصفحة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يجيب عن <code>title</code> ومن يجيب عن <code>reviews</code> إن كان كل فريق يملك حقله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكتالوج يجيب عن <code>title</code> عبر كيانه. المراجعات تجيب عن <code>reviews</code>. البوابة تسأل الكتالوج بـ <code>resolveReference</code> عندما تحتاج كيان <code>Book</code> من مفتاح <code>id</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا DataLoader داخل الخدمة المتحدة ما زال واردًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البوابة قد تطلب عشرات الكيانات في عملية <code>_entities</code> واحدة. <code>findById</code> لكل مرجع يعيد N+1 داخل الكتالوج. مجمّع الطلب يجمع المعرّفات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اذكر مكوّنين من التوثيق لا يغني عنهما ديكور على <code>BooksModule</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p>البوابة التي تدمج المخططات، وحزمة <code>@apollo/subgraph</code> مع المحرك <code>ApolloFederationDriver</code>. الديكور <code>@ResolveReference</code> جزء من الخدمة فقط. من غيره تعرف البوابة المفتاح ولا تجد من يعيد الكيان.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعلن <code>@key</code>؟</li>
+<li>متى تُستدعى <code>resolveReference</code>؟</li>
+<li>أي تحذير بشأن الاشتراكات؟</li>
+<li>لماذا الاتحاد ليس خطوة الأداء الأولى؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Federation بوابة وخدمات. الخدمة في Nest تصرّح بالمفتاح وتنفّذ <code>resolveReference</code> على <code>ApolloFederationDriver</code>. العميل يرى مخططًا واحدًا. لا ديكور واحد في الوحدة يستبدل البوابة ولا يلغي N+1 داخل الخدمة.</p>
+<h2>ماذا بعد؟</h2>
+<p>المخطط المحمي ما زال يحتاج هوية. الفصل التالي يوسّع المصادقة إلى OAuth و OpenID Connect وتدوير الرمز وإبطاله.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Federation: <a href="https://docs.nestjs.com/graphql/federation">https://docs.nestjs.com/graphql/federation</a></li>
+<li>Apollo — Federation: <a href="https://www.apollographql.com/docs/graphos/schema-design/federated-schemas/federation">https://www.apollographql.com/docs/graphos/schema-design/federated-schemas/federation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

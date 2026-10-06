@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reflection مرة أخرى</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-reflection-again.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Reflection مرة أخرى</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تذكر أن المزخرفات تلصق بيانات على الصنف أو الدالة وقت تحميل الملف، وأن Nest يقرأها لاحقًا، قبل أن تسمي <code>Reflector</code> أداة تلك القراءة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كتابة <code>if (role === &#39;admin&#39;)</code> داخل كل متحكم تكرر السياسة وتخفيها عن الحارس. لصق السياسة على الدالة مرة، ثم قراءتها من مكان واحد، يحتاج مخزنًا يعيش بعد الترجمة. TypeScript يمحو الأنواع. <code>reflect-metadata</code> و <code>SetMetadata</code> يبقيان قيمًا وقت التشغيل. هذا الدرس يثبت المخزن. الدرس التالي هو الصنف الذي يقرأه Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عند تقييم الملف تشغّل المزخرفات دوالًا. تلك الدوال تستدعي <code>Reflect.defineMetadata(key, value, target, property?)</code>. المفتاح سلسلة أو رمز، والقيمة ما تشاء، والهدف الصنف أو كائن النموذج للدالة. لاحقًا <code>Reflect.getMetadata</code> يعيد القيمة. Nest يغلّف هذا المسار حتى لا تنثر مفاتيح نصية في الحراس.</p>
+<h2>التعريف التقني</h2>
+<p>مشروع Nest يفعّل <code>emitDecoratorMetadata</code> غالبًا، فيُخزن تصميم المعاملات تحت مفاتيح مثل <code>design:paramtypes</code>. لذلك يعرف الإطار نوع <code>constructor(private books: BooksService)</code> ويحقن الرمز. هذا انعكاس للأنواع التي بقيت كقيم.</p>
+<p><code>SetMetadata</code> من <code>@nestjs/common</code> مخزن ثانٍ لمفاتيحك أنت:</p>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const ROLES_KEY = &#39;roles&#39;;
+export const Roles = (...roles: string[]) =&gt; SetMetadata(ROLES_KEY, roles);
+</code></pre>
+<p><code>@Roles(&#39;admin&#39;)</code> فوق الدالة يضع المصفوفة على الدالة لا على الصنف، إلا إذا وضعت المزخرف على الصنف. المفتاح الثابت <code>ROLES_KEY</code> يمنع اختلاف الإملاء بين الكاتب والقارئ.</p>
+<p>الواجهة <code>interface Roles</code> لا تصلح رمز حقن ولا مفتاح انعكاس لأنها تُمحى. الرمز الذي يبقى هو الدالة أو <code>Symbol</code> أو الصنف.</p>
+<p>ترتيب التقييم: المزخرفات السفلية قد تُنفذ قبل العلوية حسب لغة المزخرفات. لا تعتمد على ترتيب جانبي لقراءة metadata أثناء تعريف المزخرف نفسه. اقرأها لاحقًا في الحارس عندما يكون الصنف مكتملًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تحميل الملف
+  -&gt; @Roles يكتب المفتاح roles على الدالة
+  -&gt; design:paramtypes على الصنف للحقن
+الإقلاع والطلب
+  -&gt; قارئ واحد يسأل المفتاح
+</code></pre>
+<p>اللصق عند التحميل. القرار عند الطلب.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const IS_PUBLIC_KEY = &#39;isPublic&#39;;
+export const Public = () =&gt; SetMetadata(IS_PUBLIC_KEY, true);
+</code></pre>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { Public } from &#39;./public.decorator.js&#39;;
+
+@Controller(&#39;health&#39;)
+export class HealthController {
+  @Public()
+  @Get()
+  live(): { ok: true } {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p>لا شرط داخل <code>live</code>. العلم على الدالة. الحارس الذي ستقرأه بـ <code>Reflector</code> يرى العلم ويسمح بالمسار.</p>
+<h2>شرح المثال</h2>
+<p><code>Public</code> مصنع مزخرف بلا وسائط يعيد نداء <code>SetMetadata</code>. المفتاح <code>&#39;isPublic&#39;</code> والقيمة <code>true</code>. وضعه على الدالة يعني أن بقية دوال المتحكم تبقى محمية إن كان الحارس يفضّل الدالة على الصنف. هذا الاتفاق يُكتب في القارئ لا في المزخرف وحده.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Node يقيّم الملف فتستدعي <code>@Public()</code> الدالة.</li>
+<li><code>SetMetadata</code> يسجل metadata على الهدف.</li>
+<li>جدول Nest للمسارات يربط <code>GET /health</code> بالدالة.</li>
+<li>عند الطلب، الحارس يحصل على الدالة والصنف من السياق ويسأل المفتاح.</li>
+<li>غياب المفتاح ليس قيمة <code>false</code> بالضرورة. القارئ يقرر الافتراض: مغلق حتى يُلصق العلم.</li>
+<li><code>design:paramtypes</code> مسار آخر خاص بالحقن، لا تكتب فيه أدوارك.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مفتاح مهلة خاص بمسار التصدير:</p>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const TIMEOUT_MS = &#39;timeoutMs&#39;;
+export const TimeoutMs = (ms: number) =&gt; SetMetadata(TIMEOUT_MS, ms);
+</code></pre>
+<p>المعترض يقرأ الرقم ويقطع العمل إن طال. الدالة التي بلا مزخرف تستعمل مهلة التطبيق الافتراضية لأن <code>getMetadata</code> يعيد <code>undefined</code>. لا تخزن المهلة على حقل Singleton يتغير مع كل طلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مفتاحان نصيان مختلفان لنفس السياسة: <code>&#39;role&#39;</code> و <code>&#39;roles&#39;</code>.</li>
+<li>توقع بقاء <code>interface</code> كمفتاح.</li>
+<li>قراءة metadata أثناء تنفيذ المزخرف قبل أن تُلصق مزخرفات أخرى.</li>
+<li>وضع السر في metadata. القيمة ظاهرة لمن يملك الصنف في العملية.</li>
+<li>خلط <code>design:paramtypes</code> مع مفاتيح العمل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>سياسة أو رقم أو علم يتبع الدالة أو الصنف ويُقرأ من حارس أو معترض واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بيانات الطلب الحالي. تلك على <code>request</code> أو وسيط. إعداد البيئة مكانه <code>ConfigService</code> لا مزخرف على المتحكم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المخزن</th>
+<th>متى يُكتب</th>
+<th>مثال</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>design:paramtypes</code></td>
+<td>من المترجم للمزخرفات</td>
+<td>أنواع الـ <code>constructor</code></td>
+</tr>
+<tr>
+<td><code>SetMetadata</code></td>
+<td>مزخرفك</td>
+<td>أدوار، علم عام، مهلة</td>
+</tr>
+<tr>
+<td>حقل على الخدمة</td>
+<td>وقت التشغيل</td>
+<td>حالة تتغير، وليست لصقًا على الدالة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>متى تُكتب metadata نسبة إلى أول طلب HTTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عند تحميل الملف وتشغيل المزخرف، أي أثناء الإقلاع وقبل الطلب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>ROLES_KEY</code> ثابت مصدَّر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يستعمل الكاتب والقارئ السلسلة نفسها. اختلاف حرف يمنع الحارس من رؤية القيمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يصلح <code>interface User</code> مفتاح <code>SetMetadata</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الواجهات تُمحى في الترجمة ولا توجد قيمة وقت التشغيل تُستخدم كمفتاح.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يبقى بعد محو الأنواع؟</li>
+<li>على أي هدف يلصق مزخرف فوق الدالة؟</li>
+<li>ما مفتاح الحقن الذي لا تضع فيه أدوارك؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الانعكاس يلصق قيمًا على الصنف أو الدالة عند التحميل. <code>SetMetadata</code> لمفاتيحك، و <code>design:paramtypes</code> للحقن. القراءة تأتي من أداة واحدة في الدرس التالي.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>Reflector</code>: قراءة المفتاح من الدالة والصنف بقواعد التغليب والدمج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom decorators: <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

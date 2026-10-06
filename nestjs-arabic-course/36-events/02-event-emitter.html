@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>EventEmitter و @nestjs/event-emitter</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-event-emitter.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>EventEmitter و @nestjs/event-emitter</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بث <code>book.published</code> من خدمة واستقباله في صنف مزوّد عبر الحزمة الرسمية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>EventEmitter</code> من Node يعمل، لكنه لا يربط المستمعين بحقن Nest. صنف البريد لن يستلم <code>MailProducer</code> بسهولة إن بنيت الملتقط بـ <code>new</code>. الحزمة تضع <code>EventEmitter2</code> في الحاوية وتكتشف <code>@OnEvent</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>EventEmitterModule.forRoot()</code> مرة. المعلن يحقن <code>EventEmitter2</code> وينادي <code>emit</code> أو <code>emitAsync</code>. المستمع <code>@OnEvent(&#39;book.published&#39;)</code> على مزوّد مسجّل. الاسم سلسلة مشتركة في ثابت حتى لا ينحرف حرف.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm i @nestjs/event-emitter
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { EventEmitterModule } from &#39;@nestjs/event-emitter&#39;;
+
+@Module({
+  imports: [EventEmitterModule.forRoot()],
+})
+export class AppModule {}
+</code></pre>
+<p>الاسم الثابت <code>bookPublished = &#39;book.published&#39;</code> والحمولة <code>{ bookId: string }</code>.</p>
+<p>المعلن:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { EventEmitter2 } from &#39;@nestjs/event-emitter&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly events: EventEmitter2) {}
+
+  async publish(bookId: string) {
+    await this.prisma.book.update({ where: { id: bookId }, data: { status: &#39;PUBLISHED&#39; } });
+    this.events.emit(bookPublished, { bookId });
+  }
+}
+</code></pre>
+<p><code>emit</code> لا ينتظر المستمع <code>async</code>. <code>await emitAsync</code> ينتظر إدراج الطابور. لا تنتظر SMTP داخل المستمع.</p>
+<p>المستمع:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { OnEvent } from &#39;@nestjs/event-emitter&#39;;
+
+@Injectable()
+export class PublishedMailListener {
+  constructor(private readonly mail: MailProducer) {}
+
+  @OnEvent(bookPublished)
+  async handle(payload: { bookId: string }) {
+    await this.mail.enqueuePublished(payload.bookId);
+  }
+}
+</code></pre>
+<p>الصنف في <code>providers</code> وإلا فلن يُشترك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">forRoot
+  BooksService.emit(book.published)
+    PublishedMailListener.handle
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">this.events.emit(bookPublished, { bookId });
+</code></pre>
+<p>بعد <code>update</code> مباشرة. لا <code>emit</code> في <code>catch</code> لفشل الحفظ.</p>
+<h2>شرح المثال</h2>
+<p>الحمولة كائن <code>{ bookId }</code> لا سلسلة عارية. الافتراض بلا <code>wildcard</code>. لا تفعّل <code>book.*</code> إلا لتشخيص، حتى لا يلتقط المستمع <code>book.deleted</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>forRoot</code> يسجّل <code>EventEmitter2</code> ويربط <code>@OnEvent</code> عند الإقلاع. <code>emit</code> لا ينتظر وعد المستمع، وقد يبقى رفضًا غير معالج. المتجر يستعمل <code>await emitAsync</code> حتى يُرى فشل <code>add</code>، بينما فشل البريد لاحقًا مسؤولية <code>attempts</code>.</p>
+<h2>مثال عملي</h2>
+<p><code>BooksModule</code> تسجّل <code>PublishedMailListener</code> وتستورد <code>MailModule</code> الذي يصدّر <code>MailProducer</code>. لا خدمة SMTP. حذف المستمع من <code>providers</code> يحفظ الكتاب ولا يدرج بريدًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@OnEvent</code> على صنف غير مسجّل.</li>
+<li><code>emit</code> قبل <code>update</code>.</li>
+<li>تفعيل <code>wildcard</code> ونسيان أن <code>book.*</code> يلتقط <code>book.deleted</code> أيضًا.</li>
+<li>انتظار إرسال SMTP داخل المستمع.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لإعلانات الحالة داخل التطبيق بعد أن يصبح <code>forRoot</code> في الجذر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بين خدمتين على شبكتين. لا يوجد وسيط هنا. ولا تستبدل <code>forRoot</code> بـ <code>new EventEmitter()</code> في الخدمة فيضيع الحقن.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستدعاء</th>
+<th>انتظار المستمع <code>async</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>emit</code></td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>await emitAsync</code></td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>نداء <code>mail.send</code> المباشر</td>
+<td>نعم، وهو الاقتران الذي نتركه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة تسجّل المستمع، ومن أي حزمة؟</p>
+<details>
+<summary>الحل</summary>
+`@OnEvent` من `@nestjs/event-emitter`، بعد `EventEmitterModule.forRoot()`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الثابت <code>bookPublished</code> أفضل من كتابة السلسلة مرتين؟</p>
+<details>
+<summary>الحل</summary>
+حتى لا يعلن المعلن `book.published` ويستمع الآخر لـ `book.pubished`. الطرفان يستوردان الثابت.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار <code>emitAsync</code> لمستمع يدرج الطابور؟</p>
+<details>
+<summary>الحل</summary>
+عندما تريد أن يفشل مسار النشر أو يُسجَّل إن رمى `add`، لا أن يضيع الوعد. الإرسال البطيء نفسه يبقى خارج `await` الطويل عند مزوّد البريد.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُحقن في المعلن؟</li>
+<li>أين يُذكر المستمع حتى يعمل؟</li>
+<li>ماذا تفعل <code>wildcard</code> إن فُعّلت بلا انتباه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forRoot</code> ثم <code>emit</code> بثابت الاسم وحمولة <code>{ bookId }</code>، و <code>@OnEvent</code> على مزوّد يدرج الطابور. انتظر <code>emitAsync</code> فقط لما يجب أن يراه الطلب.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما الذي صار فضفاضًا في الاقتران، وما الذي لم يُحذف من الاعتماد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Events: <a href="https://docs.nestjs.com/techniques/events">https://docs.nestjs.com/techniques/events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

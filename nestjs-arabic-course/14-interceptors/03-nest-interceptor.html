@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NestInterceptor</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-nest-interceptor.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>NestInterceptor</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة صنف يطبّق <code>NestInterceptor</code> ويعرف وسيطَي <code>intercept</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وصف «حول الدالة» لا يكفي للمترجم. الواجهة تثبت اسم الدالة ونوع الرجوع حتى لا يُسمى الصنف معترضًا وهو يطبّق <code>CanActivate</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt;
+</code></pre>
+<p><code>context</code> هو سياق التنفيذ نفسه الذي رآه الحارس. <code>next</code> من يستدعي بقية السلسلة. الناتج تيار.</p>
+<h2>التعريف التقني</h2>
+<p>الصنف <code>@Injectable()</code> ويطبّق <code>NestInterceptor&lt;T, R&gt;</code>. <code>T</code> نوع ما يصدره <code>next.handle()</code>. <code>R</code> نوع ما يصدره التيار الذي ترجعونه من <code>intercept</code>.</p>
+<p>مثال الصفحة لغلاف الرد:</p>
+<pre><code class="language-ts">export interface Response&lt;T&gt; {
+  data: T;
+}
+
+@Injectable()
+export class TransformInterceptor&lt;T&gt; implements NestInterceptor&lt;T, Response&lt;T&gt;&gt; {
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;Response&lt;T&gt;&gt; {
+    return next.handle().pipe(map((data) =&gt; ({ data })));
+  }
+}
+</code></pre>
+<p>هذا الدرس يثبت الواجهة. شرح <code>handle</code> وحده في الدرس التالي، وفرق ما قبل النداء وما داخل <code>pipe</code> بعده.</p>
+<p><code>CallHandler</code> واجهة فيها <code>handle()</code>. لا تستورد تيارًا وتتجاهل <code>next</code> إلا حين تقصد استبدال التنفيذ.</p>
+<p>الربط <code>@UseInterceptors(TransformInterceptor)</code> يمرر الصنف للحقن، أو <code>new</code> إن لم يوجد اعتماد. العام عبر <code>useGlobalInterceptors</code> بلا حقن، أو <code>APP_INTERCEPTOR</code> مع <code>useClass</code> للحقن. تفاصيل الترتيب في الدرس الأخير.</p>
+<p><code>intercept</code> يمكن أن تكون <code>async</code> إن احتجت <code>await</code> قبل إرجاع التيار. الانتظار قبل <code>return</code> ما زال «قبل» التشغيل إن لم تنادِ <code>handle</code> داخل الانتظار إلا حين تريد ذلك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Injectable
+implements NestInterceptor
+intercept(context, next) → Observable
+</code></pre>
+<p>الحارس يطبّق واجهة أخرى ويرجع منطقيًا. لا تخلط الاسم <code>intercept</code> مع <code>canActivate</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type CallHandler,
+  type ExecutionContext,
+  Injectable,
+  type NestInterceptor,
+} from &#39;@nestjs/common&#39;;
+import { type Observable } from &#39;rxjs&#39;;
+
+@Injectable()
+export class DeskLabelInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const request = context.switchToHttp().getRequest&lt;{ url: string }&gt;();
+    void request.url;
+    return next.handle();
+  }
+}
+</code></pre>
+<p>الصنف صحيح الشكل. يقرأ المسار ثم يعيد تيار البقية بلا <code>map</code>. لا أثر ظاهر على JSON. هو هيكل الدرس.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>implements NestInterceptor</code> يفرض التوقيع.</li>
+<li><code>context.switchToHttp()</code> متاح كما في الحارس. لا تخزّن الطلب على الحقل.</li>
+<li><code>return next.handle()</code> يمرر التيار كما هو. حذف <code>return</code> يجعل الناتج <code>undefined</code> والإطار لا يملك تيارًا يشترك فيه.</li>
+<li>لا <code>@UseGuards</code> على هذا الصنف. الربط زينة معترضات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند بناء المسار يغلّف Nest المعالج بنسخ المعترضات المرتبطة. عند الطلب، بعد الحراس، تُستدعى <code>intercept</code>. القيمة المرجعة يجب أن تكون <code>Observable</code>. الاشتراك على أبعد تيار يشغّل <code>handle</code> حين تصل السلسلة إليه.</p>
+<p>إن رميت استثناء عاديًا قبل <code>return</code>، فالتيار لم يُبنَ بعد. الطبقة تعامل الرمي كخطأ طلب. إن رميت داخل <code>map</code> فالخطأ على التيار. الفرق عملي حين تضع <code>catchError</code> في معترض أبعد: هو يرى أخطاء التيار لا بالضرورة رميًا حدث قبل إرجاع الوصف من معترض داخلي. أبقِ الأخطاء المتوقعة على التيار بـ <code>throwError</code> حين تريد التقاطها في <code>pipe</code>.</p>
+<p>الحقن في الباني يعمل مع تمرير الصنف و <code>APP_INTERCEPTOR</code>. <code>useGlobalInterceptors(new DeskLabelInterceptor())</code> لا يحقن.</p>
+<h2>مثال عملي</h2>
+<p><code>DeskLabelInterceptor</code> على <code>TicketsController</code> يقرأ <code>url</code> للتطوير فقط ويعيد <code>handle</code>. الاختبار يتأكد أن <code>GET /tickets</code> ما زال يرجع جسم الخدمة لأن لا <code>map</code>. حين تضيف <code>map</code> في درس التغليف، هذا الصنف ليس هو المكان. صنف لكل أثر حتى لا يصبح <code>intercept</code> دالة طويلة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تطبيق <code>CanActivate</code> على صنف اسمه Interceptor.</li>
+<li>نسيان إرجاع التيار.</li>
+<li><code>subscribe</code> داخل <code>intercept</code> وعدم الإرجاع.</li>
+<li>تخزين <code>context</code> على <code>this</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل التفاف حول مسارات التذاكر أو حول التطبيق، بصنف واحد لكل مهمة: وسم، قياس، غلاف، مهلة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تكتب الواجهة على دالة Middleware. التوقيع مختلف. لا ترجع <code>boolean</code> من <code>intercept</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>NestInterceptor</code></th>
+<th><code>CanActivate</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الدالة</td>
+<td><code>intercept</code></td>
+<td><code>canActivate</code></td>
+</tr>
+<tr>
+<td>الوسيط الثاني</td>
+<td><code>CallHandler</code></td>
+<td>لا يوجد</td>
+</tr>
+<tr>
+<td>الرجوع</td>
+<td><code>Observable</code></td>
+<td>منطقي أو ما يعادله</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما اسم الدالة التي تطبّقها الواجهة، وما نوع رجوعها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>intercept</code>، وترجع <code>Observable</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يحدث إن قرأت الطلب ثم انتهت الدالة من غير <code>return next.handle()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا يوجد تيار يرجعه المعترض. البقية لا تُشغَّل بالطريقة التي ينتظرها الإطار، والرد لا يكتمل كنجاح عادي. أرجع ناتج <code>handle</code> أو تيارًا بديلًا مقصودًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المعترض يحتاج <code>ConfigService</code> ليقرأ بادئة السجل. أي ربط عام يحقنها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ provide: APP_INTERCEPTOR, useClass: DeskLabelInterceptor }</code> في وحدة ترى الإعداد. <code>new</code> داخل <code>useGlobalInterceptors</code> لا يحقن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وسيطا <code>intercept</code>؟</li>
+<li>ماذا يعني المعامل النوعي <code>R</code>؟</li>
+<li>كيف تمرر البقية كما هي؟</li>
+<li>أي رمز مزوّد يحقن معترضًا عامًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>NestInterceptor</code> تثبت <code>intercept(context, next)</code> وتيارًا مُرجَعًا. السياق للقراءة، و <code>next</code> لبقية السلسلة. الصنف يُربَط كحارس من حيث الحقن، ويختلف في الواجهة ونوع الرجوع.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>next.handle</code>: ماذا يشغّل الاشتراك، وماذا يحدث إن لم تُستدعَ.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

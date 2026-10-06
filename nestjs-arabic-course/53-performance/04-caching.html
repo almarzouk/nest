@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Caching كقرار أداء</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-caching.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Caching كقرار أداء</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار ما يُعاد استخدامه بين طلبات متجر رف، ومفتاح التخزين، ومدة الصلاحية، ولحظة الإبطال، باستخدام أدوات Nest للتخزين المؤقت لا كطبقة تُلف كل <code>GET</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>غلاف الكتاب وصفحة التصنيف تُقرأ أكثر بكثير مما تُكتب. كل قراءة تعيد نفس <code>findMany</code>. بعد الفهرس، الزمن مقبول لكن القاعدة ما زالت تدفع الثمن في كل طلب. التخزين يقلل هذا التكرار إلى أن يتغير الكتالوج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التخزين المؤقت نسخة سريعة لناتج غالٍ، لها مفتاح ومدة. الطلب التالي بنفس المفتاح يقرأ النسخة. أي كتابة تغيّر المعنى تحذف المفتاح أو تنتظر انتهاء المدة. تخزين بلا إبطال يعرض سعرًا قديمًا.</p>
+<h2>التعريف التقني</h2>
+<p><code>CacheModule</code> من <code>@nestjs/cache-manager</code> يسجّل مخزنًا. <code>CacheInterceptor</code> مع <code>@CacheKey</code> و <code>@CacheTTL</code> يخزّن ردود <code>GET</code> العامة. المفتاح الافتراضي مرتبط بالمسار؛ إن اختلف الرد حسب المستأجر أو المستخدم وجب أن يدخل ذلك في المفتاح. للخدمة، احقن <code>CACHE_MANAGER</code> واقرأ و اكتب بنفسك عندما لا يكون الرد HTTP كله قابلًا للتخزين. مدة <code>ttl</code> وحدتها في صفحة Caching الحالية للحزمة التي ولّدها مشروعك؛ لا تنقل رقمًا من مقال قديم. المخزن داخل الذاكرة لا يُشارك بين عمليات، وRedis يشاركها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مفتاح: tenantId + &quot;published-books&quot;
+قراءة: إصابة → رد النسخة
+        غياب → استعلام → خزّن مع TTL
+كتابة كتاب: احذف المفتاح ثم احفظ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { CacheInterceptor, CacheTTL } from &#39;@nestjs/cache-manager&#39;;
+import { Controller, Get, UseInterceptors } from &#39;@nestjs/common&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+@Controller(&#39;books&#39;)
+@UseInterceptors(CacheInterceptor)
+export class BooksController {
+  constructor(private readonly books: BooksService) {}
+
+  @Get(&#39;featured&#39;)
+  @CacheTTL(30_000)
+  featured() {
+    return this.books.featured();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>featured</code> قائمة عامة واحدة. المفتاح من المسار يكفي.</li>
+<li>ثلاثون ثانية تعني أن ظهور كتاب مميز قد يتأخر حتى هذه المدة، وهذا عقد منتج لا تفصيل إطار.</li>
+<li>المسار الذي يعتمد على <code>Authorization</code> لا يُلف بهذا المعترض كما هو، وإلا شارك الزوار نفس الجسم.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المعترض يبني مفتاحًا قبل تنفيذ الـ Handler.</li>
+<li>الإصابة تعيد القيمة ولا تستدعي الخدمة.</li>
+<li>الغياب يشغّل الـ Handler ثم يخزن القيمة القابلة للتسلسل.</li>
+<li>انتهاء <code>ttl</code> يحذف النسخة فيقرأ الطلب التالي المصدر.</li>
+<li>الحذف الصريح عند <code>update</code> أقصر من انتظار المدة حين يكون الخطأ في السعر مكلفًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { CACHE_MANAGER } from &#39;@nestjs/cache-manager&#39;;
+import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import type { Cache } from &#39;cache-manager&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
+
+  async listPublished(tenantId: string) {
+    const key = `books:${tenantId}:published`;
+    const hit = await this.cache.get(key);
+    if (hit) return hit;
+    const rows = await this.prisma.book.findMany({
+      where: { tenantId, status: &#39;published&#39; },
+      take: 20,
+      orderBy: { publishedAt: &#39;desc&#39; },
+    });
+    await this.cache.set(key, rows, 30_000);
+    return rows;
+  }
+
+  async publish(tenantId: string, id: string) {
+    const book = await this.prisma.book.update({
+      where: { id },
+      data: { status: &#39;published&#39; },
+    });
+    await this.cache.del(`books:${tenantId}:published`);
+    return book;
+  }
+}
+</code></pre>
+<p>المفتاح يتضمن <code>tenantId</code>. الحذف بعد النشر يمنع بقاء القائمة القديمة حتى نهاية المدة. تحقق أن <code>id</code> يخص المستأجر قبل <code>update</code>؛ التخزين لا يعوّض عزل البيانات.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تخزين رد فيه سعر المستخدم أو سلة خاصة بمفتاح المسار فقط.</li>
+<li>نسيان الحذف بعد الكتابة والاعتماد على TTL طويل لبيانات تتغير فورًا.</li>
+<li>تخزين كائن فيه دوال أو تواريخ غير متسلسلة ثم فشل صامت عند القراءة من Redis.</li>
+<li>وضع التخزين أمام مسار أبطأ بسبب N+1. أصلح الاستعلام أولًا حتى لا تخزن الناتج الغالي الخطأ.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قراءات كثيرة، ناتج مستقر لثوانٍ أو دقائق، ومفتاح يساوي كل ما يغيّر الجسم: مستأجر، لغة، معاملات الصفحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>أوامر الدفع، الرصيد، وأي <code>GET</code> يخص شخصًا واحدًا إن لم يكن المفتاح هويته وكنت مستعدًا لإبطاله عند تغيّر حسابه. ولا كبديل لفهرس مفقود على مسار يُستدعى مرة في الدقيقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>يشارك بين العمليات؟</th>
+<th>يناسب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ذاكرة العملية</td>
+<td>لا</td>
+<td>كتالوج تجربة، عملية واحدة</td>
+</tr>
+<tr>
+<td>Redis عبر <code>cache-manager</code></td>
+<td>نعم</td>
+<td>أكثر من نسخة من API</td>
+</tr>
+<tr>
+<td>CDN أمام GET العام</td>
+<td>نعم، خارج Nest</td>
+<td>أغلفة وملفات لا تخص مستأجرًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>GET /books/featured</code> عام. هل يكفي مفتاح المسار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نعم إن كان الجسم واحدًا لكل العالم. إن صار لكل مستأجر أبطال مختلفون، أضف <code>tenantId</code> إلى المفتاح وأوقف المعترض العام أو استبدله بتخزين داخل الخدمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>نشر كتاب لا يظهر في القائمة إلا بعد نصف دقيقة. أين الخلل إن كان TTL هو 30 ثانية والحذف غير موجود؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النسخة القديمة تبقى حتى انتهاء المدة. <code>publish</code> يجب أن يستدعي <code>cache.del</code> لمفتاح تلك القائمة، أو أن تكون نصف الدقيقة مقبولة في عقد المنتج ومكتوبة للفريق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عمليتان خلف موازن حمل، والمخزن <code>memory</code>. لماذا يرى عميل قائمة قديمة رغم <code>del</code> في العملية التي نفذت النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل عملية لها ذاكرتها. <code>del</code> يمسح عملية واحدة. الموازن قد يرسل القراءة التالية إلى العملية الأخرى. انقل المخزن إلى Redis مشترك، أو اقبل بالتباين حتى نهاية TTL على كل عملية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يجب أن يدخل في المفتاح غير المسار؟</li>
+<li>متى يكون TTL كافيًا، ومتى يلزم <code>del</code>؟</li>
+<li>لماذا التخزين لا يسبق إصلاح الاستعلام؟</li>
+<li>ما فرق ذاكرة العملية عن Redis هنا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التخزين المؤقت عقد على freshness: مفتاح كامل، مدة معروفة، وإبطال عند الكتابة التي لا تحتمل الانتظار. <code>CacheModule</code> ينفذ العقد. هو لا يختار ما يصح تخزينه.</p>
+<h2>ماذا بعد؟</h2>
+<p>الجسم المخزّن قد يبقى كبيرًا على السلك. الدرس التالي عن ضغط الاستجابة، ومتى يُنقل هذا العمل إلى الوكيل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Caching: <a href="https://docs.nestjs.com/data/caching">https://docs.nestjs.com/data/caching</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

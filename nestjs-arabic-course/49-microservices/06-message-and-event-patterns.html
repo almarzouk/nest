@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@MessagePattern و @EventPattern</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-message-and-event-patterns.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@MessagePattern و @EventPattern</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط دالة متحكم بنمط طلب-رد أو بنمط حدث، ومعرفة أن الإطار يتجاهل الزخرفة خارج المتحكم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العميل يرسل <code>{ cmd: &#39;sum&#39; }</code> والعملية الأخرى لا تعرف أي دالة تقصد. النمط مفتاح التوجيه. <code>@MessagePattern</code> للنداء الذي يرجع ناتجًا. <code>@EventPattern</code> للإشعار. وضعهما على خدمة بلا <code>@Controller</code> لا يسجل مستمعًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>النمط سلسلة أو كائن يُسلسل مع الحمولة. المعالج دالة على متحكم. الحمولة أول معامل أو <code>@Payload()</code>. يمكن <code>async</code>. يمكن إرجاع <code>Observable</code> في الطلب-الرد فيُرسل أكثر من قيمة حتى الاكتمال. الحدث لا يبني ردًا للناشر.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Controller } from &#39;@nestjs/common&#39;;
+import { EventPattern, MessagePattern, Payload } from &#39;@nestjs/microservices&#39;;
+
+@Controller()
+export class MathController {
+  @MessagePattern({ cmd: &#39;sum&#39; })
+  sum(@Payload() data: number[]): number {
+    return (data || []).reduce((a, b) =&gt; a + b, 0);
+  }
+
+  @EventPattern(&#39;order.cancelled&#39;)
+  cancelled(@Payload() data: { orderId: string }): void {
+    void data.orderId;
+  }
+}
+</code></pre>
+<p>نمط الكائن <code>{ cmd: &#39;sum&#39; }</code> يجب أن يطابق ما يرسله <code>client.send</code>. نمط السلسلة يطابق <code>emit(&#39;order.cancelled&#39;, payload)</code>.</p>
+<p><code>@Ctx()</code> يعطي سياق الناقل عندما تحتاج قناة الرد الأصلية أو إقرار الرسالة، حسب الناقل. لا تمرره إلى الخدمة.</p>
+<p>Pipe على <code>@Payload()</code> يتحقق من الشكل قبل الدالة. فشل الشكل خطأ يعبر للعميل عبر <code>RpcException</code> إن حوّلته، لا صفحة HTML.</p>
+<p>الاستثناء من الدالة: ارمِ <code>RpcException</code> من <code>@nestjs/microservices</code> برسالة أو كائن صغير. <code>HttpException</code> تبقى لمدخل HTTP في التطبيق الهجين.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نمط مطابق -&gt; دالة المتحكم -&gt; خدمة
+MessagePattern -&gt; ناتج للعميل
+EventPattern  -&gt; معالجة محلية بلا رد العقد
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>sum</code> أعلاه. العميل <code>send({ cmd: &#39;sum&#39; }, [1, 2])</code> يحصل على <code>3</code> بعد الاشتراك. غيّر المفتاح إلى <code>sum</code> نصًا من غير أن تغيّر العميل فلن يصل النداء إلى الدالة.</p>
+<h2>شرح المثال</h2>
+<p>المفتاح جزء من العقد مثل <code>POST /sum</code>. كائن <code>cmd</code> يسمح بحقول إضافية للتمييز إن اتفق الفريق، وسلسلة واحدة أبسط للأحداث. ثبّت الأسلوب في الخدمة: أوامر بكائن وأحداث بسلسلة، واكتب ذلك في مكان واحد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>عند الإقلاع تُجمع الزخارف من المتحكمات فقط.</li>
+<li>تصل رسالة فتُقارن بالنمط بعد فك التسلسل.</li>
+<li>تُستدعى الدالة بالحمولة.</li>
+<li>في الطلب-الرد يُسلسل الناتج إلى قناة الرد.</li>
+<li>في الحدث تنتهي مسؤولية الناشر عند التسليم للناقل.</li>
+<li>دالة على <code>@Injectable</code> فقط بلا متحكم لا تدخل الجدول.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>@MessagePattern({ cmd: &#39;invoice.issue&#39; })</code> تستدعي <code>invoices.issue</code> وترجع <code>{ invoiceId }</code>. <code>@EventPattern(&#39;invoice.issued&#39;)</code> في عملية البحث تحدّث الفهرس. النمطان اسمان مختلفان حتى لا يُستهلك الإشعار كطلب رد. رمي <code>new RpcException(&#39;order missing&#39;)</code> عندما لا طلب. العميل يرى الخطأ على <code>Observable</code> الخاص بـ <code>send</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الزخرفة على الخدمة.</li>
+<li>عدم تطابق النمط بين <code>send</code> والمعالج حرفًا أو شكل كائن.</li>
+<li><code>@EventPattern</code> مع توقع <code>return</code> يصل للناشر.</li>
+<li>نسيان <code>@Payload()</code> عند وجود <code>@Ctx()</code> فيختلط ترتيب الوسائط.</li>
+<li>منطق خصم داخل المتحكم بدل الخدمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على متحكم عملية تستمع للناقل، لكل عقد رسالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمسار HTTP. أبقِ <code>@Get</code>. ولا على دالة مساعدة خاصة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>@MessagePattern</code></th>
+<th><code>@EventPattern</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الرد</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>العميل</td>
+<td><code>send</code></td>
+<td><code>emit</code></td>
+</tr>
+<tr>
+<td>ناتج <code>Observable</code></td>
+<td>قيم حتى الاكتمال</td>
+<td>لا عقد رد</td>
+</tr>
+<tr>
+<td>المكان</td>
+<td>Controller</td>
+<td>Controller</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يعمل <code>@MessagePattern</code> على صنف <code>@Injectable</code> بلا متحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإطار يسجل الأنماط من المتحكمات فقط ويتجاهل الزخرفة على المزودات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يجب أن يطابق <code>{ cmd: &#39;sum&#39; }</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النمط الذي يمرره العميل إلى <code>send</code>، لا اسم الدالة <code>sum</code> وحده.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تضيف <code>@Ctx()</code> ومتى تبقيه خارج الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في المتحكم عندما يحتاج الناقل إقرارًا أو خاصية قناة. الخدمة تستقبل القيم المستخرجة فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما شكل النمط؟</li>
+<li>أي زخرفة بلا رد؟</li>
+<li>أي استثناء يعبر للعميل البعيد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>النمط مفتاح على المتحكم: <code>@MessagePattern</code> ينتظر ناتجًا و <code>@EventPattern</code> يستهلك إشعارًا. طابق العميل، وارمِ <code>RpcException</code> للخطأ العابر.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>ClientProxy</code>: <code>send</code> و <code>emit</code> من العملية الأخرى.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

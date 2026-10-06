@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nested Validation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-nested-validation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Nested Validation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فحص كائن داخل حقل، لا الحقل الأب فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>address.city</code> يصل فارغًا والطلب ينجح لأن الزينة على <code>AddressDto</code> لم تُشغَّل. <code>@IsString()</code> على الأب لا تمشي أبناء الكائن. TypeScript لا ينقل زينة الداخل إلى الفحص وحده.</p>
+<h2>الفكرة ببساطة</h2>
+<p>على الحقل المتداخل: <code>@ValidateNested()</code> من <code>class-validator</code> و <code>@Type(() =&gt; AddressDto)</code> من <code>class-transformer</code>. الأولى تشغّل فحص الصنف الداخلي. الثانية تبني نسخة ذلك الصنف حتى تُرى زينته.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@ValidateNested()
+@Type(() =&gt; AddressDto)
+address: AddressDto;
+</code></pre>
+<p><code>@ValidateNested()</code> من غير <code>@Type</code> يترك <code>address</code> كائنًا عاديًا في كثير من الحالات، فتفشل القيود الداخلية في العمل كما تتوقع. <code>@Type</code> من غير <code>@ValidateNested</code> يبني النسخة ولا يطلب فحص الأبناء.</p>
+<p>للمصفوفة المتداخلة، الصفحة تذكّر أن <code>TypeScript</code> لا يصدر بيانات لـ <code>AddressDto[]</code>. إما صنف يغلّف القائمة، أو <code>ParseArrayPipe</code> مع <code>items</code>. لفحص كل عنصر كائن:</p>
+<pre><code class="language-ts">@ValidateNested({ each: true })
+@Type(() =&gt; AddressDto)
+stops: AddressDto[];
+</code></pre>
+<p><code>each: true</code> تمشي العناصر. <code>@Type</code> ما زال يحدد صنف العنصر.</p>
+<p><code>transform: true</code> على الأنبوب حتى تستلم الدالة النسخ المتداخلة لا الكائنات العادية فقط. الفحص يمكن أن ينجح داخليًا قبل أن ترجع النسخة، لكن المعالج الذي يعتمد على <code>instanceof</code> يحتاج <code>transform</code>.</p>
+<p>خيارات <code>whitelist</code> تطبق على الداخل حين تُفحص النسخة الداخلية. حقل زائد داخل <code>address</code> يُحذف أو يُرفض حسب الخيار العام.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ReserveSeatDto
+  seat          يُفحص مباشرة
+  address       @Type يبني AddressDto
+                @ValidateNested يفحص city
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Type } from &#39;class-transformer&#39;;
+import { IsInt, IsString, Min, MinLength, ValidateNested } from &#39;class-validator&#39;;
+
+export class AddressDto {
+  @IsString()
+  @MinLength(2)
+  city: string;
+}
+
+export class ReserveSeatDto {
+  @IsInt()
+  @Min(1)
+  seat: number;
+
+  @ValidateNested()
+  @Type(() =&gt; AddressDto)
+  address: AddressDto;
+}
+</code></pre>
+<p>الجسم <code>{ &quot;seat&quot;: 4, &quot;address&quot;: { &quot;city&quot;: &quot;ن&quot; } }</code> يفشل لأن <code>city</code> أقصر من 2. الجسم الذي فيه <code>city: &quot;تونس&quot;</code> و <code>seat: 4</code> يمر من الشكل.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>زينة <code>city</code> تعيش على <code>AddressDto</code> لا على الأب.</li>
+<li>الدالة في <code>@Type</code> تؤخر الربط بالصنف.</li>
+<li>فشل الداخل يظهر في أخطاء <code>children</code> ثم في <code>message</code> حسب <code>errorFormat</code>. في وضع <code>grouped</code> المفتاح يشبه مسار الخاصية المتداخلة.</li>
+<li><code>seat</code> ما زال يُفحص حتى لو فشل <code>city</code>. المكتبة تجمع الأخطاء ما لم تضبط <code>stopAtFirstError</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>plainToInstance</code> يرى <code>@Type</code> فيني <code>AddressDto</code> من الكائن الداخلي. <code>validate</code> يرى <code>@ValidateNested</code> فيستدعي الفحص على تلك النسخة. أخطاء الداخل تُربط كأبناء لخاصية <code>address</code>.</p>
+<p>من غير <code>@Type</code>، التحويل لا يعرف الصنف الداخلي. القيود المسجّلة على <code>AddressDto</code> لا تُربَط بالكائن العادي، فيمر <code>city</code> الفارغ أو العددي.</p>
+<p>مصفوفة بلا <code>each: true</code> لا تمشي العناصر. مصفوفة بلا <code>@Type</code> تبقى عناصرها عادية.</p>
+<p><code>whitelist</code> على الأنبوب يطبّق الفكرة على <code>AddressDto</code> أيضًا: مفتاح <code>zip</code> بلا زينة داخل العنوان يُسقط أو يرفض مع <code>forbidNonWhitelisted</code>.</p>
+<h2>مثال عملي</h2>
+<p>حجز مقعد مع عنوان فوترة. العقد يرفض مدينة من حرف واحد قبل فتح الحجز. اختبار يرسل <code>address: { city: 5 }</code> ويتوقع فشل <code>@IsString()</code> على المسار المتداخل. اختبار يحذف <code>@Type</code> من الفرع ويرى الطلب ينجح، فيعيد الزينة. هذا الفرق هو الدرس كله.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@ValidateNested()</code> فقط.</li>
+<li>استيراد <code>@Type</code> من <code>class-validator</code>.</li>
+<li>نسيان <code>each: true</code> على مصفوفة عناوين.</li>
+<li>توقع فحص <code>ReserveSeatDto[]</code> في <code>@Body()</code> من غير غلاف أو <code>ParseArrayPipe</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما كان الحقل كائن عقد أو قائمة كائنات عقد، لا نصًا واحدًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقيمة أولية مثل <code>seat</code>. الزينة المباشرة تكفي. ولا تحويلًا لمسار URL. ذلك <code>Parse*</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>المكتبة</th>
+<th>الدور</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@ValidateNested()</code></td>
+<td><code>class-validator</code></td>
+<td>شغّل الفحص على الداخل</td>
+</tr>
+<tr>
+<td><code>@Type(() =&gt; AddressDto)</code></td>
+<td><code>class-transformer</code></td>
+<td>ابنِ صنف الداخل</td>
+</tr>
+<tr>
+<td><code>@IsString()</code> على <code>city</code></td>
+<td><code>class-validator</code></td>
+<td>قاعدة الحقل الداخلي</td>
+</tr>
+<tr>
+<td><code>each: true</code></td>
+<td>خيار الزينة</td>
+<td>طبّق الفحص على كل عنصر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينتين توضعان على حقل <code>address</code> حتى تُفحص <code>city</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ValidateNested()</code> و <code>@Type(() =&gt; AddressDto)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد ينجح الطلب حين تكون <code>city</code> عددًا إذا نُسيت <code>@Type</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الداخل يبقى كائنًا عاديًا بلا زينة مربوطة، ففحص <code>AddressDto</code> لا يعمل على <code>city</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>stops</code> مصفوفة عناوين. اكتب الزينتين مع الخيار الذي يمشي كل عنصر.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ValidateNested({ each: true })</code> و <code>@Type(() =&gt; AddressDto)</code> على الحقل <code>stops</code>. كل عنصر يُبنى كـ <code>AddressDto</code> ويُفحص.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا تكفي زينة الأب؟</li>
+<li>من أي حزمة <code>@Type</code>؟</li>
+<li>ماذا يفعل <code>each: true</code>؟</li>
+<li>أين تظهر أخطاء الداخل في <code>ValidationError</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الفحص المتداخل زينتان معًا: <code>@ValidateNested</code> تشغّل القواعد، و <code>@Type</code> تبني الصنف الذي يحملها. المصفوفة تحتاج <code>each: true</code>. من غير البناء يبقى الداخل كائنًا عاديًا لا تراه القيود.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>StandardSchemaValidationPipe</code>: فحص مخطط Zod أو Valibot أو ArkType عبر خيار <code>schema</code> على الزينة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

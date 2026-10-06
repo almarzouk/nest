@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Passport و @nestjs/passport</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-passport-overview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Passport و @nestjs/passport</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم وصفة Passport كما هي في Recipes: استراتيجية، دالة <code>validate</code>، و <code>AuthGuard</code>، من غير اعتبارها المسار الوحيد ولا مسارًا ملغى.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مقالات كثيرة تبدأ بـ <code>passport-local</code> فيظن القارئ أن قسم Security الجديد ألغاها، أو يخلط <code>AuthGuard(&#39;local&#39;)</code> بحارس <code>@nestjs/authentication</code>. المشروع القائم على Passport ينكسر إن حذفته لأنه «قديم». المشروع الجديد ينسخ الوصفة كاملة ثم يفاجئه أن إصدار الرمز والتحديث الدوار ليسا هما <code>TokenService</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Passport مكتبة Node شهيرة. <code>@nestjs/passport</code> يلفها كاستراتيجية قابلة للحقن. كل استراتيجية صنف يمتد <code>PassportStrategy</code> وينفّذ <code>validate</code>. الحارس <code>AuthGuard(&#39;name&#39;)</code> يشغّل الاستراتيجية المسجّلة بذلك الاسم. النجاح يضع <code>req.user</code>. الفشل يرفض الطلب. الوصفة في التوثيق تبني دخولًا محليًا ثم JWT. هذا مسار رسمي ثانٍ بجانب الحزمة التي سبقت.</p>
+<h2>التعريف التقني</h2>
+<p>التثبيت الذي تبدأ به صفحة Passport:</p>
+<pre><code class="language-bash">npm install --save @nestjs/passport passport passport-local
+npm install --save-dev @types/passport-local
+</code></pre>
+<p>ثم <code>passport-jwt</code> و <code>@nestjs/jwt</code> حين تصل إلى الرمز. <code>@nestjs/jwt</code> يعدّ <code>expiresIn</code> بالثواني في <code>signOptions</code>، مثل <code>60s</code> في مثال الصفحة. لا تنقل هذا الرقم إلى خيار <code>ttl</code> في <code>@nestjs/authentication</code>.</p>
+<p>شكل الوحدة:</p>
+<pre><code class="language-ts">@Module({
+  imports: [UsersModule, PassportModule],
+  providers: [AuthService, LocalStrategy],
+})
+export class AuthModule {}
+</code></pre>
+<p><code>PassportModule</code> تسجيل التكامل. الاستراتيجية مزوّد. من غير وجودها في <code>providers</code> لا يعرف Passport اسم <code>local</code>.</p>
+<p>دالة <code>validate</code> هي رد النداء الذي يتوقعه Passport. ما تُرجعه يصبح <code>req.user</code>. رمي <code>UnauthorizedException</code> فشل إثبات. الصفحة تقول إن فشل التحقق يعني مستخدمًا غير موجود أو كلمة لا تطابق، حسب الاستراتيجية.</p>
+<p>لا تسجّل حارس <code>@nestjs/authentication</code> العام وحارس Passport على المسار نفسه من غير أن تعرف أيهما يكتب <code>req.user</code>. للدورة: افهم الوصفة على مثال منفصل، وأبقِ مشروع المنشورات على حزمة Security إن بدأت بها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">استراتيجية Passport
+  super(options)  خيارات المكتبة
+  validate(...)   تثبت المستخدم
+AuthGuard(&quot;name&quot;) يشغّل الاستراتيجية
+req.user          ناتج validate
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, UnauthorizedException } from &quot;@nestjs/common&quot;;
+import { PassportStrategy } from &quot;@nestjs/passport&quot;;
+import { Strategy } from &quot;passport-local&quot;;
+import { AuthService } from &quot;./auth.service.js&quot;;
+
+@Injectable()
+export class LocalStrategy extends PassportStrategy(Strategy) {
+  constructor(private readonly auth: AuthService) {
+    super({ usernameField: &quot;email&quot; });
+  }
+
+  async validate(email: string, password: string) {
+    const user = await this.auth.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    return user;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>passport-local</code> افتراضيًا يقرأ <code>username</code> و <code>password</code>. نموذج الدورة يرسل <code>email</code>، لذلك <code>usernameField</code>. <code>validateUser</code> تستدعي <code>PasswordHasher.verify</code> أو مقارنة مشروعك، وترجع الشخص العام أو <code>null</code>. الاستراتيجية لا تكتب الكعكة بنفسها في هذه الوصفة: الدخول الناجح غالبًا يوقّع JWT في المتحكم بعد أن يملأ الحارس <code>req.user</code>.</p>
+<p>هذا ملف الوصفة، لا مزوّد <code>SessionCookieProvider</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>AuthGuard(&#39;local&#39;)</code> يستدعي Passport، وPassport يقرأ الجسم، وينادي <code>validate</code>، وعند النجاح يضع المستخدم على الطلب ويكمل السلسلة نحو المعالج. عند الفشل تصل <code>401</code>. الاستراتيجية تُسجَّل بالاسم الافتراضي <code>local</code> المشتق من الحزمة. الاسم في <code>AuthGuard</code> يجب أن يطابقه. الصفحة تنصح بصنف <code>LocalAuthGuard extends AuthGuard(&#39;local&#39;)</code> حتى لا يتكرر النص السحري.</p>
+<p>JWT استراتيجية ثانية باسم <code>jwt</code>، لا استبدال لصنف المحلية.</p>
+<h2>مثال عملي</h2>
+<p>مشروع قديم للمكتبة فيه <code>POST /auth/login</code> مع الحارس المحلي و <code>GET /posts</code> مع حارس JWT. اقرأه بهذه الخريطة ولا تعِد كتابته في منتصف الدورة إلا بقرار آخر الدرس. مشروع جديد اتبع <code>@nestjs/authentication</code> لأن قسم Security هو ما تبني عليه الفصول التالية من التفويض الرسمي <code>@nestjs/authorization</code>، وهو يتوقع مستخدم تلك الحزمة. Passport يبقى مفهومًا لقراءة القضايا والوظائف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>القول إن Passport أُلغي في Nest 12.</li>
+<li>خلط <code>AuthGuard(&#39;jwt&#39;)</code> مع <code>JwtBearerProvider</code>.</li>
+<li>نسيان <code>PassportModule</code> أو نسيان الاستراتيجية في <code>providers</code>.</li>
+<li>إرجاع صف فيه <code>passwordHash</code> من <code>validate</code> فيصبح <code>req.user</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لقراءة الوصفة الرسمية، ولمشروع قائم عليها، ولفريق يريد استراتيجيات Passport الجاهزة في المجتمع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كطبقة ثانية على مسارات تستخدم أصلًا حارس <code>@nestjs/authentication</code>، من غير خطة لمن يملأ <code>req.user</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>@nestjs/authentication</code></th>
+<th>Passport في Recipes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قسم Security الحالي</td>
+<td>وصفة ما زالت موثّقة</td>
+</tr>
+<tr>
+<td>مزودات تسجّل في <code>AuthenticationRegistry</code></td>
+<td><code>PassportStrategy</code> و <code>AuthGuard</code></td>
+</tr>
+<tr>
+<td>جلسة وتحديث دوار في الحزمة</td>
+<td>JWT عبر <code>@nestjs/jwt</code> في المثال</td>
+</tr>
+<tr>
+<td>ليس بديلًا يلغي الآخر</td>
+<td>ليس المسار الوحيد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تصبح قيمة رجوع <code>validate</code> على الطلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>req.user</code>، بعد نجاح استراتيجية Passport.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>usernameField: &quot;email&quot;</code> في مثال المكتبة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>passport-local</code> يبحث عن <code>username</code> افتراضيًا، ونموذج الدخول يرسل <code>email</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا نضع <code>AuthenticationModule</code> و <code>AuthGuard(&#39;local&#39;)</code> على <code>POST /auth/login</code> معًا من غير قراءة الترتيب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حارسان قد يرفضان الطلب أو يكتبان مستخدمًا بطريقتين. اختر سلسلة واحدة للمسار حتى تعرف مصدر <code>401</code> ومصدر الهوية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل الوصفة ملغاة؟</li>
+<li>ماذا يسجّل <code>PassportModule</code> مع الاستراتيجية؟</li>
+<li>كيف يختلف عمر <code>@nestjs/jwt</code> عن <code>ttl</code> في حزمة المصادقة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Passport استراتيجية تحقق وحارس بالاسم، ووصفة رسمية قائمة. حزمة Security مسار الدورة الجديد. الدروس التالية تفصل Local و JWT و <code>AuthGuard</code> داخل الوصفة فقط.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./09-local-strategy.html">Local Strategy</a> تفاصيل دخول البريد وكلمة المرور في Passport.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

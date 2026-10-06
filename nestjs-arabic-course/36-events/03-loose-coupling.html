@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Loose Coupling</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-loose-coupling.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Loose Coupling</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل خدمة الكتب تعتمد على اسم الحدث لا على خدمات البريد والمخبأ والتدقيق، مع إبقاء الاعتماد في الاتجاه الذي تستطيع اختباره.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>«ربط فضفاض» يُقال ثم تُستورد <code>MailService</code> و <code>Cache</code> و <code>AuditService</code> داخل <code>publish</code> لأن الحدث أُضيف بجانبها. الاقتران بقي، وزاد سطر <code>emit</code>. الفضفضة تعني أن حذف وحدة البريد لا يفرض تعديل <code>BooksService</code>، وأن اختبار النشر لا يشغّل SMTP.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>BooksService</code> تعرف <code>EventEmitter2</code> والثابت <code>book.published</code>. كل متصرف في صنف مستمع يمكن حذفه من <code>providers</code> دون لمس الحفظ. المستمع يجوز أن يعرف الطابور أو المخبأ. المعلن لا يجوز أن يعرفهم. الاختبار يستبدل المُصدِر أو يتحقق من <code>emit</code> بوهم.</p>
+<h2>التعريف التقني</h2>
+<p>اتجاه الاعتماد المقبول:</p>
+<pre><code class="language-text">BooksService -&gt; EventEmitter2
+PublishedMailListener -&gt; MailProducer
+IsbnCacheListener -&gt; CACHE_MANAGER
+</code></pre>
+<p>اتجاه مرفوض بعد هذا الدرس:</p>
+<pre><code class="language-text">BooksService -&gt; MailProducer
+BooksService -&gt; PublishedMailListener
+</code></pre>
+<p>استيراد النوع <code>BookPublishedPayload</code> من ملف <code>book-events.ts</code> مشترك مقبول. الملف لا يستورد Nest البريد ولا Prisma. هو اسم وشكل.</p>
+<p>اختبار النشر:</p>
+<pre><code class="language-ts">const events = { emit: vi.fn(), emitAsync: vi.fn(async () =&gt; []) };
+await service.publish(&#39;42&#39;);
+expect(events.emit).toHaveBeenCalledWith(bookPublished, { bookId: &#39;42&#39; });
+</code></pre>
+<p><code>vi.fn</code> مثال Vitest. على Jest استعمل <code>jest.fn</code>. الفصل 38 يفرّق المشغّلين. هنا الفكرة: لا <code>expect(mail.send)</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تغيير سياسة البريد  -&gt; ملف المستمع
+تغيير شرط النشر     -&gt; BooksService
+الاثنان لا يتعديان الملف الآخر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await this.prisma.book.update({ where: { id: bookId }, data: { status: &#39;PUBLISHED&#39; } });
+await this.events.emitAsync(bookPublished, { bookId });
+</code></pre>
+<p>لا سطر آخر في الدالة لأثر جانبي. إن ظهر <code>this.mail</code> فالإعلان لم يحل محل النداء.</p>
+<h2>شرح المثال</h2>
+<p><code>emitAsync</code> يبقى تفصيل انتظار إدراج الطابور كما قررنا، وهو ما زال لا يعرف نص الرسالة. مستمع التدقيق يكتب <code>{ bookId, action: &#39;published&#39; }</code> في جدوله. مستمع المخبأ يحذف مفتاح القائمة المنشورة <code>books:published</code> إن كنت تخزّنها، لا مفتاح صلاحية مستخدم. إضافة مستمع ثالث ملف جديد في <code>providers</code>، وفرق Git لا يلمس <code>publish</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحاوية تنشئ المستمعين لأنهم مزودات. المعلن لا يطلبهم بالاسم. عند <code>emitAsync</code> تستدعى الدوال المسجّلة على الاسم. ترتيب المستمعين ليس عقدًا مستقرًا تعتمد عليه لخصم المخزون ثم إرسال البريد. إن كان الترتيب مهمًا، اجعل مستمعًا واحدًا يدرج مهمة طابور تضمن التسلسل، أو أبقِ الخطوتين في الخدمة. الحدث للمتصرفين المستقلين لا لسير عمل مرتب.</p>
+<p>اختبار المستمع منفصل: استدعِ <code>handle({ bookId: &#39;42&#39; })</code> وتوقع <code>enqueuePublished</code>. لا حاجة لرفع <code>BooksService</code> في ذلك الاختبار.</p>
+<h2>مثال عملي</h2>
+<p>حذف النشرة البريدية من المنتج يعني حذف <code>PublishedMailListener</code> من الوحدة. <code>publish</code> ما زال يعلن، ولا أحد يدرج البريد. المخبأ يستمر. هذا هو اختبار التصميم: الميزة تُحذف من التسجيل لا من شرط داخل <code>if (mailEnabled)</code> في خدمة الكتب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>emit</code> ثم نداء <code>mail.send</code> الاحتياطي.</li>
+<li>مستمع يعيد استدعاء <code>books.publish</code> فيدور الحدث.</li>
+<li>الاعتماد على ترتيب <code>@OnEvent</code> لخصم ثم إرسال.</li>
+<li>ملف أحداث يستورد <code>BooksService</code> فتعود الدورة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يتعدد المتصرفون بعد حالة، وكل واحد يُختبر وحده ويُحذف وحده.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يكون العمل خطوة واحدة في المعاملة نفسها، مثل كتابة صف النشر. إخفاؤه في مستمع يفتح نافذة «حُفظ الإعلان وفشل المستمع» بلا داعٍ. الحفظ يبقى في الخدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التغيير</th>
+<th>الملفات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نص رسالة البريد</td>
+<td>المستمع أو قالب البريد</td>
+</tr>
+<tr>
+<td>من يجوز له النشر</td>
+<td><code>BooksService</code></td>
+</tr>
+<tr>
+<td>حذف التدقيق</td>
+<td>إزالة المزود</td>
+</tr>
+<tr>
+<td>ترتيب خصم ثم بريد</td>
+<td>ليس حدثين بلا عقد ترتيب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تستورد <code>BooksService</code> من عالم البريد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا شيء. تستورد اسم الحدث والمُصدِر فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تختبر <code>publish</code> بلا SMTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>وهم <code>EventEmitter2</code> وتتوقع <code>emit</code> أو <code>emitAsync</code> بالاسم و <code>{ bookId }</code>. اختبار المستمع منفصل على <code>handle</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا ترتيب مستمعين اثنين ليس سير عمل خصم مخزون ثم بريد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن ترتيب الاستدعاء ليس عقدًا تعلنه الحزمة كخطوات معاملة. إن لزم الترتيب فخطوة واحدة في الخدمة أو مهمة طابور واحدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي ملف يجوز أن يعرفه الطرفان؟</li>
+<li>ماذا يثبت حذف المستمع من <code>providers</code>؟</li>
+<li>أي أثر لا يُنقل إلى حدث؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الربط الفضفاض يعني أن المعلن يبث اسمًا والمستمع يُحذف ويُختبر وحده. الترتيب والمعاملة ليسا من هذا الربط.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما الذي لا يصلحه الحدث: العملية الأخرى، والعطل، والعميل على المقبس.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Events: <a href="https://docs.nestjs.com/techniques/events">https://docs.nestjs.com/techniques/events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

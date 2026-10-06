@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Injectable</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-injectable.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Injectable</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم <code>@Injectable()</code> كإعلان Metadata: الصنف قابل لإدارة الحاوية، وأنواع معاملاته يمكن قراءتها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>صنف مسجّل في <code>providers</code> وعليه <code>constructor(rates: FeeRates)</code> قد يفشل الإقلاع برسالة أن Nest لا تستطيع حل الاعتماديات. من غير Decorator على الصنف لا يصدر TypeScript أنواع المعاملات، فالحاوية لا ترى <code>FeeRates</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Injectable()</code> يضع Metadata تقول إن Nest IoC container تستطيع إدارة الصنف. أي Decorator على الصنف يجعل المترجم يصدر <code>design:paramtypes</code>. على Provider نستخدم <code>@Injectable</code> تحديدًا. على Controller يكفي <code>@Controller</code> لنفس الإصدار.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class FeesService {
+  constructor(private readonly rates: FeeRates) {}
+}
+</code></pre>
+<p><code>FeeRates</code> يجب أن يكون صنفًا موجودًا وقت التشغيل، واستيراده استيراد قيمة لا <code>import type</code>. الواجهة لا تُصدر في <code>design:paramtypes</code>. هذا الفخ يُشرح مع Constructor Injection في فصل Dependency Injection. هنا القاعدة: اعتمد على أصناف، وضع <code>@Injectable()</code> على Provider الذي يحقن غيره.</p>
+<p>صنف بلا اعتماديات يمكن أن يُنشأ من غير الـ Decorator إن كان في <code>providers</code>. التوثيق والممارسة يضعان <code>@Injectable()</code> دائمًا حتى لا ينكسر الصنف يوم تُضاف اعتمادية.</p>
+<p><code>@Injectable({ scope: Scope.REQUEST })</code> شكل الخيارات. Scope في الدرس التالي. الافتراضي من غير وسيط هو Singleton.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Injectable على FeesService
+  -&gt; Metadata الصنف
+  -&gt; design:paramtypes فيها FeeRates
+  -&gt; الحاوية تبحث عن رمز FeeRates
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class FeeRates {
+  readonly daily = 2;
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { FeeRates } from &#39;./fee-rates.js&#39;;
+
+@Injectable()
+export class FeesService {
+  constructor(private readonly rates: FeeRates) {}
+
+  quote(days: number) {
+    return days * this.rates.daily;
+  }
+}
+</code></pre>
+<p>التسجيل يسرد الاثنين: <code>providers: [FeeRates, FeesService]</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>FeeRates</code> بلا <code>constructor</code> مخصص، ومع ذلك عليه <code>@Injectable()</code> حتى يبقى أسلوب التسجيل واحدًا.</li>
+<li><code>FeesService</code> تحمل Decorator لأن لها اعتمادية. من غيره تصبح Metadata المعاملات فارغة أو <code>Object</code>.</li>
+<li><code>private readonly rates</code> خاصية معامل. الشرح في درس Injection.</li>
+<li>الاستيراد <code>import { FeeRates } from &#39;./fee-rates.js&#39;</code> يبقي الرمز وقت التشغيل.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>emitDecoratorMetadata</code> في ترجمة TypeScript، ومع Decorator على الصنف، يكتب مصفوفة أنواع المعاملات على الدالة البانية. Nest تقرأها عند الإقلاع. عنصر المصفوفة هو دالة الصنف البانية، وهي الرمز. <code>@Inject()</code> يستطيع استبدال هذا الاستنتاج عندما يكون الرمز نصًا أو <code>Symbol</code>، وذلك في درس Injection Tokens.</p>
+<p>رسالة الفشل المعتادة تبدأ بـ <code>Nest can&#39;t resolve dependencies</code>. السبب الشائع هنا: نسيان <code>@Injectable()</code> على المستهلك، أو نسيان تسجيل <code>FeeRates</code>، أو مسح الرمز بـ <code>import type</code>.</p>
+<h2>مثال عملي</h2>
+<p>خدمة الإعارة تعتمد على التسعير، والتسعير يعتمد على الجدول. الثلاثة عليهم الـ Decorator:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { FeeRates } from &#39;./fee-rates.js&#39;;
+import { FeesService } from &#39;./fees.service.js&#39;;
+
+@Injectable()
+export class LoansService {
+  constructor(private readonly fees: FeesService) {}
+
+  open(days: number) {
+    return { days, fee: this.fees.quote(days) };
+  }
+}
+</code></pre>
+<p><code>LoansService</code> من غير <code>@Injectable()</code> ومع <code>constructor(fees: FeesService)</code> لا تملك الحاوية نوع <code>FeesService</code> رغم أن الملف يستورد الصنف في أعلى الملف. الاستيراد وحده لا يكتب Metadata المعاملات.</p>
+<p><code>@Controller()</code> على <code>LoansController</code> يغني عن <code>@Injectable()</code> لذلك الصنف لأن Decorator الصنف موجود. لا تضع الاثنين أملًا في سلوك إضافي.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Provider باعتماديات ومن غير <code>@Injectable()</code></td>
+<td><code>design:paramtypes</code> فارغة ويفشل الحل</td>
+</tr>
+<tr>
+<td><code>import type { FeeRates }</code> ثم حقنه</td>
+<td>الرمز ممسوح وقت التشغيل</td>
+</tr>
+<tr>
+<td>الاعتماد على واجهة في <code>constructor</code></td>
+<td>الواجهة لا تظهر في Metadata</td>
+</tr>
+<tr>
+<td>خلط <code>@Injectable()</code> مع تسجيل <code>providers</code></td>
+<td>الزينة تعلن قابلية الإدارة، والمصفوفة هي التسجيل</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>على كل Provider: Service و Repository وصنف مساعد تسجله الحاوية. وعلى الصنف الذي ستضيف له اعتمادية لاحقًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على DTO الذي يصف جسم طلب فقط. ذلك صنف بيانات في فصل Body، وليس شيئًا تنشئه الحاوية. وعلى Controller، <code>@Controller</code> يؤدي إصدار الأنواع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الإشارة</th>
+<th>ماذا تكفي له</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Injectable()</code></td>
+<td>إدارة Provider وإصدار أنواع <code>constructor</code></td>
+</tr>
+<tr>
+<td><code>@Controller()</code></td>
+<td>خريطة HTTP وإصدار أنواع <code>constructor</code> لذلك الصنف</td>
+</tr>
+<tr>
+<td><code>providers: [...]</code></td>
+<td>إدخال الرمز في السجل</td>
+</tr>
+<tr>
+<td>وجود الملف</td>
+<td>لا Metadata ولا تسجيل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة يُستورد <code>Injectable</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>من <code>@nestjs/common</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>FeesService</code> تعتمد على <code>FeeRates</code> والإقلاع يقول إن الاعتماديات لا تُحل. اذكر سببين متعلقين بهذا الدرس.</p>
+<details><summary>الحل</summary>
+
+<p>غياب <code>@Injectable()</code> عن <code>FeesService</code> فيضيع نوع المعامل، أو <code>import type</code> لمزود <code>FeeRates</code> فيمسح الرمز. سبب ثالث خارج الزينة: <code>FeeRates</code> غير موجودة في <code>providers</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا Controller يحقن <code>FeesService</code> من غير <code>@Injectable()</code> على Controller؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Controller()</code> Decorator على الصنف، فيصدر TypeScript <code>design:paramtypes</code> لمعاملاته. <code>@Injectable()</code> هو الـ Decorator المخصص عندما لا يوجد غيره، كما في Service.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تعلن Metadata الخاصة بـ <code>@Injectable()</code>؟</li>
+<li>متى يصبح الـ Decorator ضروريًا لحل <code>constructor</code>؟</li>
+<li>هل يغني عن مصفوفة <code>providers</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Injectable()</code> يجعل Provider مرئيًا للإدارة ويتيح إصدار أنواع المعاملات. التسجيل في Module يبقى خطوة مستقلة، والرمز المحقون يبقى صنفًا حاضرًا وقت التشغيل.</p>
+<h2>ماذا بعد؟</h2>
+<p>وضع الصنف في مصفوفة <code>providers</code>: Registration داخل Module.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — Custom providers (DI fundamentals): <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

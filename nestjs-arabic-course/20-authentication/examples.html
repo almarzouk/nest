@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>المكتبة على <code>@nestjs/authentication</code>. Passport في المثال الأخير مرجع منفصل لا يُستورد معه.</p>
+<h2>مثال 1 — تسجيل ودخول بجلسة</h2>
+<p><code>POST /auth/sign-up</code> و <code>POST /auth/sign-in</code> عليهما <code>@Public()</code>. كلمة المرور تمر على <code>PasswordHasher.hash</code> عند الإنشاء و <code>verify</code> عند الدخول. النجاح يستدعي <code>SignInService.signIn</code>. الاستجابة لا تحتوي <code>passwordHash</code>. فشل الدخول <code>401</code> برسالة واحدة.</p>
+<p><code>AuthenticationModule.forRoot</code> يضبط <code>session.absoluteTtl</code> و <code>idleTtl</code>. الإنتاج يربط <code>SessionStore</code>، لا ذاكرة العملية.</p>
+<h2>مثال 2 — مقال باسم الشخص</h2>
+<p><code>CreatePostDto</code> فيه <code>title</code> و <code>body</code> فقط.</p>
+<pre><code class="language-ts">@Post()
+create(@CurrentUser() user: PublicUser, @Body() dto: CreatePostDto) {
+  return this.posts.create(user.id, dto);
+}
+</code></pre>
+<p>بلا كعكة: <code>401</code> قبل Prisma. مع كعكة المستخدم <code>4</code>: الصف يُكتب بـ <code>authorId</code> الخاص به ولو أرسل العميل رقمًا زائدًا يرفضه الأنبوب.</p>
+<h2>مثال 3 — جوال</h2>
+<p><code>JwtAuth</code> بترتيب <code>1</code> بعد الجلسة. <code>POST /auth/token</code> يرجع الوصول والتحديث. <code>POST /auth/token/refresh</code> يستهلك التحديث. إعادة الرمز المستهلك تلغي العائلة. <code>validate</code> تجلب المستخدم من القاعدة.</p>
+<h2>مثال 4 — Passport في ملف لا يُحمَّل</h2>
+<p><code>LocalStrategy</code> مع <code>usernameField: &quot;email&quot;</code> و <code>JwtAuthGuard</code> نمط الوصفة إن قرأت مشروعًا قديمًا. <code>AppModule</code> للدورة لا يسجّل <code>APP_GUARD</code> من <code>@nestjs/passport</code> بجانب حارس الحزمة.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>مسار واحد، حارس واحد.</li>
+<li>السر في الإعداد لا في المستودع.</li>
+<li><code>GET /me</code> بلا تجزئة.</li>
+<li>عمر الحزمة ليس ثواني <code>@nestjs/jwt</code> إلا داخل مثال الوصفة.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

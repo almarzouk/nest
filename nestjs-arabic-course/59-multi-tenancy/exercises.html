@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — اختر النموذج</h2>
+<p>عشرون مكتبة متشابهة على خطة واحدة، بلا شرط تعاقدي على قرص منفصل. أي نموذج تبدأون به؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Pool: قاعدة ومخطط مشتركان و <code>tenantId</code> على كل صف واستعلام. schema أو قاعدة لكل مكتبة تكلفة لا يطلبها هذا العدد.</p>
+</details>
+
+<h2>تمرين متوسط — مصدر المكتبة</h2>
+<p>طلب فيه <code>Host: lib-a.raf.example</code> و <code>X-Tenant-Id: lib-b</code> و <code>body.tenantId = lib-c</code> ورمز بلا مطالبة مكتبة. ما السياسة التي ترفض الخلط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا تدمجوا الثلاثة. إن كانت قناة المتصفح هي المضيف، فالمكتبة <code>lib-a</code> بعد جدول slugs، والاختلاف مع الترويسة أو الجسم خطأ 400. العضوية تُفحص على <code>lib-a</code> فقط. لا استعلام على <code>lib-c</code>.</p>
+</details>
+
+<h2>تمرين متقدم — نسيان قيد</h2>
+<p>مراجعة أظهرت <code>findUnique({ where: { id } })</code> في نموذج pool. ما أثره، وما شكل الإصلاح داخل Nest لا داخل تعليق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أي معرّف متسرب يعيد كتاب مكتبة أخرى. الإصلاح: المستودع يفضح <code>find(tenantId, id)</code> فقط، والحارس يملأ المخزن، واختبار مستأجرين يمنع دمج PR. نقل الدالة إلى <code>Scope.REQUEST</code> لا يضيف القيد تلقائيًا.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>حذف الدورة أعاد الاستيراد إلى سهم نحو ورقة. تلك الورقة في الأمثلة كانت <code>@Module</code> ثابتًا: المزودات مكتوبة في الزخرفة. الخطوة التالية أن الورقة نفسها تحتاج خيارًا من المستورد، مثل سابقة معرّف أو عنوان قاعدة، من غير أن تنسخ الوحدة لكل ميزة.</p>
+<p>ذلك Dynamic Module: دالة ثابتة <code>forRoot</code> أو <code>register</code> ترجع كائنًا فيه <code>module</code> والمزودات المبنية من الخيار. <code>forRootAsync</code> و <code>registerAsync</code> تنتظران <code>ConfigService</code>. من يعيد التصدير يصدّر الصنف ولا يستدعي <code>forRoot</code> مرة ثانية.</p>
+<p>ستمر أيضًا على <code>ConfigurableModuleBuilder</code> و <code>ModuleRef</code> الذي لمحنا إليه لفك طرف من دورة، وعلى التحميل الكسول والمزودات غير المتزامنة. جملة العبور: الدورة تُحذف برسم شجرة، والشجرة التي تحتاج خيارًا خارجيًا تُكوَّن عند الاستيراد لا بنسخ الملفات.</p>
+<h2>حد تعبره</h2>
+<p>الورقة الثابتة لا تقبل عنوان قاعدة من المستورد. نسخ الملف لكل ميزة يعيد الدورة بشكل ملفات. الدالة الثابتة ترجع <code>DynamicModule</code> وفيه <code>module</code> إلزامي. <code>forRoot</code> و <code>forRootAsync</code> مرة في الجذر، وغالبًا <code>global: true</code>. <code>register</code> و <code>registerAsync</code> لكل مستهلك، ومن غير <code>global</code> إن كان الرمز النصي مشتركًا بين نداءين.</p>
+<p>من يعيد التصدير يكتب <code>exports: [DatabaseModule]</code> بعد أن استُدعي <code>forRoot</code> مرة. نداء ثانٍ يعيد بناء المزودات.</p>
+<p><code>registerAsync</code> أحد ثلاثة فقط: <code>useFactory</code> أو <code>useClass</code> أو <code>useExisting</code>. <code>useClass</code> يطبّق <code>create()</code> إلا إن غيّرت اسم الدالة. <code>ConfigurableModuleBuilder</code> يولّد <code>ConfigurableModuleClass</code> و <code>MODULE_OPTIONS_TOKEN</code> و <code>setClassMethodName(&#39;forRoot&#39;)</code> و <code>setExtras</code> حتى لا يدخل <code>isGlobal</code> في رمز الخيارات.</p>
+<p><code>ModuleRef.get</code> للـ Singleton و <code>strict</code> افتراضيًا. <code>resolve</code> للنطاق. <code>create</code> لصنف غير مسجل. لا تستدعِ <code>get</code> في الـ <code>constructor</code>.</p>
+<p><code>LazyModuleLoader.load</code> بعد <code>import()</code> يخبئ الوحدة ويرجع <code>ModuleRef</code>. خطافات تلك الوحدة لا تُستدعى. لا تحمّل متحكمًا أو بوابة أو resolver أو middleware أو وحدة عامة بعد <code>listen</code>.</p>
+<p>مصنع <code>useFactory</code> الذي يرجع <code>Promise</code> يُنتظر قبل بناء من يعتمد عليه. هذا غير <code>forRootAsync</code> الذي يرجع خيارات الوحدة. الكائن العادي بلا خطاف إيقاف.</p>
+<h2>تمرين عبور</h2>
+<p>سابقتان لمعرف المستخدم ومعرف الطلب. أي أسلوب، وهل الوحدة عامة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>register</code> أو <code>registerAsync</code> داخل كل ميزة، بلا <code>global: true</code>، حتى لا يختلط الرمز. <code>forRoot</code> مرة واحدة يبقى لعنوان القاعدة المشترك.</p>
+</details>
+
+<p><a href="../42-dynamic-modules/README.html">Dynamic Modules</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

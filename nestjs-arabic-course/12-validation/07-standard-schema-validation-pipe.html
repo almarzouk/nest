@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>StandardSchemaValidationPipe</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-standard-schema-validation-pipe.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>StandardSchemaValidationPipe</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فحص الدخل بمخطط يطبّق Standard Schema، مثل Zod و Valibot و ArkType، عبر الأنبوب المدمج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عقد الدعوة مكتوب <code>z.object</code> لا صنفًا مزيّنًا. <code>ValidationPipe</code> يتخطاه لأنه ليس صنف <code>class-validator</code>. القواعد تبقى قيمة بلا من يقرأها على الطلب.</p>
+<h2>الفكرة ببساطة</h2>
+<p>سجّل <code>StandardSchemaValidationPipe</code> عامًا. على المعامل مرّر المخطط في خيار الزينة: <code>@Body({ schema: reserveSchema })</code>. الأنبوب يفحص من يعلن مخططًا ويمرر الباقي. الناتج الافتراضي هو مخرج المخطط بعد التحويل والقيم الافتراضية.</p>
+<h2>التعريف التقني</h2>
+<p>الأنبوب من <code>@nestjs/common</code>. الصفحة تثبّت الحزمة التي تختارها، والمثال Zod:</p>
+<pre><code class="language-bash">npm i zod
+</code></pre>
+<pre><code class="language-ts">import { z } from &#39;zod&#39;;
+
+export const reserveSchema = z.object({
+  showId: z.string().min(1),
+  seat: z.number().int().positive(),
+});
+
+export type ReserveInput = z.infer&lt;typeof reserveSchema&gt;;
+</code></pre>
+<pre><code class="language-ts">import { StandardSchemaValidationPipe } from &#39;@nestjs/common&#39;;
+
+app.useGlobalPipes(new StandardSchemaValidationPipe());
+</code></pre>
+<pre><code class="language-ts">@Post()
+reserve(@Body({ schema: reserveSchema }) dto: ReserveInput): ReserveInput {
+  return dto;
+}
+</code></pre>
+<p>الخيار <code>schema</code> يعمل على <code>@Body()</code> و <code>@Query()</code> و <code>@Param()</code>، وعلى <code>@MessageBody()</code> و <code>@Payload()</code> في النقلات الأخرى. يمكن أن يأتي بعد اسم خاصية: <code>@Body(&#39;seat&#39;, { schema })</code>.</p>
+<p>فشل الفحص <code>400</code>. الرسائل في مثال الصفحة مسبوقة بمسار الخاصية، مثل <code>seat: ...</code>.</p>
+<p>الخيارات على بناء الأنبوب:</p>
+<ul>
+<li><code>transform</code> افتراضيًا <code>true</code>: الدالة تستلم مخرج المخطط. <code>false</code> يمرر الدخل الأصلي بعد نجاح الفحص، ونوعه عندها <code>z.input</code>.</li>
+<li><code>validateCustomDecorators</code> افتراضيًا <code>false</code>.</li>
+<li><code>validateOptions</code> تُمرَّر إلى <code>~standard.validate</code>.</li>
+<li><code>errorHttpStatusCode</code> افتراضيًا <code>400</code>.</li>
+<li><code>exceptionFactory</code> تستلم مشكلات المخطط.</li>
+</ul>
+<p>المسار والاستعلام نصان. التحويل يتم داخل المخطط، مثل <code>z.coerce.number()</code>، لا عبر <code>ParseIntPipe</code> إلا إذا اخترت ذلك الأسلوب.</p>
+<p>خصائص غير المعرّفة قرار المخطط: <code>z.object</code> يسقطها، <code>z.strictObject</code> يرفضها، <code>z.looseObject</code> يبقيها. لا <code>whitelist</code> على هذا الأنبوب.</p>
+<p>Valibot و ArkType الكائن نفسه في خيار <code>schema</code>. نص الخطأ يأتي من المكتبة فيختلف لفظه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">معامل بلا schema     يمر
+معامل مع schema      ~standard.validate
+  فشل → 400
+  نجاح → مخرج المخطط إن transform: true
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { z } from &#39;zod&#39;;
+
+export const listQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  open: z.coerce.boolean().optional(),
+});
+
+export type ListQuery = z.infer&lt;typeof listQuerySchema&gt;;
+</code></pre>
+<pre><code class="language-ts">@Get()
+list(@Query({ schema: listQuerySchema }) query: ListQuery): ListQuery {
+  return query;
+}
+</code></pre>
+<p><code>GET /reservations?page=2</code> يجعل <code>page</code> العدد <code>2</code>. غياب <code>page</code> يجعلها <code>1</code> بسبب <code>default</code>. النص في الاستعلام يُجبر عبر <code>coerce</code> قبل القاعدة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>المخطط مصدر الحقيقة. <code>ListQuery</code> نوع مشتق لا يُفحص وحده.</li>
+<li><code>default</code> و <code>coerce</code> آثار تحويل داخل المخطط، وتصل إلى الدالة لأن <code>transform</code> على الأنبوب افتراضيًا <code>true</code>.</li>
+<li>لا زينة <code>@IsInt()</code> بجانب <code>page</code> في هذا الأسلوب.</li>
+<li>الربط العام آمن كما تقول الصفحة: من لا يعلن <code>schema</code> لا يُفحص بهذا الأنبوب.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأنبوب يبحث عن مخطط على بيانات المعامل. إن وجده يستدعي واجهة Standard Schema. المشكلات تُحوَّل إلى استثناء HTTP. النجاح يعيد المخرج، وفيه القيم الافتراضية والنصوص المشذّبة إن عرّفها المخطط، كما في مثال الصفحة لـ <code>search</code> بعد <code>trim</code>.</p>
+<p><code>transform: false</code> يوقف تسليم المخرج ويبقي الدخل بعد أن نجح الفحص. استخدم <code>z.input&lt;typeof schema&gt;</code> عندها.</p>
+<p><code>exceptionFactory</code> تستلم <code>issues</code> وفيها <code>message</code> و <code>path</code>. الصفحة تبني منها <code>422</code> إن أردت رمزًا آخر. أبقِ الرمز في عائلة أخطاء العميل.</p>
+<p>مصفوفة: <code>z.array(reserveSchema)</code> على <code>@Body({ schema })</code> تفحص كل عنصر. رسالة العنصر تُسبق بفهرسه في مثال الصفحة.</p>
+<h2>مثال عملي</h2>
+<p>صالة جديدة تكتب الحجوزات بمخطط Zod واحد. <code>POST</code> يستخدم <code>reserveSchema</code>. <code>GET</code> يستخدم <code>listQuerySchema</code> مع <code>coerce</code> و <code>default</code>. اختبار يرسل <code>seat: 0</code> ويتوقع <code>400</code> ونصًا يذكر <code>seat</code>. اختبار يرسل <code>page</code> غائبًا ويتوقع <code>1</code> في القيمة التي تستلمها الدالة. عقد الصنف القديم لمسار آخر لا يُمس في هذا الدرس.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير المخطط إلى <code>ValidationPipe</code>.</li>
+<li>نسيان خيار <code>{ schema }</code> ثم الدهشة أن كل جسم يمر رغم وجود أنبوب عام.</li>
+<li>توقع <code>whitelist</code> هنا. سلوك المفاتيح الزائدة يُكتب في المخطط.</li>
+<li><code>z.infer</code> كمعامل <code>@Body()</code> من غير المخطط في الزينة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يكون العقد قيمة مخطط، وتريد الفحص والتحويل الافتراضي من المكتبة نفسها على <code>@Body</code> أو <code>@Query</code> أو <code>@Param</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لصنف عليه زينة <code>class-validator</code> فقط. ذلك <code>ValidationPipe</code>. ولا تحوّل فشل المخطط إلى <code>500</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>هذا الأنبوب</th>
+<th><code>ValidationPipe</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مصدر القاعدة</td>
+<td>كائن مخطط</td>
+<td>زينة على صنف</td>
+</tr>
+<tr>
+<td>الربط على المعامل</td>
+<td><code>{ schema }</code></td>
+<td>نوع الصنف</td>
+</tr>
+<tr>
+<td>مفاتيح زائدة</td>
+<td>سلوك المخطط</td>
+<td><code>whitelist</code></td>
+</tr>
+<tr>
+<td>تحويل الاستعلام</td>
+<td><code>z.coerce</code> ونحوه</td>
+<td><code>transform</code> و <code>Parse*</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُعلَّق <code>reserveSchema</code> حتى يفحصه الأنبوب العام؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في خيار الزينة: <code>@Body({ schema: reserveSchema })</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>GET</code> بلا <code>page</code> يعيد العدد <code>1</code> في المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المخطط يعرّف <code>default(1)</code>، وخيار <code>transform</code> على الأنبوب افتراضيًا <code>true</code> فيصل مخرج المخطط إلى الدالة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد رفض المفتاح <code>role</code> على مخطط Zod، لا إسقاطه. أي شكل كائن تستخدم، ولماذا لا تضبط <code>forbidNonWhitelisted</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>z.strictObject</code>. المفاتيح الزائدة قرار المخطط. <code>forbidNonWhitelisted</code> خيار <code>ValidationPipe</code> ولا يغيّر هذا الأنبوب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مكتبات تذكرها الصفحة كمخططات متوافقة؟</li>
+<li>ماذا يمر من المعاملات التي بلا <code>schema</code>؟</li>
+<li>ما افتراض <code>transform</code> على هذا الأنبوب؟</li>
+<li>كيف يُجبر نص الاستعلام إلى عدد داخل Zod؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>StandardSchemaValidationPipe</code> يفحص المخطط المعلّق على الزينة ويعيد مخرجه افتراضيًا. Zod و Valibot و ArkType تدخل من الخيار نفسه. من لا يعلن مخططًا لا يُمس. خيارات التبييض مكانها المخطط لا أنبوب الأصناف.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يجمع الأنبوبين في تطبيق واحد ويثبت أن <code>class-validator</code> ليست مسارًا ملغى.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

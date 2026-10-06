@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Container</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-container.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Container</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وصف حاوية Nest كسجل رموز داخل حدود Module: وصفة، ونسخة مخزنة، وقواعد من يرى الرمز.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سطر التركيب اليدوي يعرف كل المراجع لأنها متغيرات محلية. بعد IoC لا يوجد متغير <code>tax</code> في <code>main</code>. الحاوية هي المكان الذي يقابل رمز <code>TaxPolicy</code> بالوصفة ثم بالنسخة. من غير هذا السجل يبقى المُنشئ طلبًا بلا طرف يسلّم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nest تحمل IoC container تدير علاقات Providers. لكل رمز مرئي في سياق Module خانة: ماذا تفعل عند الحل، وهل توجد نسخة Singleton جاهزة. السياق ليس كيسًا واحدًا لكل ملفات <code>src</code>. Module ترى ما سجلته وما صُدّر إليها عبر <code>imports</code>.</p>
+<h2>التعريف التقني</h2>
+<p>الخانة تربط الرمز بواحدة من الوصفات التي عرفتها في فصل Providers: <code>useClass</code> أو <code>useValue</code> أو <code>useFactory</code> أو <code>useExisting</code>. الاختصار <code>providers: [DraftService]</code> خانة رمزها الصنف ووصفتها <code>useClass</code> للصنف نفسه.</p>
+<p>النسخة المخزنة خاصة بالنطاق. <code>DEFAULT</code> يضع كائنًا واحدًا في الخانة بعد أول حل. <code>REQUEST</code> لا يضع كائن التطبيق كله في تلك الخانة؛ لكل طلب خريطة حل أقصر عمرًا. تفاصيل العدوى في درس Scope. هنا المهم أن الحاوية تملك العمر لا الملف.</p>
+<p>البحث عن الرمز يتم في سياق الصنف الذي يُبنى: Module التي أعلنت المستهلك، زائد ما استوردته. رمز مصدَّر من <code>AcquisitionModule</code> مرئي لمن يستوردها. <code>RegionalTax</code> غير المصدَّرة ليست في حاوية المستورد حتى لو استطاع TypeScript استيراد الملف.</p>
+<p>لا تنشئ الحاوية بنفسك في تطبيق HTTP العادي. <code>NestFactory.create</code> تبنيها من الجذر. <code>ModuleRef</code> لاستعلام يدوي لاحق في الدورة، خارج هذا الدرس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سياق AcquisitionModule
+  TaxPolicy    -&gt; useClass FlatTax    -&gt; نسخة
+  DraftService -&gt; useClass DraftService -&gt; نسخة تعرف السياسة
+سياق ReportsModule
+  يرى DraftService إن صُدّرت
+  لا يرى TaxPolicy إن لم تُصدَّر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+import { FlatTax } from &#39;./flat-tax.js&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+
+@Module({
+  providers: [DraftService, { provide: TaxPolicy, useClass: FlatTax }],
+  exports: [DraftService],
+})
+export class AcquisitionModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>خانتان في السياق: <code>DraftService</code> و <code>TaxPolicy</code>.</li>
+<li><code>FlatTax</code> ليست خانة مستقلة. هي هدف <code>useClass</code> تحت رمز السياسة.</li>
+<li><code>exports</code> تنشر خانة <code>DraftService</code> فقط إلى المستورد.</li>
+<li>مستورد يحقن <code>TaxPolicy</code> يفشل الحل لأن الخانة لم تُنشر، رغم أنها موجودة داخل المشتريات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تُملأ السجلات من Metadata كل Module مستوردة من الجذر. الخانة تُنشأ قبل أن يُنادى <code>total</code>. حل <code>DraftService</code> يسأل السياق عن <code>TaxPolicy</code>، فتنفَّذ وصفة <code>FlatTax</code>، وتُحفظ النسخة تحت رمز السياسة، ثم تُبنى المسودة وتُحفظ تحت رمزها.</p>
+<p>طلب ثانٍ لـ <code>DraftService</code> في النطاق الافتراضي يعيد المرجع المخزن ولا يعيد <code>useClass</code>. لذلك عدّاد على المسودة عدّاد تطبيق داخل هذا السياق، لا عدّاد كل عملية <code>create</code> في الاختبارات التي تبني تطبيقًا جديدًا. كل <code>NestFactory.create</code> حاوية جديدة.</p>
+<p><code>NEST_DEBUG</code> يطبع تفاصيل إضافية عن الحل عند الإقلاع إن تعقّد الرسم. المتغير بيئة تشغيل، لا خيارًا داخل <code>@Module</code>.</p>
+<h2>مثال عملي</h2>
+<p>تقرير يستورد المشتريات ويرى المسودة فقط:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { AcquisitionModule } from &#39;../acquisition/acquisition.module.js&#39;;
+import { ReportsService } from &#39;./reports.service.js&#39;;
+
+@Module({
+  imports: [AcquisitionModule],
+  providers: [ReportsService],
+})
+export class ReportsModule {}
+</code></pre>
+<p><code>ReportsService</code> تطلب <code>DraftService</code> في المُنشئ فتجد الخانة المنشورة. طلب <code>TaxPolicy</code> من التقرير لا يجد خانة في سياقه. الإصلاح الذي يحافظ على الحد هو تصدير السياسة عمدًا، أو إبقاء الحساب داخل <code>DraftService</code> حتى لا يحتاج التقرير الرمز الأدنى.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>اعتبار الحاوية خريطة عامة لكل صنف مستورد في TypeScript</td>
+<td>الملف المرئي للمترجم قد يكون مخفيًا عن السياق</td>
+</tr>
+<tr>
+<td>البحث عن النسخة في متغير داخل <code>main</code></td>
+<td>المرجع داخل خانة الرمز</td>
+</tr>
+<tr>
+<td>تصدير كل الخانات احتياطًا</td>
+<td>الحد بين Module يختفي</td>
+</tr>
+<tr>
+<td>توقع أن <code>FlatTax</code> تُحقن بالاسم من غير خانة</td>
+<td>الرمز المسجّل هو <code>TaxPolicy</code></td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>في كل تطبيق Nest يعمل بـ <code>NestFactory.create</code>. أنت تتعامل معها عبر <code>providers</code> و <code>imports</code> و <code>exports</code> لا عبر مؤشر حاوية في كل خدمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تطلب من الحاوية بناء DTO جسم الطلب. تلك قيمة يدخلها <code>@Body</code> إلى الدالة. ولا تخزن حالة الطلب على نسخة <code>DEFAULT</code> أملًا أن الحاوية تعزل الطلبات؛ العزل Scope أو وسائط الدالة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخانة</th>
+<th>المحتوى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>رمز + <code>useClass</code></td>
+<td>كيفية البناء، ثم النسخة بعد الحل</td>
+</tr>
+<tr>
+<td>رمز + <code>useValue</code></td>
+<td>المرجع الجاهز من لحظة التسجيل</td>
+</tr>
+<tr>
+<td>رمز غير مصدَّر</td>
+<td>مرئي داخل Module المالكة فقط</td>
+</tr>
+<tr>
+<td>صنف مستورد استيراد TypeScript</td>
+<td>لا خانة إلى أن يُسجَّل أو يُستورد مع تصديره</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تعيش نسخة <code>DraftService</code> بعد الإقلاع الافتراضي؟</p>
+<details><summary>الحل</summary>
+
+<p>في خانة رمزها داخل سياق Module التي سجلتها، أو التي تراها عبر التصدير. ليست متغيرًا في <code>main</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفشل حقن <code>TaxPolicy</code> في <code>ReportsService</code> مع المثالين أعلاه؟</p>
+<details><summary>الحل</summary>
+
+<p><code>AcquisitionModule</code> تصدّر <code>DraftService</code> فقط. خانة السياسة تبقى داخل سياق المشتريات، والاستيراد لا ينسخ الخانات غير المصدَّرة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الفرق بين حاوية <code>NestFactory.create</code> في اختبارين منفصلين؟</p>
+<details><summary>الحل</summary>
+
+<p>كل إقلاع يبني سجلات ونسخ Singleton خاصة به. عدّاد على الخدمة في الاختبار الأول لا يظهر في الثاني. داخل الإقلاع الواحد الخانة تشارك النسخة لكل من يحقن الرمز في ذلك السياق.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تحفظ الخانة قبل الحل وبعده للنطاق الافتراضي؟</li>
+<li>كيف تصل خانة إلى Module أخرى؟</li>
+<li>هل <code>FlatTax</code> خانة في مثال <code>useClass</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحاوية سجل خانات ضمن سياق Module: رمز ووصفة ونسخة حسب Scope. الرؤية تتبع التسجيل والتصدير والاستيراد، لا شجرة ملفات المشروع.</p>
+<h2>ماذا بعد؟</h2>
+<p>الفرق بين ملء الخانة بالوصفة وبين تنفيذها: Registration و Resolution.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

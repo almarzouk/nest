@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BeforeApplicationShutdown</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-before-application-shutdown.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>BeforeApplicationShutdown</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استخدام اللحظة التي انتهت فيها كل دوال <code>onModuleDestroy</code>، والإشارة معروفة، واتصالات HTTP لم تُغلق بعد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعض التنظيف يجب أن يرى سبب الإنهاء: <code>SIGTERM</code> من Kubernetes يختلف في قرارك عن <code>SIGINT</code> من الطرفية. وبعضه يجب أن يحدث قبل أن يقطع الإطار المقابس، مثل رفض عمل جديد أو تعليم readiness أن النسخة تغادر. <code>onModuleDestroy</code> لا يمرر الإشارة، و <code>onApplicationShutdown</code> يأتي بعد إغلاق الاتصالات.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>beforeApplicationShutdown(signal?)</code> يُستدعى بعد اكتمال معالجات <code>onModuleDestroy</code> كلها. عندما تنتهي وعوده، يستدعي الإطار إغلاق الاتصالات القائمة كجزء من <code>app.close()</code>. الخطاف جسر بين تنظيف الوحدات وقطع الباب.</p>
+<h2>التعريف التقني</h2>
+<p>الواجهة <code>BeforeApplicationShutdown</code> تعرّف دالة تستقبل الإشارة نصًا عند الإنهاء بسبب إشارة. مع <code>app.close()</code> المباشر قد تصل القيمة فارغة لأن النداء ليس إشارة نظام.</p>
+<p>التوثيق: بعد اكتمال المعالجات (الوعود حُسمت) تُغلق الاتصالات الموجودة. الاتجاه بين الوحدات هو اتجاه الإيقاف: من الجذر نحو الأوراق. الوعد يُنتظر قبل المتابعة.</p>
+<p>Terminus، إن فعّلت shutdown hooks، يستخدم حدث دورة الحياة هذا ليبلغ <code>shutting_down</code>. ذلك تكامل لاحق في فصل الصحة، والفكرة هنا: الخطاف مكان مناسب لقول «لا ترسلوا عملًا جديدًا» قبل قطع المقابس.</p>
+<p>على Windows دعم الإشارات محدود: <code>SIGINT</code> يعمل، و <code>SIGTERM</code> لا يصل لأن إنهاء العملية من مدير المهام غير قابل للاعتراض. الخطاف نفسه سليم عندما يبدأ الإغلاق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كل onModuleDestroy اكتمل
+  -&gt; beforeApplicationShutdown(signal)
+  -&gt; app يغلق الاتصالات
+  -&gt; onApplicationShutdown(signal)
+</code></pre>
+<p>الإشارة معلومة. المقابس ما زالت هنا حتى يرجع الخطاف.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, BeforeApplicationShutdown } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class DrainFlag implements BeforeApplicationShutdown {
+  draining = false;
+
+  beforeApplicationShutdown(signal?: string): void {
+    this.draining = true;
+    console.log(signal ?? &#39;close&#39;);
+  }
+}
+</code></pre>
+<p>بعد هذا السطر تستطيع خدمات ما زالت تعمل على طلبات قديمة أن تقرأ <code>draining</code> وتمتنع عن جدولة دفعة جديدة. الطلب الذي دخل قبل الإغلاق يكمله Node حتى يغلق الإطار السيرفر.</p>
+<h2>شرح المثال</h2>
+<p><code>signal</code> اختياري في النوع لأن <code>app.close()</code> قد لا يمرر <code>SIGTERM</code>. طباعة القيمة في التطوير تكفي لرؤية الفرق بين Ctrl+C ونداء الاختبار. العلم <code>draining</code> ذاكرة داخل Singleton. لا تضع العلم على خدمة <code>REQUEST</code> لأن تلك الأصناف لا تستقبل الخطاف.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تنتهي سلسلة <code>onModuleDestroy</code>.</li>
+<li>Nest يستدعي <code>beforeApplicationShutdown</code> ويمرر الإشارة إن وُجدت.</li>
+<li>ينتظر كل الوعود.</li>
+<li>يغلق الاتصالات القائمة. هذه خطوة الإطار بعد الخطاف، لا عملك داخل الدالة.</li>
+<li>ثم <code>onApplicationShutdown</code>.</li>
+<li>رفض الوعد يُحسم ثم تكمل السلسلة. لا تبتلع خطأ إغلاق مورد إلزامي بصمت إن كان التشخيص يهمك؛ سجّله ثم اترك السلسلة تكمل.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>إيقاف مستهلك طابور قبل قطع HTTP، مع معرفة الإشارة:</p>
+<pre><code class="language-ts">import { Injectable, BeforeApplicationShutdown } from &#39;@nestjs/common&#39;;
+import { InvoiceWorker } from &#39;./invoice.worker.js&#39;;
+
+@Injectable()
+export class WorkerDrain implements BeforeApplicationShutdown {
+  constructor(private readonly worker: InvoiceWorker) {}
+
+  async beforeApplicationShutdown(signal?: string): Promise&lt;void&gt; {
+    if (signal === &#39;SIGTERM&#39;) {
+      await this.worker.stopAccepting();
+    } else {
+      await this.worker.stopAccepting();
+    }
+  }
+}
+</code></pre>
+<p>في هذا المثال الفرعان متماثلان عمدًا: الإيقاف اللطيف مطلوب في الحالتين، وتسجيل <code>signal</code> يبقى للمراقبة. الفرق العملي يظهر عندما تريد مهلة أطول لـ <code>SIGTERM</code> فقط. اطلب تلك المهلة من المنسّق، ولا تنم داخل الخطاف دقيقة كاملة فتعطل مهلة القتل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قراءة <code>request</code> هنا. الخطاف ليس داخل طلب.</li>
+<li>إغلاق <code>Prisma</code> مرة ثانية بعد <code>onModuleDestroy</code> فيتعطل الإغلاق.</li>
+<li>افتراض أن الاتصالات أُغلقت. الإغلاق يلي هذا الخطاف.</li>
+<li>نسيان أن Windows لن يسلم <code>SIGTERM</code>.</li>
+<li>حجز الخطاف بانتظار طويل فيتجاوز <code>terminationGracePeriodSeconds</code> وتُقتل العملية في منتصف الانتظار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تحتاج الإشارة، أو تريد ترتيبًا صريحًا بعد تدمير الوحدات وقبل قطع المقابس: علم الإفراغ، إيقاف قبول رسائل، إشعار جاهزية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قطع اتصال قاعدة تملكه في <code>onModuleDestroy</code>. عمل أخير بعد زوال المقابس ينتظر <code>onApplicationShutdown</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>الخطاف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أريد إغلاق مواردي أولًا</td>
+<td><code>onModuleDestroy</code></td>
+</tr>
+<tr>
+<td>أريد الإشارة قبل قطع المقابس</td>
+<td><code>beforeApplicationShutdown</code></td>
+</tr>
+<tr>
+<td>أريد أثرًا بعد إغلاق الاتصالات</td>
+<td><code>onApplicationShutdown</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفعل الإطار عندما تنتهي وعود هذا الخطاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يغلق الاتصالات القائمة، ثم يستدعي <code>onApplicationShutdown</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي <code>onModuleDestroy</code> لتمييز <code>SIGTERM</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>onModuleDestroy</code> لا يستقبل وسيط الإشارة. الإشارة معامل في هذا الخطاف وفي <code>onApplicationShutdown</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يستدعي <code>app.close()</code> ويرى <code>signal</code> بقيمة <code>undefined</code>. هل السلسلة مكسورة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. النداء الصريح ليس إشارة نظام، فالوسيط قد يغيب. السلسلة تعمل لأن <code>app.close()</code> يشغّل خطافات الإنهاء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يقع الخطاف بين destroy وإغلاق الاتصالات؟</li>
+<li>ماذا تستقبل الدالة؟</li>
+<li>لماذا المهلة الطويلة داخله خطرة في المنسّق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>beforeApplicationShutdown</code> بعد كل <code>onModuleDestroy</code> وقبل قطع الاتصالات. الإشارة متاحة، والباب لم يُغلق حتى يرجع الخطاف.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>OnApplicationShutdown</code>: آخر خطوة بعد إغلاق الاتصالات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Functional Middleware</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-functional-middleware.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Functional Middleware</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة Middleware كدالة بلا صنف، وتمريرها إلى <code>apply</code> عندما لا توجد اعتماديات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>صنف فيه <code>use</code> واحدة وسطر واحد يخفي أن العمل دالة. التوثيق يسمي هذا الشكل functional middleware ويطلبه حين لا تحتاج <code>constructor</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تصدّر دالة باسم واضح بمعاملات <code>(req, res, next)</code>. الوحدة تستدعي <code>consumer.apply(اسمالدالة)</code>.</p>
+<h2>التعريف التقني</h2>
+<p>الدالة لا تطبّق واجهة. لا <code>@Injectable()</code>. Nest يقبلها لأن <code>apply</code> يقبل دالة Middleware كما يقبل صنفًا.</p>
+<p>الشرط الوحيد هو عقد Express: إن لم تنهِ الرد فنادِ <code>next()</code>. الدالة تستطيع أن تكون <code>async</code> إن كان العمل غير متزامن، والأوضح في الأمثلة القصيرة الإبقاء على الشكل المتزامن ونقل العمل الذي يحتاج خدمة إلى صنف.</p>
+<p>عدة دوال في استدعاء واحد تعمل بالترتيب المكتوب:</p>
+<pre><code class="language-ts">consumer.apply(traceLoan, stampArrival).forRoutes(LoansController);
+</code></pre>
+<p><code>traceLoan</code> ثم <code>stampArrival</code>. هذا ترتيب <code>apply</code>، ودرس الترتيب يضع هذا السطر داخل ترتيب أوسع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">trace-loan.middleware.ts     دالة مُصدَّرة
+loans.module.ts              apply(traceLoan)
+لا providers                 الدالة ليست مزوّدًا يُحقن
+</code></pre>
+<p>ملف الدالة صغير. الاختبار يستدعيها بكائنات طلب ورد مزيفة وينتظر أن <code>next</code> استُدعيت مرة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { randomUUID } from &#39;node:crypto&#39;;
+import type { NextFunction, Request, Response } from &#39;express&#39;;
+
+export function traceLoan(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  const incoming = req.header(&#39;x-request-id&#39;);
+  const requestId = incoming &amp;&amp; incoming.length &gt; 0 ? incoming : randomUUID();
+  res.setHeader(&#39;x-request-id&#39;, requestId);
+  next();
+}
+</code></pre>
+<pre><code class="language-ts">import { Module, type MiddlewareConsumer, type NestModule } from &#39;@nestjs/common&#39;;
+import { LoansController } from &#39;./loans.controller.js&#39;;
+import { traceLoan } from &#39;./trace-loan.middleware.js&#39;;
+
+@Module({
+  controllers: [LoansController],
+})
+export class LoansModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(traceLoan).forRoutes(LoansController);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>req.header</code> يقرأ الترويسة إن أرسلها البوابة. القيمة الفارغة تُستبدل بـ <code>randomUUID()</code>.</li>
+<li>الرد يعيد المعرّف حتى يضعه العميل في تذكرة الدعم.</li>
+<li><code>apply</code> يأخذ الدالة نفسها لا اسم ملف نصي.</li>
+<li>لاحقة <code>.js</code> في الاستيراد لأن المشروع ESM كما يولّده NestJS 12.</li>
+<li><code>forRoutes(LoansController)</code> يحدّد أين تعمل. تفاصيل <code>exclude</code> درس لاحق. هنا يكفي أن الدالة لا تعمل على التطبيق كله من تلقاء نفسها.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest يضع الدالة في سلسلة المسارات المطابقة. عند طلب يطابق <code>LoansController</code> تُستدعى <code>traceLoan</code> بمعاملات المنصة. <code>next()</code> يمرر إلى Middleware التالي ثم يخرج الطلب من هذه الطبقة نحو Guards.</p>
+<p>الدالة لا تُنشأ عبر الحاوية. لا تستطيع كتابة <code>constructor</code>. إن احتجت <code>ConfigService</code> فذلك صنف في الدرس التالي، أو قراءة محدودة جدًا لا تناسب الاختبار. الإغلاق على متغير خارجي يعيد أسلوب Express ويصعّب استبدال الاعتماد في الاختبار.</p>
+<p><code>configure</code> يمكن أن تكون <code>async</code>. دالة التتبع هذه لا تنتظر شيئًا، فـ <code>configure</code> تبقى متزامنة.</p>
+<h2>مثال عملي</h2>
+<p>على مسار <code>POST /loans</code> يصل طلب من البوابة بترويسة <code>x-request-id: 9f2</code>. الدالة تبقي القيمة وتكتبها على الرد. طلب من أداة محلية بلا الترويسة يحصل على UUID جديد. <code>LoansController</code> لا يقرأ الترويسة. السجل في طرف آخر يقرأ الرد. هكذا يبقى التتبع خارج قاعدة الإعارة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسجيل الدالة في <code>providers</code>. هي ليست مزوّدًا. مكانها <code>apply</code>.</li>
+<li>استدعاء <code>traceLoan()</code> داخل <code>apply</code> من غير معاملات المنصة. <code>apply</code> يريد الدالة، والمنصة تستدعيها. استدعِ أنت فقط إن كانت الحزمة مصنعًا يرجع دالة، مثل <code>consumer.apply(factory())</code>.</li>
+<li>كتابة منطق الدور داخل الدالة لأنها «أسهل من Guard». الدالة لا ترى metadata المسار.</li>
+<li>نسيان تصدير الدالة ثم تمرير اسم غير معرّف إلى <code>apply</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>دالة قصيرة بلا اعتماديات: معرّف طلب، ختم، أو غلاف حول Middleware جاهز من حزمة Express.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حين تحتاج خدمة من الحاوية، أو حالة مُدارة عبر <code>constructor</code>. الصنف هو الشكل الذي يحقن.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Functional</th>
+<th>Class</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الشكل</td>
+<td>دالة مُصدَّرة</td>
+<td><code>@Injectable()</code> و <code>use</code></td>
+</tr>
+<tr>
+<td>الحقن</td>
+<td>غير متاح</td>
+<td><code>constructor</code></td>
+</tr>
+<tr>
+<td>التسجيل</td>
+<td><code>apply(fn)</code></td>
+<td><code>apply(Class)</code></td>
+</tr>
+<tr>
+<td>توجيه التوثيق</td>
+<td>عند غياب الاعتماديات</td>
+<td>عند الحاجة إليها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا نضع <code>@Injectable()</code> فوق <code>traceLoan</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها دالة لا صنف. Nest يستدعيها مباشرة. الزينة والحقن للصنف الذي يطبّق <code>NestMiddleware</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>تريد تشغيل <code>traceLoan</code> ثم دالة <code>stampArrival</code> على المتحكم نفسه. ماذا تكتب داخل <code>apply</code>، وأي دالة ترى الطلب أولًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>consumer.apply(traceLoan, stampArrival).forRoutes(LoansController)</code>. الأولى في القائمة، <code>traceLoan</code>، تعمل أولًا ثم <code>stampArrival</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>traceLoan</code> تحتاج أن ترفض المعرّفات الأطول من 80 حرفًا برمز <code>400</code>. أبقِها دالة. ماذا ترمي، ومن في الفلاتر يرى الاستثناء؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترمي <code>BadRequestException</code> من <code>@nestjs/common</code> قبل <code>next()</code>، أو تمرر الخطأ إلى <code>next(error)</code>. لأن الربط عبر <code>MiddlewareConsumer</code>، طبقة الاستثناءات تستقبل الرمي. الذي يشكّل الرد من الفلاتر المخصصة هو الفلتر العام فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تفضّل الدالة على الصنف؟</li>
+<li>ماذا يُمرَّر إلى <code>apply</code>؟</li>
+<li>هل تُذكر الدالة في <code>providers</code>؟</li>
+<li>ما ترتيب دالتين داخل <code>apply</code> واحد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Functional middleware دالة بعقد <code>(req, res, next)</code> تُمرَّر إلى <code>apply</code> حين لا يوجد ما يُحقن. الاختبار يستدعيها مباشرة. الاعتماد على خدمة ينقلك إلى صنف.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يكتب الصنف: <code>NestMiddleware</code>، والدالة <code>use</code>، وحقن مزوّد من الوحدة نفسها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

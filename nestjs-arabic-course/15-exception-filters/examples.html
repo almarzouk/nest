@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة ملفات على الشباك: استثناء مجال، فلتر يحفظ الرمز، وتسجيل عام. لا يوجد فلتر يثبّت <code>500</code>.</p>
+<h2>مثال 1 — مقعد مبيع بمفتاح ثابت</h2>
+<pre><code class="language-ts">export class SeatTakenException extends HttpException {
+  constructor(seat: number) {
+    super(
+      { statusCode: HttpStatus.CONFLICT, code: &#39;SEAT_TAKEN&#39;, seat },
+      HttpStatus.CONFLICT,
+    );
+  }
+}
+</code></pre>
+<p>الخدمة ترمي <code>new SeatTakenException(4)</code>. من غير فلتر مخصص يخرج الجسم كما هو لأن الأب <code>HttpException</code>.</p>
+<h2>مثال 2 — فلتر يمسك HTTP فقط على مسار الاسترداد</h2>
+<pre><code class="language-ts">@Catch(HttpException)
+export class RefundHttpFilter implements ExceptionFilter {
+  catch(exception: HttpException, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse&lt;Response&gt;();
+    const request = host.switchToHttp().getRequest&lt;Request&gt;();
+    const status = exception.getStatus();
+    const payload = exception.getResponse();
+    const body = typeof payload === &#39;string&#39; ? { statusCode: status, message: payload } : payload;
+    response.status(status).json({ ...body, path: request.url });
+  }
+}
+</code></pre>
+<p><code>@UseFilters(RefundHttpFilter)</code> على <code>refund</code> فقط. <code>409</code> يبقى <code>409</code> ويزداد <code>path</code>. <code>TypeError</code> لا يمسكه هذا <code>@Catch</code> فيكمل إلى العام.</p>
+<h2>مثال 3 — عام للمجهول ولـ Middleware</h2>
+<pre><code class="language-ts">@Catch()
+export class DeskExceptionFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse&lt;Response&gt;();
+    if (exception instanceof HttpException) {
+      const status = exception.getStatus();
+      const payload = exception.getResponse();
+      response.status(status).json(typeof payload === &#39;string&#39; ? { statusCode: status, message: payload } : payload);
+      return;
+    }
+    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      statusCode: 500,
+      message: &#39;Internal server error&#39;,
+    });
+  }
+}
+</code></pre>
+<p><code>APP_FILTER</code> يسجّل هذا الصنف. معرف تتبع تالف في Middleware يرجع <code>400</code> من هنا. <code>refund</code> الذي رمى <code>SeatTakenException</code> لا يصل إلى هنا لأن <code>RefundHttpFilter</code> أخص.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>status(500)</code> داخل فرع <code>HttpException</code>.</li>
+<li><code>cause</code> غير مذكور في <code>json</code>.</li>
+<li>فلتر الدالة ضيق أو ينسخ الرمز.</li>
+<li>اختبار Middleware لا يتوقع فلتر <code>TicketsController</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

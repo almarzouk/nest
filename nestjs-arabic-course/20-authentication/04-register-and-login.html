@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Register و Login كمفاهيم</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-register-and-login.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Register و Login كمفاهيم</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد ماذا يُنشأ عند التسجيل وماذا يُثبت عند الدخول، قبل اختيار <code>@nestjs/authentication</code> أو Passport.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسار واحد اسمه <code>login</code> ينشئ الحساب إن غاب، فيصبح التخمين أداة فتح حسابات. مسار تسجيل يعيد الجلسة من غير تجزئة، أو دخول يرجِع <code>passwordHash</code>. الرسالتان المختلفتان لحالة البريد تكشفان من سجّل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التسجيل ينشئ صف مستخدم جديد: بريد فريد، اسم، وتجزئة كلمة مرور. الدخول يثبت أن من يعرف الكلمة هو صاحب الصف، ثم يصدر دليلًا: جلسة أو رموزًا. الفشل في الدخول إجابة واحدة. النجاح لا يعيد السر ولا التجزئة.</p>
+<h2>التعريف التقني</h2>
+<p>الخطوات مستقلة عن الحزمة:</p>
+<ol>
+<li><code>Create</code> حساب: فحص DTO، رفض البريد المكرر بـ <code>409</code>، <code>hash</code> ثم <code>INSERT</code>.</li>
+<li><code>Login</code>: جلب التجزئة بمعرّف البريد، <code>verify</code>، وعند الفشل <code>401</code> برسالة موحدة، وعند النجاح إصدار دليل وخيار <code>needsRehash</code>.</li>
+<li>الطلبات التالية تقدّم الدليل لا الكلمة.</li>
+</ol>
+<p>صفحة <code>@nestjs/authentication</code> تسمّي المسارات <code>POST /auth/sign-up</code> و <code>POST /auth/sign-in</code> للجلسة، و <code>POST /auth/token</code> لإصدار الرموز. وصفة Passport تسمّي غالبًا <code>POST /auth/login</code> مع <code>AuthGuard(&#39;local&#39;)</code>. الأسماء تختلف. المعنى واحد: إنشاء مرة، وإثبات مرة، ودليل بعد ذلك.</p>
+<p><code>@Public()</code> في الحزمة الرسمية يستثني هذين المسارين من الحارس العام الذي يرفض المجهول بـ <code>401</code>. من غير الاستثناء لا يستطيع أحد التسجيل لأن التسجيل نفسه محمي.</p>
+<p>البريد في التسجيل لا يثبت ملكية الصندوق. الحزمة تفصل التحقق بالرسالة لاحقًا. في هذا الدرس لا نبني البريد. نذكر أن كتابة البريد في نموذج ليست دليل ملكية.</p>
+<p>لا تربط <code>authorId</code> بالجسم بعد الدخول. المؤلف هو معرّف الشخص في الدليل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">sign-up:  DTO -&gt; hash -&gt; صف جديد -&gt; 409 إن تكرر البريد
+sign-in:  DTO -&gt; verify -&gt; 401 أو إصدار جلسة/رموز
+بعدها:    الدليل -&gt; مستخدم حالي -&gt; الخدمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">type PublicUser = { id: number; email: string; name: string };
+
+interface Accounts {
+  register(email: string, password: string): Promise&lt;PublicUser&gt;;
+  login(email: string, password: string): Promise&lt;PublicUser&gt;;
+}
+</code></pre>
+<p><code>login</code> في هذا العقد ترجع الشخص بعد النجاح. إصدار الكعكة أو الرمز خطوة تالية على الحدود، حتى تبقى الدالة قابلة للاختبار من غير HTTP.</p>
+<h2>شرح المثال</h2>
+<p><code>register</code> لا تسجّل دخولًا بالضرورة. بعض المنتجات تدخل المستخدم مباشرة بعد التسجيل. الحزمة الرسمية تستدعي <code>SignInService.signIn</code> بعد إنشاء الحساب في مثالها. هذا قرار منتج: أقل احتكاكًا، ويحتاج المسار <code>@Public()</code>. افصله في رأسك حتى تستطيع تعطيل الدخول التلقائي.</p>
+<p><code>login</code> لا ترجع التجزئة. الاختبار يتحقق من الرمز ومن غياب الحقل السري.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>تحت التزامن، فحص «البريد غير موجود» ثم <code>INSERT</code> قد ينجح لطلبين. قيد <code>@unique</code> و <code>P2002</code> ما زالا مصدر <code>409</code>. الدخول لا ينشئ صفًا، فلا يغيّر هذا القيد. <code>verify</code> على تجزئة وهمية لبريد غائب توحّد الزمن، والنتيجة <code>401</code> نفسها.</p>
+<p>إصدار الجلسة يحذف جلسة المتصفح السابقة التي تحملها الكعكة، كما تشرح الصفحة، دفاعًا عن تثبيت الجلسة. هذا تفصيل حدود لا تفصيل <code>verify</code>.</p>
+<h2>مثال عملي</h2>
+<p>على مشروع المنشورات: <code>POST /auth/sign-up</code> ينشئ صف <code>User</code> بالتجزئة. <code>POST /auth/sign-in</code> عند النجاح يضع الكعكة. <code>POST /posts</code> يقرأ المؤلف من المستخدم الحالي ويرفض الجسم الذي يحاول تعيين <code>authorId</code> لشخص آخر. احذف <code>authorId</code> من <code>CreatePostDto</code> حين تصل تلك الحماية، لا قبله إن كان الاختبار القديم ما زال ينشئ مقالات بلا هوية. رتّب الهجرة: أضف المصادقة، ثم اجعل الحقل يُتجاهل، ثم احذفه من العقد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إنشاء الحساب داخل مسار الدخول عند غياب البريد.</li>
+<li>رسالتان مختلفتان للبريد والكلمة.</li>
+<li>إرجاع <code>passwordHash</code> في JSON التسجيل.</li>
+<li>إبقاء <code>authorId</code> من العميل بعد أن أصبحت الهوية موجودة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يفتح الناس حسابات بكلمة مرور على مورد المستخدمين الذي بنيته.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمفتاح آلة بلا مستخدم بشري. ذلك مفتاح API في الحزمة، بعقد مختلف عن كلمة المرور. ولاستبدال الهوية بمزوّد خارجي قبل أن تفهم هذين المسارين.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التسجيل</th>
+<th>الدخول</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ينشئ صفًا</td>
+<td>لا ينشئ صفًا</td>
+</tr>
+<tr>
+<td><code>409</code> للتكرار</td>
+<td><code>401</code> للفشل</td>
+</tr>
+<tr>
+<td>يكتب تجزئة</td>
+<td>يقرأ التجزئة ويقارن</td>
+</tr>
+<tr>
+<td>قد يصدر دليلًا كقرار إضافي</td>
+<td>يصدر الدليل عند النجاح</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل فشل الدخول ينشئ مستخدمًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الدخول يثبت صفًا موجودًا أو يرفض. الإنشاء مسار التسجيل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مسار التسجيل يحتاج استثناءً من حارس «كل المسارات موثّقة»؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من يسجّل لا يحمل دليلًا بعد. من غير <code>@Public()</code> أو ما يعادله، الحارس يعيد <code>401</code> قبل إنشاء الصف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بعد الدخول، عميل يرسل <code>authorId</code> مختلفًا عن الشخص في الجلسة. أين يُحسم المؤلف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من الهوية المثبتة في الخدمة عند الكتابة، لا من الجسم. الحقل في DTO يُحذف أو يُتجاهل حتى لا يكتب أحد باسم غيره.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يُخزَّن عند التسجيل؟</li>
+<li>ماذا ترجع رسالة فشل الدخول؟</li>
+<li>متى يُرسل سر الكلمة مرة أخرى؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التسجيل ينشئ صفًا مجزأ. الدخول يثبت الصف ويصدر دليلًا. بعدهما المؤلف يأتي من الهوية. الحزمة التالية تسمي هذه الخطوات بأسماء Nest الحالية.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-nestjs-authentication.html">@nestjs/authentication</a> يربط المفاهيم بالحارس والمزوّد والجلسة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

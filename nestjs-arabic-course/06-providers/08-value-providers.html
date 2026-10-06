@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Value Providers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-value-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Value Providers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل قيمة جاهزة بـ <code>useValue</code>: ثابت، كائن مكتبة أُنشئ خارج الحاوية، أو مزيف يطابق شكل صنف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>جدول أسعار الشحن ليس صنفًا يحتاج <code>new</code> في كل إقلاع. ومزيف الاختبار قد يكون كائنًا حرفيًا فيه <code>send</code>. <code>useClass</code> ما زال يطلب دالة بانية. <code>useValue</code> يضع القيمة تحت الرمز كما هي.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">{
+  provide: ShippingRates,
+  useValue: { standard: 15, express: 40 },
+}
+</code></pre>
+<p>من يطلب الرمز يحصل على هذا الكائن. الحاوية لا تستدعي بناءً ولا تقرأ <code>design:paramtypes</code> للقيمة.</p>
+<h2>التعريف التقني</h2>
+<p><code>useValue</code> يناسب ثابتًا، أو مكتبة خارجية أنشأتها أنت، أو استبدال خدمة بكائن مزيف في الاختبار. التوثيق يذكر أن structural typing في TypeScript يقبل أي كائن يطابق الدوال المطلوبة، بما فيه كائن حرفي أو نسخة صنعتها بـ <code>new</code> قبل التسجيل.</p>
+<p>القيمة تُلتقط عند تحميل Module. الكائن نفسه هو ما يُمرَّر لكل المستهلكين عند Scope الافتراضي. تعديل حقل عليه ظاهر لكل من حقن الرمز.</p>
+<p>لا تجمع <code>useValue</code> مع <code>useClass</code> في السجل نفسه. مفتاح واحد يحدد الوصفة.</p>
+<p>رمز نصي مثل <code>&#39;SHIPPING_RATES&#39;</code> صالح هنا، وحقنه يتم بـ <code>@Inject</code>. درس Injection Tokens يفصل الرموز غير الصنفية. هذا الدرس يركز على أن الوصفة قيمة لا بناء.</p>
+<p>تصدير القيمة يكون بالرمز:</p>
+<pre><code class="language-ts">exports: [ShippingRates]
+</code></pre>
+<h2>Mental Model</h2>
+<pre><code class="language-text">useValue: ratesObject
+    -&gt; السجل يحتفظ بالمرجع
+    -&gt; constructor يحصل على المرجع نفسه
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+export class ShippingRates {
+  standard: number;
+  express: number;
+}
+
+export const shippingRatesProvider = {
+  provide: ShippingRates,
+  useValue: { standard: 15, express: 40 },
+};
+
+@Injectable()
+export class ShippingService {
+  constructor(private readonly rates: ShippingRates) {}
+
+  price(speed: &#39;standard&#39; | &#39;express&#39;) {
+    return this.rates[speed];
+  }
+}
+
+@Module({
+  providers: [shippingRatesProvider, ShippingService],
+  exports: [ShippingRates],
+})
+export class ShippingModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>ShippingRates</code> صنف رمز. <code>useValue</code> لا ينادي <code>new ShippingRates()</code>.</li>
+<li>الكائن الحرفي يكفي لأن الخدمة تقرأ <code>standard</code> و <code>express</code>.</li>
+<li><code>price</code> تعيد رقمًا من الجدول المشترك.</li>
+<li><code>exports</code> فيها الرمز <code>ShippingRates</code>، فيحقنه من يستورد <code>ShippingModule</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الحل تعيد الحاوية القيمة المخزنة للرمز. لا توجد سلسلة اعتماديات داخل الوصفة؛ القيمة جاهزة حتى لو اعتمد مستهلكوها على غيرها. إن كانت القيمة نسخة أنشأتها بـ <code>new Client(url)</code> قبل <code>@Module</code>، فأنت المسؤول عن وسائط <code>Client</code>، لا الحاوية.</p>
+<p>في الاختبار:</p>
+<pre><code class="language-ts">{
+  provide: ShippingService,
+  useValue: { price: () =&gt; 0 },
+}
+</code></pre>
+<p>أي مستهلك يطلب <code>ShippingService</code> يحصل على هذا الكائن. الدوال الناقصة تظهر عند الاستدعاء، لذلك المزيف يطابق ما يستدعيه الاختبار فعلًا.</p>
+<h2>مثال عملي</h2>
+<p>عميل فهرس أُنشئ في ملف تهيئة ويُسجَّل كما هو:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { CatalogClient } from &#39;./catalog-client.js&#39;;
+import { CatalogService } from &#39;./catalog.service.js&#39;;
+
+const client = new CatalogClient(&#39;https://catalog.internal&#39;);
+
+@Module({
+  providers: [
+    CatalogService,
+    { provide: CatalogClient, useValue: client },
+  ],
+})
+export class CatalogModule {}
+</code></pre>
+<p><code>CatalogService</code> تطلب <code>CatalogClient</code> في المُنشئ. الحاوية تمرر <code>client</code> الذي يتصل بالعنوان المكتوب عند تحميل الملف. عنوان يعتمد على Provider آخر يُبنى داخل <code>useFactory</code> لا داخل <code>useValue</code>.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useValue: ShippingRates</code> تمرير الصنف لا الكائن</td>
+<td>المستهلك يستلم الدالة البانية بدل الجدول</td>
+</tr>
+<tr>
+<td>تعديل <code>rates.standard</code> من طلب</td>
+<td>كل الطلبات ترى السعر الجديد لأن المرجع واحد</td>
+</tr>
+<tr>
+<td>مزيف ينقصه دالة يستدعيها المسار</td>
+<td>الفشل يظهر عند الطلب لا عند الإقلاع</td>
+</tr>
+<tr>
+<td>توقع حل اعتماديات داخل كائن <code>useValue</code></td>
+<td>القيمة لا تُبنى من الحاوية</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لجدول ثابت، أو مزيف اختبار يطابق الدوال، أو كائن مكتبة صنعته قبل الإقلاع وتعرف وسائطه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يجب أن تبني الحاوية الصنف وتحقن وسائطه. ذلك <code>useClass</code>. وعندما تُحسب القيمة من مزودات أخرى. ذلك <code>useFactory</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحاجة</th>
+<th>الوصفة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>new</code> تديره Nest لصنف تختاره</td>
+<td><code>useClass</code></td>
+</tr>
+<tr>
+<td>مرجع جاهز أو ثابت</td>
+<td><code>useValue</code></td>
+</tr>
+<tr>
+<td>حساب يعتمد على مزودات</td>
+<td><code>useFactory</code></td>
+</tr>
+<tr>
+<td>اسم ثانٍ للنسخة المسجّلة</td>
+<td><code>useExisting</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل تستدعي الحاوية بناء <code>ShippingRates</code> في مثال <code>useValue</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. تمرر الكائن <code>{ standard: 15, express: 40 }</code> كما كُتب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تصدّر الجدول إلى Module أخرى؟</p>
+<details><summary>الحل</summary>
+
+<p><code>exports: [ShippingRates]</code> باستخدام الرمز الذي في <code>provide</code>. المستورِد يحقن <code>ShippingRates</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>useValue: { price: () =&gt; 0 }</code> بدل <code>useClass: FakeShipping</code> في اختبار ضيق؟</p>
+<details><summary>الحل</summary>
+
+<p>الاختبار يحتاج دالة <code>price</code> فقط. الكائن يطابق هذا الاستدعاء من غير ملف صنف. إن كان للمزيف اعتماديات تريد Nest أن تبنيها، انتقل إلى <code>useClass</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تخزن الحاوية تحت الرمز مع <code>useValue</code>؟</li>
+<li>لماذا تغيير حقل القيمة ظاهر لكل المستهلكين؟</li>
+<li>ماذا يحدث إن وُضع الصنف نفسه في <code>useValue</code> بدل نسخة أو كائن؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useValue</code> يسجل مرجعًا جاهزًا تحت الرمز. لا بناء ولا حقن وسائط داخل القيمة. الثابت والمزيف والعميل المُنشأ خارجًا هي الحالات المناسبة.</p>
+<h2>ماذا بعد؟</h2>
+<p>حساب القيمة من مزودات أخرى: Factory Providers.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Value providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers#value-providers-usevalue">https://docs.nestjs.com/fundamentals/custom-providers#value-providers-usevalue</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

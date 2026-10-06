@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Consumers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-consumers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Consumers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ مهمة <code>resize</code> في صنف يمتد <code>WorkerHost</code>، بقراءة <code>bookId</code> من الحمولة وإعادة جلب الصف داخل <code>process</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الطابور يتراكم إن لم يوجد معالج في <code>providers</code>. معالج يثق بجسم المهمة كأنه صف كامل يعمل على عنوان قديم أو على كائن لم يُسلسَل كما ظننت. المستهلك يعيد التحميل من Prisma ثم يقص.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Processor(coverQueueName)</code> على صنف يمتد <code>WorkerHost</code> من <code>@nestjs/bullmq</code>. تكتب <code>process(job)</code>. <code>job.data</code> من نوع <code>ResizePayload</code>. أي رمي داخل <code>process</code> فشل مهمة ستُعاد حسب السياسة. الصنف في <code>providers</code> مع <code>registerQueue</code> بالاسم نفسه.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Processor, WorkerHost } from &#39;@nestjs/bullmq&#39;;
+import { Job } from &#39;bullmq&#39;;
+import { coverQueueName } from &#39;./queue-names.js&#39;;
+import type { ResizePayload } from &#39;./covers.producer.js&#39;;
+import { CoversService } from &#39;./covers.service.js&#39;;
+
+@Processor(coverQueueName)
+export class CoversConsumer extends WorkerHost {
+  constructor(private readonly covers: CoversService) {
+    super();
+  }
+
+  async process(job: Job&lt;ResizePayload&gt;): Promise&lt;void&gt; {
+    if (job.name !== &#39;resize&#39;) return;
+    await this.covers.resize(job.data.bookId, job.data.coverKey);
+  }
+}
+</code></pre>
+<p><code>CoversService.resize</code> تفتح الصف بالمعرف. إن لم يوجد الكتاب، تخرج بهدوء أو ترمي حسب ما إن كان الغياب مؤقتًا. إن كان <code>coverKey</code> في القاعدة مختلفًا عن حمولة المهمة، تتوقف لأن تحديثًا أحدث تولى الغلاف.</p>
+<p>لا تزين الدالة بـ <code>@Process</code>. تلك زينة <code>@nestjs/bull</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Redis مهمة resize { bookId, coverKey }
+  WorkerHost.process
+    prisma.book.findUnique
+    قص الملف إن تطابق المفتاح
+    تحديث coverStatus = ready
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async resize(bookId: string, coverKey: string) {
+  const book = await this.prisma.book.findUnique({ where: { id: bookId } });
+  if (!book || book.coverKey !== coverKey) return;
+  await this.images.writeThumbnail(coverKey);
+  await this.prisma.book.update({
+    where: { id: bookId },
+    data: { coverStatus: &#39;ready&#39; },
+  });
+}
+</code></pre>
+<p><code>return</code> بلا رمي يعني نجاح المهمة حتى لا تُعاد إلى الأبد لكتاب حُذف أو استُبدل غلافه. الرمي يبقى لخطأ القرص أو قاعدة متقطعة حيث الإعادة مفيدة.</p>
+<h2>شرح المثال</h2>
+<p>المقارنة مع <code>coverKey</code> تمنع قصًا قديمًا من كتابة <code>ready</code> فوق تحديث أحدث. <code>writeThumbnail</code> يقرأ من مسار بنته أنت من المفتاح المولَّد لا من اسم المستخدم. المستهلك لا يعرف <code>Request</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تسجل العامل عند الإقلاع لأن الصنف مزوّد وعليه <code>@Processor</code>. BullMQ يحجز المهمة للعامل حتى لا يأخذها عامل ثانٍ معًا. <code>process</code> يعمل حتى يعود الوعد. النجاح ينقل المهمة إلى حالة مكتملة. الرمي يعيدها إلى فشل قابل لإعادة المحاولة. إن كان التطبيق بلا <code>@Processor</code> في شجرة الوحدات، المنتج ما زال يستطيع <code>add</code> والمهام تبقى في الانتظار. تحقق من طول الانتظار في التطوير.</p>
+<p>عدة نسخ من التطبيق تعني عدة عمال على الطابور نفسه، وهذا مقصود لزيادة القص. لذلك <code>resize</code> يتحمل التنفيذ المتوازي لكتابين مختلفين، والكتاب الواحد محمي بـ <code>jobId</code> وبفحص <code>coverKey</code>.</p>
+<h2>مثال عملي</h2>
+<p>التسجيل:</p>
+<pre><code class="language-ts">@Module({
+  imports: [BullModule.registerQueue({ name: coverQueueName })],
+  providers: [CoversProducer, CoversConsumer, CoversService],
+})
+export class CoversModule {}
+</code></pre>
+<p><code>CoversService</code> قابلة للاختبار بلا Redis: استدعِ <code>resize(&#39;42&#39;, &#39;key&#39;)</code> على قاعدة اختبار. <code>process</code> غلاف رفيع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Process()</code> من الحزمة القديمة على مسار BullMQ.</li>
+<li>استخدام <code>job.data</code> كصف كامل بلا <code>findUnique</code>.</li>
+<li>رمي <code>NotFoundException</code> لكتاب حُذف، فيتكرر الفشل حتى تنفد المحاولات.</li>
+<li>قص <code>coverKey</code> القديم وكتابة <code>ready</code> بلا مقارنة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل اسم مهمة في الطابور: <code>resize</code> هنا، و <code>send</code> على طابور البريد بصنف معالج آخر حتى لا يختلط الفشل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمنطق يحتاجه الرد المتزامن. ولا تفتح عاملًا في عملية اختبار الوحدة التي لا تشغل Redis. اختبر <code>resize</code> مباشرة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الرمي</th>
+<th>مصير المهمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نجاح الوعد</td>
+<td>مكتملة</td>
+</tr>
+<tr>
+<td><code>return</code> بعد كتاب غائب</td>
+<td>مكتملة بلا قص</td>
+</tr>
+<tr>
+<td>خطأ قرص</td>
+<td>فشل ثم إعادة حسب <code>attempts</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي صنف يمتد المستهلك على المسار النشط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>WorkerHost</code>، والدالة <code>process</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تعيد جلب الكتاب داخل <code>resize</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الحمولة معرفات فقط، والحالة قد تتغير بين <code>add</code> والتنفيذ.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تخرج بهدوء بدل رمي <code>NotFoundException</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يُحذف الكتاب أو يتبدل <code>coverKey</code>. الإعادة لن تصلحه. ارمِ فقط لما قد ينجح في المحاولة التالية مثل انقطاع التخزين.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُذكر اسم الطابور على المستهلك؟</li>
+<li>ماذا في <code>job.data</code>؟</li>
+<li>لماذا <code>process</code> رفيع و <code>resize</code> هي العمل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>WorkerHost.process</code> يقرأ <code>{ bookId, coverKey }</code> ويجلب الصف. النجاح يكمل المهمة. الغياب النهائي لا يُعاد رميه بلا نهاية.</p>
+<h2>ماذا بعد؟</h2>
+<p>كم مرة يُعاد الفشل، وما الذي يجب أن يتحمله القص إن تكرر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+<li>BullMQ — NestJS: <a href="https://docs.bullmq.io/guide/nestjs">https://docs.bullmq.io/guide/nestjs</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

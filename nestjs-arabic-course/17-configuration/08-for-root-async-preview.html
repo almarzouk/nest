@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forRootAsync: أول استخدام حقيقي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-for-root-async-preview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>forRootAsync: أول استخدام حقيقي</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء خيارات وحدة أخرى من <code>ConfigService</code> أثناء التهيئة، عبر <code>forRootAsync</code>، لا من قيم تُقرأ عند استيراد الملف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>TypeOrmModule.forRoot({ url: process.env.DATABASE_URL })</code> يُقيَّم عندما يُستورد <code>app.module.ts</code>. في تلك اللحظة قد لا يكون <code>ConfigModule</code> قد دمج <code>.env</code> بعد، فيصل <code>url</code> فارغًا وتُحفظ تلك اللقطة داخل خيارات الوحدة. إعادة القراءة لاحقًا لا تصلح الخيار الذي بُني.</p>
+<p><code>forRootAsync</code> يؤخر المصنع حتى مرحلة التهيئة، ويحقن <code>ConfigService</code> بعد تحميل البيئة والتحقق.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>forRoot</code> يستقبل كائنًا جاهزًا. <code>forRootAsync</code> يستقبل مصنعًا. المصنع يمكن أن يكون <code>async</code>، ويُدرج في <code>inject</code> ما يحتاجه. Nest ينشئ الاعتمادات أولًا ثم يستدعي المصنع ويسجّل الوحدة بالناتج.</p>
+<p>أول استخدام حقيقي في هذه الدورة: تمرير اتصال القاعدة. الفصل التالي يختار Prisma مسارًا تطبيقيًا. الشكل نفسه ينطبق على أي وحدة توثّق <code>forRootAsync</code>، ومنها <code>TypeOrmModule</code> في التوثيق الرسمي.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة TypeORM، المصنع يحقن <code>ConfigService</code>:</p>
+<pre><code class="language-ts">TypeOrmModule.forRootAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) =&gt; ({
+    type: &quot;postgres&quot;,
+    url: config.getOrThrow&lt;string&gt;(&quot;DATABASE_URL&quot;),
+    autoLoadEntities: true,
+    synchronize: false,
+  }),
+});
+</code></pre>
+<p><code>imports: [ConfigModule]</code> لازم إن لم تكن الوحدة عامة ومرئية. مع <code>isGlobal: true</code> قد يكفي الحقن، والإبقاء على <code>imports</code> يوثّق الاعتماد.</p>
+<p>إن كان الاتصال في نطاق <code>registerAs</code>، التوثيق يختصر المصنع:</p>
+<pre><code class="language-ts">TypeOrmModule.forRootAsync(databaseConfig.asProvider());
+</code></pre>
+<p><code>asProvider()</code> يرجِع <code>imports</code> فيه <code>ConfigModule.forFeature</code>، و <code>inject</code> لـ <code>databaseConfig.KEY</code>، و <code>useFactory</code> يمرّر الكائن كما هو. كائن النطاق يجب أن يطابق ما تنتظره <code>forRoot</code>، أو لفّه بمصنع يعدّل الشكل.</p>
+<p><code>forRootAsync</code> على <code>ConfigModule</code> نفسه أقل شيوعًا. التحميل يتم بـ <code>forRoot</code>. غير المتزامن يظهر عندما تعتمد وحدة ثانية على القيم.</p>
+<p>لا تضع <code>synchronize: true</code> في هذا المصنع. توثيق TypeORM يحذّر أنه قد يمسح بيانات الإنتاج. الترحيل هو طريق تغيير المخطط، ويبدأ من الفصل التالي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">استيراد الملف          forRoot({ url: process.env... })  لقطة مبكرة
+تهيئة الوحدات         forRootAsync -&gt; inject ConfigService
+                                      -&gt; useFactory -&gt; خيارات
+                                      -&gt; اتصال القاعدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { ConfigModule, ConfigService } from &quot;@nestjs/config&quot;;
+import { TypeOrmModule } from &quot;@nestjs/typeorm&quot;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    TypeOrmModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =&gt; ({
+        type: &quot;postgres&quot; as const,
+        url: config.getOrThrow&lt;string&gt;(&quot;DATABASE_URL&quot;),
+        autoLoadEntities: true,
+        synchronize: false,
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المثال معاينة، لا قرار بأن TypeORM مسار الدورة. المسار التطبيقي Prisma، و <code>PrismaService</code> سيقرأ <code>DATABASE_URL</code> من <code>ConfigService</code> داخل بنّائه، بعد أن يكون التحقق قد مر. <code>forRootAsync</code> هنا يوضح التوقيت: المصنع يعمل أثناء التهيئة، و <code>getOrThrow</code> يمنع اتصالًا بعنوان فارغ.</p>
+<p><code>synchronize: false</code> متعمَّد حتى لا يُنسخ تحذير التوثيق إلى مشروعك كإعداد إنتاج.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest يعامل المصنع كمزوّد غير متزامن: يحل <code>inject</code>، ينتظر الناتج، ثم يمرّره إلى تسجيل الوحدة الديناميكية. إن رمى <code>getOrThrow</code> أو رمى المخطط قبل ذلك، يتوقف <code>create</code>. الخيارات الناتجة لقطة صحيحة بعد التحميل، لا لقطة الاستيراد.</p>
+<p><code>useClass</code> بديل يوثّقه TypeORM: صنف ينفّذ مصنع الخيارات. استخدمه حين تمتلئ الدالة بشرطين. للدورة، <code>useFactory</code> يكفي.</p>
+<p>وحدات لاحقة، مثل <code>AuthenticationModule.forRootAsync</code> و <code>ThrottlerModule.forRootAsync</code>، تتبع الفكرة: أسرار وعمر رموز وحدود طلبات تأتي من <code>ConfigService</code> لا من أرقام مكتوبة في <code>app.module.ts</code>.</p>
+<h2>مثال عملي</h2>
+<p>المكتبة تقرأ <code>DATABASE_URL</code> بعد مخطط Zod. في التطوير العنوان يشير إلى PostgreSQL محلي. في الاختبار المصنع نفسه يستقبل <code>ConfigService</code> مزيفًا يعيد عنوان قاعدة الاختبار. لا يوجد فرع <code>if (process.env.NODE_ENV)</code> داخل <code>BooksService</code>.</p>
+<p>حين يصل فصل Prisma، احذف معاينة TypeORM إن لم تخترها، وأبقِ العادة: أي خيار اتصال يُبنى في مصنع أو في بنّاء خدمة بعد التحقق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قراءة <code>process.env</code> داخل <code>useFactory</code> رغم حقن <code>ConfigService</code>، فتفوت قيم المخطط المحوّلة.</li>
+<li><code>synchronize: true</code> منسوخًا من مثال سريع.</li>
+<li>نسيان <code>inject</code> مع وجود وسيط في المصنع، فيصل <code>config</code> كـ <code>undefined</code>.</li>
+<li>استدعاء <code>forRoot</code> و <code>forRootAsync</code> للاتصال نفسه في وحدتين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تُبنى خيارات وحدة من مزوّد يُحل أثناء التهيئة: قاعدة، بريد، حد معدّل الطلبات، سر توقيع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقيمة حرفية لا تعتمد على البيئة، مثل <code>GreetingModule.forRoot(&quot;مرحبًا&quot;)</code> من فصل الوحدات. <code>forRoot</code> المباشر أوضح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>forRoot(options)</code></th>
+<th><code>forRootAsync({ useFactory, inject })</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الكائن يُحسب عند الاستيراد</td>
+<td>المصنع يُحسب عند التهيئة</td>
+</tr>
+<tr>
+<td>مناسب لحرفي ثابت</td>
+<td>مناسب لـ <code>ConfigService</code></td>
+</tr>
+<tr>
+<td>لا حقن</td>
+<td><code>inject</code> و <code>imports</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا قد يكون <code>process.env.DATABASE_URL</code> فارغًا داخل كائن <code>forRoot</code> رغم صحة <code>.env</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكائن يُقيَّم عند استيراد الملف، وقد يسبق تحميل dotenv داخل <code>ConfigModule</code>. المصنع في <code>forRootAsync</code> يعمل بعد ذلك التحميل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تغيّر في المثال حتى يقرأ المصنع كائن نطاق <code>database</code> فيه <code>url</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>TypeOrmModule.forRootAsync(databaseConfig.asProvider())</code> إن كان شكل الكائن مطابقًا، أو مصنع يحقن <code>databaseConfig.KEY</code> ويعيد <code>{ type: &quot;postgres&quot;, url: db.url, synchronize: false, autoLoadEntities: true }</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختباران ينشئان تطبيقين. لماذا حقن <code>ConfigService</code> في المصنع أنظف من كتابة العنوان في أعلى <code>app.module.ts</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل <code>TestingModule</code> يقدّم <code>ConfigService</code> بقيمة مختلفة. أعلى الملف لقطة واحدة على العملية. المصنع يعيد الحساب لكل تطبيق عند تهيئته.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق في توقيت <code>forRoot</code> و <code>forRootAsync</code>؟</li>
+<li>لماذا <code>synchronize: false</code> في معاينة القاعدة؟</li>
+<li>ماذا يفعل <code>databaseConfig.asProvider()</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forRootAsync</code> أول جسر حقيقي من الإعداد إلى وحدة تحتاج عنوانًا أو سرًا عند الإقلاع. اقرأ عبر <code>ConfigService</code> بعد التحقق، وأبقِ أسرار الاتصال خارج الكود.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> تجمع ملف البيئة والمخطط وقراءة المنفذ في مكتبة واحدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+<li>NestJS — TypeORM: <a href="https://docs.nestjs.com/data/typeorm">https://docs.nestjs.com/data/typeorm</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

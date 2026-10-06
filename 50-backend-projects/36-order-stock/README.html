@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>36 — طلب يخصم المخزون</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>36 — طلب يخصم المخزون</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new order-stock</code></p>
+<h2>ماذا تبني</h2>
+<p>PostgreSQL و Prisma. إنشاء طلب يخصم الكمية في المعاملة نفسها. المخزون الناقص 409 ولا يترك طلبًا نصف مكتوب.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>الذاكرة لم تعد تكفي. أول قاعدة حقيقية مع قاعدة عمل تُكسر إن انفصل الخصم عن الإدراج.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>PrismaService</li>
+<li>transaction</li>
+<li>قيد لا ينقص تحت الصفر</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>دفع</li>
+<li>شحن</li>
+<li>synchronize العشوائي. استخدم ترحيل Prisma لا TypeORM synchronize.</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>السلة والفصل 18. Docker لـ Postgres مقبول.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/18-database/README.html">18-database</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الكمية المتوفرة لا تنزل تحت صفر.</li>
+<li>فشل الخصم يلغي إدراج الطلب.</li>
+<li>السعر يُنسخ إلى سطر الطلب وقت الشراء حتى لا يتغير التاريخ لاحقًا.</li>
+<li>لا SQL من المتحكم.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/orders</code></td>
+<td>201</td>
+<td>طلب وخصم</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/orders</code></td>
+<td>409</td>
+<td>عند نقص المخزون</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new order-stock</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>مخطط Product و Order و OrderLine وترحيل.</li>
+<li>prisma.$transaction تضم الخصم والإدراج.</li>
+<li>اختبر طلبين متوازيين على آخر قطعة إن استطعت، أو على الأقل طلبًا أكبر من المتوفر.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">prisma/schema.prisma
+src/orders/orders.service.ts
+src/prisma/prisma.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">await this.prisma.$transaction(async (tx) =&gt; {
+  const updated = await tx.product.updateMany({
+    where: { id: productId, stock: { gte: quantity } },
+    data: { stock: { decrement: quantity } },
+  });
+  if (updated.count !== 1) throw new ConflictException(&quot;out of stock&quot;);
+});
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>خصم ثم إدراج من غير معاملة.</li>
+<li>الثقة بالمخزون الذي قرأته قبل ثانية من غير شرط في التحديث.</li>
+<li>تشغيل مخطط يمسح الجداول في الإنتاج.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>طلب ناجح يقلل المخزون.</li>
+<li>طلب زائد لا يترك صف طلب.</li>
+<li>السعر على السطر ثابت بعد تغيير سعر المنتج.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف إلغاء طلب يعيد الكمية في معاملة.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 36» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../35-ops-health/README.html">35. صحة وإيقاف</a></li>
+<li>التالي: <a href="../37-checkout-idempotency/README.html">37. دفع وهمي بلا تكرار</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

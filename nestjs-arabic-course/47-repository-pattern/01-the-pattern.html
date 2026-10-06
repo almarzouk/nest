@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>النمط</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-the-pattern.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>النمط</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف Repository كنمط: واجهة تشبه مجموعة كائنات في الذاكرة للجذر التجميعي، تخفي كيف يُحفظ، وتفصل لغة الدومين عن SQL.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الخدمة التي تنثر <code>findUnique</code> و <code>update</code> وشكل الجداول في قواعد العمل لا تستطيع الحديث عن «احفظ الطلب» من غير أعمدة. النمط، كما استقر بعد Evans و Fowler، يقدّم مجموعة: أضف، اجلب بالمعرف، أزل. المستدعي يتكلم عن الجذر. التنفيذ يتكلم عن الجداول. الخلط مع صنف <code>Repository</code> الذي يولّده ORM هو درس تالٍ. هنا العقد فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>للتجميع <code>Order</code> منفذ فيه العمليات التي تحتاجها السياسة على المجموعة، لا كل استعلامات التقارير. <code>findById</code> يعيد الجذر أو فراغًا متفقًا عليه. <code>save</code> يحفظ الجذر كاملًا بما فيه السطور التي يحميها. لا <code>saveLine</code> عام يستدعيه أي متحكم. التقرير المعقد استعلام خارج المجموعة، بجانب النمط لا داخله.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export interface OrdersRepository {
+  findById(id: string): Promise&lt;Order | null&gt;;
+  save(order: Order): Promise&lt;void&gt;;
+}
+
+export const ORDERS = Symbol(&#39;ORDERS&#39;);
+</code></pre>
+<p><code>Order</code> كيان الدرس السابق، بلا Prisma. الواجهة في مجلد السياسة. لا دالة <code>query(sql: string)</code>. لا إرجاع صف القاعدة.</p>
+<p>النمط ليس طبقة إلزامية في Nest. خدمة تستدعي <code>PrismaService</code> مباشرة ما زالت صحيحة عندما لا يوجد جذر يحمي لامتغيرات ولا اختبار سياسة يمنع القاعدة. النمط يُشترى عندما تريد استبدال الحفظ أو عندما تتعدد الكتابات على التجميع ويجب أن تمر من <code>save(order)</code>.</p>
+<p>اسم <code>Repository</code> في الكود يصف هذا العقد. إن سمّيت صنف Prisma <code>OrdersRepository</code> وهو يعيد أنواع العميل، فالاسم يدّعي النمط والتنفيذ يسرّب التفصيل. إما تسمية <code>PrismaOrderStore</code> بلا ادعاء، أو واجهة نظيفة وتنفيذ خلفها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سياسة: orders.save(order)
+مجموعة وهمية من Order
+تنفيذ: جداول orders و order_lines في معاملة واحدة
+</code></pre>
+<p>المستدعي لا يرتب الجداول.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async cancel(id: string): Promise&lt;void&gt; {
+  const order = await this.orders.findById(id);
+  if (order === null) {
+    throw new Error(&#39;الطلب غير موجود&#39;);
+  }
+  order.cancel();
+  await this.orders.save(order);
+}
+</code></pre>
+<p><code>cancel()</code> على الكيان يرفض الإلغاء بعد الشحن. المستودع لا يعرف القاعدة. هو يحفظ الحالة بعد أن غيّرها الجذر.</p>
+<h2>شرح المثال</h2>
+<p>الجلب ثم التعديل ثم الحفظ وحدة عمل على التجميع. تنفيذ <code>save</code> يكتب الرأس والسطور في معاملة. إن حفظ المتحكم السطر وحده ضاع فحص <code>cancel</code>. هذا جوهر النمط أكثر من عدد الدوال في الواجهة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>السياسة تطلب الجذر بالمعرف.</li>
+<li>التنفيذ يركّب <code>Order</code> من الصفوف.</li>
+<li>الدالة على الكيان تغيّر الحقول الخاصة.</li>
+<li><code>save</code> يترجم الحالة إلى كتابة.</li>
+<li><code>null</code> يعني غيابًا كما اتفق ليسكوف، لا صفًا فارغًا.</li>
+<li>استعلام «أفضل عشرة كتب مبيعًا» لا يدخل هذه الواجهة. قارئ تقارير منفصل حتى لا تنتفخ المجموعة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>BooksRepository</code> للمجموعة: <code>findById</code> و <code>save</code>. صفحة المتجر التي تعرض عنوانًا وسعرًا فقط تقرأ عبر <code>CatalogQuery</code> يعيد DTO قراءة. خلط الاثنين في <code>find(filter: any)</code> يعيد النمط إلى مساعد استعلام عام. ابدأ بعمليتين حقيقيتين تستعملهما <code>cancel</code> أو <code>place</code>، وأضف دالة عندما تناديها سياسة لا عندما «قد تلزم».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>واجهة بكل أفعال CRUD مولَّدة.</li>
+<li><code>save(data: unknown)</code>.</li>
+<li>إرجاع كائن Prisma من <code>findById</code>.</li>
+<li>وضع SQL داخل <code>Order.cancel</code>.</li>
+<li>تسمية النمط لكل <code>PrismaService</code> بلا جذر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>جذر تجميعي تُحفظ تغييراته من مكان واحد، وتريد اختبار السياسة على مجموعة وهمية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قراءة للواجهة بلا قواعد على الكيان. استعلام في الخدمة أو قارئ مخصص أوضح من مجموعة شكلية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>لغة المستدعي</th>
+<th>ما يُخفى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>النمط</td>
+<td>جذر المجموعة</td>
+<td>الجداول والمعاملة</td>
+</tr>
+<tr>
+<td>استدعاء Prisma في الخدمة</td>
+<td>أعمدة واستعلامات</td>
+<td>لا شيء</td>
+</tr>
+<tr>
+<td>تقرير منفصل</td>
+<td>DTO قراءة</td>
+<td>لا يمر عبر <code>save</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد <code>findById</code> عند غياب الطلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>null</code>، والسياسة تقرر رسالة الغياب. التنفيذ لا يرمي استثناء HTTP.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>save(order)</code> لا <code>saveLine</code> من المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن اللامتغيرات على الجذر. حفظ السطر من الخارج يتخطاها. المعاملة داخل <code>save</code> تكتب ما يقرره الجذر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين يوضع استعلام الأكثر مبيعًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قارئ أو استعلام قراءة يعيد DTO، لا على <code>OrdersRepository</code> الذي يشبه مجموعة الجذور.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحاكي النمط؟</li>
+<li>ماذا لا تضعه على الواجهة؟</li>
+<li>متى الاسم <code>Repository</code> ادعاء فارغ؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المستودع النمطي مجموعة للجذر: اجلبه، غيّره عبر دواله، واحفظه. أخفِ الجداول، ولا تحوّل الواجهة إلى مساعد استعلام لكل الشاشات.</p>
+<h2>ماذا بعد؟</h2>
+<p>ORM Repository: ماذا يعني <code>Repository&lt;Entity&gt;</code> في TypeORM نسبة إلى هذا النمط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Database (نظرة على أدوات البيانات): <a href="https://docs.nestjs.com/techniques/database">https://docs.nestjs.com/techniques/database</a></li>
+<li>Martin Fowler، Repository (مصدر النمط)</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Custom Exceptions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-custom-exceptions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Custom Exceptions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنشاء فئة تمتد من <code>HttpException</code> تحمل رمزًا وجسمًا ثابتين لخطأ مجال التذاكر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>ConflictException</code> نصه يتغير بين الملفات: مرة «مبيع» ومرة «مقفل». الواجهة تريد مفتاح <code>code</code> ثابتًا مثل <code>SEAT_TAKEN</code> لتترجم الجملة. النص الحر لا يكفي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنف <code>SeatTakenException extends HttpException</code> يبني الجسم <code>{ code, seat }</code> مع <code>HttpStatus.CONFLICT</code>. الخدمة ترمي الصنف. الفلتر المدمج يسلسل الجسم لأن الأب <code>HttpException</code>.</p>
+<h2>التعريف التقني</h2>
+<p>الوراثة من <code>HttpException</code> تبقي <code>getStatus()</code> و <code>getResponse()</code> وتُبقي الاستثناء ضمن العائلة التي لا تُعامل كعطل مجهول.</p>
+<pre><code class="language-ts">super({ code: &#39;SEAT_TAKEN&#39;, seat }, HttpStatus.CONFLICT, { cause });
+</code></pre>
+<p>الكائن هو الجسم كله، كما في درس الأب: لن يظهر <code>statusCode</code> إلا إذا أضفته إلى الكائن. إن كان عقد العميل عندكم <code>statusCode</code> زائد <code>code</code> فضعهما معًا داخل الكائن.</p>
+<p>لا تمتد من <code>Error</code> فقط ثم تتوقع <code>409</code>. من غير الأب يصبح الرد <code>500</code>.</p>
+<p>الفئة لا تفحص الزينة ولا تفتح قاعدة. هي اسم للشرط الذي اكتشفته الخدمة. الرسالة للبشر يمكن أن تبقى حقل <code>message</code> داخل الكائن بجانب <code>code</code>.</p>
+<p><code>@Catch(SeatTakenException)</code> لاحقًا يخص هذا النوع إن أردت سجلًا إضافيًا. من غيره يكفي المدمج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الخدمة اكتشفت المقعد مبيعًا
+  throw new SeatTakenException(seat)
+  الجسم { code: &#39;SEAT_TAKEN&#39;, seat }
+  الرمز 409
+</code></pre>
+<p>العميل يتفرع على <code>code</code> لا على نص إنجليزي.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { HttpException, HttpStatus } from &#39;@nestjs/common&#39;;
+
+export class SeatTakenException extends HttpException {
+  constructor(seat: number, cause?: unknown) {
+    super(
+      { code: &#39;SEAT_TAKEN&#39;, seat, message: `Seat ${seat} is already sold` },
+      HttpStatus.CONFLICT,
+      cause ? { cause } : undefined,
+    );
+  }
+}
+</code></pre>
+<pre><code class="language-ts">if (this.sold.has(key)) {
+  throw new SeatTakenException(seat);
+}
+</code></pre>
+<p>الرد:</p>
+<pre><code class="language-json">{
+  &quot;code&quot;: &quot;SEAT_TAKEN&quot;,
+  &quot;seat&quot;: 4,
+  &quot;message&quot;: &quot;Seat 4 is already sold&quot;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>code</code> ثابت يمكن للواجهة أن تقارنه.</li>
+<li><code>seat</code> يعيد القيمة التي رُفضت من غير تحليل الجملة.</li>
+<li><code>cause</code> اختياري ولا يخرج في JSON.</li>
+<li>الرمز ما زال <code>409</code> لأن المعنى تعارض حالة لا شكل تالف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>super</code> يمرر الجسم والرمز إلى <code>HttpException</code>. عند الصعود يرى الفلتر المدمج فئة معروفة، فيكتب <code>getStatus()</code> و <code>getResponse()</code>. لا حاجة إلى <code>@Catch</code> حتى يظهر <code>code</code>.</p>
+<p>فلتر <code>@Catch()</code> فارغ يمسك هذا الصنف أيضًا لأنه يمسك كل شيء، وقد يضيع <code>code</code> إن استبدلت الجسم بـ <code>{ statusCode: 500 }</code>. الدرس عن <code>@Catch</code> يحذّر من ذلك. هنا الجسم الصحيح يعيش على الاستثناء نفسه.</p>
+<p>الاختبار يستدعي الخدمة ويتوقع أن الخطأ <code>instanceof SeatTakenException</code> وأن <code>getStatus()</code> يساوي <code>409</code>. لا تحتاج HTTP لثبات العقد، واختبار HTTP يتأكد أن الجسم خرج كما هو.</p>
+<h2>مثال عملي</h2>
+<p>واجهة الشباك تترجم <code>SEAT_TAKEN</code> إلى جملة عربية وتلوّن المقعد. تغيير <code>message</code> الإنجليزية لا يكسر الترجمة. مسار ثانٍ يرمي الصنف نفسه من إلغاء مزدوج إن أضفت <code>code</code> آخر في صنف ثانٍ <code>TicketAlreadyCancelledException</code> بدل فرع نصي داخل فئة واحدة. صنف لكل حالة لها مفتاح ثابت.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الوراثة من <code>Error</code> ونسخ <code>status</code> كحقل عادي لا يقرأه الفلتر المدمج.</li>
+<li>جسم مختلف في كل <code>throw new SeatTakenException</code> عبر وسيط حر يغيّر المفاتيح.</li>
+<li>وضع اسم جدول SQL في <code>code</code>.</li>
+<li>تحويل الفئة إلى <code>500</code> في فلتر عام لاحق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يحتاج العميل مفتاحًا ثابتًا أو حقولًا غير الرسالة، والحالة تتكرر في أكثر من مسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمرة واحدة فيها نص كافٍ: <code>new NotFoundException(&#39;...&#39;)</code> أخف. ولا تستبدل الفئة أنبوب <code>400</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>ConflictException</code> بنص</th>
+<th><code>SeatTakenException</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الرمز</td>
+<td><code>409</code></td>
+<td><code>409</code></td>
+</tr>
+<tr>
+<td>الجسم</td>
+<td><code>message</code> غالبًا</td>
+<td><code>code</code> و <code>seat</code> و <code>message</code></td>
+</tr>
+<tr>
+<td>تمييز النوع</td>
+<td>عام</td>
+<td><code>instanceof</code> خاص</td>
+</tr>
+<tr>
+<td>التكرار</td>
+<td>جملة قد تتفاوت</td>
+<td>بناء واحد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي صنف تمتد فئة المجال حتى يكتب Nest الرمز الصحيح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>HttpException</code>، أو من فئة جاهزة إن كان ذلك يغطي الجسم. الامتداد المباشر من <code>Error</code> يعطي <code>500</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تضع <code>code: &#39;SEAT_TAKEN&#39;</code> بدل الاعتماد على <code>message</code> فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النص يتغير مع اللغة والصياغة. المفتاح ثابت تقارنه الواجهة والاختبار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد <code>statusCode</code> و <code>code</code> معًا في JSON. ماذا تغيّر في <code>super</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تضع المفتاحين داخل كائن الجسم، مثل <code>{ statusCode: HttpStatus.CONFLICT, code: &#39;SEAT_TAKEN&#39;, seat }</code>، لأن الكائن يستبدل الجسم الافتراضي ولا يدمجه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا يكفي <code>extends Error</code>؟</li>
+<li>ماذا يفعل الفلتر المدمج من غير <code>@Catch</code> على فئتك؟</li>
+<li>أين يذهب <code>cause</code>؟</li>
+<li>متى تبقى الفئة الجاهزة أخف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>فئة المجال تثبت الرمز والجسم فوق <code>HttpException</code>. العميل يتفرع على <code>code</code>. الفلتر المدمج يسلسل ما مررته إلى <code>super</code> ما لم يستبدله فلتر لاحق بجسم أعمى.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي واجهة الفلتر: <code>catch(exception, host)</code> حين لا يكفي تسلسل المدمج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

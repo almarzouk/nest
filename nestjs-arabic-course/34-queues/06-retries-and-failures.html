@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Retries و Failed Jobs</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-retries-and-failures.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Retries و Failed Jobs</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد عدد إعادات القص والانتظار بينها، وجعل التنفيذ آمنًا إن اشتغلت المهمة مرتين.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خطأ قرص لحظي يستحق محاولة ثانية. خطأ «الكتاب حُذف» لا يستحق خمسًا. وإن أرسلت بريد النشر من المحاولة الأولى ثم رميت بعدها، المحاولة الثانية ترسله مرة أخرى. السياسة رقم. الأمان من التكرار سلوك داخل <code>process</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>خيارات <code>add</code> تتضمن <code>attempts</code> و <code>backoff</code>. بعد استنفاد العدد تنتقل المهمة إلى حالة فاشلة تقدر أن تراقبها. العمل الذي له أثر خارجي، مثل البريد، يتحقق من أثر سابق قبل الإرسال. القص الذي يكتب الملف نفسه فوق نفسه أسهل تكرارًا من البريد.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">await this.covers.add(&#39;resize&#39;, payload, {
+  jobId: `resize:${payload.bookId}`,
+  attempts: 5,
+  backoff: { type: &#39;exponential&#39;, delay: 1000 },
+  removeOnComplete: 100,
+  removeOnFail: false,
+});
+</code></pre>
+<p><code>attempts: 5</code> تشمل المحاولة الأولى في عدّ BullMQ المعتاد: تأكد من المعنى في إصدار المكتبة التي ثبتّها واكتب الرقم الذي ينتج أربع إعادات أو خمس تشغيلات كما قررت، وثبّته في اختبار. <code>backoff</code> الأسي يزيد الانتظار حتى لا تطرق قرصًا معطلًا كل ثانية. <code>removeOnFail: false</code> يبقي المهمة الفاشلة للتشخيص. لا تترك الفشل بلا أثر في السجل.</p>
+<p>داخل القص الآمن للتكرار:</p>
+<pre><code class="language-ts">if (book.coverStatus === &#39;ready&#39; &amp;&amp; book.coverKey === coverKey) return;
+</code></pre>
+<p>إن اكتمل العمل ثم أُعيد بسبب مهلة بعد الكتابة، الخروج الهادئ يمنع قصًا بلا داعٍ. للبريد:</p>
+<pre><code class="language-ts">if (await this.mail.alreadySent(bookId, &#39;published&#39;)) return;
+await this.mail.sendPublished(bookId);
+await this.mail.markSent(bookId, &#39;published&#39;);
+</code></pre>
+<p>علّم الإرسال بعد نجاح المزوّد. إن علّمت قبله ثم رميت، لن تُعاد الرسالة. إن أرسلت ثم سقطت قبل العلامة، قد تُرسل مرتين. النافذة تضيق بالعلامة بعد النجاح وبمفتاح تكرار عند المزوّد إن وُجد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">فشل قابل للإصلاح -&gt; رمي -&gt; انتظار -&gt; process من جديد
+أثر سبق إنجازه -&gt; return
+استنفاد المحاولات -&gt; مهمة فاشلة + coverStatus failed
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>عند استنفاد المحاولات حدّث الصف حتى لا يبقى <code>pending</code> للأبد:</p>
+<pre><code class="language-ts">async process(job: Job&lt;ResizePayload&gt;): Promise&lt;void&gt; {
+  try {
+    await this.covers.resize(job.data.bookId, job.data.coverKey);
+  } catch (error) {
+    const last = job.attemptsMade + 1 &gt;= (job.opts.attempts ?? 1);
+    if (last) {
+      await this.covers.markFailed(job.data.bookId, job.data.coverKey);
+    }
+    throw error;
+  }
+}
+</code></pre>
+<p>أعد الرمي حتى تسجّل BullMQ الفشل. <code>markFailed</code> لا يبتلع الخطأ.</p>
+<h2>شرح المثال</h2>
+<p><code>attemptsMade</code> عدد ما بدأ. على المحاولة الأخيرة اكتب <code>failed</code> على الكتاب إن كان <code>coverKey</code> ما زال مطابقًا، ثم ارمِ. الواجهة ترى <code>failed</code> لا <code>pending</code>. مهمة الإصلاح اليدوي تستطيع إعادة <code>add</code> بعد تصليح القرص.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>BullMQ تؤخر المهمة الفاشلة حسب <code>backoff</code> ثم تعيدها إلى عامل متاح. الحمولة لا تتغير بين المحاولات. لذلك إن كانت الحمولة كائنًا قديمًا فكل المحاولات القديمة. مع <code>bookId</code> كل محاولة تقرأ القاعدة من جديد، وهذا سبب تصميم المنتج. مهمة في حالة failed لا تُعاد وحدها حتى تعيد إدراجها أو تستعمل أداة المكتبة لإعادة التشغيل.</p>
+<h2>مثال عملي</h2>
+<p>افصل الطابور إن اختلفت السياسة:</p>
+<table>
+<thead>
+<tr>
+<th>المهمة</th>
+<th>attempts</th>
+<th>سبب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>resize</code></td>
+<td>5 بانتظار أسي</td>
+<td>القرص يرمش</td>
+</tr>
+<tr>
+<td><code>sendPublished</code></td>
+<td>3</td>
+<td>البريد أثر خارجي ويحتاج علامة إرسال</td>
+</tr>
+</tbody></table>
+<p>لا تضع الاثنين في <code>process</code> واحد حتى لا يعيد القص إرسال البريد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>catch</code> فارغ داخل <code>process</code> فيُحسب النجاح.</li>
+<li>إعادة لا نهائية عبر <code>attempts</code> ضخم على خطأ تحقق لن يتغير.</li>
+<li>بريد بلا <code>alreadySent</code>.</li>
+<li><code>removeOnFail: true</code> ثم انعدام أثر للتشخيص.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل <code>add</code> منتج. الرقم مكتوب بجانب نوع العمل لا متروكًا للافتراض.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحل لتكرار <code>POST</code> من الواجهة. الواجهة تعيد الطلب، والطابور يعيد المهمة. الاثنان يحتاجان <code>jobId</code> وعلامة أثر، لا رقمًا واحدًا مشتركًا بلا تمييز.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الإعادة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>انقطاع قرص</td>
+<td>نعم، حتى الحد</td>
+</tr>
+<tr>
+<td>كتاب حُذف</td>
+<td>لا، خروج هادئ</td>
+</tr>
+<tr>
+<td>بريد أُرسل وعُلّم</td>
+<td>لا، خروج هادئ</td>
+</tr>
+<tr>
+<td>بريد أُرسل ولم يُعلَّم</td>
+<td>قد يتكرر، ضيّق النافذة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيارين في <code>add</code> يحددان العدد والانتظار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>attempts</code> و <code>backoff</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تعيد رمي الخطأ بعد <code>markFailed</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تسجّل المكتبة المحاولة فاشلة. ابتلاع الخطأ يعلّم المهمة ناجحة والصف <code>failed</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا علامة «أُرسل» بعد نجاح المزوّد لا قبله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العلامة السابقة تمنع الإعادة رغم أن الرسالة لم تخرج. العلامة اللاحقة قد تسمح بتكرار نادر إن سقطت العملية بينهما، وهو أهون من ضياع الرسالة، ويُضيَّق بمفتاح عند المزوّد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحدث بعد آخر محاولة؟</li>
+<li>لماذا القص أسهل تكرارًا من البريد؟</li>
+<li>أي حالة تغطيها الواجهة غير <code>pending</code> و <code>ready</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>حدد <code>attempts</code> و <code>backoff</code>، واترك الفشل النهائي مرئيًا على الصف. ارمِ ما قد يُصلح، واخرج بهدوء إن كان الأثر قد تم أو لم يعد مطلوبًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما الذي تختلف به حزمة Bull القديمة حتى لا تُنسخ زينتها في هذا المشروع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+<li>BullMQ — Retrying failing jobs: <a href="https://docs.bullmq.io/guide/retrying-jobs">https://docs.bullmq.io/guide/retrying-jobs</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

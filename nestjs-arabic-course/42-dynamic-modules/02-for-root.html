@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forRoot</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-for-root.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>forRoot</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استخدام اسم <code>forRoot</code> عندما تُكوَّن الوحدة مرة واحدة للتطبيق، وتمرير الخيار إلى مزود عبر رمز حقن، مع إبقاء الاستدعاء في الجذر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عنوان قاعدة أو سابقة عامة ليست شأن كل ميزة. إن استدعت كل وحدة <code>forRoot</code> بنَت اتصالًا ثانيًا أو خالفت العنوان. الاصطلاح المجتمعي الذي يشرحه التوثيق: <code>forRoot</code> لتكوين مرة على مستوى التطبيق. الاسم ليس قيد لغة، واتباعه يجعل قارئ <code>AppModule</code> يعرف أن هذا مكان الإعداد الوحيد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>static forRoot(options): DynamicModule</code> تبني المزودات من <code>options</code> وترجع <code>{ module, providers, exports }</code>. غالبًا <code>global: true</code> حتى لا تعيد الميزات الاستيراد. من غير <code>global</code>، وحدة نواة تستورد <code>forRoot</code> وتعيد تصدير الصنف.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { DynamicModule, Module } from &#39;@nestjs/common&#39;;
+import { DatabaseService } from &#39;./database.service.js&#39;;
+
+@Module({})
+export class DatabaseModule {
+  static forRoot(url: string): DynamicModule {
+    return {
+      module: DatabaseModule,
+      global: true,
+      providers: [
+        { provide: &#39;DATABASE_URL&#39;, useValue: url },
+        DatabaseService,
+      ],
+      exports: [DatabaseService],
+    };
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class DatabaseService {
+  constructor(@Inject(&#39;DATABASE_URL&#39;) private readonly url: string) {}
+
+  dsn(): string {
+    return this.url;
+  }
+}
+</code></pre>
+<p><code>AppModule</code> فقط يستدعي <code>DatabaseModule.forRoot(process.env.DATABASE_URL ?? &#39;&#39;)</code>. الميزات تحقن <code>DatabaseService</code> لأن الوحدة عامة، أو تستورد الصنف المعاد تصديره إن لم تضع <code>global</code>.</p>
+<p><code>forFeature</code> في مكتبات مثل TypeORM شريحة بعد <code>forRoot</code>: كيانات هذه الميزة على اتصال الجذر. لا تستدعِ <code>forRoot</code> مكان <code>forFeature</code>.</p>
+<p>زخرفة <code>@Module</code> الثابتة تُدمَج مع الراجع. إن وضعت مزودًا على الاثنين فاعرف ناتج الدمج ولا تكرر الرمز بالخطأ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+  DatabaseModule.forRoot(url)  -&gt; مرة، ربما global
+BooksModule
+  يحقن DatabaseService         -&gt; بلا forRoot
+</code></pre>
+<p>الخيار يدخل من الجذر. الخدمة تقرأه بالرمز.</p>
+<h2>أبسط مثال</h2>
+<p>المقطعان أعلاه. أضف في الجذر:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DatabaseModule } from &#39;./database/database.module.js&#39;;
+
+@Module({
+  imports: [DatabaseModule.forRoot(&#39;postgresql://localhost/shop&#39;)],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>useValue</code> يربط النص بالرمز <code>&#39;DATABASE_URL&#39;</code>. <code>DatabaseService</code> مزود صنف عادي داخل الكائن الراجع فيُبنى بعد توفر الرمز. <code>exports</code> يجعل الخدمة مرئية. <code>global: true</code> يلغي حاجة <code>imports</code> في كل ميزة. العنوان الثابت في المثال للتعلم؛ في التطبيق يأتي من إعداد لا من سلسلة في المصدر.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تحميل <code>AppModule</code> يستدعي <code>forRoot</code> بمعامل الجذر.</li>
+<li>يُسجَّل الرمز والخدمة في تلك الوحدة الديناميكية.</li>
+<li>مع <code>global</code> تصبح المصدَّرات مرئية للتطبيق.</li>
+<li>حقن <code>DatabaseService</code> في أي ميزة يجد النسخة نفسها <code>DEFAULT</code>.</li>
+<li>استدعاء ثانٍ في ميزة أخرى يسجل تكوينًا آخر. تجنبه لـ <code>forRoot</code>.</li>
+<li>إعادة التصدير من نواة تستعمل <code>exports: [DatabaseModule]</code> بعد الاستدعاء الأول فقط.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>CacheModule.forRoot({ ttlSeconds: 30 })</code> في الجذر يصدّر <code>CacheService</code> عامة. الكتب والطلبات تحقن الخدمة وترى المهلة نفسها. ميزة تريد مهلة مختلفة لا تستدعي <code>forRoot</code> ثانٍ. إما وسيط على الدالة <code>get(key, ttl)</code> أو وحدة <code>register</code> منفصلة للخيار المحلي، وذلك الدرس بعد <code>forRootAsync</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>forRoot</code> داخل كل <code>imports</code> ميزة.</li>
+<li>نسيان تصدير الخدمة أو الرمز الذي سيُحقن خارجًا.</li>
+<li><code>global: true</code> على وحدة ميزة فيها متحكمات، فيتسع السطح.</li>
+<li>وضع السر داخل المستودع في معامل <code>forRoot</code>. المعامل يُمرَّر من بيئة الإقلاع.</li>
+<li>خلط الاسم مع <code>register</code> ثم استدعاؤه مرة في الجذر ومرة في الميزة بعناوين مختلفة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>اتصال أو إعداد واحد للتطبيق: قاعدة، إعداد عام، بريد بعنوان واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>خيار يختلف لكل مستورد، مثل سابقة المعرف. ذلك <code>register</code>. خيار يُقرأ من <code>ConfigService</code> بشكل غير متزامن ينتظر <code>forRootAsync</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاسم الاصطلاحي</th>
+<th>عدد التكوينات</th>
+<th>مكان الاستدعاء</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>forRoot</code></td>
+<td>واحد للتطبيق</td>
+<td>الجذر أو نواة</td>
+</tr>
+<tr>
+<td><code>register</code></td>
+<td>قد يختلف لكل مستورد</td>
+<td>وحدة الميزة</td>
+</tr>
+<tr>
+<td><code>forFeature</code></td>
+<td>شريحة على جذر مُعد</td>
+<td>وحدة الميزة بعد الجذر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يستدعي <code>forRoot</code> لعنوان قاعدة واحد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مكان تكوين واحد، عادة <code>AppModule</code> أو وحدة نواة. الميزات لا تعيد النداء.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>@Inject(&#39;DATABASE_URL&#39;)</code> وليس حقن النص مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النص قيمة مسجّلة برمز. الحقن يطلب الرمز. الخدمة لا تستورد عنوان الميزة، فالجذر هو من يمرره.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>CoreModule</code> يعيد التصدير. ماذا يُمنع داخل <code>BooksModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>DatabaseModule.forRoot(...)</code> مرة أخرى. الكتب تستورد <code>CoreModule</code> أو تعتمد على <code>global</code> وتحقن الخدمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغيّر <code>global: true</code>؟</li>
+<li>كيف يصل <code>url</code> إلى الخدمة؟</li>
+<li>ما فرق الاسم عن <code>register</code> في اصطلاح التوثيق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forRoot</code> تكوين مرة. الخيار يصبح مزودًا، والجذر يملك الاستدعاء، والميزات تحقن الناتج أو تستورد الصنف المعاد تصديره.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>forRootAsync</code>: الخيار يأتي من <code>ConfigService</code> ووعد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

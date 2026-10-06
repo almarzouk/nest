@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Audit Logs</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-audit-logs.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Audit Logs</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل من غيّر ماذا داخل مكتبة رف: نشر كتاب، دعوة عضو، تغيير خطة، بحيث تُراجع الحادثة من غير قراءة سجل التطبيق الخام.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خلاف: «من نشر هذا الكتاب أمس؟» السجل التشغيلي فيه stack وأسرار، أو لا شيء لأن النشر نجح بهدوء. المدير يريد قائمة مفهومة. أنتم تريدون سطرًا لا يُحدَّث بعد كتابته.</p>
+<h2>الفكرة ببساطة</h2>
+<p>سطر تدقيق إلحاق فقط: المنظمة، الفاعل، الفعل، هدف، وقت، وملخص.diff صغير. لا كلمات مرور ولا رموز. الكتابة في نفس معاملة الأثر إن أمكن حتى لا يُنشر كتاب بلا سطر أو العكس.</p>
+<h2>التعريف التقني</h2>
+<p>جدول <code>AuditLog</code> بمفتاح <code>id</code> و <code>organizationId</code> وفهرس <code>(organizationId, createdAt)</code>. الحقول: <code>actorUserId</code>, <code>action</code> مثل <code>books.publish</code>, <code>targetType</code>, <code>targetId</code>, <code>metadata</code> JSON محدود. لا <code>update</code> على السطر من API. القراءة <code>GET /audit-logs</code> للصلاحية <code>audit.read</code> وبقيد المستأجر. هذا ليس OpenTelemetry. المراقبة للأعطال والكمون؛ التدقيق لأفعال البشر. لا تسجلوا جسم الطلب كاملًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">معاملة:
+  UPDATE book SET status
+  INSERT audit_logs
+القراءة لاحقًا قائمة للإدارة لا تتبع أثر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface AuditEntry {
+  organizationId: string;
+  actorUserId: string;
+  action: &#39;books.publish&#39;;
+  targetId: string;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>action</code> قيمة مغلقة حتى تُصفّى الواجهة.</li>
+<li><code>actorUserId</code> من الجلسة لا من الجسم.</li>
+<li>لا حقل <code>password</code> و لا <code>refreshToken</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الخدمة تبدأ معاملة.</li>
+<li>تغيّر الكتاب.</li>
+<li>تدرج سطر التدقيق بنفس <code>organizationId</code>.</li>
+<li>الالتزام معًا. الفشل يتراجع عنهما.</li>
+<li>طلب القراءة يعيد الصفحة بـ <code>nextCursor</code> و 200 إن كانت فارغة، مع قيد المستأجر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">await prisma.$transaction(async (tx) =&gt; {
+  const book = await tx.book.update({
+    where: { id: bookId },
+    data: { status: &#39;published&#39; },
+  });
+  if (book.organizationId !== tenantId) throw new Error(&#39;tenant mismatch&#39;);
+  await tx.auditLog.create({
+    data: {
+      organizationId: tenantId,
+      actorUserId,
+      action: &#39;books.publish&#39;,
+      targetType: &#39;book&#39;,
+      targetId: bookId,
+    },
+  });
+});
+</code></pre>
+<p>الأسلم أن يكون <code>where</code> مركّبًا من البداية (<code>id</code> + <code>organizationId</code>) حتى لا يُحدَّث صف جار ثم تفشل التدقيقة. المثال يُظهر أن السطرين في معاملة واحدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة التدقيق بعد <code>return</code> فيصبح النشر بلا سطر عند انقطاع.</li>
+<li>تخزين جسم <code>POST</code> وفيه سر OAuth.</li>
+<li>سجل عام بلا <code>organizationId</code> يراه مدير مكتبة أخرى.</li>
+<li>السماح بـ <code>DELETE /audit-logs/:id</code> للمدير. الإخفاء سياسة احتفاظ لا حذف من الواجهة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على أفعال تغيّر حالة يسأل عنها إنسان لاحقًا: نشر، دور، خطة، حذف.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسجلوا كل <code>GET</code>. ولا تستبدلوا به سجل الأخطاء. فشل Prisma غير المتوقع يذهب إلى السجل التشغيلي بجسم 500 ثابت.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Audit log</th>
+<th>Log تشغيلي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السؤال</td>
+<td>من نشر؟</td>
+<td>لماذا 500؟</td>
+</tr>
+<tr>
+<td>الجمهور</td>
+<td>مدير المكتبة</td>
+<td>المشغّل</td>
+</tr>
+<tr>
+<td>الشكل</td>
+<td>صف بعقد</td>
+<td>نص أو JSON أداة</td>
+</tr>
+<tr>
+<td>التعديل</td>
+<td>لا</td>
+<td>أداة خارجية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل يُسجَّل <code>GET /books</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا في هذا التصميم. القائمة قراءة. سجّلوا النشر والدعوة وتغيير الخطة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المعاملة الواحدة مع <code>UPDATE</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا ينجح الأثر ويفشل إدراج السطر أو العكس. القارئ للتدقيق يرى الواقع. التعويض لاحقًا يترك نافذة كاذبة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المدير يطلب حذف سطر محرج. ما البديل الذي يبقي السجل إلحاقًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا حذف من API. إن فرضت سياسة الاحتفاظ، وظيفة داخلية تنقل القديم إلى أرشيف بارد بعد المدة، وتبقي السلسلة بلا تعديل من مدير المكتبة. التصحيح سطر جديد <code>books.unpublish</code> لا تعديل سطر الأمس.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يثبت السطر: الفاعل أم نص السجل الخام؟</li>
+<li>لماذا لا جسم الطلب كاملًا؟</li>
+<li>أين قيد المستأجر في القراءة؟</li>
+<li>ما فرق التدقيق عن تتبع الأثر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>سجل التدقيق صفوف إلحاق لأفعال البشر داخل المكتبة، في نفس معاملة الأثر، بلا أسرار، وبلا حذف من واجهة المدير.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعض هذه الأفعال يجب أن تصل إلى الإنسان فورًا: دعوة أو فاتورة. الدرس التالي الإشعارات كقناة لا كـ <code>console.log</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Database (المعاملات مفهوم طبقة البيانات): <a href="https://docs.nestjs.com/data/overview">https://docs.nestjs.com/data/overview</a></li>
+<li>NestJS — Logger (قناة مختلفة): <a href="https://docs.nestjs.com/application/logger">https://docs.nestjs.com/application/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

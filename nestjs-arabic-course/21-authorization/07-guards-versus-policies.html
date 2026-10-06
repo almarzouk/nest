@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Guard مقابل Policy</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-guards-versus-policies.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Guard مقابل Policy</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت أي قرار يبقى على الحارس وأي قرار يعيش في السياسة والخدمة، حتى لا يُجلب المقال داخل <code>canActivate</code> لكل طلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس يفتح Prisma ليقرر تعديل المقال يخلط بوابة الدخول بقاعدة المورد، ويصعب اختباره من غير HTTP، ويعيد <code>403</code> قبل أن تعرف الخدمة إن كان المقال أصلًا غير موجود. سياسة تُنسخ في الحارس وفي الخدمة تتعارض بعد أسبوع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>حارس المصادقة: هل لدينا شخص؟ حارس <code>@Can</code>: هل القدرة العامة مسموحة لهذا الشخص قبل تشغيل المعالج؟ السياسة على صف: بعد <code>find</code>، <code>authorize</code>. الحارس لا يستبدل السياسة التي تحتاج سجلًا. السياسة لا تستبدل إثبات الهوية.</p>
+<h2>التعريف التقني</h2>
+<p>طبقات المكتبة على <code>PATCH /posts/:id</code>:</p>
+<ol>
+<li>حارس <code>@nestjs/authentication</code>: بلا دليل <code>401</code>.</li>
+<li><code>ParseIntPipe</code> و <code>ValidationPipe</code> حسب ترتيب Nest. الحارس يسبق الأنبوب.</li>
+<li>لا <code>@Can(&quot;update&quot;)</code> هنا لأن القدرة تحتاج الصف.</li>
+<li><code>PostsService</code> تحمّل المقال. الغياب <code>404</code>.</li>
+<li><code>authorizationService.authorize(PostPolicy, &quot;update&quot;, user, post)</code>.</li>
+<li>المنع <code>403</code> عبر ترجمة <code>AuthorizationError</code>.</li>
+<li>ثم <code>update</code> في Prisma.</li>
+</ol>
+<p>على <code>POST /posts</code> الخطوة <code>3</code> موجودة: <code>@Can(PostPolicy, &quot;create&quot;)</code> لأن لا صف بعد.</p>
+<p>حارس أدوار منزلي <code>RolesGuard</code> يقرأ بيانات مسار ويفحص <code>roles.includes</code> هو RBAC مبكر. ما زال لا يرى المقال. إن وُجدت <code>PostPolicy.create</code> فالحارس اليدوي يكررها. أبقِ <code>@Can</code> حتى يبقى الاسم نفسه الذي تختبره في السياسة.</p>
+<p><code>before()</code> في السياسة يسبق القدرة في المسار وفي الخدمة. لا تضع التجاوز في الحارس فقط وإلا اختلف <code>authorize</code>.</p>
+<p>صفحة التفويض تذكر أن كاشًا يجيب قبل المعالج يتخطى فحص السجل. الحارس لا يصلح ذلك إن كانت الاستجابة مخزّنة قبل الحارس أيضًا. لا تكاش <code>GET</code> المشروط بالمستخدم بمفتاح URL وحده.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حارس مصادقة     من؟
+@Can            هل الفعل العام مسموح؟
+خدمة + سياسة    هل هذا الصف مسموح؟
+Prisma          الكتابة بعد نعم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async update(user: PublicUser, id: number, title: string) {
+  const post = await this.prisma.post.findUnique({ where: { id } });
+  if (!post) {
+    throw new NotFoundException(&quot;Post not found&quot;);
+  }
+  await this.authorization.authorize(PostPolicy, &quot;update&quot;, user, post);
+  return this.prisma.post.update({
+    where: { id },
+    data: { title },
+    select: { id: true, title: true, authorId: true, published: true },
+  });
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>لا حارس في المقتطف. المتحكم مرّر <code>user</code> من <code>@CurrentUser()</code> بعد أن دخل الشخص. السياسة ترى <code>authorId</code>. فشلها لا يحدّث الصف. نجاحها يكتب العنوان فقط، لا حقولًا من العميل غير العنوان.</p>
+<p>اختبار الخدمة يزيف <code>prisma</code> ويمرّر سياسة حقيقية. اختبار الحارس وحده لا يثبت قاعدة المالك.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>authorize</code> تستدعي القدرة ثم <code>before</code> إن وُجد، داخل الحزمة. رمي <code>AuthorizationError</code> بسبب <code>forbidden</code> يصبح <code>403</code> على HTTP من الوحدة، من غير أن تكتب <code>throw new ForbiddenException</code> في كل خدمة، وإن رميته أنت فالرمز نفسه مقبول ما دامت الرسالة لا تسرّب SQL. الغياب يُرمى قبل <code>authorize</code> حتى لا تسأل السياسة عن <code>null</code>.</p>
+<p>حارس يحمّل المقال ثم السياسة تحمّله ثانية يعني استعلامين واختلافًا إن تغيّر الصف بينهما. حمّله مرة في الخدمة.</p>
+<h2>مثال عملي</h2>
+<p>جدول المسارات:</p>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>مصادقة</th>
+<th><code>@Can</code></th>
+<th>سياسة على الصف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /auth/sign-in</code></td>
+<td><code>@Public()</code></td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>GET /posts</code> العام</td>
+<td>مفتوح أو اختياري</td>
+<td>لا</td>
+<td><code>read</code> عند إخفاء مسودة داخل العنصر</td>
+</tr>
+<tr>
+<td><code>POST /posts</code></td>
+<td>لازمة</td>
+<td><code>create</code></td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>PATCH /posts/:id</code></td>
+<td>لازمة</td>
+<td>لا</td>
+<td><code>update</code> بعد <code>find</code></td>
+</tr>
+<tr>
+<td><code>POST /posts/:id/publish</code></td>
+<td>لازمة</td>
+<td>لا</td>
+<td><code>publish</code> بعد <code>find</code></td>
+</tr>
+</tbody></table>
+<p>قراءة القائمة قد ترشّح في الخدمة بـ <code>can</code> من غير رمي، فتخفي المسودات بدل أن تكسر الصفحة كلها. هذا <code>can</code> لا <code>authorize</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>Prisma داخل <code>canActivate</code> لمعرفة المالك.</li>
+<li><code>@Can</code> وشرط مالك مختلف في الخدمة.</li>
+<li><code>403</code> لمقال غير موجود.</li>
+<li>حارس أدوار موازٍ لـ <code>PostPolicy.create</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الحارس لإيقاف الطلب قبل العمل حين يكفي الشخص والفعل. السياسة بعد التحميل حين يكفي القرار صفًا. الاثنان معًا على أفعال مختلفة، لا نسختان من الشرط نفسه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حارس لكل عمود. ذلك يعيد RBAC المبعثر. وسياسة لإثبات كلمة المرور. ذلك مصادقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Guard</th>
+<th>Policy في الخدمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قبل المعالج</td>
+<td>بعد <code>find</code></td>
+</tr>
+<tr>
+<td>شخص وفعل عام</td>
+<td>شخص وصف</td>
+</tr>
+<tr>
+<td><code>@Can(&quot;create&quot;)</code></td>
+<td><code>authorize(&quot;update&quot;)</code></td>
+</tr>
+<tr>
+<td>لا يملك المقال</td>
+<td>تملكه الخدمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>PATCH</code> لا يحمل <code>@Can(PostPolicy, &quot;update&quot;)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القدرة تحتاج المقال، والحارس لا يحمّله. النداء في الخدمة بعد <code>findUnique</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين يُستخدم <code>can</code> بدل <code>authorize</code> في قائمة المنشورات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حين تريد إخفاء المسودات أو تمييز العناصر من غير رمي <code>403</code> على الصفحة كلها. <code>can</code> ترجع منطقيًا والخدمة ترشّح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حارس يحمّل المقال ويفحص المالك، والخدمة تحدّث من غير سياسة. ما الذي يضعف الاختبار، وما ترتيب الدورة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اختبار المالك صار اختبار HTTP، والخدمة تثق بأي منادٍ. انقل الفحص إلى <code>PostPolicy.update</code> واستدعِ <code>authorize</code> في الخدمة، واترك الحارس للمصادقة ولـ <code>@Can</code> على الأفعال بلا صف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب المصادقة والتفويض على الصف؟</li>
+<li>متى <code>@Can</code>؟</li>
+<li>لماذا لا يفتح الحارس Prisma لكل تعديل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحارس بوابة على الشخص والفعل العام. السياسة قرار على الصف داخل الخدمة بعد التحميل. شرط واحد في السياسة، لا نسخة في <code>canActivate</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> لمسار نشر وتعديل على المقال نفسه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

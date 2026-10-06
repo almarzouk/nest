@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Root Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-root-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Root Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم أن <code>AppModule</code> نقطة البداية التي يبني منها الإطار كل الرسم، لا مجرد ملف إعداد عادي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>من غير جذر، لا يعرف الإطار أي المتحكمات تُنشر وأي المزوّدات تُنشأ. استيراد الملفات في <code>main.ts</code> واحدًا واحدًا يعيد قائمة مسطحة بلا حدود.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Root Module الوحدة التي تمررها إلى <code>NestFactory.create</code>. في القالب اسمها <code>AppModule</code> في <code>app.module.ts</code>. منها يُبنى application graph.</p>
+<h2>التعريف التقني</h2>
+<p>فصل Modules: كل تطبيق فيه وحدة واحدة على الأقل هي الجذر. التطبيق الصغير قد يكتفي بها. التطبيق الحقيقي يستورد وحدات ميزات داخل <code>imports</code>. الجذر لا يُحقن كمزوّد عادي؛ هو وصف انطلاق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">create(AppModule)
+    |
+    +-- imports: وحدات ميزات
+    +-- controllers: متحكمات هذا الملف
+    +-- providers: مزوّدات هذا الملف
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { AppController } from &#39;./app.controller.js&#39;;
+import { AppService } from &#39;./app.service.js&#39;;
+
+@Module({
+  controllers: [AppController],
+  providers: [AppService],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Module</code> يسجل Metadata الكائن.</li>
+<li><code>controllers</code> أصناف تُنشأ وتُربط مساراتها.</li>
+<li><code>providers</code> ما تستطيع الحاوية حقنه هنا.</li>
+<li>لا <code>imports</code> بعد. الرسم عقدة واحدة.</li>
+<li>الصنف فارغ الجسم. الوصف في الزينة. حقن مزوّد داخل صنف الوحدة ممكن لاحقًا للتهيئة، والتوثيق يحذّر أن صنف الوحدة نفسه لا يُحقن كمزوّد بسبب دورات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>create</code> يقرأ Metadata الجذر، ثم Metadata كل وحدة في <code>imports</code>، بشكل متحمّس: تحميل التطبيق يحمّل الوحدات حتى التي لن يُستخدم مسارها في أول طلب. التحميل الكسول استثناء لاحق (<code>LazyModuleLoader</code>). الرسم الناتج هو خريطة العلاقات التي تحل بها الحاوية الاعتماديات.</p>
+<h2>مثال عملي</h2>
+<p>عندما تضيف كتبًا، الجذر يستورد الوحدة ولا يعيد إعلان خدمة الكتب:</p>
+<pre><code class="language-ts">@Module({
+  imports: [BooksModule],
+})
+export class AppModule {}
+</code></pre>
+<p>هذا الشكل يصبح صادقًا بعد فصل Modules. المعاينة هنا حتى ترى أن الجذر فهرس وحدات لا سلة كل الأصناف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسجيل كل متحكمات المنتج في <code>AppModule</code> إلى الأبد.</li>
+<li>نسيان تمرير الجذر إلى <code>create</code> وتمرير متحكمًا بدلًا منه.</li>
+<li>اعتبار وجود <code>app.module.ts</code> كافيًا إن استوردت وحدة لا تصدّر ما تحتاجه. التصدير درس لاحق، والفشل يظهر عند الإقلاع لا عند حفظ الملف.</li>
+</ul>
+<h2>متى نكتفي بالجذر؟</h2>
+<p>في قالب Hello World وأمثلة اللغة القصيرة.</p>
+<h2>متى نخرج منه؟</h2>
+<p>عند أول ميزة لها متحكم وخدمة خاصة. تُنقل إلى Feature Module وتُستورد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>استيراد ملفات في main</th>
+<th>Root Module</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يعلن القطع</td>
+<td>قائمة متفرقة</td>
+<td>Metadata واحدة تتفرع</td>
+</tr>
+<tr>
+<td>الحدود</td>
+<td>ضعيفة</td>
+<td><code>imports</code> و <code>exports</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما اسم الوحدة الجذر في القالب؟</p>
+<details><summary>الحل</summary>
+
+<p><code>AppModule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين تضع <code>BooksModule</code> عندما تُنشأ: داخل <code>controllers</code> أم <code>imports</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>داخل <code>imports</code>، لأن الوحدة تُستورد ولا تُسجَّل كمتحكم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تحميل وحدة في <code>imports</code> يحدث عند الإقلاع حتى لو لم يضرب أحد مسارها؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن التحميل الافتراضي متحمّس: بناء الرسم ينشئ الوحدات والمزوّدات مع التطبيق، لا عند أول طلب. الاستثناء تحميل كسول مؤجل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يبدأ من Root Module؟</li>
+<li>ماذا تحتوي <code>controllers</code> مقارنة بـ <code>imports</code>؟</li>
+<li>هل صنف الوحدة الجذر مزوّد يُحقن في أي مكان؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>AppModule</code> جذر الرسم. القالب يسجل عليه متحكمًا وخدمة. الميزات اللاحقة وحدات تُستورد لا ملفات تُكدس في <code>main.ts</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>اسم السياق الذي يعيش فيه هذا الرسم بعد <code>create</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Lazy loading: <a href="https://docs.nestjs.com/fundamentals/lazy-loading-modules">https://docs.nestjs.com/fundamentals/lazy-loading-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

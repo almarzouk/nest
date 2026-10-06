@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>توثيق Auth</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-auth-in-swagger.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>توثيق Auth</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إظهار قفل الجلسة وقفل <code>Bearer</code> في Swagger بما يطابق <code>@nestjs/authentication</code> في هذه الدورة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>POST /posts</code> في الواجهة يُجرَّب بلا رأس فيأخذ <code>401</code>. القارئ يظن أن المسار معطوب. أو تُضاف مصادقة Basic لأن المثال الرسمي بدأ بها، بينما المكتبة لا تقبل Basic. وثيقة بلا مخطط أمن تخفي أن القراءة العامة مفتوحة والكتابة مغلقة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>DocumentBuilder</code> يسجّل مخطط الأمن مرة. المزخرف على المتحكم أو العملية يطبّقه. <code>@ApiBearerAuth</code> مع <code>addBearerAuth</code> لرمز الوصول. <code>@ApiCookieAuth</code> مع <code>addCookieAuth</code> لكعكة الجلسة. اسم الكعكة في الوثيقة يطابق ما يضعه الخادم حتى يفهم المجرب أي قيمة يلصق. Swagger لا يسجّل الدخول عنك.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Security:</p>
+<pre><code class="language-ts">const config = new DocumentBuilder()
+  .setTitle(&quot;Library posts&quot;)
+  .setVersion(&quot;1.0&quot;)
+  .addCookieAuth(&quot;__Host-sid&quot;)
+  .addBearerAuth()
+  .build();
+</code></pre>
+<pre><code class="language-ts">import { ApiBearerAuth, ApiCookieAuth } from &quot;@nestjs/swagger&quot;;
+
+@ApiCookieAuth()
+@Controller(&quot;posts&quot;)
+export class PostsController {}
+</code></pre>
+<p><code>addBearerAuth()</code> يعرّف مخطط HTTP من نوع <code>bearer</code> بالاسم الافتراضي الذي يربطه <code>@ApiBearerAuth()</code>. <code>addCookieAuth</code> يأخذ اسم الكعكة. في الحزمة الاسم <code>__Host-sid</code> كما في فصل الكعكات. المثال في الصفحة يستخدم <code>&#39;optional-session-id&#39;</code> كموضع لاسم تكتبه أنت.</p>
+<p><code>@ApiSecurity(&#39;basic&#39;)</code> مع <code>addSecurity</code> لمخطط تبنيه يدويًا. <code>@ApiBasicAuth</code> و <code>addBasicAuth</code> لمسار Basic. المكتبة لا تستخدمه للدخول. لا تضفه حتى لا يظهر قفل لا يقبله الحارس.</p>
+<p><code>GET</code> المنشورات العامة: لا تضع المزخرف على ذلك المعالج، أو أزل الأمن عن العملية إن ورث المتحكم القفل. القفل على الصنف يعم الطرق. القراءة العامة تستحق عملية بلا أمن حتى لا يطلب Swagger مفتاحًا لـ <code>GET /posts</code>.</p>
+<p>تجربة الواجهة: Authorize ثم ألصق الرمز لـ Bearer. الكعكة أصعب من الواجهة لأن المتصفح يرفق <code>__Host-sid</code> حسب أصل الصفحة لا حسب حقل Authorize دائمًا. للتجربة اليدوية ابقَ على نفس الأصل، أو استخدم Bearer في Swagger والجوال، واترك الكعكة لمتصفح التطبيق. الوثيقتان معًا صادقتان لأن الحزمة تقبل الجلسة أولًا ثم <code>JwtBearerProvider</code> إن رُتّب.</p>
+<p>Passport ما زال وصفة رسمية. إن وثّقت مشروعًا قديمًا على <code>AuthGuard(&#39;jwt&#39;)</code> فالقفل Bearer يكفي هناك. لا تعلن الاثنين على مسار واحد في التطبيق كما سبق في الاختيار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">addCookieAuth + addBearerAuth في الوثيقة
+المسار المحمي يحمل قفلًا
+GET العام بلا قفل
+Authorize في الواجهة يملأ الرأس أو يشرح الكعكة
+الحارس ما زال يرفض الطلب الفارغ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@ApiBearerAuth()
+@Post()
+@ApiUnauthorizedResponse({ description: &quot;Missing session or bearer&quot; })
+create(@Body() dto: CreatePostDto) {
+  return this.posts.create(dto);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>هذا القفل لمسار واحد إن كانت بقية المتحكم عامة. <code>401</code> في الاستجابات يشرح فشل التجربة. لا تكتب كلمة المرور في وصف المزخرف. الرمز الذي يُلصق في Authorize هو <code>accessToken</code> قصير العمر من <code>TokenService</code>، لا تجزئة كلمة المرور.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المخططات تذهب إلى <code>components.securitySchemes</code>. العملية المحمية تأخذ مصفوفة <code>security</code>. Swagger UI يرسم قفلًا. عند التنفيذ يضيف <code>Authorization: Bearer</code> إن كان المخطط bearer ومُلئ. الكعكة تعتمد على المتصفح. الوثيقة لا تستدعي <code>SignInService</code>.</p>
+<p>مسار <code>@Public()</code> مع قفل في الوثيقة يربك القارئ: الواجهة تطلب رمزًا والخادم يتجاهل غيابه. زامن <code>@Public</code> مع غياب المزخرف.</p>
+<h2>مثال عملي</h2>
+<p><code>AuthController</code> للدخول يبقى بلا قفل على <code>sign-in</code> لأنه <code>@Public</code>. <code>GET /me</code> يحمل <code>@ApiCookieAuth</code> و <code>@ApiBearerAuth</code> إن قبل الاثنين. بعد فتح <code>/api</code> تأكد أن <code>sign-in</code> بلا قفل وأن <code>POST /posts</code> بقفل. نفّذ إنشاءً بلا Authorize وتوقع <code>401</code> في الاستجابة لا صفحة Swagger فارغة.</p>
+<p>لا تضع قيمة <code>__Host-sid</code> حقيقية في <code>example</code> داخل المستودع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>addBasicAuth</code> لمشروع الجلسة.</li>
+<li>قفل على المتحكم كله بما فيه <code>GET</code> العام.</li>
+<li>اسم كعكة في الوثيقة غير <code>__Host-sid</code>.</li>
+<li>لصق <code>passwordHash</code> في خانة Bearer.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل عملية يغطيها الحارس، بمخطط يطابق ما يرسله العميل فعلًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كآلية دخول. Authorize يخزن الرمز في المتصفح لتجربة الواجهة. احذف التجربة على جهاز مشترك. الإنتاج الذي يعرض Swagger للعلن يعرض شكل العقد لا أسرار المستخدمين.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>@ApiCookieAuth</code></th>
+<th><code>@ApiBearerAuth</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يوثّق <code>__Host-sid</code></td>
+<td>يوثّق <code>Authorization: Bearer</code></td>
+</tr>
+<tr>
+<td>مناسب لواجهة نفس الأصل</td>
+<td>مناسب للجوال ولتجربة Swagger</td>
+</tr>
+<tr>
+<td>يحتاج <code>addCookieAuth</code></td>
+<td>يحتاج <code>addBearerAuth</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مستدعٍ في <code>DocumentBuilder</code> يسجّل Bearer الجاهز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>addBearerAuth()</code>، والمزخرف <code>@ApiBearerAuth()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يبقى <code>POST /auth/sign-in</code> بلا <code>@ApiCookieAuth</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسار عام قبل وجود جلسة. القفل يوحي أن الطلب يحتاج كعكة مسبقة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المتحكم عليه <code>@ApiCookieAuth</code> و <code>GET /posts</code> عام. كيف تُصلح الوثيقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>انقل المزخرف إلى عمليات الكتابة فقط، واترك القراءة بلا أمن. أو أقسم المتحكم إن اختلط العام بالمحمي بكثرة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما اسم الكعكة الذي يُمرَّر إلى <code>addCookieAuth</code> هنا؟</li>
+<li>هل الواجهة تسجّل الدخول؟</li>
+<li>أي مخطط لا نعلنه لمكتبة الدورة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوثيقة تقفل ما يقفله الحارس: كعكة الجلسة و Bearer. التسجيل والقراءة العامة بلا قفل. Basic لا يدخل عقد هذه الدورة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-examples-and-responses.html">Examples و Response Types</a> أجسام النجاح والقوائم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — OpenAPI security: <a href="https://docs.nestjs.com/openapi/security">https://docs.nestjs.com/openapi/security</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

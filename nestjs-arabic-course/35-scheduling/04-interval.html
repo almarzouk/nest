@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interval</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-interval.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Interval</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل دالة كل مدة ثابتة بالميلي ثانية، من لحظة تسجيل المؤقت لا من خانة على الساعة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قياس طول طابور <code>covers</code> كل ثلاثين ثانية لا يحتاج نمط cron. كتابة <code>*/30 * * * * *</code> صحيحة لكنها أصعب قراءة لنبضة تشخيص. <code>@Interval</code> يصرّح بالمدة directly. هو لا يستبدل التقرير اليومي.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Interval(30_000)</code> يستدعي الدالة كل 30 ثانية. الرقم بالميلي ثانية كبقية المدد في هذه الفصول. الدالة تقرأ مقياسًا أو تضع علمًا. إن احتاجت قاعدة، فالاستعلام رخيص. العمل الثقيل يُدرج إلى طابور.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { Interval } from &#39;@nestjs/schedule&#39;;
+import { InjectQueue } from &#39;@nestjs/bullmq&#39;;
+import { Queue } from &#39;bullmq&#39;;
+import { coverQueueName } from &#39;../covers/queue-names.js&#39;;
+
+@Injectable()
+export class QueueWatchService {
+  constructor(@InjectQueue(coverQueueName) private readonly covers: Queue) {}
+
+  @Interval(30_000)
+  async logWaiting() {
+    const waiting = await this.covers.getJobCounts(&#39;waiting&#39;);
+    if (waiting.waiting &gt; 100) {
+      this.logger.warn(`covers waiting ${waiting.waiting}`);
+    }
+  }
+}
+</code></pre>
+<p><code>getJobCounts</code> قراءة حالة لا تنفيذ قص. التحذير عبر <code>Logger</code> ستفصله في فصل التسجيل. هنا المهم أن النبضة لا تنادي <code>resize</code>.</p>
+<p>اسم اختياري يميّز المؤقت إن أردت إيقافه لاحقًا عبر <code>SchedulerRegistry</code>: <code>@Interval(&#39;covers-waiting&#39;, 30_000)</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إقلاع
+  30s -&gt; logWaiting
+  30s -&gt; logWaiting
+  ...
+</code></pre>
+<p>إعادة التشغيل تعيد العد من الصفر. لا التقاط لنبضة فاتت.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Interval(30_000)
+async logWaiting() {
+  const counts = await this.covers.getJobCounts(&#39;waiting&#39;);
+  if (counts.waiting &gt; 100) {
+    this.logger.warn(`covers waiting ${counts.waiting}`);
+  }
+}
+</code></pre>
+<p>حد 100 رقم تشغيلي تضعه في الإعداد إن تعدد البيئات. لا تقص المهام داخل هذا الفرع.</p>
+<h2>شرح المثال</h2>
+<p>ثلاثون ألف ميلي ثانية بين بداية الاستدعاءات حسب سلوك المكتبة. إن استمر <code>getJobCounts</code> نادرًا أطول من المدة، قد تتداخل النبضات. القراءة القصيرة لا تحتاج قفلًا. إن تحولت الدالة إلى مسح جدول كبير، أعدها إلى <code>@Cron</code> ليلي أو إلى مهمة طابور.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>setInterval</code> في العملية يجدول الدالة. لا Redis للجدولة نفسها، لكن <code>getJobCounts</code> يسأل Redis الخاص بـ BullMQ. سقوط Redis يرمي داخل النبضة. التقط خطأ الاتصال وسجّله مرة، ولا تبنِ حلقة إعادة داخل <code>@Interval</code> لأن النبضة التالية ستحاول أصلًا. نسختان تعني تحذيرين كل 30 ثانية. للقياس هذا مقبول. لإجراء تغيير في القاعدة من النبضة راجع قفل الفصل السابق.</p>
+<h2>مثال عملي</h2>
+<p>نبضة تتفقد كتب <code>pending</code> أقدم من خمس دقائق وتعيد <code>enqueueResize</code> بمعرّف المهمة نفسه:</p>
+<pre><code class="language-ts">@Interval(60_000)
+async requeueStuck() {
+  const stuck = await this.books.pendingOlderThan(5 * 60_000);
+  for (const book of stuck) {
+    await this.producer.enqueueResize({ bookId: book.id, coverKey: book.coverKey });
+  }
+}
+</code></pre>
+<p>هذا تعويض عن نافذة «حُفظ الصف وفشل <code>add</code>»، لا بديل عن <code>attempts</code> لمهمة وصلت الطابور وفشل قصها. <code>jobId</code> يمنع تكديس النسخ. إن كانت القائمة ضخمة، أدرجها كمهمة واحدة <code>requeue-stuck</code> بدل الحلقة في النبضة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Interval(30)</code> باعتقاد أنها ثوانٍ، فتعمل كل 30 ميلي ثانية.</li>
+<li>قص أو بريد جماعي داخل النبضة.</li>
+<li>استبدال <code>@Cron(&#39;0 0 1 * * *&#39;)</code> بفترة 24 ساعة من وقت النشر.</li>
+<li>نسيان أن كل نسخة تقيس وتكتب إن كانت النبضة تغيّر بيانات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لتباعد ثابت: مقياس، أو التقاط مهام عالقة، أو تنظيف لا يهتم بالدقيقة على الساعة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لموعد تقويمي ومنطقة زمنية. ولا كمهلة طلب HTTP.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>مرجع الزمن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Interval(30_000)</code></td>
+<td>تباعد 30 ثانية في العملية</td>
+</tr>
+<tr>
+<td><code>@Cron(&#39;0 15 * * * *&#39;)</code></td>
+<td>الدقيقة 15</td>
+</tr>
+<tr>
+<td><code>timeout</code> في Axios</td>
+<td>سقف طلب واحد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعني <code>30_000</code> في <code>@Interval</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>30 ثانية، لأن الوحدة ميلي ثانية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>requeueStuck</code> يستعمل <code>jobId</code> الموجود في المنتج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا تُضاف مهمة قص ثانية للكتاب نفسه إن كانت الأولى ما زالت قائمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تُخرج الحلقة من <code>@Interval</code> إلى مهمة طابور واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يكبر عدد الكتب العالقة ويطول عمل النبضة أو يتداخل. النبضة تدرج مهمة، والعامل يمشي على المعرفات.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين التباعد والتقويم؟</li>
+<li>ماذا تفعل النبضة إن سقط Redis؟</li>
+<li>أي أثر لا يكون داخل <code>logWaiting</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Interval</code> بالميلي ثانية لتباعد ثابت داخل العملية. اقرأ أو أعد إدراج معرفات. لا تنفّذ القص ولا تعتمد عليه لساعة الفجر.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>@Timeout</code> لنبضة واحدة بعد الإقلاع، لا كل فترة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Task scheduling: <a href="https://docs.nestjs.com/techniques/task-scheduling">https://docs.nestjs.com/techniques/task-scheduling</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

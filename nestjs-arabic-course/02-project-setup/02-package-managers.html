@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>npm و pnpm و yarn و bun</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-package-managers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>npm و pnpm و yarn و bun</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ماذا يفعل مدير الحزم في مشروع Nest، وأي الأسماء يدعمها CLI الإصدار 12.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الإطار مجموعة حزم على سجل npm. من غير مدير حزم تنسخ المجلدات يدويًا وتفقد القفل الذي يجعل تثبيت زميل المطابقة لتثبيت جهازك.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المدير يقرأ <code>package.json</code>، ينزّل الاعتماديات، ويكتب ملف قفل. npm يأتي مع Node. Nest CLI 12 يدعم أيضًا yarn و pnpm و bun.</p>
+<h2>التعريف التقني</h2>
+<p><code>package.json</code> يعلن الاسم والنسخة والسكربتات والاعتماديات. <code>dependencies</code> تلزم التشغيل. <code>devDependencies</code> للتطوير والاختبار والترجمة. ملف القفل (<code>package-lock.json</code> أو ما يقابله) يثبت النسخ الفعلية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">package.json   ماذا نريد
+lockfile       ماذا ثُبّت بالضبط
+node_modules   الملفات المحمّلة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npm install
+npm install @nestjs/common
+</code></pre>
+<h2>شرح المثال</h2>
+<p>بلا وسائط، <code>npm install</code> يثبّت ما في القفل أو في <code>package.json</code>. مع اسم حزمة يضيفها إلى <code>dependencies</code> ثم يثبّتها. <code>npm install -D</code> يضعها في <code>devDependencies</code>. pnpm أوامرها قريبة: <code>pnpm add</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المدير يحل شجرة الإصدارات، يتحقق من السجل، ويكتب <code>node_modules</code>. Nest لا تملك سجلًا خاصًا. <code>@nestjs/core</code> حزمة عامة. سكربتات <code>npm run start:dev</code> تقرأ مفتاح <code>scripts</code> الذي يولّده CLI.</p>
+<h2>مثال عملي</h2>
+<p>في هذه الدورة الأمثلة تستخدم npm لأنه الافتراضي مع توثيق First steps. إن اختار الفريق pnpm فليبقَ القفل نفسه للجميع. لا تخلط مديرين في المستودع الواحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>رفع <code>node_modules</code> إلى Git. القفل يكفي لإعادة التثبيت.</li>
+<li>حذف ملف القفل في كل تثبيت. تضيع قابلية التكرار.</li>
+<li>تثبيت حزمة Nest قديمة بنسخ مكتوبة في درس قديم من غير النظر إلى توثيق 12.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لإضافة <code>@nestjs/config</code> أو <code>class-validator</code> أو عميل قاعدة البيانات عندما يصل درسها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تثبّت حزمة قبل الفصل الذي يشرحها كي لا يصبح المشروع كومة اعتماديات صامتة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مدير</th>
+<th>ملف قفل شائع</th>
+<th>دعم Nest CLI 12</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>npm</td>
+<td>package-lock.json</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>pnpm</td>
+<td>pnpm-lock.yaml</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>yarn</td>
+<td>yarn.lock</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>bun</td>
+<td>bun.lock</td>
+<td>نعم في CLI 12</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ملف تعلن فيه سكربت <code>start:dev</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>package.json</code> تحت المفتاح <code>scripts</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يثبّت زميلك نسخة مختلفة من حزمة إذا لم يُرفع ملف القفل؟</p>
+<details><summary>الحل</summary>
+
+<p><code>package.json</code> قد يسمح بمدى إصدارات. المدير يحل أحدث ما يطابق المدى يوم التثبيت. القفل يثبت الحل الذي اختُبر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فرّق بين اعتمادية تشغيل مثل <code>@nestjs/core</code> واعتمادية تطوير مثل أداة الاختبار.</p>
+<details><summary>الحل</summary>
+
+<p>الأولى تبقى في الإنتاج لأن التطبيق يستوردها عند التشغيل. الثانية تُستخدم للبناء أو الاختبار ويمكن إسقاطها من تثبيت الإنتاج (<code>npm ci --omit=dev</code>) بعد وجود ناتج البناء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يثبت ملف القفل؟</li>
+<li>أين تعيش سكربتات npm؟</li>
+<li>أي مديري حزم يذكرهم مسار Nest 12 إضافة إلى npm؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المدير يثبّت شجرة Nest من <code>package.json</code> والقفل. الزم الفريق على مدير واحد.</p>
+<h2>ماذا بعد؟</h2>
+<p>CLI يستخدم المدير بعد أن ينشئ الملفات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TRANSIENT</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-transient-scope.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>TRANSIENT</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز النسخة الخاصة بكل مكان حقن عن نسخة الطلب، ومعرفة أن هذا النطاق لا يصعد إلى المستهلك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسجّل يريد أن يعرف من استدعاه، أو مولّد حالة يجب ألا يُشارك بين خدمتين حتى داخل الطلب نفسه. <code>REQUEST</code> ما زال يشارك النسخة داخل شجرة ذلك الطلب، ويصعد بالنطاق. <code>TRANSIENT</code> يعطي كل مستهلك كائنًا مخصصًا ويترك المستهلك على نطاقه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المزود العابر غير مشترك بين المستهلكين. إن حقنت <code>LoggerService</code> العابرة في <code>BooksService</code> و <code>OrdersService</code> فلكل واحدة نسخة. <code>BooksService</code> إن كانت <code>DEFAULT</code> تبقى واحدة، ونسخة المسجّل تعيش داخلها. حقن <code>BooksService</code> في مكان آخر لا يصنع <code>BooksService</code> جديدة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+
+@Injectable({ scope: Scope.TRANSIENT })
+export class LoggerService {}
+</code></pre>
+<p>وعلى المزود المخصص: <code>scope: Scope.TRANSIENT</code> بجانب <code>provide</code> و <code>useClass</code>.</p>
+<p>التوثيق: إن حقن <code>DogsService</code> الـ Singleton مزودًا عابرًا، يأخذ نسخة طازجة، ويبقى <code>DogsService</code> نفسه Singleton. من يحقن <code>DogsService</code> لا يحصل على نسخة جديدة منه. إن أردت ذلك علّم <code>DogsService</code> صراحة <code>TRANSIENT</code>.</p>
+<p>رمز <code>INQUIRER</code> من <code>@nestjs/core</code> يعطي الصنف الذي بُني المزود داخله. مفيد مع النطاق العابر للسجلات والمقاييس:</p>
+<pre><code class="language-ts">import { Inject, Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { INQUIRER } from &#39;@nestjs/core&#39;;
+
+@Injectable({ scope: Scope.TRANSIENT })
+export class HelloService {
+  constructor(@Inject(INQUIRER) private readonly parentClass: object) {}
+
+  sayHello(message: string): void {
+    const name = this.parentClass?.constructor?.name ?? &#39;unknown&#39;;
+    console.log(`${name}: ${message}`);
+  }
+}
+</code></pre>
+<p><code>get()</code> على <code>ModuleRef</code> لا يسترجع المزودات ذات النطاق، بما فيها العابرة. استخدم <code>resolve()</code> كما في فصل <code>ModuleRef</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksService (واحدة)  -&gt; HelloService نسخة أ
+OrdersService (واحدة) -&gt; HelloService نسخة ب
+نسخة أ !== نسخة ب
+BooksService تبقى واحدة مهما كثرت الطلبات
+</code></pre>
+<p>لا context id لكل طلب بسبب هذا المزود وحده.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { HelloService } from &#39;./hello.service.js&#39;;
+
+@Injectable()
+export class AppService {
+  constructor(private readonly helloService: HelloService) {}
+
+  getRoot(): string {
+    this.helloService.sayHello(&#39;My name is getRoot&#39;);
+    return &#39;Hello world!&#39;;
+  }
+}
+</code></pre>
+<p>عند النداء تطبع <code>AppService: My name is getRoot</code> لأن <code>INQUIRER</code> هو الصنف الأب الذي حقن النسخة العابرة.</p>
+<h2>شرح المثال</h2>
+<p><code>HelloService</code> عابرة، فالنسخة التي داخل <code>AppService</code> ليست التي داخل خدمة أخرى. <code>INQUIRER</code> يُحقن وقت البناء ويعرف الأب. لو كانت الخدمة <code>DEFAULT</code> لاشترك الجميع في مسجّل واحد ولما اختلف الأب بشكل مفيد لكل مستهلك.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية ترى الاعتماد العابر أثناء بناء <code>AppService</code>.</li>
+<li>تنشئ <code>HelloService</code> مخصصة لهذا البناء وتحقن <code>INQUIRER</code>.</li>
+<li>تخزن <code>AppService</code> كـ Singleton مع حقل يشير إلى تلك النسخة.</li>
+<li>بناء <code>OrdersService</code> ينشئ <code>HelloService</code> ثانية.</li>
+<li>طلبات لاحقة تعيد <code>AppService</code> نفسها ونسخة المسجّل نفسها المرتبطة بها.</li>
+<li>لا عدوى: وجود العابر لا يعلّم الأب <code>REQUEST</code> ولا <code>TRANSIENT</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>ساعة توقيت لكل خدمة تقيس عملها من غير سباق على حقول مشتركة:</p>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+
+@Injectable({ scope: Scope.TRANSIENT })
+export class Stopwatch {
+  private started = 0;
+
+  start(): void {
+    this.started = Date.now();
+  }
+
+  millis(): number {
+    return Date.now() - this.started;
+  }
+}
+</code></pre>
+<p><code>ImportService</code> و <code>ExportService</code> تحقنان <code>Stopwatch</code>. استدعاء <code>start</code> في الاستيراد لا يصفّر ساعة التصدير. لو كانت الساعة <code>DEFAULT</code> لشاركت الحقل <code>started</code> كل الخدمات. لو كانت <code>REQUEST</code> لصعدت الخدمتان إلى نطاق الطلب إن حقنتاها، ودفعت ثمن الشجرة لكل طلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>انتظار عدوى مثل <code>REQUEST</code>. الأب يبقى على نطاقه.</li>
+<li>استخدام <code>TRANSIENT</code> لعميل قاعدة، فتفتح عميلًا لكل خدمة من غير داعٍ.</li>
+<li>استرجاع النسخة بـ <code>ModuleRef.get()</code>. العابر يُحل بـ <code>resolve()</code>.</li>
+<li>نسيان <code>INQUIRER</code> ثم محاولة تخزين اسم الأب يدويًا على Singleton.</li>
+<li>تعليم المتحكم <code>TRANSIENT</code> لحل مشكلة مستخدم. المتحكم العابر ليس بديل الديكور.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حالة صغيرة يجب أن تُعزل لكل مستهلك: مسجّل يعرف أباه، ساعة، سياق بناء. الأب يبقى Singleton.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمشاركة اتصال، أو لعزل كل طلب. العزل لكل طلب هو <code>REQUEST</code> إن كانت النسخة نفسها يجب أن تختلف مع الطلب. المستخدم الحالي يبقى على الطلب لا على النطاق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>DEFAULT</code></th>
+<th><code>REQUEST</code></th>
+<th><code>TRANSIENT</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المشاركة</td>
+<td>كل التطبيق</td>
+<td>داخل الطلب</td>
+<td>لا تُشارك بين المستهلكين</td>
+</tr>
+<tr>
+<td>عدوى</td>
+<td>—</td>
+<td>تصعد</td>
+<td>لا تصعد</td>
+</tr>
+<tr>
+<td><code>INQUIRER</code></td>
+<td>أب واحد غير مفيد</td>
+<td>حسب الشجرة</td>
+<td>الأب الذي حقن هذه النسخة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>خدمتان Singleton تحقن <code>LoggerService</code> العابرة. كم نسخة مسجّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نسختان، واحدة لكل مستهلك. الخدمتان تبقيان Singleton.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يطبع <code>INQUIRER</code> في المثال الرسمي داخل <code>AppService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اسم الأب <code>AppService</code>، فالسطر يبدأ بـ <code>AppService:</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا إبقاء <code>Stopwatch</code> عابرة أرخص من تعليم سلسلة الكتب <code>REQUEST</code> لأجل ساعة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العابر يبني كائن ساعة صغير لكل مستهلك عند الإقلاع ويبقي المتحكم Singleton. <code>REQUEST</code> يعيد بناء المتحكم وكل السلسلة الصاعدة لكل طلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل النطاق العابر يعدي؟</li>
+<li>متى يفيد <code>INQUIRER</code>؟</li>
+<li>كيف تسترجع نسخة عابرة من <code>ModuleRef</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>TRANSIENT</code> نسخة مخصصة لكل حقن، والمستهلك يبقى على نطاقه. استخدمه لعزل حالة صغيرة، لا لاتصال مشترك ولا للمستخدم الحالي.</p>
+<h2>ماذا بعد؟</h2>
+<p>الأثر على الأداء: ماذا يكلف صعود <code>REQUEST</code> في الشجرة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

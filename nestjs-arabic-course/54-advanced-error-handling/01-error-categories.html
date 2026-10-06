@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أنواع الأخطاء</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-error-categories.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أنواع الأخطاء</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت قائمة قصيرة لأنواع الفشل في متجر رف، حتى تتفق الخدمة والفلتر والعميل على الاسم قبل الاتفاق على رمز HTTP.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق الواجهة يرى أحيانًا <code>200</code> مع <code>book: null</code>، وأحيانًا <code>500</code> لأن العنوان فارغ، وأحيانًا <code>400</code> لأن الكتاب محذوف. كل مسار اخترع رده. العميل لا يستطيع رسم حالة واحدة للغياب وحالة واحدة لتعارض النشر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنّف الفشل حسب من يملك القرار: المدخلات، قاعدة المجال، الغياب، تعارض الحالة، أو عطل لم تتوقعه. التصنيف يحدث في الكود كأنواع. الرمز على السلك يأتي لاحقًا في درس التحويل، لا داخل هذا التصنيف.</p>
+<h2>التعريف التقني</h2>
+<p>في Nest، فشل التحقق من <code>ValidationPipe</code> أو <code>StandardSchemaValidationPipe</code> خطأ حدّي يتعلق بشكل الطلب. <code>HttpException</code> وأصنافها (<code>NotFoundException</code>, <code>ConflictException</code>, ...) أخطاء تعرف وضع HTTP مسبقًا. خطأ المجال صنف تملكه أنت ويرميه الـ Service بلا استيراد <code>@nestjs/common</code>. العطل غير المتوقع أي شيء آخر: انقطاع Prisma، <code>TypeError</code>، رفض لم تلتقطه. الاستراتيجية الناضجة تبقي هذه الخانات منفصلة حتى يترجمها فلتر واحد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">شكل الجسم        تحقق
+قاعدة نشر        مجال
+لا صف            غياب
+الحالة تمنع      تعارض
+سقوط اتصال       غير متوقع
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class BookNotFound extends Error {
+  constructor(readonly bookId: string) {
+    super(`Book ${bookId} was not found`);
+  }
+}
+
+export class BookAlreadyPublished extends Error {
+  constructor(readonly bookId: string) {
+    super(`Book ${bookId} is already published`);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاسمان يخبران الخدمة ماذا حدث، لا ماذا يكتب المتحكم.</li>
+<li><code>bookId</code> يصل إلى السجل لاحقًا. رسالة <code>Error</code> للبشر داخل العملية.</li>
+<li>لا حقل <code>statusCode</code> هنا. وجوده يخلط التصنيف بالبروتوكول.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الـ Pipe يرفض الشكل قبل الخدمة. هذا تحقق.</li>
+<li>الخدمة تبحث. صفر صفوف يعني غيابًا، فترمي <code>BookNotFound</code>.</li>
+<li>إن وجدت الصف والحالة <code>published</code> وأمر النشر تكرر، ترمي <code>BookAlreadyPublished</code>. هذا تعارض.</li>
+<li>إن رمى العميل Prisma <code>P2002</code> على قيد فريد، فهذا تعارض ثبات أيضًا لكن مصدره القاعدة، ويُترجم في نفس الخانة.</li>
+<li>انقطاع الشبكة إلى القاعدة لا يدخل أي خانة مجال. يبقى غير متوقع.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export type ShelfFailure =
+  | { kind: &#39;validation&#39;; field: string }
+  | { kind: &#39;not-found&#39;; bookId: string }
+  | { kind: &#39;conflict&#39;; bookId: string; state: string }
+  | { kind: &#39;unexpected&#39; };
+
+export function classify(error: unknown): ShelfFailure[&#39;kind&#39;] {
+  if (error instanceof BookNotFound) return &#39;not-found&#39;;
+  if (error instanceof BookAlreadyPublished) return &#39;conflict&#39;;
+  return &#39;unexpected&#39;;
+}
+</code></pre>
+<p>الدالة لا تكتب HTTP. هي العقد الذي سيستهلكه الفلتر في الدرس الثالث. التحقق أصلًا لا يصل إليها إن أوقف الـ Pipe الطلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>خانة واحدة اسمها <code>AppError</code> فيها <code>status</code> اختياري فيمتلئ بكل شيء.</li>
+<li>معاملة الغياب كقائمة فارغة في <code>GET /books/:id</code> ومعاملته كنجاح في القائمة. القائمة الفارغة نجاح بحث؛ المعرّف الغائب غياب. تفصيل الرموز في فصل التصميم، والتصنيف هنا يفصل الحالتين.</li>
+<li>تسجيل أخطاء التحقق بنفس مستوى سقوط القاعدة، فيختفي العطل داخل الضجيج.</li>
+<li>رمي <code>Error</code> نصي: <code>throw new Error(&#39;not found&#39;)</code> ثم البحث في الرسالة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في بداية أي ميزة تغيّر حالة كتاب: انشر، أوقف، احذف. اكتب الأنواع قبل المتحكم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضف نوعًا لكل سطر <code>if</code>. إن لم يتغير سلوك العميل ولا السجل، أبقِ الفشل داخل التحقق أو داخل نوع موجود.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النوع</th>
+<th>من يرميه عادة</th>
+<th>هل يعرف HTTP؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تحقق</td>
+<td>Pipe</td>
+<td>نعم، 400 عبر الأنبوب</td>
+</tr>
+<tr>
+<td>غياب / تعارض مجال</td>
+<td>Service</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>HttpException</code> جاهز</td>
+<td>الحد، أو كود قرر الارتباط بـ HTTP</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>غير متوقع</td>
+<td>أي طبقة</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>publish()</code> وجد الكتاب منشورًا. أي نوع من القائمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تعارض حالة. الكتاب موجود، والعملية لا تجوز في هذه الحالة. ليس غيابًا وليس عطلًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>findMany</code> أعاد <code>[]</code> لتصفية لا تطابق شيئًا، و <code>findUnique</code> أعاد <code>null</code>. هل هما نوع واحد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. مصفوفة فارغة نتيجة بحث ناجحة. <code>null</code> على معرّف محدد غياب. النوعان يُترجمان لاحقًا إلى ردّين مختلفين.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>Prisma رمى انتهاك مفتاح فريد على <code>isbn</code> أثناء الإنشاء. في أي خانة تضعه، ولماذا لا تضعه مع سقوط الاتصال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تعارض ثبات: العميل يستطيع تصحيح ISBN. سقوط الاتصال لا يصلحه العميل بإعادة إرسال نفس الجسم، فهو غير متوقع حتى لو كانت الرسالة من Prisma أيضًا. ميّز بالكود (<code>P2002</code>) لا بنوع الاستثناء العام للمكتبة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الخانات الخمس التي تكفي رف في هذا الدرس؟</li>
+<li>لماذا لا يحمل نوع المجال <code>statusCode</code>؟</li>
+<li>ما فرق القائمة الفارغة عن المعرّف الغائب؟</li>
+<li>أي الأخطاء يصل أصلًا قبل الخدمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التصنيف أسماء ثابتة للفشل: تحقق، مجال، غياب، تعارض، غير متوقع. الرمز والشكل قرار لاحق على الحد. الرسالة النصية ليست نوعًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الخانات واضحة. الدرس التالي يكتب أصناف المجال التي يرميها <code>BooksService</code> من غير Nest HTTP.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

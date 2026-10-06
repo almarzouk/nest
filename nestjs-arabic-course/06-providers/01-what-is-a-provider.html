@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Provider</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-a-provider.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Provider</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف Provider: أي شيء تسجّله الحاوية ليُحقَن في صنف آخر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>Controller الذي ينشئ مستودعًا وأداة تسعير بنفسه يملك شبكة كائنات خفية. Provider يخرج هذه الكائنات إلى تسجيل صريح، وNest توصلها لمن يطلبها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التوثيق يقول إن Services و Repositories و Factories و Helpers يمكن أن تكون Providers. الفكرة أن الصنف يُحقن كاعتمادية، فتتكوّن علاقات بين الكائنات، ووقت التشغيل يتولى التوصيل.</p>
+<p>في أبسط شكل، Provider صنف JavaScript داخل مصفوفة <code>providers</code> في Module.</p>
+<h2>التعريف التقني</h2>
+<p>التسجيل الافتراضي هو اسم الصنف:</p>
+<pre><code class="language-ts">providers: [FeesService]
+</code></pre>
+<p>هذا اختصار لربط الرمز <code>FeesService</code> بالصنف نفسه. الأشكال <code>useClass</code> و <code>useValue</code> و <code>useFactory</code> و <code>useExisting</code> دروس لاحقة في هذا الفصل. هنا يكفي أن الحاوية لا ترى إلا ما سُجّل.</p>
+<p>Controller يبقى في <code>controllers</code>. هو يستهلك Provider ولا يُعاد إعلانه داخل <code>providers</code> في الاستعمال المعتاد.</p>
+<p><code>@Injectable()</code> على الصنف يعلن أنه قابل للإدارة. تفصيل الزينة في درسها. النطاق الافتراضي Singleton: نسخة واحدة تُشارك. Scope درس مستقل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Module.providers  -&gt;  سجل الحاوية
+        |
+        v
+Controller أو Provider آخر يطلب النوع في constructor
+        |
+        v
+النسخة نفسها تُمرَّر عند النطاق الافتراضي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class FeesService {
+  lateFee(days: number) {
+    return days * 2;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { FeesService } from &#39;./fees.service.js&#39;;
+
+@Module({
+  providers: [FeesService],
+})
+export class FeesModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الصنف قاعدة غرامة بسيطة. لا مسار HTTP هنا.</li>
+<li><code>@Injectable()</code> من <code>@nestjs/common</code> يضع Metadata الإدارة.</li>
+<li><code>providers: [FeesService]</code> هو التسجيل. من غيره لا تملك الحاوية رمزًا تمرره.</li>
+<li><code>FeesModule</code> حد التسجيل، كما في فصل Modules. التصدير لازم فقط عندما تحقنه Module أخرى.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تقرأ Nest مصفوفة <code>providers</code> وتسجل الرمز. عندما تبني صنفًا يعتمد على <code>FeesService</code> تبحث عن الرمز، وتنشئ النسخة مرة ضمن النطاق الافتراضي، وتخزنها، وتمررها إلى <code>constructor</code>. إنشاء الاعتماديات بـ <code>new</code> داخل الملفات موضوع فصل Dependency Injection. هنا التسجيل هو الباب.</p>
+<p>Provider يمكن أن يكون قيمة أو مصنعًا، لا صنف خدمة فقط. تلك الأشكال تأتي بعد أن يثبت تسجيل الصنف.</p>
+<h2>مثال عملي</h2>
+<p>مستودع وقارئة أسعار بجانب الخدمة، والخدمة هي التي تُصدَّر:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { FeeRates } from &#39;./fee-rates.js&#39;;
+import { FeesService } from &#39;./fees.service.js&#39;;
+import { LoansRepository } from &#39;./loans.repository.js&#39;;
+
+@Module({
+  providers: [FeesService, FeeRates, LoansRepository],
+  exports: [FeesService],
+})
+export class FeesModule {}
+</code></pre>
+<p><code>FeeRates</code> و <code>LoansRepository</code> مرئيان داخل <code>FeesModule</code> فقط. Module الطلبات التي تستورد <code>FeesModule</code> تستطيع حقن <code>FeesService</code> لأن اسمها في <code>exports</code>. الحقن نفسه يُكتب في <code>constructor</code>، ودرسه يلي التسجيل.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ملف <code>fees.service.ts</code> من غير <code>providers</code></td>
+<td>الحاوية لا تعرف الرمز رغم أن TypeScript يستورد الملف</td>
+</tr>
+<tr>
+<td>وضع <code>FeesService</code> في <code>controllers</code></td>
+<td>الخدمة تُعامل كمدخل HTTP</td>
+</tr>
+<tr>
+<td>توقع أن كل صنف في المجلد Provider</td>
+<td>التسجيل قرار في <code>@Module</code></td>
+</tr>
+<tr>
+<td><code>new FeesService()</code> داخل Controller بجانب التسجيل</td>
+<td>نسختان: واحدة من الحاوية وأخرى محلية</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لكل قدرة يريد صنف آخر استخدامها عبر الحاوية: حساب، مستودع، عميل HTTP، إعداد ثابت ستحقنه لاحقًا كقيمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لدالة تُستدعى مرة داخل ملف واحد ولا يحتاجها صنف آخر. تلك دالة عادية في الملف. ولصنف مسارات HTTP. ذلك Controller في <code>controllers</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>الدور</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>providers</code></td>
+<td>ما تنشئه الحاوية أو تحفظه تحت رمز</td>
+</tr>
+<tr>
+<td><code>controllers</code></td>
+<td>مداخل HTTP</td>
+</tr>
+<tr>
+<td><code>exports</code></td>
+<td>ما يجوز لـ Module مستورِدة أن تحقنه</td>
+</tr>
+<tr>
+<td>استيراد TypeScript</td>
+<td>يجعل الاسم ظاهرًا للمترجم، ولا يسجل الرمز</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اذكر ثلاثة أشكال يصنفها التوثيق كـ Provider.</p>
+<details><summary>الحل</summary>
+
+<p>من القائمة: Service و Repository و Factory و Helper. أي منها يُسجَّل ليُحقن.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>FeesService</code> مستوردة في Controller و <code>FeesModule</code> لا تسجلها. ماذا ينقص الحاوية؟</p>
+<details><summary>الحل</summary>
+
+<p>سجلًا في <code>providers</code>، ثم تصديرًا إن كان Controller في Module أخرى. استيراد الملف لا يغني عن المصفوفة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يبقى <code>FeeRates</code> خارج <code>exports</code> بينما الخدمة داخله؟</p>
+<details><summary>الحل</summary>
+
+<p>جدول الأسعار تفصيل داخل الميزة. <code>FeesService</code> هي العقد الذي تستهلكه الطلبات. إخفاء <code>FeeRates</code> يمنع Module أخرى من الاعتماد على شكل الجدول.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفكرة الرئيسية وراء Provider؟</li>
+<li>أين يُسجَّل صنف حتى تستطيع الحاوية حقنه؟</li>
+<li>ما النطاق الافتراضي الذي ستفصّله لاحقًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Provider كائن تديره الحاوية وتوصله لمن يطلبه. التسجيل في <code>providers</code> هو ما يجعله مرئيًا، والصنف العادي على القرص لا يدخل السجل وحده.</p>
+<h2>ماذا بعد؟</h2>
+<p>Service كمكان قاعدة العمل الذي يستدعيه Controller.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

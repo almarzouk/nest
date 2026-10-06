@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Permissions و Claims</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-permissions-and-claims.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Permissions و Claims</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التفريق بين صلاحية محفوظة عندك و claim يحمله الرمز أو الجلسة، ومتى لا يكفي الادعاء.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يضع <code>permissions: [&quot;post:publish&quot;]</code> داخل JWT ويعتبره مصدر الحقيقة. سحب الصلاحية لا يسري حتى ينتهي الرمز. فريق آخر يسمي كل حقل في الرمز «صلاحية» فيختلط <code>sub</code> بمعرّف الشخص مع فعل مسموح.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الصلاحية قرار منتج مخزّن عندك: هذا المستخدم يملك <code>post:publish</code>. الـ claim زوجًا وقّعه المُصدر داخل الرمز أو خزّنه في الجلسة، مثل <code>sub</code> أو <code>amr</code>. قد ينسخ claim قائمة صلاحيات لحظة الإصدار. النسخة قد تقدُم. الصلاحية الحالية تُقرأ من قاعدتك حين يهمك أن يسري السحب فورًا.</p>
+<h2>التعريف التقني</h2>
+<p>في <code>@nestjs/authentication</code>، <code>claims</code> التي تمرّ إلى <code>TokenService.issue</code> تُنسخ إلى رموز العائلة عند التحديث. الصفحة تحذّر من وضع حقائق تتغير، مثل الأدوار، داخلها. <code>amr</code> وصف لطريقة الدخول، لا صلاحية نشر. <code>sub</code> معرّف، لا فعل.</p>
+<p>صلاحيات المكتبة تبقى في الجدول أو في <code>roles</code> على الصف، و <code>validate</code> يحمّلها إلى <code>PublicUser</code>. السياسة تقرأ <code>user.roles</code> لا <code>payload.permissions</code> القديم.</p>
+<p>جلسة الخادم أسهل للتحديث: السجل يشير إلى <code>userId</code> والصف يُجلب كل مرة، فلا حاجة لنسخ الصلاحيات في الكعكة. الكعكة تحمل معرّف الجلسة فقط في تصميم الحزمة.</p>
+<p>CASL وغيره يسمّون الصلاحيات abilities. لا نخلط الاسم مع claim معيار JWT.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قاعدة: roles أو permissions  الحالية
+رمز: claims لحظة الإصدار (sub, amr)
+القرار: من القاعدة عبر validate
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function canPublish(user: PublicUser): boolean {
+  return user.roles.includes(&quot;editor&quot;);
+}
+</code></pre>
+<pre><code class="language-ts">// حمولة رمز، للفهم فقط
+type AccessClaims = { sub: string; amr?: string[] };
+</code></pre>
+<p><code>canPublish</code> لا تقبل <code>AccessClaims</code>. إن احتجت المعرّف، خذه من المستخدم المحمّل.</p>
+<h2>شرح المثال</h2>
+<p>الدالة الثانية شكل بيانات الرمز. تمريرها إلى قاعدة النشر يجعل العمر والتحديث مصدر السماح. الدالة الأولى تقرأ ما ثبّته <code>validate</code> من الصف. هذا هو خط هذا الدرس.</p>
+<p><code>emailVerified</code> في مثال الحزمة علم على المستخدم في قاعدتك، لا claim تختاره الواجهة. قد ينعكس في جلسة، لكن الكتابة تقرأ الصف.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الطلب، مزوّد JWT يتحقق من التوقيع ثم <code>validate</code> تستعلم. الاستعلام هو ما يلغي صلاحية سُحبت قبل انتهاء <code>exp</code>. من غير الاستعلام، الحارس يصدق النسخة الموقّعة. التوقيع يثبت أنك كتبت النسخة، لا أنها ما زالت صحيحة.</p>
+<p>جلسة <code>SessionAuth</code> تستعلم أيضًا بـ <code>session.userId</code>. المعرّف في الكعكة claim غير موقّع بمعناه الواسع: سر عشوائي يشير إلى سجل. السجل نفسه ليس قائمة أفعال.</p>
+<h2>مثال عملي</h2>
+<p>محرر أُزيل دوره عصرًا. طلبه بعد دقيقة على <code>POST /posts/9/publish</code> يحمّل <code>roles: [&quot;reader&quot;]</code> فيُرفض بـ <code>403</code> حين تُكتب السياسة. لو كان الفحص على claim <code>role=editor</code> داخل الوصول ذي الخمس عشرة دقيقة، لبقي النشر ممكنًا حتى التحديث أو الانتهاء. هذا فرق المنتج الذي يبرر جملة الصفحة: أبقِ المتغير خارج <code>claims</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية <code>sub</code> صلاحية.</li>
+<li>نسخ <code>roles</code> إلى <code>claims</code> ثم نسيان <code>validate</code>.</li>
+<li>رفض التوقيع الصحيح لأن الدور تغيّر، برمز <code>401</code> بدل تحميل الصف و <code>403</code>.</li>
+<li>تخزين قائمة أفعال طويلة في الكعكة المقروءة من JavaScript.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الصلاحية في القاعدة لكل فعل يتغير. الـ claim لمعرّف ولوصف كيفية الدخول ولحدود الرمز مثل الجمهور والانتهاء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحمل شجرة صلاحيات كاملة في كل وصول «حتى لا نستعلم». الاستعلام بالمعرّف رخيص أمام نافذة سماح خاطئة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Claim</th>
+<th>Permission</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>داخل رمز أو مؤشر جلسة</td>
+<td>في صفك</td>
+</tr>
+<tr>
+<td>يثبته التوقيع أو سر الكعكة</td>
+<td>يثبته آخر كتابة إلى الجدول</td>
+</tr>
+<tr>
+<td>قد يقدُم</td>
+<td>الحالي عند <code>validate</code></td>
+</tr>
+<tr>
+<td><code>sub</code> و <code>amr</code></td>
+<td><code>editor</code> و <code>post:publish</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>amr: [&quot;pwd&quot;]</code> صلاحية نشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. هو وصف أن الدخول تم بكلمة مرور، كما تمرّره أمثلة <code>issue</code> في الحزمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا جلسة الكعكة لا تحتاج نسخ <code>roles</code> داخل الكعكة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكعكة تحمل مؤشر الجلسة. <code>validate</code> تجلب المستخدم وأدواره من القاعدة في كل طلب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رمز وصول صحيح التوقيع لمستخدم حُذف صفه. ماذا ترجع <code>validate</code>، وما رمز HTTP المناسب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>null</code>. الطلب ليس شخصًا معروفًا ممنوعًا، بل دليلًا بلا حساب. الحزمة ترفض الرمز. ذلك أقرب إلى <code>401</code> من <code>403</code> لأن الهوية لم تُثبت كمستخدم حي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تعيش الصلاحية الحالية؟</li>
+<li>ماذا يثبت التوقيع؟</li>
+<li>أي حقول claim لا تضعها في شرط النشر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الصلاحية قرار في قاعدتك. الـ claim بيان حمله الدليل لحظة إصداره. افحص الفعل على المستخدم الذي حمّله <code>validate</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-policy-based.html">Policy-based Authorization</a> يجمع الدور وملكية الصف في قرار واحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

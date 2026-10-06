@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>خريطة الدورة</title>
+<style>
+  :root { --bg:#f3efe6; --paper:#fffdf8; --ink:#1c2430; --muted:#5c6570; --line:#e4dccf; --teal:#0e6b66; --soft:#e5f3f1; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; }
+  main { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:28px 0 64px; }
+  header.bar { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:16px 0 0; color:var(--muted); font-size:14px; }
+  header.bar a { color:var(--teal); }
+  article { background:var(--paper); border:1px solid var(--line); padding:22px 26px 32px; }
+  h1 { font-size:28px; line-height:1.35; margin:0 0 12px; }
+  h2 { font-size:22px; margin:28px 0 8px; }
+  h3 { font-size:18px; margin:22px 0 8px; }
+  a { color:var(--teal); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; background:var(--soft); padding:0 4px; }
+  pre { background:#1c2430; color:#f4f1ea; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+  pre code { background:transparent; color:inherit; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th, td { border-bottom:1px solid var(--line); text-align:right; padding:8px; vertical-align:top; }
+  th { color:var(--muted); }
+  blockquote { margin:12px 0; padding:8px 14px; border-right:3px solid var(--teal); background:var(--soft); }
+  img { max-width:100%; }
+  ul, ol { padding-right:1.2em; }
+  details { background:var(--soft); padding:8px 12px; margin:10px 0; }
+  summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<header class="bar"><span>nestjs-arabic-course/ROADMAP.md</span> · <a href="ROADMAP.md">ملف Markdown الأصلي</a></header>
+<main>
+<article>
+<h1>خريطة الدورة</h1>
+<p>هذه الخريطة هي ترتيب التعلم. كل سطر فصل كامل داخل مجلده، لا مقالًا يجمع عدة مواضيع كبيرة.</p>
+<p>أساس المعلومات: <a href="https://docs.nestjs.com/">توثيق NestJS الرسمي</a> كما كان منشورًا في 5 أكتوبر 2026، للإصدار الرئيسي <strong>NestJS 12</strong>.</p>
+<h2>لماذا هذا الترتيب؟</h2>
+<ol>
+<li>الفصل <code>00</code> يبني لغة HTTP و Backend قبل أي Decorator.</li>
+<li>الفصل <code>01</code> يجهّز TypeScript الذي ستقرأه في الملفات المولَّدة، قبل إنشاء المشروع.</li>
+<li>من <code>02</code> إلى <code>07</code> نبني الصندوق: تشغيل، Module، Controller، Provider، ثم تفسير Dependency Injection.</li>
+<li>التوثيق الرسمي يعرض في قسم Overview الترتيب Controllers ثم Providers ثم Modules. نحن نبدأ بـ Modules لأن <code>NestFactory.create()</code> يستقبل Root Module، وكل Controller و Provider يُسجَّلان داخله. عند قراءة التوثيق لاحقًا ستجد الموضوعات نفسها بترتيب عرض مختلف.</li>
+<li>الفصل <code>08</code> يرسم Request Lifecycle مرة واحدة، ثم الفصول <code>09</code>–<code>16</code> تشرح كل محطة.</li>
+<li>الحد الأدنى من RxJS موضوع داخل بداية فصل Interceptors، لأن <code>next.handle()</code> يعيد <code>Observable</code>. الفصل <code>31</code> يعمّق RxJS قبل <code>HttpModule</code>.</li>
+<li>التحقق يعلّم <code>ValidationPipe</code> مع <code>class-validator</code>، ثم <code>StandardSchemaValidationPipe</code> لأن التوثيق الحالي يوثّق الاثنين معًا.</li>
+<li>المصادقة تبدأ بمفاهيم الهوية، ثم <code>@nestjs/authentication</code> لأنه مسار قسم Security الحالي. وصفة Passport تبقى لأنها ما زالت فصلًا رسميًا في Recipes، وليست مسارًا ملغى.</li>
+<li>البيانات تشرح الفكرة بلا ORM، ثم PostgreSQL، ثم Prisma كمسار تطبيقي أساسي، مع TypeORM و Drizzle كما يوثّقهما Nest.</li>
+<li>الطوابير تركز على BullMQ. التوثيق يقول إن Bull في وضع الصيانة بينما BullMQ هو التطوير النشط.</li>
+<li>الفصول <code>66</code> و <code>67</code> و <code>68</code> إضافات من التوثيق الحالي: الموثوقية، وأدوات CLI، وميزات منصة اختيارية. المسار الأساسي ينتهي وظيفيًا عند المشروع في <code>65</code>، وهذه الثلاثة تكمّله.</li>
+</ol>
+<h2>المراحل</h2>
+<h3>00 — المقدمة: قبل NestJS</h3>
+<ul>
+<li>المجلد: <a href="./00-introduction/README.html"><code>00-introduction</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>تفهم Backend و HTTP و REST و Node.js و Express، ثم لماذا وُجدت NestJS وكيف تُرتَّب معماريًا.</li>
+</ul>
+<h3>01 — TypeScript الضروري لـ NestJS</h3>
+<ul>
+<li>المجلد: <a href="./01-typescript-for-nestjs/README.html"><code>01-typescript-for-nestjs</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>كل ما تحتاجه من TypeScript لقراءة كود NestJS وكتابته، بلا دورة لغة كاملة.</li>
+</ul>
+<h3>02 — التثبيت وهيكل المشروع</h3>
+<ul>
+<li>المجلد: <a href="./02-project-setup/README.html"><code>02-project-setup</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>متطلبات Node.js، و Nest CLI، وإنشاء مشروع، وفهم الملفات التي يولّدها.</li>
+</ul>
+<h3>03 — تشغيل التطبيق</h3>
+<ul>
+<li>المجلد: <a href="./03-bootstrap/README.html"><code>03-bootstrap</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>ماذا يحدث من NestFactory.create حتى app.listen.</li>
+</ul>
+<h3>04 — Modules</h3>
+<ul>
+<li>المجلد: <a href="./04-modules/README.html"><code>04-modules</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>كيف تقسّم NestJS التطبيق إلى وحدات ذات حدود واضحة.</li>
+</ul>
+<h3>05 — Controllers</h3>
+<ul>
+<li>المجلد: <a href="./05-controllers/README.html"><code>05-controllers</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>استقبال HTTP Request وإرجاع Response من غير وضع Business Logic داخل المسار.</li>
+</ul>
+<h3>06 — Providers و Services</h3>
+<ul>
+<li>المجلد: <a href="./06-providers/README.html"><code>06-providers</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>أين تعيش Business Logic، وكيف تُسجَّل حتى يستطيع Container إنشاءها.</li>
+</ul>
+<h3>07 — Dependency Injection</h3>
+<ul>
+<li>المجلد: <a href="./07-dependency-injection/README.html"><code>07-dependency-injection</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>لماذا لا ننشئ الاعتماديات بـ new، وكيف يجدها Nest.</li>
+</ul>
+<h3>08 — Request Lifecycle</h3>
+<ul>
+<li>المجلد: <a href="./08-request-lifecycle/README.html"><code>08-request-lifecycle</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>الترتيب الرسمي لمرور الطلب داخل NestJS.</li>
+</ul>
+<h3>09 — Middleware</h3>
+<ul>
+<li>المجلد: <a href="./09-middleware/README.html"><code>09-middleware</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>الكود الذي يجري قبل اختيار الـ Route Handler، ومتى يكون هو الأداة المناسبة.</li>
+</ul>
+<h3>10 — Pipes</h3>
+<ul>
+<li>المجلد: <a href="./10-pipes/README.html"><code>10-pipes</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>تحويل البيانات والتحقق منها قبل أن تصل إلى الـ Handler.</li>
+</ul>
+<h3>11 — DTO</h3>
+<ul>
+<li>المجلد: <a href="./11-dto/README.html"><code>11-dto</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>شكل البيانات المسموح به على حدود التطبيق.</li>
+</ul>
+<h3>12 — Validation</h3>
+<ul>
+<li>المجلد: <a href="./12-validation/README.html"><code>12-validation</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>رفض البيانات غير الصالحة قبل Business Logic، بأسلوب Classes وأسلوب Schemas.</li>
+</ul>
+<h3>13 — Guards</h3>
+<ul>
+<li>المجلد: <a href="./13-guards/README.html"><code>13-guards</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>من يُسمح له بتجاوز هذا المسار: Authentication و Authorization على البوابة.</li>
+</ul>
+<h3>14 — Interceptors</h3>
+<ul>
+<li>المجلد: <a href="./14-interceptors/README.html"><code>14-interceptors</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>منطق يلتف حول الـ Handler قبل التنفيذ وبعده. يبدأ الفصل بالحد الأدنى من RxJS لأن next.handle يعيد Observable.</li>
+</ul>
+<h3>15 — Exception Filters</h3>
+<ul>
+<li>المجلد: <a href="./15-exception-filters/README.html"><code>15-exception-filters</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>تحويل الاستثناءات غير الممسوكة إلى Responses مفهومة.</li>
+</ul>
+<h3>16 — Custom Decorators</h3>
+<ul>
+<li>المجلد: <a href="./16-custom-decorators/README.html"><code>16-custom-decorators</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>بناء @CurrentUser و @Roles و @Public فوق metadata و reflection.</li>
+</ul>
+<h3>17 — Configuration</h3>
+<ul>
+<li>المجلد: <a href="./17-configuration/README.html"><code>17-configuration</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>إعدادات تختلف بين البيئات، مع التحقق من صحتها.</li>
+</ul>
+<h3>18 — Database</h3>
+<ul>
+<li>المجلد: <a href="./18-database/README.html"><code>18-database</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>من الاتصال بقاعدة البيانات حتى Prisma كمسار أساسي، مع TypeORM و Drizzle كما يوثّقهما Nest.</li>
+</ul>
+<h3>19 — مشروع REST API</h3>
+<ul>
+<li>المجلد: <a href="./19-rest-api-project/README.html"><code>19-rest-api-project</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>Users و Posts و Comments تُبنى طبقة بعد طبقة بالمفاهيم السابقة.</li>
+</ul>
+<h3>20 — Authentication</h3>
+<ul>
+<li>المجلد: <a href="./20-authentication/README.html"><code>20-authentication</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>إثبات هوية المستخدم. المسار الأساسي هو @nestjs/authentication، ثم وصفة Passport الرسمية لأنها ما زالت موثّقة.</li>
+</ul>
+<h3>21 — Authorization</h3>
+<ul>
+<li>المجلد: <a href="./21-authorization/README.html"><code>21-authorization</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>ماذا يُسمح للمستخدم أن يفعل بعد أن نعرف من هو.</li>
+</ul>
+<h3>22 — Cookies و Sessions</h3>
+<ul>
+<li>المجلد: <a href="./22-cookies-and-sessions/README.html"><code>22-cookies-and-sessions</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>حالة عبر طلبات HTTP، والفرق العملي بين Cookie Session و JWT.</li>
+</ul>
+<h3>23 — CORS و Security</h3>
+<ul>
+<li>المجلد: <a href="./23-cors-and-security/README.html"><code>23-cors-and-security</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>حدود المتصفح، والهجمات الشائعة، وما يوفّره Nest جاهزًا.</li>
+</ul>
+<h3>24 — توثيق الـ API</h3>
+<ul>
+<li>المجلد: <a href="./24-api-documentation/README.html"><code>24-api-documentation</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>OpenAPI عبر @nestjs/swagger حتى يصبح العقد قابلًا للقراءة والتجربة.</li>
+</ul>
+<h3>25 — Serialization</h3>
+<ul>
+<li>المجلد: <a href="./25-serialization/README.html"><code>25-serialization</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>ما الذي يخرج في الاستجابة، وما الذي يبقى داخل الخادم.</li>
+</ul>
+<h3>26 — Pagination و Filtering و Sorting</h3>
+<ul>
+<li>المجلد: <a href="./26-pagination-filtering-sorting/README.html"><code>26-pagination-filtering-sorting</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>نمط قابل لإعادة الاستخدام لقوائم REST.</li>
+</ul>
+<h3>27 — File Upload</h3>
+<ul>
+<li>المجلد: <a href="./27-file-upload/README.html"><code>27-file-upload</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>استقبال الملفات والتحقق منها قبل تخزينها.</li>
+</ul>
+<h3>28 — Static Files</h3>
+<ul>
+<li>المجلد: <a href="./28-static-files/README.html"><code>28-static-files</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>تقديم ملفات جاهزة عبر ServeStaticModule، ومتى لا يكون هذا عمل الـ API.</li>
+</ul>
+<h3>29 — GraphQL</h3>
+<ul>
+<li>المجلد: <a href="./29-graphql/README.html"><code>29-graphql</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>GraphQL من الصفر، ثم Code First داخل NestJS.</li>
+</ul>
+<h3>30 — WebSockets</h3>
+<ul>
+<li>المجلد: <a href="./30-websockets/README.html"><code>30-websockets</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>اتصال يبقى مفتوحًا، و Gateway بدل Controller.</li>
+</ul>
+<h3>31 — RxJS في NestJS</h3>
+<ul>
+<li>المجلد: <a href="./31-rxjs/README.html"><code>31-rxjs</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>القدر الذي تحتاجه Interceptors و HttpModule: Observable و pipe والمعاملات الأساسية.</li>
+</ul>
+<h3>32 — HTTP Client</h3>
+<ul>
+<li>المجلد: <a href="./32-http-client/README.html"><code>32-http-client</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>استدعاء API خارجية من داخل Nest.</li>
+</ul>
+<h3>33 — Caching</h3>
+<ul>
+<li>المجلد: <a href="./33-caching/README.html"><code>33-caching</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>متى نحتفظ بنتيجة، ومتى تصبح النسخة المحفوظة خطرًا.</li>
+</ul>
+<h3>34 — Queues</h3>
+<ul>
+<li>المجلد: <a href="./34-queues/README.html"><code>34-queues</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>عمل خلفي عبر BullMQ. Bull موثّق أيضًا لكنه في وضع الصيانة.</li>
+</ul>
+<h3>35 — Scheduling</h3>
+<ul>
+<li>المجلد: <a href="./35-scheduling/README.html"><code>35-scheduling</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>عمل يشتغل بالوقت: Cron و Interval و Timeout.</li>
+</ul>
+<h3>36 — Events</h3>
+<ul>
+<li>المجلد: <a href="./36-events/README.html"><code>36-events</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>إعلان أن شيئًا حدث، من غير أن يعرف المُعلن كل من سيتصرف.</li>
+</ul>
+<h3>37 — Logging</h3>
+<ul>
+<li>المجلد: <a href="./37-logging/README.html"><code>37-logging</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>سجل تستطيع قراءته أثناء التطوير وبعد الإطلاق.</li>
+</ul>
+<h3>38 — Testing</h3>
+<ul>
+<li>المجلد: <a href="./38-testing/README.html"><code>38-testing</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>Unit و Integration و E2E، مع TestingModule و Supertest.</li>
+</ul>
+<h3>39 — Application Lifecycle</h3>
+<ul>
+<li>المجلد: <a href="./39-application-lifecycle/README.html"><code>39-application-lifecycle</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>لحظات الإقلاع والإيقاف التي يعطيك Nest خطافات لها.</li>
+</ul>
+<h3>40 — Injection Scopes</h3>
+<ul>
+<li>المجلد: <a href="./40-injection-scopes/README.html"><code>40-injection-scopes</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>DEFAULT و REQUEST و TRANSIENT، وكلفة كل واحد.</li>
+</ul>
+<h3>41 — Circular Dependencies</h3>
+<ul>
+<li>المجلد: <a href="./41-circular-dependencies/README.html"><code>41-circular-dependencies</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>دورة اعتماد، ومتى تكون عيب تصميم، وماذا يفعل forwardRef.</li>
+</ul>
+<h3>42 — Dynamic Modules</h3>
+<ul>
+<li>المجلد: <a href="./42-dynamic-modules/README.html"><code>42-dynamic-modules</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>Module يُكوَّن عند الاستيراد: forRoot و register وأشكالها غير المتزامنة.</li>
+</ul>
+<h3>43 — Discovery و Metadata</h3>
+<ul>
+<li>المجلد: <a href="./43-discovery-and-metadata/README.html"><code>43-discovery-and-metadata</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>قراءة ما كتبه الـ Decorators أثناء التشغيل.</li>
+</ul>
+<h3>44 — Custom Providers المتقدمة</h3>
+<ul>
+<li>المجلد: <a href="./44-advanced-custom-providers/README.html"><code>44-advanced-custom-providers</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>useClass و useValue و useFactory و useExisting و Symbols.</li>
+</ul>
+<h3>45 — Architecture</h3>
+<ul>
+<li>المجلد: <a href="./45-architecture/README.html"><code>45-architecture</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>طبقات وحدود، بلا تعقيد زائد عن حاجة NestJS.</li>
+</ul>
+<h3>46 — SOLID داخل NestJS</h3>
+<ul>
+<li>المجلد: <a href="./46-solid/README.html"><code>46-solid</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>المبادئ الخمسة على Providers و Modules حقيقية.</li>
+</ul>
+<h3>47 — Repository Pattern</h3>
+<ul>
+<li>المجلد: <a href="./47-repository-pattern/README.html"><code>47-repository-pattern</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>الفرق بين Repository الخاص بـ ORM وحدود الـ Domain.</li>
+</ul>
+<h3>48 — CQRS</h3>
+<ul>
+<li>المجلد: <a href="./48-cqrs/README.html"><code>48-cqrs</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>@nestjs/cqrs: Command و Query و Event، ومتى يصبح النمط أثقل من المشكلة.</li>
+</ul>
+<h3>49 — Microservices</h3>
+<ul>
+<li>المجلد: <a href="./49-microservices/README.html"><code>49-microservices</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>من Monolith إلى رسائل بين عمليات، بالنواقل التي يوثّقها Nest.</li>
+</ul>
+<h3>50 — Docker</h3>
+<ul>
+<li>المجلد: <a href="./50-docker/README.html"><code>50-docker</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>تشغيل NestJS مع PostgreSQL و Redis في بيئة قابلة للتكرار.</li>
+</ul>
+<h3>51 — Production</h3>
+<ul>
+<li>المجلد: <a href="./51-production/README.html"><code>51-production</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>بناء التطبيق وإيقافه بأمان ووضعه خلف عكس الوكيل.</li>
+</ul>
+<h3>52 — Health Checks</h3>
+<ul>
+<li>المجلد: <a href="./52-health-checks/README.html"><code>52-health-checks</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>هل العملية حية، وهل هي جاهزة لاستقبال العمل.</li>
+</ul>
+<h3>53 — Performance</h3>
+<ul>
+<li>المجلد: <a href="./53-performance/README.html"><code>53-performance</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>ما الذي يبطئ Node process، وما الذي يستحق القياس فعلًا.</li>
+</ul>
+<h3>54 — معالجة أخطاء متقدمة</h3>
+<ul>
+<li>المجلد: <a href="./54-advanced-error-handling/README.html"><code>54-advanced-error-handling</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>استراتيجية واحدة للأخطاء من الـ Domain حتى الـ HTTP Response.</li>
+</ul>
+<h3>55 — API Versioning</h3>
+<ul>
+<li>المجلد: <a href="./55-api-versioning/README.html"><code>55-api-versioning</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>تشغيل أكثر من نسخة للمسارات داخل التطبيق نفسه.</li>
+</ul>
+<h3>56 — تصميم REST API</h3>
+<ul>
+<li>المجلد: <a href="./56-rest-api-design/README.html"><code>56-rest-api-design</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>أسماء الموارد، والأكواد، و Idempotency، وعقد الأخطاء.</li>
+</ul>
+<h3>57 — GraphQL المتقدم</h3>
+<ul>
+<li>المجلد: <a href="./57-graphql-advanced/README.html"><code>57-graphql-advanced</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>حماية المخطط من الاستعلامات المكلفة، وأساسيات Federation.</li>
+</ul>
+<h3>58 — Authentication المتقدم</h3>
+<ul>
+<li>المجلد: <a href="./58-advanced-authentication/README.html"><code>58-advanced-authentication</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>OAuth 2.0 و OpenID Connect وتدوير التوكن وإبطاله.</li>
+</ul>
+<h3>59 — Multi-tenancy</h3>
+<ul>
+<li>المجلد: <a href="./59-multi-tenancy/README.html"><code>59-multi-tenancy</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>عزل بيانات العملاء الثلاثة الشائعة، وكيف يُحدَّد المستأجر في الطلب.</li>
+</ul>
+<h3>60 — معمارية Backend لـ SaaS</h3>
+<ul>
+<li>المجلد: <a href="./60-saas-backend-architecture/README.html"><code>60-saas-backend-architecture</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>خريطة منظمة وعضوية وأدوار واشتراك وفوترة قبل المشروع النهائي.</li>
+</ul>
+<h3>61 — Webhooks</h3>
+<ul>
+<li>المجلد: <a href="./61-webhooks/README.html"><code>61-webhooks</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>إشعار داخل إلى نظامك، وإشعار خارج منه، مع التوقيع والتكرار.</li>
+</ul>
+<h3>62 — معمارية تكامل Stripe</h3>
+<ul>
+<li>المجلد: <a href="./62-stripe-architecture/README.html"><code>62-stripe-architecture</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>حدود الخدمة حول Checkout والاشتراك و Webhook، لا دورة Stripe كاملة.</li>
+</ul>
+<h3>63 — Event-Driven Architecture</h3>
+<ul>
+<li>المجلد: <a href="./63-event-driven-architecture/README.html"><code>63-event-driven-architecture</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>أحداث النطاق وأحداث التكامل والاتساق المؤجل.</li>
+</ul>
+<h3>64 — Observability</h3>
+<ul>
+<li>المجلد: <a href="./64-observability/README.html"><code>64-observability</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>Logs و Metrics و Traces، ثم ما يوفّره NestJS Observe.</li>
+</ul>
+<h3>65 — المشروع الإنتاجي النهائي</h3>
+<ul>
+<li>المجلد: <a href="./65-final-production-project/README.html"><code>65-final-production-project</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>SaaS API يُبنى على مراحل ويجمع REST و GraphQL و Prisma و Redis و الاختبارات.</li>
+</ul>
+<h3>66 — Reliability</h3>
+<ul>
+<li>المجلد: <a href="./66-reliability/README.html"><code>66-reliability</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>فصل أُضيف لأن التوثيق الحالي يفرد resiliency و idempotency و outbox و workflows و locks.</li>
+</ul>
+<h3>67 — CLI و Devtools و Standalone</h3>
+<ul>
+<li>المجلد: <a href="./67-cli-devtools-standalone/README.html"><code>67-cli-devtools-standalone</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>أدوات العمل اليومي بعد أن تصبح المعمارية مفهومة.</li>
+</ul>
+<h3>68 — ميزات منصة اختيارية</h3>
+<ul>
+<li>المجلد: <a href="./68-optional-platform-features/README.html"><code>68-optional-platform-features</code></a></li>
+<li>الحالة: مكتمل</li>
+<li>فصول رسمية مفيدة ليست شرطًا لمسار التعلم الأساسي: i18n و Mail و File Storage و SSE و Serverless.</li>
+</ul>
+<h2>ماذا تقرأ من التوثيق وأنت تتقدم؟</h2>
+<p>كل درس مكتوب يختم بروابط الصفحات التي اعتُمد عليها. ابدأ دائمًا من <a href="https://docs.nestjs.com/">docs.nestjs.com</a>. فهرس الفصول بصيغة مناسبة للقراءة الآلية موجود عند <a href="https://docs.nestjs.com/llms.txt">docs.nestjs.com/llms.txt</a>.</p>
+<h2>خارج المسار الإلزامي</h2>
+<p>MongoDB و Sequelize و MikroORM موثّقة رسميًا. لن نمر عليها درسًا درسًا في المسار الأساسي حتى لا تتفرع قبل إتقان Prisma. تُذكر في فصل قاعدة البيانات كبدائل موجودة.</p>
+
+</article>
+</main>
+</body>
+</html>

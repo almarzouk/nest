@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متى تبقى على Singleton</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-durable-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متى تبقى على Singleton</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قرار عملي: ابقَ على <code>Scope.DEFAULT</code> لتمرير المستخدم والمستأجر، واستعمل المزود الدائم <code>durable</code> فقط عندما تتجمع الطلبات على عدد صغير من السياقات وتحتاج شجرة معزولة أطول من طلب واحد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نطاق الطلب لكل ترويسة مستأجر يعيد بناء الكتالوج والفواتير آلاف المرات بينما المستأجرون عشرة. التوثيق يسمي هذا الخلل ثم يعرض المزودات الدائمة: شجرة فرعية لكل مجموعة طلبات تتشارك صفات، لا لكل طلب. البقاء على Singleton ما زال القرار الأول إن كانت الصفة وسيطًا لا اتصالًا مختلفًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>إن كان العزل «لا يقرأ أ طلبَ ب» يتحقق بتمرير <code>tenantId</code> إلى استعلام Prisma على عميل واحد، فالنسخة الواحدة تكفي. إن كان لكل مستأجر مصدر بيانات مختلف ويجب ألا تُبنى الشجرة لكل طلب، سجّل استراتيجية <code>ContextIdStrategy</code> وعلّم المزود <code>Scope.REQUEST</code> مع <code>durable: true</code>. الإطار يعيد شجرة ذلك المستأجر بين طلباته.</p>
+<h2>التعريف التقني</h2>
+<p>العلم <code>durable</code> يُقرأ على من صرّح <code>Scope.REQUEST</code>. من صعد بالعدوى فقط يرث الديمومة من اعتمادياته إن كانت كلها دائمة، ما لم يُصرَّح <code>durable: false</code>. الديمومة تصعد مثل نطاق الطلب.</p>
+<p>الاستراتيجية تُسجَّل مرة قبل وصول الطلبات:</p>
+<pre><code class="language-ts">import { ContextIdFactory } from &#39;@nestjs/core&#39;;
+import { AggregateByTenantContextIdStrategy } from &#39;./tenant.strategy.js&#39;;
+
+ContextIdFactory.apply(new AggregateByTenantContextIdStrategy());
+</code></pre>
+<p>شكل <code>attach</code> من التوثيق يجمع <code>x-tenant-id</code> في <code>Map</code> ويعيد context id لذلك المستأجر عندما تكون الشجرة دائمة، ويعيد context الطلب الأصلي لغير ذلك. إعادة كائن <code>{ resolve, payload }</code> تجعل <code>@Inject(REQUEST)</code> يستقبل <code>payload</code> مثل <code>{ tenantId }</code> بدل طلب HTTP كامل.</p>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+
+@Injectable({ scope: Scope.REQUEST, durable: true })
+export class CatsService {}
+</code></pre>
+<p>على المزود المخصص: <code>scope: Scope.REQUEST</code> و <code>durable: true</code> معًا. التحذير: الاستراتيجية غير مناسبة لعدد كبير من المستأجرين لأن الخريطة تحتفظ بشجرة لكل مفتاح.</p>
+<p>تمرير المستخدم العادي لا يدخل هنا. Guard يضع <code>request.user</code> وديكور <code>@CurrentUser()</code> يقرأه، والخدمة <code>DEFAULT</code> تستقبل <code>userId</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قيمة تُمرَّر إلى SQL          -&gt; DEFAULT
+شجرة مختلفة لكل طلب          -&gt; REQUEST مكلف
+شجرة لكل مستأجر من عشرة      -&gt; REQUEST + durable + strategy
+مئات الآلاف من المفاتيح      -&gt; لا تحتفظ بشجرة لكل مفتاح
+</code></pre>
+<p><code>payload</code> يحل محل الطلب داخل الشجرة الدائمة. لا تفترض <code>request.headers</code> هناك.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;./prisma.service.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  list(tenantId: string) {
+    return this.prisma.book.findMany({ where: { tenantId } });
+  }
+}
+</code></pre>
+<p>عميل واحد، شرط في الاستعلام، والمزود Singleton يرى <code>onModuleInit</code>. هذا ما تبقى عليه في المتجر ذي القاعدة المشتركة.</p>
+<h2>شرح المثال</h2>
+<p>العزل هنا في السطر <code>where</code>، لا في هوية كائن <code>BooksService</code>. اختبار يمرر مستأجرين يثبت أن الصفوف لا تختلط من غير نطاق طلب. إن انتقلت لاحقًا إلى قاعدة لكل مستأجر، عندها تُراجع الديمومة، وبعد قياس، وبعد أن يكون عدد المفاتيح صغيرًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>ContextIdFactory.apply</code> يستبدل طريقة ربط الطلب بشجرة.</li>
+<li><code>attach</code> يقرأ صفة التجميع ويبحث عن context id موجود أو ينشئ واحدًا.</li>
+<li>للمكوّن ذي الشجرة الدائمة يُستخدم معرف المستأجر، فتعيد الحاوية الشجرة المخزنة.</li>
+<li>لغير الدائم يبقى معرف الطلب الفريد فيُبنى ثم يُجمع.</li>
+<li><code>payload</code> المسجّل هو ما يراه من يحقن <code>REQUEST</code> داخل الشجرة الدائمة.</li>
+<li>مفتاح جديد في الخريطة يعني شجرة جديدة تبقى. لذلك العدد الكبير يأكل الذاكرة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عشرة متاجر، لكل منها <code>DataSource</code>، والكتالوج يحقن المصدر. علّم المصدر <code>durable</code> وسجّل الاستراتيجية على <code>x-tenant-id</code>. الكتالوج يصعد ويصبح دائمًا إن كانت اعتمادياته الطلبية كلها دائمة، فتُحفظ شجرة المتجر وتُعاد في الطلب التالي لنفس الترويسة. أبقِ مسجّل التطبيق و <code>Prisma</code> العام خارج هذه السلسلة إن كانا مشتركين، حتى لا تُجبرهما الديمومة على التعدد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>durable: true</code> من غير <code>Scope.REQUEST</code> الصريح. العلم يُقرأ على التصريح الصريح.</li>
+<li>خريطة مستأجرين بلا حد حتى تمتلئ الذاكرة.</li>
+<li>قراءة <code>request.url</code> داخل شجرة استبدلت <code>payload</code> بالحمولة.</li>
+<li>استخدام الديمومة لتمرير <code>userId</code> بينما الاستعلام على عميل مشترك يكفي.</li>
+<li>نسيان تسجيل الاستراتيجية قبل أول طلب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>ابقَ على Singleton عندما العزل شرط في الاستعلام أو وسيط دالة. استخدم الديمومة عندما تتعدد المصادر فعلًا والمستأجرون قلة والطلب نفسه لا يحمل حالة فريدة يجب أن تموت معه، مثل UUID للطلب فقط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عدد مفاتيح ضخم، أو بوابة WebSocket، أو رغبة في «نظافة» معمارية من غير مصدر بيانات مختلف. النطاق الافتراضي أصدق في هذه الحالات.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الموقف</th>
+<th>القرار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>user</code> على الطلب</td>
+<td>Guard + ديكور، خدمة <code>DEFAULT</code></td>
+</tr>
+<tr>
+<td>كاش يموت مع الرد</td>
+<td><code>REQUEST</code> ضيق</td>
+</tr>
+<tr>
+<td>عشرة مصادر بيانات</td>
+<td><code>durable</code> مع استراتيجية</td>
+</tr>
+<tr>
+<td>عميل Prisma واحد</td>
+<td><code>DEFAULT</code> و <code>where</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تبقى عليه لتمرير المستخدم إلى <code>findFor(userId)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Scope.DEFAULT</code>. Guard وديكور يقرآن المستخدم، والدالة تستقبل المعرف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>على أي مزود يُقرأ علم <code>durable</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على من صرّح <code>Scope.REQUEST</code>. من صعد بالعدوى يرث الديمومة من اعتماديات طلبية كلها دائمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تحذير التوثيق من عدد كبير من المستأجرين مع <code>Map</code> السياقات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل مفتاح يحتفظ بشجرة فرعية. المفاتيح التي لا تُحد تحوّل الديمومة إلى تسريب ذاكرة، وتفقد معنى التجميع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى Singleton أصح من <code>REQUEST</code> للمستخدم؟</li>
+<li>ماذا يعيد <code>payload</code> في الشجرة الدائمة؟</li>
+<li>لماذا الاستراتيجية تُستدعى قبل الطلبات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الافتراض Singleton. الديمومة تحسين لمتعدد مستأجرين بعدد صغير ومصادر مختلفة، لا بديل عن تمرير معرف في وسيط.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع النطاقات الثلاثة وقرار المستخدم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

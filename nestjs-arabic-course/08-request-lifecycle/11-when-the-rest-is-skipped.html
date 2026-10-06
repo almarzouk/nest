@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متى يُتخطى باقي المسار</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-when-the-rest-is-skipped.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متى يُتخطى باقي المسار</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حصر الحالات التي لا تكمل فيها الدورة حتى الاستجابة القياسية: منع، رمي، إنهاء مبكر، أو كتابة الرد بنفسك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مؤقت على Interceptor لا يسجل <code>PATCH</code>، أو JSON لا يخرج رغم <code>return</code>. السبب غالبًا أن مرحلة سابقة أوقفت الطريق أو أن <code>@Res()</code> أخرج الإرسال من Nest. من غير قائمة التخطي تبدو الدورة «ناقصة ترتيب» وهي سارت حتى نقطة قطع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>طريق النجاح كامل فقط عندما تنادي كل مرحلة التالية ولا يُرمى استثناء غير ممسوك ولا يُنهى الرد من الخارج. أول قطع يترك ما بعده في قائمة النجاح. المرشحات بديل عن الباقي عند الاستثناء، لا خطوة إضافية بعد نجاح.</p>
+<h2>التعريف التقني</h2>
+<p>الحالات:</p>
+<ol>
+<li>Middleware لا تنادي <code>next()</code> وتنهي الرد. Guards وما بعدها لا تبدأ.</li>
+<li>Middleware ترمي. لا مرشح مسار ولا Controller. Exception Filter العام فقط.</li>
+<li>Guard يعيد <code>false</code> أو يرمي. Pipes والمعالج والخدمة لا تبدأ. المرشحات تُفحص من المسار إلى العام لأن المسار معروف.</li>
+<li>Pipe ترمي. الدالة والخدمة لا تُستدعيان. <code>catchError</code> في Interceptor الدخول قد يمسك. إن بقي الرمي فالمرشحات من المسار صعودًا.</li>
+<li>المعالج أو Service يرمي. طريق خروج النجاح لا يحمل قيمة. الأغلفة ترى الخطأ، ثم المرشحات إن بقي غير ممسوك.</li>
+<li><code>try/catch</code> أو <code>catchError</code> الذي يرجع قيمة. المرشحات لا تعمل، والطريق يكمل كنجاح من نقطة الإمساك.</li>
+<li><code>@Res()</code> أو <code>@Next()</code> من غير <code>passthrough</code>. أنت تكتب الرد بـ <code>res.send</code> أو ما يعادله. من غير إرسال يعلق الطلب. Interceptors والتسلسل القياسي على القيمة المعادة لا يعملان كالمعتاد. <code>passthrough: true</code> يعيد القيمة إلى Nest ويكمل الإرسال القياسي.</li>
+</ol>
+<p>لا تُضاف حالة «Filter يعمل بعد 200». النجاح لا يدخل البند 9.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قطع في Middleware     -&gt; لا Guard ولا Pipe ولا دالة
+قطع في Guard          -&gt; لا Pipe ولا دالة، ونعم مرشحات المسار
+قطع في Pipe أو الدالة -&gt; لا قيمة نجاح، والمرشح إن بقي الخطأ
+@Res() بلا passthrough -&gt; الرد من كودك لا من تسلسل Nest
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Res } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+
+@Controller(&#39;loans&#39;)
+export class LoanExportController {
+  constructor(private readonly loans: LoansService) {}
+
+  @Get(&#39;export.csv&#39;)
+  exportCsv(@Res() res: Response) {
+    res.type(&#39;text/csv&#39;);
+    res.send(this.loans.csv());
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>export.csv</code> لا يسلسل كائنًا عبر طبقة Nest. <code>res.send</code> هو النهاية.</li>
+<li>Interceptor ينتظر قيمة <code>return</code> لا يرى هذا الجسم بالأسلوب القياسي.</li>
+<li>نسيان <code>send</code> يعلق العميل، وهذا قطع ناقص لا استجابة.</li>
+<li><code>@Res({ passthrough: true })</code> مع <code>return</code> كان سيبقي التسلسل. المسار هنا اختار الوضع الآخر عمدًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest بعد اكتشاف <code>@Res()</code> أو <code>@Next()</code> تعطّل الإرسال القياسي لذلك المعالج. مراحل ما قبل الدالة، من Middleware حتى Pipes، تبقى كما هي إن لم تُقطع هي أيضًا. القطع في البند 7 قطع للإرسال لا حذف لـ Guard. حارس فاشل ما زال يمنع الدخول إلى <code>exportCsv</code>.</p>
+<p>عند الرمي، التوثيق: تُتخطى بقية الدورة ويذهب الطلب إلى المرشح. أغلفة Interceptor جزء من طريق الخطأ عبر <code>catchError</code>، لا استثناءً من هذه القاعدة عندما تعيد الرمي.</p>
+<p>إنهاء Middleware للرد يعني أن اختيار المسار قد لا يحدث، فيصدق عليها قيد المرشح العام إن كان هناك رمي، أو لا مرشح أصلًا إن كان الرد نجاحًا مبكرًا عبر كائن المنصة.</p>
+<h2>مثال عملي</h2>
+<p><code>PATCH /loans/9</code> بأربع نهايات:</p>
+<table>
+<thead>
+<tr>
+<th>النهاية</th>
+<th>ما لا يعمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>MemberGuard</code> يعيد <code>false</code></td>
+<td>Pipe و <code>update</code> وخروج النجاح</td>
+</tr>
+<tr>
+<td><code>ParseIntPipe</code> ترمي</td>
+<td><code>LoansService.update</code></td>
+</tr>
+<tr>
+<td>الخدمة ترمي والمرشح على الدالة يمسك</td>
+<td>المرشح العام لهذا الاستثناء، وقيمة JSON نجاح</td>
+</tr>
+<tr>
+<td>المعالج <code>@Res()</code> بلا <code>passthrough</code> ويعمل <code>send</code></td>
+<td>تسلسل <code>return</code> و Interceptor القيمة</td>
+</tr>
+</tbody></table>
+<p>الرابعة ما زالت تمر على الحارس والـ Pipe إن نجحا. التخطي فيها في طبقة الإرسال لا في رأس القائمة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تفسير صمت Interceptor الخروج على CSV كخلل ترتيب</td>
+<td><code>@Res()</code> أوقف الأسلوب القياسي</td>
+</tr>
+<tr>
+<td>توقع <code>LoanPatchFilter</code> بعد <code>app.use</code></td>
+<td>المرشح العام فقط</td>
+</tr>
+<tr>
+<td>اعتبار <code>false</code> من Guard نجاحًا فارغًا</td>
+<td>استثناء رفض ثم مرشحات</td>
+</tr>
+<tr>
+<td>إمساك الخطأ وإعادة <code>{ ok: false }</code> ثم البحث في المرشح</td>
+<td>الطريق أصبح نجاحًا</td>
+</tr>
+<tr>
+<td><code>next()</code> مع كتابة الرد من Middleware</td>
+<td>خطر نهايتين؛ اختر قطعًا واحدًا</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عند تشخيص «لماذا لم تعمل المرحلة السفلى». ابحث عن أول قطع: <code>next</code>، Guard، رمي، <code>catch</code>، أو <code>@Res()</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تقطع الطريق بـ <code>@Res()</code> لمسار JSON عادي حتى تتجنب Interceptor. أعد القيمة. ولا تبتلع الاستثناء لتفادي مرشح ثم تعِد بناء شكل الخطأ يدويًا في كل Service.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القطع</th>
+<th>المراحل التي تبقى خارج التنفيذ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Middleware تنهي الرد</td>
+<td>من Guards حتى الاستجابة القياسية</td>
+</tr>
+<tr>
+<td>Guard يرفض</td>
+<td>Pipes والدالة وخروج النجاح</td>
+</tr>
+<tr>
+<td>Pipe أو خدمة ترمي</td>
+<td>ما بعد نقطة الرمي في طريق النجاح</td>
+</tr>
+<tr>
+<td>إمساك متعمد</td>
+<td>مرحلة المرشحات</td>
+</tr>
+<tr>
+<td><code>@Res()</code> بلا <code>passthrough</code></td>
+<td>إرسال Nest و Interceptors القيمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا تُسلسل Nest كائن <code>return</code> في <code>exportCsv</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Res()</code> بلا <code>passthrough</code> يضع المعالج في وضع المكتبة. <code>res.send</code> يكتب الجسم، والأسلوب القياسي متوقف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>حارس أعاد <code>false</code> و Pipe على <code>:id</code> لم تُسجَّل في السجلات. هل الترتيب مكسور؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. Pipes بعد Guards. الرفض يتخطاها وينقل استثناء المنع إلى المرشحات من المسار إلى العام.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>Middleware عام كتب JSON خطأ ورمي. أي مرشح على <code>LoansController</code> سيغير ذلك JSON؟</p>
+<details><summary>الحل</summary>
+
+<p>لا مرشح على Controller. الاستثناء قبل اختيار المسار فيراه Exception Filter العام فقط. كتابة JSON من Middleware ثم الرمي قد تنتج نهاية مزدوجة؛ القطع الأنظف إما <code>next()</code> أو إنهاء من غير رمي يعتمد على مرشح مسار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يتخطى Guard عند <code>false</code>؟</li>
+<li>متى تُتخطى المرشحات رغم وجود خطأ في الخدمة؟</li>
+<li>ماذا يفقد <code>@Res()</code> من غير <code>passthrough</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>باقي المسار يُتخطى عند إنهاء Middleware، أو رفض Guard، أو رمي غير ممسوك ينتقل إلى المرشحات، أو عند إمساك متعمد يكمل نجاحًا. <code>@Res()</code> بلا <code>passthrough</code> يترك لك الإرسال ويبعد التسلسل و Interceptors القيمة عن السلوك القياسي.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تتبع طلب إعارة على الخريطة نفسها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+<li>NestJS — Controllers (Library-specific): <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

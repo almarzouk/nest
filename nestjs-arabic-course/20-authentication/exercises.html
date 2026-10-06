@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>سلسلة الدورة <code>@nestjs/authentication</code> إلا إذا سأل التمرين عن الوصفة.</p>
+<h2>سهل</h2>
+<ol>
+<li>أي رمز إن غابت الكعكة على <code>POST /posts</code> بعد إغلاق المسار؟</li>
+<li>ماذا يُخزَّن بدل كلمة المرور؟</li>
+<li>أي مزخرف يقرأ الشخص في المتحكم؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>401</code>.</li>
+<li>ناتج <code>PasswordHasher.hash</code>.</li>
+<li><code>@CurrentUser()</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا <code>verify</code> لبريد غير موجود لا ترجع فورًا؟</li>
+<li>ماذا يحدث لعائلة التحديث عند إعادة استخدام رمز مستهلك؟</li>
+<li>لماذا لا يوضع <code>LocalAuthGuard</code> على كل المسارات في وصفة Passport؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>حتى يبقى الزمن قريبًا من كلمة خاطئة، عبر التجزئة الوهمية داخل <code>verify</code>.</li>
+<li>تُلغى العائلة ويحتاج الطرفان دخولًا جديدًا.</li>
+<li>لأنه يطالب بجسم كلمة المرور. بقية المسارات تحمل رمزًا أو كعكة.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>الفريق أضاف <code>AuthenticationModule</code> وأضاف <code>APP_GUARD</code> بصنف <code>JwtAuthGuard</code> من الوصفة، ووضع <code>@Public()</code> على التسجيل، والسر في ملف <code>constants.ts</code> مرفوع، و <code>authorId</code> ما زال في <code>CreatePostDto</code>.</p>
+<ol>
+<li>ما مشكلة الحارسين؟</li>
+<li>أين يجب أن يعيش السر؟</li>
+<li>من يملك <code>authorId</code> بعد الإصلاح؟</li>
+<li>هل حذف Passport من التوثيق جزء من الإجابة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>سلسلتان تكتبان الهوية أو ترفضان الطلب. الدورة تبقي حارس الحزمة وتخرج <code>JwtAuthGuard</code> من <code>AppModule</code>.</li>
+<li>في بيئة التشغيل عبر <code>ConfigService</code>، لا في مستودع.</li>
+<li><code>@CurrentUser()</code> ثم وسيط الخدمة، والحقل يُحذف من DTO الكتابة.</li>
+<li>لا. الوصفة تبقى رسمية للقراءة ولمشروع قائم، وليست طبقة ثانية هنا.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

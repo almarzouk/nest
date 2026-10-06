@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Liskov Substitution</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-liskov-substitution.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Liskov Substitution</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ضمان أن تنفيذًا يحل محل آخر خلف الرمز نفسه لا يكسر مستدعي Nest: نفس المعنى للنجاح والفشل والحالات الحدية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>useClass</code> و <code>useExisting</code> يعدان المستدعي أن الرمز يطبّق العقد. تنفيذ <code>find</code> يرمي دائمًا بينما التنفيذ الأصلي يعيد <code>null</code> عند الغياب يكسر المتحكم الذي يترجم <code>null</code> إلى <code>404</code>. مبدأ ليسكوف: البديل يقف مكان الأصل من غير مفاجأة من يبرمج ضد العقد. في الاختبار، المزيف الذي يعيد بيانات أنجح دائمًا يخفي فرع الغياب.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اكتب العقد بسلوك يمكن اختباره: <code>find</code> يعيد الكيان أو <code>null</code>، ولا يرمي إلا لعطل بنية. كل محول، بما فيه المزيف، يلتزم. إن احتجت «ارمِ عند الغياب» فذلك عقد مختلف ودالة أخرى، لا تنفيذ خاص بصمت.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export interface BooksPort {
+  findTitle(id: string): Promise&lt;string | null&gt;;
+}
+</code></pre>
+<p><code>PrismaBooksAdapter</code> يعيد <code>null</code> عندما <code>findUnique</code> لا يجد صفًا. مزيف الاختبار:</p>
+<pre><code class="language-ts">const books: BooksPort = {
+  findTitle: async (id) =&gt; (id === &#39;b1&#39; ? &#39;مقدمة&#39; : null),
+};
+</code></pre>
+<p>مخالفة: مزيف يعيد <code>&#39;&#39;</code> عند الغياب، أو يرمي <code>Error(&#39;missing&#39;)</code> بينما الخدمة تكتب <code>if (title === null)</code>. المستدعي لا يستطيع استبدال المحول.</p>
+<p>مخالفة نطاق: تنفيذ <code>pay</code> للبطاقة ينتظر الوسيط وينجح بمبلغ صفر، وتنفيذ المحفظة يرمي على الصفر. المنسق الذي جرّب البطاقة لا يستطيع تمرير المحفظة. وحّد القاعدة في العقد: «الصفر مرفوض قبل النداء» أو «كل التنفيذات تقبل الصفر».</p>
+<p>الوراثة ليست مطلوبة للمبدأ. أي بديل خلف <code>provide</code> يدخل فيه: <code>useClass</code> و <code>useValue</code>.</p>
+<p>لا تضعف الشروط البعدية: إن وعد الأصل أن <code>save</code> يحفظ ما يُقرأ بعدها، فبديل الاختبار الذي ينسى التخزين في مصفوفة يكسر اختبارًا لاحقًا يعتمد على القراءة. قوِّ المزيف حتى يطابق الوعد، أو ضيّق الاختبار إلى ما يفعله المزيف فعلًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المستدعي يبرمج ضد BooksPort
+Prisma و Fake يُستبدلان
+الناتج عند الغياب: null في الاثنين
+العطل: رمي من الاثنين
+</code></pre>
+<p>إن اختلف المعنى فالرموز مختلفة لا تنفيذان لعقد واحد.</p>
+<h2>أبسط مثال</h2>
+<p>خدمة:</p>
+<pre><code class="language-ts">async titleOrMissing(id: string): Promise&lt;string&gt; {
+  const title = await this.books.findTitle(id);
+  if (title === null) {
+    throw new NotFoundException();
+  }
+  return title;
+}
+</code></pre>
+<p>استبدل <code>BOOKS</code> بمحول Prisma أو بالمزيف. <code>b1</code> يعيد عنوانًا و <code>b2</code> يرمي <code>NotFoundException</code> في الحالتين. إن رمى المزيف داخل <code>findTitle</code> فلن يصل الفرع إلى <code>NotFoundException</code> الذي يتوقعه مسار HTTP.</p>
+<h2>شرح المثال</h2>
+<p><code>NotFoundException</code> قرار حافة HTTP في هذه الدالة. إن أردت إبقاء الخدمة بلا HTTP، ارمِ خطأ دومين وترجمه في Filter. المهم أن الغياب يخرج من المنفذ كـ <code>null</code> في كل التنفيذات حتى يبقى قرار الترجمة في مكان واحد. تنفيذ يرمي <code>NotFoundException</code> من Prisma يسرّب HTTP إلى المحول ويكسر عامل الطابور الذي استبدل الحافة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية تمرر أحد التنفيذين خلف الرمز.</li>
+<li>الخدمة لا تفحص اسم الصنف.</li>
+<li><code>null</code> يذهب إلى فرع الغياب.</li>
+<li>استثناء البنية (انقطاع القاعدة) يصعد كما هو من كلا الطرفين إن التزما بذلك.</li>
+<li>مزيف «سعيد» فقط لا يمرر الفرع. أضف حالة <code>null</code> في الاختبار.</li>
+<li><code>useExisting</code> لا ينقذك من مخالفة سلوك. اللقب يشارك النسخة، والمبدأ عن المعنى لا عن المرجع.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>CardPayment.pay</code> يرفض المبلغ السالب برمي <code>RangeError</code>. <code>CashPayment.pay</code> كان يتجاهل السالب ويكتب صفرًا. بعد توحيد العقد، كلاهما يرمي <code>RangeError</code> قبل أي شبكة، والفحص يمكن أن يعيش في المنسق مرة واحدة قبل <code>pay</code> فيستغنى التنفيذان عن التكرار. إن بقي الفحص داخل التنفيذات فيجب أن يتطابق. اختلاف هنا يكسر استبدال القناة تحت <code>PAYMENTS</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مزيف يعيد دائمًا نجاحًا.</li>
+<li><code>find</code> يعيد <code>null</code> في Prisma ويرمي في الاختبار.</li>
+<li>تنفيذ يوسّع العقد بحقول مطلوبة جديدة فيرجع المستدعي يفحص اسم الصنف.</li>
+<li>رمي استثناء HTTP من المحول الثانوي.</li>
+<li>اعتبار الوراثة من <code>BaseRepository</code> كافية بينما الدوال تغيّر معنى الحذف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما سجلت تنفيذًا ثانيًا لرمز، بما فيه مزيف الاختبار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفرض سلوكًا موحدًا على قناتين بعقدين مختلفين. افصل الرمز إن كان «الدفع المؤجل» ليس «دفعًا فوريًا».</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الموقف</th>
+<th>هل الاستبدال سليم؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الغياب <code>null</code> في الطرفين</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>أحد الطرفين يرمي عند الغياب</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>المزيف بلا فرع فشل</td>
+<td>الاختبار ناقص</td>
+</tr>
+<tr>
+<td>عقدان مختلفان خلف رمز واحد</td>
+<td>اقسم الرمز</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد <code>findTitle</code> عند غياب الصف في كل التنفيذات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>null</code>، كما كُتب في <code>BooksPort</code>، لا رميًا خاصًا بمحول واحد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>NotFoundException</code> داخل محول Prisma يضر عامل الطابور؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العامل يستعمل المنفذ بلا HTTP. استثناء الإطار يربطه بشكل رد المتصفح. الغياب يبقى <code>null</code> والترجمة في الحافة التي تحتاجها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>WalletPayment</code> يقبل المبلغ صفر و <code>CardPayment</code> يرفضه. ماذا تعدّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>وحّد العقد: إما الرفض في الاثنين أو القبول في الاثنين، أو أخرج الصفر إلى فحص في المنسق قبل اختيار القناة. لا تترك السلوكين خلف <code>Payment</code> واحد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يستبدل المستدعي فعلًا؟</li>
+<li>كيف يخالف المزيف السعيد المبدأ؟</li>
+<li>متى تقسم الرمز بدل توحيد السلوك؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>كل <code>useClass</code> ومزيف خلف الرمز يفي بمعنى النجاح والغياب والعطل نفسه. إن اختلف المعنى فذلك عقد آخر لا تنفيذ بديل.</p>
+<h2>ماذا بعد؟</h2>
+<p>Interface Segregation: اقسم العقد الواسع حتى لا يُجبر المستهلك على دوال لا يناديها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

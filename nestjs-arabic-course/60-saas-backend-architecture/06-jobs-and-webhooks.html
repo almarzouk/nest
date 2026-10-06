@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Background Jobs و Webhooks</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-jobs-and-webhooks.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Background Jobs و Webhooks</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد مكانين في معمارية رف: عمل لا ينتظره طلب HTTP (مهمة)، وإشعار يعبر حدود النظام (ويب هوك صادر أو وارد)، من غير بناء أي منهما كاملًا هنا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نشر الكتاب يضغط الصورة ويرسل بريدًا وينادي شريك المخزون داخل <code>POST</code> واحد. المهلة تقطع الرد بعد ما نُشر الكتاب جزئيًا. شريك آخر يريد أن يُبلَّغ عند النشر، فيُطلب منكم إبقاء الاتصال مفتوحًا حتى يرد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المهمة وحدة عمل تُعاد بأمان: مفتاح، مدخلات، حالة. الويب هوك رسالة عبر HTTP إلى عنوان سجّله الطرف الآخر، أو رسالة منه إليكم. الطلب الذي ينشر الكتاب يلتزم الأثر ويجدول المهمة أو يدرج حدثًا. التسليم يعيد المحاولة. التفاصيل: التوقيع، الجسم الخام، والتكرار تأتي في فصل الويب هوك. هنا نرسم الحدود حتى لا تكبر <code>BooksService</code>.</p>
+<h2>التعريف التقني</h2>
+<p>طابور <code>@nestjs/bullmq</code> أو ما شابه يعيش في وحدة <code>JobsModule</code> ويستهلك أسماء وظائف مثل <code>cover.resize</code>. المعالج يحمّل المستأجر من حمولة المهمة لا من سياق طلب غائب. الويب هوك الصادر صف <code>WebhookEndpoint</code> لكل منظمة: <code>url</code>, سر, أحداث مشتركة. الحدث <code>book.published</code> يُدرج بعد الالتزام. الوارد من Stripe أو غيره مسار مستقل <code>POST /webhooks/...</code> لا يمر من حارس جلسة المستخدم. لا تستورد وحدة الكتب SDK الشريك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /books/:id/publish
+  COMMIT book + audit
+  enqueue cover.resize { organizationId, bookId }
+  enqueue webhook.deliver { organizationId, event }
+
+عامل لاحق يسلّم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface JobPayload {
+  organizationId: string;
+  bookId: string;
+}
+
+export const jobs = {
+  resizeCover: &#39;cover.resize&#39;,
+  deliverWebhook: &#39;webhook.deliver&#39;,
+} as const;
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الحمولة معرّفات لا كائن كتاب كامل قد يشيخ.</li>
+<li><code>organizationId</code> إجباري لأن العامل بلا حارس طلب.</li>
+<li>الاسم ثابت حتى لا تتفرق السلاسل في المتحكمات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب يتحقق من الصلاحية والخطة والمستأجر.</li>
+<li>يلتزم النشر والتدقيق.</li>
+<li>يدفع رسالة إلى الطابور. إن فشل الدفع بعد الالتزام فمهمة تعويض أو نمط صادر لاحقًا يعيد البناء من الصفوف.</li>
+<li>العامل ينفّذ ثم يعلّم النجاح. الفشل يعيد المحاولة بعدد محدود.</li>
+<li>الويب هوك الفاشل لا يعيد الكتاب مسودة. هو تسليم متأخر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Injectable()
+export class PublishCoordinator {
+  constructor(private readonly books: BooksService, private readonly queue: { add: (name: string, payload: JobPayload) =&gt; Promise&lt;void&gt; }) {}
+
+  async publish(tenantId: string, bookId: string, actorId: string) {
+    await this.books.publish(tenantId, bookId, actorId);
+    await this.queue.add(jobs.resizeCover, { organizationId: tenantId, bookId });
+    await this.queue.add(jobs.deliverWebhook, { organizationId: tenantId, bookId });
+  }
+}
+</code></pre>
+<p><code>books.publish</code> المعاملة. الطابور بعدها. إن أردتم ذرية أقوى فسيأتي صندوق الصادر في فصول الاعتمادية. هذا الدرس يمنع فقط أن يكون الضغط نداءً متزامنًا داخل المتحكم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>await sharp()</code> و <code>await fetch(partner)</code> داخل طلب النشر.</li>
+<li>مهمة بلا <code>organizationId</code> فتحدّث أول عميل Prisma في الخريطة.</li>
+<li>ويب هوك وارد على مسار الجلسة فيفشل توقيع المزود لأن الجسم مُحلِّل خطأ، وهذا يُعالج في فصل لاحق لكن الحد هنا مسار خاص.</li>
+<li>إعادة محاولة بلا مفتاح فتتكرر الدعوة للشريك.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عمل أطول من مهلة HTTP، وتسليمه غير لازم لرمز 200/201، وتبليغ نظام خارجي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تؤجلوا التحقق من الصلاحية إلى العامل؛ المتصفح يظن أن النشر نجح. ولا تضعوا كل دالة في طابور «للنظافة».</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>مهمة</th>
+<th>ويب هوك صادر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يستدعي</td>
+<td>عامل داخل منصتكم</td>
+<td>عنوان العميل عبر HTTP</td>
+</tr>
+<tr>
+<td>الحمولة</td>
+<td>معرّفات عمل</td>
+<td>حدث بعقد</td>
+</tr>
+<tr>
+<td>الفشل</td>
+<td>إعادة داخل الطابور</td>
+<td>إعادة تسليم موقّعة</td>
+</tr>
+<tr>
+<td>أثره على الكتاب</td>
+<td>لا يلغي الالتزام</td>
+<td>لا يلغي الالتزام</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل ينتظر <code>POST publish</code> رد شريك المخزون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. يلتزم النشر ويجدول التسليم. الشريك البطيء لا يمسك مهلة المتصفح.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>العامل استيقظ بلا طلب HTTP. من أين يأخذ <code>tenantId</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من حمولة المهمة التي كُتبت عند الجدولة. لا من <code>tenantStorage</code> لطلب انتهى، ولا من قيمة افتراضية لأول مكتبة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الطابور قُبل بعد الالتزام ثم ضاعت الرسالة. ماذا يبقى صحيحًا في الكتالوج، وما الذي يجب أن يُعاد بناؤه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكتاب منشور والتدقيق موجود. صورة الغلاف وتسليم الويب هوك قد يغيبان. إعادة البناء من الصفوف التي بلا مهمة مكتملة (أو صندوق صادر لاحقًا) تعيد الجدولة. لا تعيدوا النشر نفسه فتكرروا الأثر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يلتزم طلب النشر، وماذا يُجدول؟</li>
+<li>لماذا الحمولة معرّفات؟</li>
+<li>أين يعيش ويب هوك المزود نسبة إلى حارس الجلسة؟</li>
+<li>هل فشل التسليم يعيد المسودة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المهام والويب هوك حدود تسليم بعد الالتزام. العامل يعرف المكتبة من الحمولة. فشل القناة لا يلغي فعل الكتالوج. التوقيع والجسم الخام يأتيان في فصلهما.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحد المعماري جاهز. الفصل التالي يفتح الويب هوك نفسه: وارد وصادر، توقيع، جسم خام، إعادة، ومفتاح تكرار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+<li>NestJS — Webhooks: <a href="https://docs.nestjs.com/http/webhooks">https://docs.nestjs.com/http/webhooks</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

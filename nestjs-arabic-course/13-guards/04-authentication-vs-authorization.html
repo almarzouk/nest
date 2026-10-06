@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Authentication و Authorization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-authentication-vs-authorization.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Authentication و Authorization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفريق «من هذا؟» عن «هل يُسمح له بهذه الدالة؟»، وتحديد ما يُبنى في هذا الفصل وما يُؤجَّل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كلمة auth في الكود تغطي الاثنين. حارس واحد يتحقق من الرمز ويفرض دور المشرف ويحوّل المقعد يصعب اختباره. الصفحة نفسها تفصل: Middleware مناسب للمصادقة التي تلصق هوية لأنها لا تحتاج سياق الدالة، والحارس مناسب للتفويض لأنه يرى <code>ExecutionContext</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Authentication تجيب عن الهوية: هل الترويسة تثبت شخصًا، ومن هو. Authorization تجيب عن الإذن: هل هذا الشخص يجوز له <code>reserve</code> أو <code>refund</code>. هذا الفصل يعلّم البوابة التي تقدر أن تحمل أيًا منهما. إستراتيجية الرمز وكلمة المرور والجلسة فصول لاحقة. زينة <code>@Roles</code> و <code>@Public</code> فصل الزينة المخصصة.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تصف حارس التفويض بأنه شائع لأن بعض المسارات تتاح فقط لصاحب صلاحية. وتقول إن المصادقة عادة تتعاون معه. المثال التعليمي في التوثيق يتحقق من طلب ثم يرجع منطقيًا، ويحيلك إلى فصل المصادقة لمثال واقعي.</p>
+<p>حد هذا المجلد:</p>
+<ul>
+<li>يجوز لحارس أن يرفض طلبًا بلا دليل هوية برمز <code>401</code>، كآلية <code>throw</code>.</li>
+<li>يجوز لحارس أن يرجع <code>false</code> فيصير <code>403</code> حين تكون الهوية معروفة والإذن ناقصًا.</li>
+<li>لا نثبّت JWT ولا Passport ولا جدول مستخدمين هنا.</li>
+<li>إلصاق <code>request.user</code> بعد التحقق من رمز يمكن أن يعيش في Middleware أو في حارس مصادقة. كلاهما مذكور في التوثيق. ما لا يعيش في Middleware هو قرار يعتمد على بيانات الدالة، لأن تلك الطبقة لا تعرف المعالج التالي.</li>
+</ul>
+<p>التفويض الذي يقرأ أدوارًا مكتوبة على <code>reserve</code> يحتاج <code>getHandler()</code> ثم <code>Reflector</code>. قراءة الزينة تُكتب حين تُبنى الزينة. هنا تعرف لماذا المكان حارس لا أنبوب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">من أنت؟          مصادقة     401 إن غابت الهوية
+هل تفتح reserve؟ تفويض     403 إن منعت البوابة
+هل seat عدد؟     شكل       400 من الأنبوب
+هل المقعد مبيع؟  أعمال     409 من الخدمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from &#39;@nestjs/common&#39;;
+
+type DeskRequest = { headers: Record&lt;string, string | undefined&gt;; user?: { name: string } };
+
+@Injectable()
+export class IdentifyDeskGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest&lt;DeskRequest&gt;();
+    const name = request.headers[&#39;x-desk-name&#39;];
+    if (!name) {
+      throw new UnauthorizedException();
+    }
+    request.user = { name };
+    return true;
+  }
+}
+</code></pre>
+<p>هذا حارس مصادقة تعليمي: يثبت وجود اسم شباك ويلصقه. لا يقرر إن كان الاسم يجوز له الاسترداد. حارس ثانٍ لاحقًا يقرأ <code>request.user</code> وبيانات الدالة ويرجع <code>false</code> للتفويض. الفصل لا يملأ الحارس الثاني بجدول أدوار حقيقي.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>401</code> لغياب الهوية، لا <code>403</code>. الضيف لم يُعرَف بعد.</li>
+<li><code>request.user</code> أثر على طلب هذه الدورة فقط، يُقرأ من السياق لا من حقل على الصنف.</li>
+<li><code>return true</code> يعني «الهوية حاضرة»، لا «كل العمليات مباحة».</li>
+<li>الترويسة <code>x-desk-name</code> بديل مؤقت عن رمز. استبدلها في فصل المصادقة، وأبقِ شكل الحارس.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>إن رُبط الحارسان معًا، ترتيب <code>@UseGuards</code> هو ترتيب التنفيذ: التعريف أولًا ثم التفويض. التفويض الذي يقرأ <code>request.user</code> قبل لصقه يرى <code>undefined</code>. دورة الطلب لا تعيد ترتيب الحراس حسب النية. الدرس الأخير في الفصل يثبت الترتيب العام ثم المتحكم ثم المسار.</p>
+<p>الأنبوب ما زال بعد الاثنين. فشل الهوية لا يفحص DTO. نجاح الهوية وفشل الإذن كذلك.</p>
+<p>Middleware يستطيع لصق <code>user</code> أيضًا إن كان العمل لا يقرأ زينة الدالة. إن بدأت المصادقة هناك، الحارس في هذا الدرس يبقى للتفويض فقط حتى لا تُقرأ الترويسة مرتين.</p>
+<h2>مثال عملي</h2>
+<p>شباك: <code>IdentifyDeskGuard</code> ثم بوابة استرداد ترجع <code>false</code> لغير المشرف. اليوم بوابة الاسترداد يمكن أن تقارن <code>request.user.name</code> بقائمة ثابتة في الاختبار. غدًا تقرأ <code>@Roles([&#39;refund&#39;])</code> من الدالة. الاختبار الأول يثبت الفرق بين غياب الترويسة (<code>401</code>) واسم لا يملك الاسترداد (<code>403</code>). لا تختبر مكتبة JWT في هذا الملف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>رمز <code>403</code> عند غياب الهوية. العميل يظن أنه معروف وممنوع.</li>
+<li>رمز <code>401</code> عند نقص الدور بعد أن عُرفت الهوية. المعنى الشائع عندئذ المنع <code>403</code>.</li>
+<li>حشر فحص المقعد في حارس التفويض.</li>
+<li>اعتبار هذا الملف فصل المصادقة مكتملًا لأنه لصق <code>user</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تقسم البوابات: واحدة تثبت الهوية وتلصقها، وواحدة تقرر الإذن على الدالة. الآلية هنا، والمزوّد الحقيقي لاحقًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تكتب تحقق كلمة المرور ولا توقيع الرمز في هذا الدرس. لا تضع التفويض في <code>ValidationPipe</code>. لا تقرأ دور الدالة من Middleware.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>الطبقة</th>
+<th>رمز شائع عند الفشل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من أنت؟</td>
+<td>مصادقة، حارس أو Middleware بلا زينة</td>
+<td><code>401</code></td>
+</tr>
+<tr>
+<td>هل تُفتح هذه الدالة؟</td>
+<td>تفويض في حارس</td>
+<td><code>403</code></td>
+</tr>
+<tr>
+<td>هل الشكل صحيح؟</td>
+<td>Pipe</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td>هل الحالة تسمح؟</td>
+<td>خدمة</td>
+<td><code>409</code> أو <code>404</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما رمز غياب الهوية، وما رمز نقص الإذن بعد معرفة الشخص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الغياب <code>401</code> عبر <code>UnauthorizedException</code>. نقص الإذن <code>403</code> عبر <code>return false</code> أو <code>ForbiddenException</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يصلح Middleware للمصادقة التي تلصق <code>user</code> فقط، ولا يصلح لتفويض يعتمد على الدالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المصادقة هنا لا تحتاج معرفة المعالج التالي. التفويض يحتاج <code>ExecutionContext</code> ليعرف أي دالة ستعمل وما بياناتها. Middleware لا يملك هذا السياق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حارس واحد يتحقق من الرمز ويفرض الدور ويفحص <code>seat</code>. كيف تقسمه على الطبقات من غير تنفيذ JWT؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إثبات الهوية في حارس مصادقة أو Middleware يلصق <code>user</code>. الدور في حارس تفويض يقرأ الدالة. <code>seat</code> في <code>ValidationPipe</code> على DTO. الحجز المبيع في الخدمة. هذا الفصل يكتب البوابتين كآلية، والرمز لاحقًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما سؤال المصادقة وما سؤال التفويض؟</li>
+<li>لماذا <code>401</code> غير <code>403</code>؟</li>
+<li>ماذا نؤجل إلى فصل المصادقة؟</li>
+<li>أين يعيش فحص الشكل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المصادقة تثبت الهوية. التفويض يفتح الدالة أو يمنعها. الحارس يقدر أن يحمل الاثنين كآلية، والأوضح فصلهما. الرمز والجلسة والأدوار المزيّنة فصول تالية على هذه البوابة لا بدلًا عنها.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي مستويات الربط: تطبيق، متحكم، ومسار، ولماذا الحارس العام يغلق تسجيل الدخول والصحة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/security/authentication">Authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

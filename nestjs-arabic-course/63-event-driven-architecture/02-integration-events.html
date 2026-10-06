@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Integration Events</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-integration-events.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Integration Events</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف الحدث الذي يعبر حد رف إلى نظام آخر، أو بين خدمتين تنشران منفصلتين، كعقد عام لا كصنف داخلي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يصدّر <code>BookPublished</code> نفسه إلى HTTP الشريك. عندما أضيفتم حقلًا داخليًا انكسر الشريك. أو أرسلتم كيان Prisma فيه حقول لم يُعلَن عنها. إعادة المحاولة بلا اسم عقد تخلط «نُشر» مع «تغيّر السعر».</p>
+<h2>الفكرة ببساطة</h2>
+<p>حدث التكامل وثيقة: اسم ثابت <code>book.published</code>، إصدار، معرّف حدث، ومعرّفات عامة. يتغير بإصدار لا بإعادة هيكلة الصنف الداخلي. النقل ويب هوك أو طابور أو ناقل. حدث النطاق قد يُترجم إلى حدث تكامل بعد الالتزام، وليس كل حدث نطاق يُنشر خارجًا.</p>
+<h2>التعريف التقني</h2>
+<p>الحمولة JSON مستقرة: <code>id</code>, <code>type</code>, <code>specversion</code> إن اتبعتم أسلوبًا مثل CloudEvents أو حقولًا أصغر توثّقونها. لا أصناف TypeScript الخاصة بالمستودع. <code>organizationId</code> إن كان الشريك متعدد المكتبات عندكم؛ وإلا يكفي ما اتفقتم أنه مفتاحه. التوقيع والجسم الخام من فصل الويب هوك على النقل HTTP. المستهلك يطبق قيد المعرّف. إصدار الحمولة عندما يُحذف حقل أو يتغير معناه، لا عندما تضيفون مستمعًا داخليًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BookPublished (داخلي)
+→ ترجمة
+book.published v1 { id, bookId } (عقد)
+→ ويب هوك أو ناقل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface BookPublishedV1 {
+  id: string;
+  type: &#39;book.published&#39;;
+  specversion: &#39;1&#39;;
+  organizationId: string;
+  bookId: string;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>type</code> و <code>specversion</code> يثبّتان العقد.</li>
+<li><code>id</code> للتكرار عند المستهلك لا مفتاح جدول داخلي متغير.</li>
+<li>الحقول أقل من صف <code>Book</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>حدث النطاق يقع بعد الالتزام أو تُبنى رسالة التكامل في نفس المعاملة عبر صندوق لاحق.</li>
+<li>مترجم صريح ينسخ الحقول المعلنة فقط.</li>
+<li>النقل يرسل JSON.</li>
+<li>المستهلك يتحقق من <code>type</code> و <code>specversion</code> قبل الأثر.</li>
+<li>تغيير داخلي في اسم عمود Prisma لا يغيّر الواجهة إن بقي المترجم.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function toIntegration(event: { id: string; organizationId: string; bookId: string }): BookPublishedV1 {
+  return {
+    id: event.id,
+    type: &#39;book.published&#39;,
+    specversion: &#39;1&#39;,
+    organizationId: event.organizationId,
+    bookId: event.bookId,
+  };
+}
+</code></pre>
+<p>لا تمرّروا <code>BookPublished</code> إلى <code>JSON.stringify</code> مباشرة إن كان الصنف سيكبر. الدالة هي الحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نشر كائن النطاق كما هو.</li>
+<li>معرّف جديد كلما أُعيد الإرسال.</li>
+<li>حقل <code>status</code> يتغير معناه في v1 بصمت.</li>
+<li>اعتبار كل <code>@OnEvent</code> حدث تكامل لأنه «حدث».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يستهلك فريق أو نظام آخر الحقيقة، بما فيه عامل رف إن كان عملية منفصلة لا تشارك الذاكرة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمستمع في نفس العملية يستطيع استيراد النوع الداخلي. ولا لكل <code>console.log</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>نطاق</th>
+<th>تكامل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الجمهور</td>
+<td>نموذجكم</td>
+<td>خارج الحد</td>
+</tr>
+<tr>
+<td>الشكل</td>
+<td>صنف</td>
+<td>عقد مُصدَّر</td>
+</tr>
+<tr>
+<td>التغيير</td>
+<td>حر داخل الاختبارات</td>
+<td>إصدار</td>
+</tr>
+<tr>
+<td>النقل</td>
+<td>ذاكرة العملية غالبًا</td>
+<td>HTTP أو ناقل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل إضافة مستمع تدقيق داخلي ترفع <code>specversion</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. العقد الخارجي لم يتغير. الإصدار عندما تتغير حمولة الشريك.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُرسل أعمدة Prisma كلها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها ليست عقدًا. عمود داخلي جديد سيصل إلى الشريك بلا قرار، وقد يتضمن بيانات لا تخصه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمتا رف منفصلتان: كتالوج وإشعارات. أي نوع حدث بينهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تكامل، حتى لو كتبتموه أنتم، لأن الإشعارات عملية أخرى لا تشارك كائن <code>BookPublished</code> في الذاكرة. الناقل أو الطابور يحمل <code>book.published</code> v1.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يثبَّت في حدث التكامل؟</li>
+<li>من يترجم حدث النطاق؟</li>
+<li>لماذا المعرّف ثابت عبر الإعادة؟</li>
+<li>متى لا يُنشر الحدث خارجًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>حدث التكامل عقد مُصدَّر بمعرّف وإصدار وحقول عامة. حدث النطاق يبقى داخل النموذج. الترجمة دالة صريحة على الحد.</p>
+<h2>ماذا بعد؟</h2>
+<p>النقل داخل العملية أو بين العمليات يحتاج اسمًا للوسيط. الدرس التالي ناقل الأحداث.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Events: <a href="https://docs.nestjs.com/application/events">https://docs.nestjs.com/application/events</a></li>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Event Loop وما يسدّه</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-event-loop.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Event Loop وما يسدّه</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>أن ترى لماذا يتأخر <code>GET /books</code> في متجر رف بينما المعالج لا يفعل شيئًا «ثقيلًا» في نظرك: خيط Node واحد يدور على حلقة أحداث، وأي عمل متزامن طويل يمنع بقية الطلبات من التقدم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تحت الحمل، زمن الاستجابة يقفز لكل المسارات دفعة واحدة، بما فيها مسار الصحة. السبب غالبًا ليس Nest ولا عدد الـ Controllers، بل دالة حبست الحلقة: حلقة على مصفوفة ضخمة، <code>JSON.parse</code> لملف كتالوج كامل، أو <code>bcrypt</code> المتزامن، أو <code>fs.readFileSync</code> على مسار ساخن.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحلقة تسلّم الطلب إلى معالجك، ثم تنتظر أن تُرجع الدالة السيطرة. انتظار قاعدة البيانات أو <code>fetch</code> يُرجع السيطرة. الحساب المتزامن لا يُرجعها. الطلبات الأخرى تقف في الطابور خلف ذلك الحساب حتى ينتهي.</p>
+<h2>التعريف التقني</h2>
+<p>عملية Node تشغّل JavaScript على خيط واحد. I/O يذهب إلى libuv ويعود كـ callback أو Promise. ما دام المكدس مشغولًا بكود متزامن، لا تُعالَج مؤقتات ولا استجابات I/O المكتملة. في Nest، الـ Handler الذي يعمل <code>await prisma.book.findMany()</code> يحرر الحلقة أثناء انتظار Postgres. الـ Handler الذي يفرز 200 ألف سعر في الذاكرة قبل <code>return</code> لا يحررها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب أ يبدأ فرز كتالوج ضخم     الحلقة مشغولة
+طلب ب (صحة)                   ينتظر دوره
+طلب أ ينتهي                   ثم يُرد على ب
+</code></pre>
+<p>قياس واحد: إذا تأخر <code>/health</code> كلما اشتغل مسار التقارير، فالمسار يسد الحلقة. إذا تأخر مسار الكتب وحده وبقي <code>/health</code> سريعًا، فالوقت داخل انتظار قاعدة ذلك المسار.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;reports&#39;)
+export class ReportsController {
+  @Get(&#39;prices&#39;)
+  prices() {
+    const started = Date.now();
+    let n = 0;
+    for (let i = 0; i &lt; 50_000_000; i++) n += i % 7;
+    return { n, blockedMs: Date.now() - started };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الحلقة لا تنتظر شبكة. هي تحسب. طوال <code>blockedMs</code> لا يُكتب رد أي طلب آخر على هذه العملية.</li>
+<li>نقل الحساب إلى <code>async</code> لا يفيد. <code>async</code> بلا <code>await</code> حقيقي يبقى متزامنًا حتى أول نقطة انتظار.</li>
+<li>مسار الصحة في العملية نفسها يتأخر بالقيمة نفسها تقريبًا إذا وصل أثناء الحلقة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>محول HTTP (Express افتراضيًا) يستلم الطلب ويضعه في طابور الحلقة.</li>
+<li>Nest يشغّل الـ Guards والـ Pipes ثم الـ Handler.</li>
+<li>أثناء الحلقة المتزامنة، libuv قد يكون أنهى I/O، لكن الـ callbacks لا تعمل حتى يفرغ المكدس.</li>
+<li>بعد <code>return</code>، Nest يسلسل الجسم ويرسله، ثم تلتقط الحلقة الطلب التالي.</li>
+<li>إن كان العمل CPU حقيقيًا ومستمرًا، مكانه <code>worker_threads</code> أو عملية منفصلة، لا داخل الـ Handler.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تقرير خصومات رف يقرأ الصفوف (هذا I/O) ثم يبني المدرج التكراري بخيط عامل حتى لا يتوقف البيع:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { Worker } from &#39;node:worker_threads&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+
+@Injectable()
+export class PriceReportService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async histogram() {
+    const rows = await this.prisma.book.findMany({
+      select: { priceCents: true },
+    });
+    return new Promise((resolve, reject) =&gt; {
+      const worker = new Worker(new URL(&#39;./histogram.worker.js&#39;, import.meta.url), {
+        workerData: rows.map((row) =&gt; row.priceCents),
+      });
+      worker.once(&#39;message&#39;, resolve);
+      worker.once(&#39;error&#39;, reject);
+    });
+  }
+}
+</code></pre>
+<p><code>await findMany</code> يحرر الحلقة. بناء المدرج يحدث في الخيط العامل. ملف <code>histogram.worker.js</code> يستقبل <code>workerData</code> ويرسل الناتج بـ <code>parentPort.postMessage</code>. لا تنقل كائنات Prisma نفسها إلى العامل؛ انقل أرقامًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قياس الأداء بطلب واحد على جهازك واستنتاج أن الإطار بطيء. الحلقة تظهر تحت التزامن.</li>
+<li>استدعاء <code>bcrypt.hashSync</code> أو <code>readFileSync</code> داخل طلب تسجيل الدخول.</li>
+<li>بناء PDF أو صورة غلاف داخل نفس العملية لكل طلب شراء.</li>
+<li>الاعتقاد أن <code>setTimeout(fn, 0)</code> يلغي التكلفة. هو يؤجلها دورة واحدة فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يتأخر كل شيء معًا، أو عندما تعرف أن مسارًا يعمل حسابًا أو تحليلًا طويلًا على بيانات في الذاكرة. عندها قس <code>/health</code> أثناء الضغط على ذلك المسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يكون الزمن كله في استعلام SQL أو في شبكة خارجية. نقل ذلك إلى Worker لا يسرع Postgres. أصلح الاستعلام أولًا، وهذا درس الفهارس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العمل</th>
+<th>أثره على الحلقة</th>
+<th>الاتجاه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>await</code> لاستعلام</td>
+<td>يحرر الحلقة أثناء الانتظار</td>
+<td>أبقه في الخدمة</td>
+</tr>
+<tr>
+<td>حلقة على مئات الآلاف</td>
+<td>يسد كل الطلبات</td>
+<td>عامل أو عملية</td>
+</tr>
+<tr>
+<td><code>JSON.stringify</code> لجسم صغير</td>
+<td>قصير عادة</td>
+<td>اتركه</td>
+</tr>
+<tr>
+<td>ضغط الاستجابة داخل العملية</td>
+<td>CPU لكل رد كبير</td>
+<td>وكيل عكسي، درس الضغط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>مساران على العملية نفسها: <code>GET /health</code> يعيد <code>{ ok: true }</code> فورًا، و <code>GET /reports/prices</code> فيه حلقة 50 مليون. ماذا يحدث لزمن <code>/health</code> إذا أُرسل أثناء الحلقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يتأخر حتى تنتهي الحلقة، لأن الخيط الواحد لا يرد على الصحة قبل أن يفرغ المكدس. هذا دليل سد، لا دليل أن Terminus معطوب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>دالة <code>async</code> تعمل <code>JSON.parse</code> على ملف كتالوج 80 ميغابايت ثم <code>await</code> لحفظ الناتج. أي جزء يسد الحلقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>JSON.parse</code> يسد، لأنه متزامن ويستهلك CPU على السلسلة كلها قبل أن تصل الدالة إلى <code>await</code>. الانتظار بعده يحرر الحلقة. إن تكرر التحليل لكل طلب، حلّله مرة خارج الطلب أو في عامل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>صمم قياسًا يفصل «سد الحلقة» عن «SQL بطيء» لمتجر رف من غير أداة APM.</p>
+<details>
+<summary>الحل</summary>
+
+<p>شغّل ضغطًا على مسار الكتب، وطلبًا خفيفًا ثابتًا على <code>/health</code> لا يلمس القاعدة. إذا صعد زمن الصحة مع زمن الكتب، فهناك عمل متزامن على الحلقة. إذا بقيت الصحة سريعة وتأخرت الكتب، فالوقت في الاستعلام أو في تجمع الاتصالات. كرر بعد إزالة أي <code>Sync</code> وأي حلقة ثقيلة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يحرر حلقة الأحداث داخل Handler؟</li>
+<li>لماذا <code>async</code> وحدها لا تمنع السد؟</li>
+<li>أي إشارة عملية تقول إن السد عام لا خاص بقاعدة البيانات؟</li>
+<li>أين يذهب حساب المدرج التكراري إن وجب أن يبقى البيع سريعًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأداء في Node يبدأ بالحلقة. I/O المنتظر يتشارك العملية بأمان. العمل المتزامن الطويل يوقف كل العملاء على تلك العملية، ومكانه خيط عامل أو مسار لا يمس كل طلب.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحلقة سليمة وقد يظل الطلب غاليًا لأن Nest ينشئ شجرة حقن جديدة لكل طلب. الدرس التالي يقيس كلفة <code>Scope.REQUEST</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Node.js — The Node.js Event Loop: <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick">https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick</a></li>
+<li>Node.js — Worker threads: <a href="https://nodejs.org/api/worker_threads.html">https://nodejs.org/api/worker_threads.html</a></li>
+<li>NestJS — Performance (Fastify): <a href="https://docs.nestjs.com/http/performance">https://docs.nestjs.com/http/performance</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

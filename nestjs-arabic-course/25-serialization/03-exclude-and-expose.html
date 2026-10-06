@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Exclude و Expose</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-exclude-and-expose.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Exclude و Expose</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إخفاء <code>passwordHash</code> بـ <code>@Exclude</code>، وإظهار حقل محسوب بـ <code>@Expose</code>، مع ضبط <code>@Transform</code> حين يتغير شكل القيمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العميل يحتاج <code>label</code> من <code>first</code> و <code>last</code> بلا إلزام القاعدة بعمود. ويحتاج ألا يرى التجزئة. مزخرف واحد على الكيان كله قد يخفي <code>id</code> إن عكست الاستراتيجية. <code>@Exclude</code> على السر أوضح من قائمة حذف متفرقة في المعالجات.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Exclude()</code> على الخاصية يسقطها من <code>instanceToPlain</code>. <code>@Expose()</code> على جالب يضيف قيمة تُحسب عند التسلسل. <code>@Expose({ name: &quot;emailAddress&quot; })</code> يغيّر اسم JSON. <code>@Transform</code> يستبدل القيمة، مثل أخذ <code>role.name</code> من كائن. الاستيراد من <code>class-transformer</code>. الاعتراض من الدرس السابق هو الذي يشغّل هذه المزخرفات.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Exclude, Expose, Transform } from &quot;class-transformer&quot;;
+
+export class UserResponse {
+  id: number;
+  email: string;
+
+  @Exclude()
+  passwordHash?: string;
+
+  @Expose()
+  get label(): string {
+    return this.email.split(&quot;@&quot;)[0];
+  }
+
+  @Transform(({ value }) =&gt; value?.code ?? value)
+  role: string | { code: string };
+
+  constructor(partial: Partial&lt;UserResponse&gt;) {
+    Object.assign(this, partial);
+  }
+}
+</code></pre>
+<p>الصفحة تعرض <code>fullName</code> كجالب مع <code>@Expose</code>، و <code>@Transform(({ value }) =&gt; value.name)</code> على علاقة. المكتبة تبقي <code>role</code> سلسلة <code>reader</code> أو <code>editor</code>. إن وصلت العلاقة ككائن، التحويل يرسل الرمز فقط.</p>
+<p><code>@SerializeOptions({ excludePrefixes: [&quot;_&quot;] })</code> يستبعد البادئة لكل المسار. لا تغني عن <code>@Exclude</code> على التجزئة إن كان اسمها بلا بادئة.</p>
+<p>استراتيجية الإظهار الحصري في <code>class-transformer</code> عبر <code>@Exclude()</code> على الصنف ثم <code>@Expose()</code> على كل حقل مسموح. ذلك قائمة سماح. مفيدة لصف مستخدم واسع. انسَ <code>@Expose</code> على <code>email</code> فيختفي البريد من JSON رغم أنك أردته. اخترها حين الأسرار أكثر من الحقول العامة، وأبقِ <code>@Exclude</code> الموضعي حين الحقول العامة هي الأغلب وسر واحد معروف.</p>
+<p><code>groups</code> في <code>@Expose({ groups: [&quot;admin&quot;] })</code> مع <code>@SerializeOptions({ groups: [&quot;admin&quot;] })</code> تُظهر حقلًا لمجموعة. لا تستعمل المجموعة كتفويض. المسار الإداري يضبط المجموعة بعد <code>@Can</code>. زائر يصل إلى المعالج يرى ما يرجعه المعالج.</p>
+<p>مخطط Zod المقابل قائمة سماح بلا مزخرفات: الخصائص المعلنة فقط تخرج. <code>@Exclude</code> قائمة حذف. الحقل الجديد على الصف يخرج مع <code>@Exclude</code> الموضعي حتى تضيف مزخرفًا. مع المخطط أو مع <code>@Exclude</code> على الصنف لا يخرج حتى تذكره. هذا فرق عملي عند إضافة عمود سري لاحقًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Exclude على السر يحذفه
+@Expose على الجالب يضيف ناتجًا
+@Transform يبدّل شكل الخاصية
+عمود جديد بلا مزخرف قد يخرج إن كانت الاستراتيجية حذفًا فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Exclude()
+passwordHash?: string;
+</code></pre>
+<h2>شرح المثال</h2>
+<p>سطر واحد على صنف الإخراج، مع الاعتراض، يغلق المسارات التي تعيد <code>UserResponse</code>. لا تضعه فقط على كيان TypeORM أو صنف Prisma المولَّد إن كان المعالج يعيد كائنًا من عميل Prisma. المزخرف يتبع الصنف الذي يُسلسَل.</p>
+<p>الجالب <code>label</code> لا يُخزَّن. لا تجعله مدخلًا في DTO الإنشاء. <code>@Expose</code> للإخراج.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>instanceToPlain</code> يرى البيانات الوصفية. الخاصية المستبعدة لا تُنسخ إلى الناتج. الجالب المعلَّم يُستدعى ويُكتب مفتاحه. <code>@Transform</code> يستلم <code>value</code> الحالية. إن كانت <code>role</code> أصلًا سلسلة، أعدها كما هي حتى لا ترمي عند <code>value.name</code>.</p>
+<p>التحويل لا يشفّر. <code>@Transform</code> الذي يعيد التجزئة مقصوصة ما زال تسريبًا. احذفها.</p>
+<h2>مثال عملي</h2>
+<p><code>PostResponse</code> يستبعد أي <code>author.passwordHash</code> بتحويل المؤلف إلى <code>{ id, email }</code> عبر <code>@Transform</code>، أو بمنع تضمين المؤلف كاملًا. اختبار يتوقع <code>label</code> لـ <code>ada@library.test</code> أن يكون <code>ada</code>، وغياب <code>passwordHash</code>. أضف عمود <code>recoveryCode</code> في تمرين وانظر هل يخرج. إن خرج، الاستراتيجية الموضعية تحتاج مزخرفًا جديدًا أو انتقل إلى قائمة سماح.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Expose</code> على <code>passwordHash</code> لتوثيقه فيظهر في JSON.</li>
+<li>جالب بلا <code>@Expose</code> ثم توقع ظهور <code>label</code>. الصفحة تعلّم الجالب بالمزخرف.</li>
+<li><code>@Transform</code> يرمي لأن القيمة أحيانًا سلسلة وأحيانًا كائن.</li>
+<li>مجموعة <code>admin</code> على مسار بلا حارس.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>@Exclude</code> لكل سر معروف على صنف الإخراج. <code>@Expose</code> لحقل مشتق. <code>@Transform</code> لشكل أبسط لعلاقة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتغيير معنى التفويض. إخفاء <code>role</code> في JSON لا يلغي الدور في السياسة. ولا لحذف السر من النسخ الاحتياطية للقاعدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>@Exclude</code> موضعي</th>
+<th><code>@Exclude</code> على الصنف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السر المسمى يختفي</td>
+<td>لا يخرج إلا <code>@Expose</code></td>
+</tr>
+<tr>
+<td>عمود جديد قد يخرج</td>
+<td>عمود جديد يختفي حتى تذكره</td>
+</tr>
+<tr>
+<td>مناسب لسر واحد</td>
+<td>مناسب لصف واسع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مزخرف يخفي <code>passwordHash</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Exclude()</code> من <code>class-transformer</code> على الخاصية، مع <code>ClassSerializerInterceptor</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تضيف <code>label</code> من غير عمود؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جالب مع <code>@Expose()</code> يعيد القيمة المحسوبة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أُضيف <code>sessionVersion</code> السري على الصف. لماذا خرج في JSON؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاستراتيجية تحذف المسمّى فقط. الحقل الجديد بلا <code>@Exclude</code>. ضع المزخرف أو انتقل إلى قائمة سماح أو مخطط Zod.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين تُستورد المزخرفات؟</li>
+<li>ماذا يفعل <code>@Transform</code> في مثال الدور؟</li>
+<li>هل <code>groups</code> تستبدل <code>@Can</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Exclude</code> يحذف السر المعروف. <code>@Expose</code> يضيف المحسوب. عمود سري جديد يحتاج أن تدخله القاعدة، لا أن تأمل أن الاعتراض يخمنه.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-response-dtos.html">Response DTOs</a> صنف خروج منفصل عن صف القاعدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Serialization: <a href="https://docs.nestjs.com/application/serialization">https://docs.nestjs.com/application/serialization</a></li>
+<li>class-transformer: <a href="https://github.com/typestack/class-transformer">https://github.com/typestack/class-transformer</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

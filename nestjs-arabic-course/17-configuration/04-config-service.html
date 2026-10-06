@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ConfigService</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-config-service.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ConfigService</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الإعداد المحمّل عبر <code>ConfigService.get</code> و <code>getOrThrow</code>، مع قيمة افتراضية آمنة حيث يناسب الافتراض.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد <code>forRoot</code> تبقى القيم خلف الخدمة. استدعاء <code>process.env</code> من جديد يتجاوز الدمج والتحقق اللاحق، ويعيد النصوص الخام. المفتاح الناقص الذي يُقرأ بـ <code>get</code> يرجع <code>undefined</code>، وقد يصل <code>NaN</code> إلى <code>listen</code> إذا حوّلته من غير فحص.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تحقن <code>ConfigService</code> وتطلب مفتاحًا بالاسم. <code>get</code> يرجع القيمة أو الافتراضي الذي تمرّره. <code>getOrThrow</code> يرمي إن كانت النتيجة <code>undefined</code>، ونوع الإرجاع يستبعد <code>undefined</code>. الوسيط النوعي <code>get&lt;string&gt;</code> تلميح TypeScript، لا فحص تشغيل.</p>
+<h2>التعريف التقني</h2>
+<p>استورد <code>ConfigService</code> من <code>@nestjs/config</code>. إن لم يكن <code>ConfigModule</code> عامًا، استورده في وحدة الميزة.</p>
+<pre><code class="language-ts">constructor(private readonly config: ConfigService) {}
+</code></pre>
+<p><code>get</code> يقبل مفتاحًا، وافتراضيًا اختياريًا. النقطة في الاسم تقرأ كائنًا متداخلًا بُني عبر <code>load</code>، مثل <code>database.host</code>. <code>getOrThrow</code> بنفس الوسائط ويرمي إن بقيت القيمة <code>undefined</code>.</p>
+<p><code>skipProcessEnv: true</code> في <code>forRoot</code> يجعل <code>get</code> يتجاهل <code>process.env</code> الخام ويقرأ ملفات الإعداد المخصصة وما نتج عن التحقق. مفيد حين تريد مصدرًا واحدًا بعد التحويل.</p>
+<p>في <code>main.ts</code>:</p>
+<pre><code class="language-ts">const config = app.get(ConfigService);
+const port = config.get&lt;string&gt;(&quot;PORT&quot;);
+</code></pre>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ConfigService
+  get(&quot;LIBRARY_NAME&quot;, &quot;Library&quot;)  -&gt; نص، وقد يكون الافتراضي
+  getOrThrow(&quot;DATABASE_URL&quot;)      -&gt; نص أو استثناء عند الطلب
+  get(&quot;database.port&quot;)            -&gt; حقل داخل كائن load
+</code></pre>
+<p>الافتراضي يناسب اسم المكتبة. عنوان القاعدة لا يناسبه افتراض صامت.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { ConfigService } from &quot;@nestjs/config&quot;;
+
+@Injectable()
+export class ListenPort {
+  constructor(private readonly config: ConfigService) {}
+
+  get port(): number {
+    const raw = this.config.get&lt;string&gt;(&quot;PORT&quot;, &quot;3000&quot;);
+    const port = Number(raw);
+    if (!Number.isInteger(port) || port &lt; 1 || port &gt; 65535) {
+      throw new Error(&quot;PORT must be an integer from 1 to 65535&quot;);
+    }
+    return port;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>PORT</code> إن غاب يصبح <code>&quot;3000&quot;</code> ثم <code>3000</code>. القيمة <code>&quot;0&quot;</code> أو <code>&quot;abc&quot;</code> تفشل الفحص هنا. هذا الفحص ما زال يدويًا؛ درس التحقق ينقله إلى مخطط يرفض الإقلاع قبل أول طلب.</p>
+<p><code>get&lt;string&gt;</code> لا يحوّل <code>&quot;3000&quot;</code> إلى عدد. النوع الذي تكتبه تلميح للمترجم. التحويل يبقى <code>Number</code> أو <code>z.coerce.number()</code> في المخطط.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الخدمة تبحث في البنية التي بناها <code>forRoot</code>: ناتج الدمج، ثم مفاتيح الكائنات المحمّلة بالاسم المنقّط. مع <code>cache: true</code> تُحفظ قراءات مفاتيح <code>process.env</code>. <code>getOrThrow</code> يفحص <code>undefined</code> بعد الحل، بما في ذلك بعد الافتراضي إن استخدمته. سلسلة فارغة <code>&quot;&quot;</code> ليست <code>undefined</code>، فلا يرمي <code>getOrThrow</code> بسببها. إن كان الفارغ غير مقبول، المخطط أو فحصك يرفضه.</p>
+<p>حقن الخدمة في اختبار يتم باستبدال المزوّد:</p>
+<pre><code class="language-ts">{ provide: ConfigService, useValue: { get: () =&gt; &quot;3000&quot;, getOrThrow: () =&gt; &quot;3000&quot; } }
+</code></pre>
+<p>الاختبار لا يلمس <code>.env</code> الحقيقي.</p>
+<h2>مثال عملي</h2>
+<p><code>BooksService</code> لا تقرأ البيئة. <code>CatalogClient</code> الذي ينادي فهرسًا خارجيًا يحقن <code>ConfigService</code> ويأخذ <code>CATALOG_URL</code> بـ <code>getOrThrow</code> لأن الغياب يعني إقلاعًا لا يعرف أين الفهرس. اسم العرض <code>LIBRARY_NAME</code> يُقرأ بـ <code>get(&quot;LIBRARY_NAME&quot;, &quot;Neighborhood Library&quot;)</code> لأن الغياب له بديل مفهوم.</p>
+<p>لا تطبع <code>CATALOG_URL</code> إن حمل رمزًا. سجّل «catalog client configured» من غير القيمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>افتراض أن <code>get&lt;number&gt;(&quot;PORT&quot;)</code> يحوّل النص وقت التشغيل.</li>
+<li><code>getOrThrow</code> على مفتاح فارغ السلسلة واعتبار ذلك حماية كافية.</li>
+<li>تمرير افتراضي لسر، فيعمل التطبيق بسر التطوير على الإنتاج.</li>
+<li>بناء كائن خيارات في عشر خدمات كل منها يستدعي <code>get</code> للمفتاح نفسه بشكل مختلف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في مزوّد واحد يبني خيارات ميزة: منفذ الاستماع، عنوان عميل HTTP، علم تشغيل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في كل دالة مجال. الكيان <code>Book</code> يستقبل عنوانًا وسعرًا جاهزين. من يقرأ الإعداد هو حد التركيب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>get</code></th>
+<th><code>getOrThrow</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يرجع قيمة أو <code>undefined</code> أو الافتراضي</td>
+<td>يرمي إن كانت النتيجة <code>undefined</code></td>
+</tr>
+<tr>
+<td>مناسب لاسم له بديل</td>
+<td>مناسب لعنوان قاعدة أو سر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما نوع القيمة التي يرجعها <code>get(&quot;PORT&quot;)</code> قبل أي مخطط تحويل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نص من البيئة، أو <code>undefined</code> إن غاب المفتاح ولم تمرّر افتراضيًا. التلميح <code>&lt;number&gt;</code> لا يغيّر ذلك وحده.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا افتراضي <code>&quot;dev-secret&quot;</code> لـ <code>JWT_SECRET</code> أخطر من غياب المفتاح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الغياب يفشل عند <code>getOrThrow</code> أو عند المخطط. الافتراضي يجعل الإنتاج يوقّع بسر معروف نُسخ من التطوير، والتطبيق يقلع كأنه سليم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمة تقرأ <code>config.get(&quot;database.host&quot;)</code> وترى <code>undefined</code> رغم أن <code>DATABASE_HOST</code> موجود في <code>.env</code>. ما النقص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاسم المنقّط يقرأ كائنًا بنيته دالة <code>load</code> أو <code>registerAs</code>، لا متغير البيئة الخام. المتغير الخام يُطلب بالاسم <code>DATABASE_HOST</code> إلى أن يربطه مصنع الإعداد بحقل <code>database.host</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغيّر الوسيط النوعي في <code>get&lt;string&gt;</code>؟</li>
+<li>متى تختار <code>getOrThrow</code>؟</li>
+<li>كيف تختبر مستهلكًا للخدمة من غير ملف <code>.env</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ConfigService</code> نقطة القراءة. <code>get</code> مع افتراضي للقيم التي لها بديل آمن، و <code>getOrThrow</code> لما لا يعمل التطبيق من دونه. التحويل والرفض المبكر موضوع التحقق.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-validation.html">التحقق من الإعدادات</a> يوقف الإقلاع إذا نقص مفتاح أو جاء المنفذ نصًا غير عددي.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

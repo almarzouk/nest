@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مستويات الربط وترتيب Observables</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-binding-and-observable-order.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مستويات الربط وترتيب Observables</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط المعترض عامًا أو على متحكم أو على مسار، وفهم أن طريق الخروج يعكس طريق الدخول.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>غلاف <code>{ data }</code> ومعترض سجل على التطبيق نفسه ينتجان ترتيبًا مفاجئًا: السجل يرى الغلاف أو يرى التذكرة حسب أيهما أبعد. الفريق يرتب الزينة كما يرتب الحراس ويتوقع أن الخروج بنفس الاتجاه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الدخول مثل الحراس: عام، ثم متحكم، ثم مسار. الخروج عكس ذلك لأن كل معترض يرجّع <code>Observable</code> يلف التيار الداخلي: أول من دخل هو آخر من يرى القيمة. الصفحة تسمي ذلك أول داخل وآخر خارج.</p>
+<h2>التعريف التقني</h2>
+<p>الربط:</p>
+<ul>
+<li>مسار أو متحكم: <code>@UseInterceptors(TicketLogInterceptor)</code>.</li>
+<li>عام بلا حقن: <code>app.useGlobalInterceptors(new TicketLogInterceptor())</code>.</li>
+<li>عام مع حقن: <code>{ provide: APP_INTERCEPTOR, useClass: TicketLogInterceptor }</code>.</li>
+</ul>
+<p>عدة <code>APP_INTERCEPTOR</code> بترتيب التسجيل. داخل <code>@UseInterceptors(A, B)</code> يدخل <code>A</code> ثم <code>B</code> في طريق الدخول.</p>
+<p>دورة الطلب بعد الحراس:</p>
+<ol>
+<li>معترضات عامة ثم المتحكم ثم المسار، وهذا قبل الأنبوب.</li>
+<li>بعد الدالة: معترضات المسار ثم المتحكم ثم العام على طريق الاستجابة.</li>
+</ol>
+<p>عوامل <code>pipe</code> على المعترض الخارجي تعمل بعد عوامل المعترض الداخلي. <code>map</code> الغلاف إن كان عامًا يغلّف ما خرج من <code>map</code> المسار. <code>tap</code> السجل العام يرى الجسم بعد غلاف المسار إن كان الغلاف أقرب إلى الدالة.</p>
+<p>أخطاء الأنبوب والدالة تظهر على التيار، فيراها <code>catchError</code> في معترض يلف تلك المرحلة. رفض الحارس قبل أي معترض.</p>
+<p><code>@Res()</code> من غير تمرير يعطل <code>map</code> لأن القيمة لا تسري على التيار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دخول:  GlobalLog → ControllerEnvelope → RouteTiming → Pipe → handler
+خروج:  RouteTiming.tap → ControllerEnvelope.map → GlobalLog.tap → رد
+</code></pre>
+<p><code>RouteTiming</code> آخر من يبدأ في الدخول وأول من يرى القيمة الخام في الخروج.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@UseInterceptors(TicketEnvelopeInterceptor)
+@Controller(&#39;tickets&#39;)
+export class TicketsController {
+  @UseInterceptors(TicketLogInterceptor)
+  @Get()
+  list(): string[] {
+    return [&#39;t1&#39;];
+  }
+}
+</code></pre>
+<p>مع سجل عام <code>GlobalLogInterceptor</code> مسجّل كـ <code>APP_INTERCEPTOR</code> قبل هذين:</p>
+<p>الدخول: <code>GlobalLog</code> ثم <code>TicketEnvelope</code> ثم <code>TicketLog</code> ثم <code>list</code>.</p>
+<p>الخروج: <code>tap</code> في <code>TicketLog</code> يرى <code>[&#39;t1&#39;]</code>، ثم <code>map</code> في الغلاف يصنع <code>{ data: [&#39;t1&#39;] }</code>، ثم <code>tap</code> العام يرى الغلاف.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>السجل على الدالة يقيس قبل الغلاف فيرى المصفوفة.</li>
+<li>السجل العام يقيس بعد الغلاف فيرى <code>{ data }</code>.</li>
+<li>نقل <code>TicketLogInterceptor</code> إلى التطبيق وعكس مكان الغلاف يعكس ما يُطبع.</li>
+<li>الحارس، إن وُجد على الصنف، يعمل قبل <code>GlobalLog</code> أصلًا لأنه قبل كل المعترضات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل <code>intercept</code> خارجي يستدعي <code>handle</code> الذي هو المعترض التالي. الاشتراك من الخارج يفتح الخارجي أولًا حتى يصل إلى الدالة. القيمة تصعد: آخر <code>pipe</code> رُكّب حول المصدر هو أول من يستلم الإصدار، أي معترض المسار، ثم من لفّه، حتى العام. هذا معنى أول داخل وآخر خارج على المراقبات لا على قائمة الحراس.</p>
+<p>الأنابيب بين آخر معترض والدالة في الدخول. لذلك فشل <code>ValidationPipe</code> خطأ على تيار المعترضات التي لفّت الأنبوب، لا على معترض موضوع خطأً بعد الأنبوب. لا يوجد ربط معترض بعد الأنبوب في هذه الدورة غير وجه الخروج للعوامل.</p>
+<p>أول فلتر يمسك خطأ التيار إن لم يلتقطه <code>catchError</code>. إن حوّل <code>catchError</code> الخطأ إلى قيمة، الفلتر لا يراه.</p>
+<h2>مثال عملي</h2>
+<p>الشباك يريد مدة الدالة الخام في سجل المسار، وغلافًا على المتحكم، وسطرًا عامًا يرى ما يغادر التطبيق. الربط كما في المثال. اختبار يدفع الجسم الذي رآه كل <code>tap</code> في مصفوفة. المتوقع على <code>GET /tickets</code>: المصفوفة العارية ثم الغلاف. إن انعكس التوقع، الربط معكوس لا عامل <code>tap</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع أن <code>@UseInterceptors</code> على الدالة يغلّف آخرًا في الخروج. هو أول من يرى القيمة الخام.</li>
+<li>قياس «زمن الدالة» في المعترض العام بعد غلاف ثقيل واعتبار الرقم مدة SQL.</li>
+<li><code>useGlobalInterceptors(new ...)</code> مع اعتماد في الباني.</li>
+<li>التقاط <code>TimeoutError</code> في المعترض الداخلي وتحويل كل الأخطاء، فيصل الخارجي قيمة لا خطأ.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>العام لسياسة تغادر التطبيق، مثل سجل أخير أو غلاف أخير. المتحكم لميزة التذاكر. المسار لمهلة تقرير واحد أو سجل يرى القيمة الخام.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تربط غلافين على المستويين نفسهما. ولا ترتب المعترضات كأنها حراس على طريق الخروج. ولا تضع التخزين المعاين عامًا على <code>POST</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المستوى</th>
+<th>الدخول</th>
+<th>الخروج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Global</td>
+<td>أول معترض</td>
+<td>آخر <code>pipe</code></td>
+</tr>
+<tr>
+<td>Controller</td>
+<td>بعده</td>
+<td>قبل العام</td>
+</tr>
+<tr>
+<td>Route</td>
+<td>أقرب إلى الدالة</td>
+<td>أول <code>pipe</code> على القيمة الخام</td>
+</tr>
+<tr>
+<td>Guard</td>
+<td>قبل الثلاثة</td>
+<td>لا يعود</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يرى قيمة الدالة أولًا على طريق الخروج: معترض المسار أم المعترض العام؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>معترض المسار. الخروج من الأقرب إلى الدالة نحو العام.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>غلاف على المتحكم وسجل على الدالة. ماذا يطبع السجل: المصفوفة أم <code>{ data }</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المصفوفة. سجل الدالة أول في الخروج، والغلاف ما زال خارجه فلم يطبَّق بعد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد أن سجل التطبيق يطبع الغلاف لا التذكرة الخام، وأن سجل المسار يطبع الخام. أين تضع كل معترض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الغلاف على المتحكم أو حيث يكون داخل السجل العام. سجل المسار على الدالة فيرى الخام أولًا. السجل العام يبقى <code>APP_INTERCEPTOR</code> فيرى الغلاف لأنه آخر الخارج.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب الدخول للمستويات الثلاثة؟</li>
+<li>لماذا الخروج معاكس؟</li>
+<li>أين يقع الأنبوب بالنسبة إلى المعترض في الدخول؟</li>
+<li>أي ربط عام يحقن اعتمادًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ادخل من العام إلى المسار، واخرج من المسار إلى العام. عوامل الخارجي ترى ناتج الداخلي. الحارس لا يشارك في العودة. اختر المستوى حسب الجسم الذي تريد أن تراه: خام الدالة أو شكل العميل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع سجلًا وغلافًا ومهلة على التقرير، ثم التمارين، ثم فلاتر الاستثناءات لما يفلت من <code>catchError</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

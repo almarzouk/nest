@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>شباك التذاكر. أجب ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>أي مصنع يبني زينة معامل؟</li>
+<li>أي دالة على <code>Reflector</code> تغلب زينة الدالة على زينة الصنف؟</li>
+<li>ماذا تكتب فوق الصحة حين تكون الهوية <code>APP_GUARD</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>createParamDecorator</code>.</li>
+<li><code>getAllAndOverride</code> مع الدالة ثم الصنف.</li>
+<li><code>@Public(true)</code> وفرع في الحارس يرجع <code>true</code> قبل فحص الترويسة.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>اربط <code>POST /tickets/refund</code> و <code>GET /health</code>:</p>
+<ul>
+<li>الاسترداد يحتاج مستخدمًا ملصوقًا ودور <code>refund</code> وإلا <code>403</code> بعد الهوية.</li>
+<li>الدالة تستلم الاسم فقط.</li>
+<li>الصحة بلا ترويسة ترجع <code>{ ok: true }</code> رغم الحارس العام.</li>
+</ul>
+<p>لا تذكر <code>exclude</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>IdentifyDeskGuard</code> عام يلصق <code>{ name, roles }</code> أو يرمي <code>401</code>، ويبدأ بقراءة <code>Public</code>. <code>health</code> عليها <code>@Public(true)</code>. <code>RolesGuard</code> بعد الهوية يقرأ <code>@Roles([&#39;refund&#39;])</code> عبر <code>getAllAndOverride</code>. <code>refund</code> عليها تلك الزينة و <code>@CurrentUser(&#39;name&#39;)</code>. من لا يحمل الدور يرجع <code>false</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>راجع أربعة أعطال:</p>
+<ol>
+<li><code>@Public(true)</code> على الصحة والرد <code>401</code>.</li>
+<li><code>@Roles([&#39;refund&#39;])</code> والمستخدم <code>lead</code> يُمنع لأن <code>user.roles</code> فارغة.</li>
+<li>الصنف <code>@Roles([&#39;audit&#39;])</code> والدالة <code>@Roles([&#39;refund&#39;])</code> والحارس يقارن <code>audit</code>.</li>
+<li><code>@CurrentUser()</code> على <code>health</code> بعد فتحها ترجع <code>undefined</code>.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>الحارس لا يقرأ <code>Public</code> قبل الترويسة.</li>
+<li>حارس الهوية يلصق الاسم فقط. أضف <code>roles</code> عند اللصق، ورتّب هذا الحارس قبل <code>RolesGuard</code>.</li>
+<li>ترتيب <code>getAllAndOverride</code> يضع الصنف أولًا. اجعل <code>[handler, class]</code>.</li>
+<li>مسار <code>@Public</code> لا يلصق <code>user</code>. لا تضع <code>@CurrentUser</code> على الصحة، أو اقبل أن الوسيط غائب لأن الزينة تقرأ ولا تُنشئ مستخدمًا.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

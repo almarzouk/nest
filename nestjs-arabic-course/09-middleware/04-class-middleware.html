@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Class Middleware و NestMiddleware</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-class-middleware.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Class Middleware و NestMiddleware</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة Middleware كصنف يطبّق <code>NestMiddleware</code> ويحقن مزوّدًا من الوحدة نفسها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرّف الطلب السهل دالة. ختمًا يعتمد على ساعة قابلة للاستبدال في الاختبار، أو على خدمة تقرأ إعدادًا، لا تعيش في دالة مغلقة على <code>Date.now</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنف عليه <code>@Injectable()</code> وفيه <code>use(req, res, next)</code>. الواجهة <code>NestMiddleware</code> تثبّت هذا التوقيع. الاعتماديات تأتي من <code>constructor</code> كما في أي مزوّد.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">interface NestMiddleware&lt;TRequest = any, TResponse = any&gt; {
+  use(req: TRequest, res: TResponse, next: (error?: any) =&gt; void): void | Promise&lt;void&gt;;
+}
+</code></pre>
+<p>التوثيق يسمح بأن تكون <code>use</code> غير متزامنة. الوعد المرفوض يصل إلى طبقة الاستثناءات إن كان الربط عبر <code>MiddlewareConsumer</code>.</p>
+<p>الحقن يعمل لمزوّدات الوحدة نفسها، بالطريقة التي تُحقن بها المتحكمات. الصنف لا يُسجَّل في <code>providers</code> كي «يصبح Middleware». التسجيل الذي يشغّله على الطلب هو <code>consumer.apply(ShelfClockMiddleware)</code> في درس <code>configure</code>. الحاوية تستطيع بناءه لأن Nest يدير أصناف Middleware المطبَّقة هناك.</p>
+<p><code>app.use(new ShelfClockMiddleware(...))</code> يمر خارج الحاوية. لذلك الساعة التي تريد حقنها تُربَط من الوحدة، لا من <code>main.ts</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ShelfClock          مزوّد في providers
+ShelfClockMiddleware  constructor(clock)
+apply(ShelfClockMiddleware)   Nest يبني الصنف ويحقن الساعة
+use()               نفس عقد next
+</code></pre>
+<p>الصنف طبقة رقيقة حول خدمة. القاعدة «كيف نقيس الوقت» تعيش في <code>ShelfClock</code>. <code>use</code> تلصق الناتج على الرد.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, type NestMiddleware } from &#39;@nestjs/common&#39;;
+import type { NextFunction, Request, Response } from &#39;express&#39;;
+import { ShelfClock } from &#39;./shelf-clock.js&#39;;
+
+@Injectable()
+export class ShelfClockMiddleware implements NestMiddleware {
+  constructor(private readonly clock: ShelfClock) {}
+
+  use(req: Request, res: Response, next: NextFunction): void {
+    res.setHeader(&#39;x-shelf-time&#39;, this.clock.iso());
+    next();
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class ShelfClock {
+  iso(): string {
+    return new Date().toISOString();
+  }
+}
+</code></pre>
+<p><code>ShelfClock</code> في <code>providers</code> الخاصة بالوحدة التي تملك الصنف. الاختبار يستبدل <code>ShelfClock</code> بكلاس يرجع <code>2026-10-05T06:00:00.000Z</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>implements NestMiddleware</code> يجعل نسيان <code>use</code> خطأ TypeScript.</li>
+<li><code>@Injectable()</code> مطلوب حتى تملأ الحاوية <code>constructor</code>.</li>
+<li><code>private readonly clock</code> يحفظ الاعتماد كما في الخدمات.</li>
+<li><code>res.setHeader</code> أثر جانبي على الرد. <code>next()</code> يسلم السلسلة.</li>
+<li>لا تضع <code>@Controller</code> هنا. هذا الصنف ليس مسارًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع يرى Nest الصنف داخل <code>apply</code>. يبنيه من حاوية الوحدة ويحل <code>ShelfClock</code>. عند الطلب يستدعي <code>use</code> لا الدالة التي صدّرتها أنت باسم آخر.</p>
+<p>إن كانت <code>use</code> ترجع <code>Promise</code>، الرفض يُعامَل كاستثناء في طبقة الاستثناءات للربط عبر المستهلك. الفلاتر التي تراه هي العامة، لأن المسار لم يُختر بعد. هذا قيد الدورة، مستقل عن كون الكتابة صنفًا.</p>
+<p><code>@UseFilters()</code> على الصنف غير مدعوم. لا تبحث عن هذا السطر في الأمثلة الرسمية.</p>
+<p>المزوّد يجب أن يكون مرئيًا في الوحدة التي تطبّق Middleware. خدمة مُصدَّرة من وحدة مستوردة تُحقن إن كانت الوحدة المستوردة ضمن <code>imports</code>، بنفس قواعد الحقن التي تعرفها. خدمة غير مصدَّرة من وحدة أخرى تبقى مخفية.</p>
+<h2>مثال عملي</h2>
+<p>الاختبار يريد وقتًا ثابتًا على <code>GET /copies</code>. تستبدل <code>ShelfClock</code> في وحدة الاختبار. <code>ShelfClockMiddleware</code> لا يتغير. طلب حقيقي في التطوير يقرأ الساعة الحقيقية. المعالج يعيد نسخة الكتاب، والترويسة <code>x-shelf-time</code> تأتي من الصنف. هكذا يبقى الوقت قابلًا للاستبدال من غير معامل إضافي على كل مسار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>@Injectable()</code> ثم الدهشة أن <code>clock</code> قيمته <code>undefined</code>.</li>
+<li>وضع منطق الساعة داخل <code>use</code> ثم عجز الاختبار عن تثبيت الوقت.</li>
+<li>تمرير <code>new ShelfClockMiddleware(new ShelfClock())</code> إلى <code>app.use</code> وتسمية ذلك حقنًا. البناء اليدوي يقطع الحاوية.</li>
+<li>جعل <code>use</code> تنهي كل الطلبات بـ <code>res.json</code> حتى «تتأكد أنها عملت». المعالج لن يعمل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند وجود اعتماد واحد على الأقل تريد استبداله في الاختبار أو مشاركته مع خدمة: ساعة، إعداد، مسجّل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>دالة من سطرين بلا <code>constructor</code>. التوثيق يطلب functional middleware هناك حتى لا يصنع الملف صنفًا فارغًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>NestMiddleware</code></th>
+<th>مزوّد عادي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الدالة التي يستدعيها الإطار على الطلب</td>
+<td><code>use</code></td>
+<td>لا يستدعيها على كل طلب</td>
+</tr>
+<tr>
+<td>من يبنيه</td>
+<td>Nest عند <code>apply(Class)</code></td>
+<td>الحاوية عند الحقن</td>
+</tr>
+<tr>
+<td>عقد المنصة</td>
+<td><code>req, res, next</code></td>
+<td>لا يعرفه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما اسم الدالة التي يستدعيها Nest على الصنف عند وصول الطلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>use</code>. ليست <code>handle</code> ولا <code>intercept</code>. الواجهة <code>NestMiddleware</code> تثبّت هذا الاسم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>ShelfClock</code> غير مذكور في <code>providers</code> ولا في <code>exports</code> لوحدة مستوردة. ماذا يحدث عند الإقلاع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تفشل الحاوية في بناء <code>ShelfClockMiddleware</code> لأن الاعتماد غير متاح في تلك الوحدة. العلاج تسجيل الساعة في الوحدة المالكة، أو استيراد وحدة تصدّرها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد أن تقرأ <code>use</code> علم ميزة من <code>ConfigService</code> قبل <code>next()</code>. أين يعيش الصنف، ولماذا يفشل <code>app.use</code> هنا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصنف في الوحدة التي تستورد وحدة الإعداد وترى <code>ConfigService</code>. <code>apply(ShelfClockMiddleware)</code> من <code>configure</code>. <code>app.use</code> لا يسأل الحاوية، فـ <code>ConfigService</code> لن تُحقن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تطبّق الواجهة <code>NestMiddleware</code>؟</li>
+<li>من أين تأتي اعتماديات <code>constructor</code>؟</li>
+<li>لماذا لا يكفي <code>app.use</code> لصنف يحتاج خدمة؟</li>
+<li>ماذا يعني أن ترجع <code>use</code> وعدًا مرفوضًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الصنف <code>@Injectable()</code> مع <code>use</code> هو Middleware حين تحتاج الحقن. الواجهة تثبت التوقيع. الحاوية تبنيه لأن الوحدة طبّقته عبر <code>apply</code>، لا لأنك وضعته في <code>providers</code> كمسار.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي هو مكان الاستدعاء: <code>configure</code> و <code>MiddlewareConsumer</code> على وحدة تطبّق <code>NestModule</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

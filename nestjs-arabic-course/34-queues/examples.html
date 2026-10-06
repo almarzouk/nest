@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>قص غلاف بعد إنشاء الكتاب. الحزمة <code>@nestjs/bullmq</code> فقط.</p>
+<h2>مثال 1 — التسجيل</h2>
+<pre><code class="language-ts">BullModule.forRoot({
+  connection: { host: &#39;localhost&#39;, port: 6379 },
+});
+
+BullModule.registerQueue({ name: coverQueueName });
+</code></pre>
+<p><code>coverQueueName</code> هو <code>&#39;covers&#39;</code> من <code>queue-names.ts</code>.</p>
+<h2>مثال 2 — المنتج</h2>
+<pre><code class="language-ts">await this.covers.add(&#39;resize&#39;, { bookId: book.id, coverKey: book.coverKey }, {
+  jobId: `resize:${book.id}`,
+  attempts: 5,
+  backoff: { type: &#39;exponential&#39;, delay: 1000 },
+  removeOnFail: false,
+});
+</code></pre>
+<p>بعد <code>prisma.book.create</code> لا قبله. الحمولة بلا نموذج Prisma.</p>
+<h2>مثال 3 — المستهلك</h2>
+<pre><code class="language-ts">@Processor(coverQueueName)
+export class CoversConsumer extends WorkerHost {
+  constructor(private readonly covers: CoversService) {
+    super();
+  }
+
+  async process(job: Job&lt;{ bookId: string; coverKey: string }&gt;) {
+    await this.covers.resize(job.data.bookId, job.data.coverKey);
+  }
+}
+</code></pre>
+<p><code>resize</code> تجلب الصف، وتخرج إن اختلف <code>coverKey</code>، وتكتب <code>ready</code> بعد القص. خطأ القرص يُرمى ليُعاد. الكتاب المحذوف خروج هادئ.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>@nestjs/bull</code> ولا <code>@Process</code> في الملفات.</li>
+<li><code>waitUntilFinished</code> غير مستخدم في المتحكم.</li>
+<li>بايتات الغلاف ليست في Redis.</li>
+<li>طابور Redis ليس قاعدة مخبأ ISBN إن كنت تمسح المفاتيح في التمارين.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

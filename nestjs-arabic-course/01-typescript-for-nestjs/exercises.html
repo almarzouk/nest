@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل</h2>
+<p>اكتب نوع دالة <code>isExpensive(price: number): boolean</code> تعيد <code>true</code> عندما <code>price &gt; 100</code>. ما نوع الناتج الذي يستنتجه المترجم لـ <code>const flag = isExpensive(40)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">function isExpensive(price: number): boolean {
+  return price &gt; 100;
+}
+const flag = isExpensive(40);
+</code></pre>
+<p>نوع <code>flag</code> هو <code>boolean</code>.</p>
+</details>
+
+<h2>تمرين متوسط</h2>
+<p>صنف <code>ReviewsController</code> يحتاج <code>ReviewsService</code> في حقل خاص غير قابل لإعادة التعيين. اكتب الـ constructor المختصر ودالة <code>async count()</code> ترجع <code>Promise&lt;number&gt;</code> عبر <code>this.reviewsService.count()</code>، مع افتراض أن الخدمة فيها <code>count(): Promise&lt;number&gt;</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">class ReviewsController {
+  constructor(private readonly reviewsService: ReviewsService) {}
+
+  async count(): Promise&lt;number&gt; {
+    return this.reviewsService.count();
+  }
+}
+</code></pre>
+</details>
+
+<h2>تمرين متقدم</h2>
+<p>ملف فيه الواجهة <code>AppConfig</code> والصنف <code>ConfigService</code>، والمتحكم يستورد الاثنين بـ <code>import type</code> ويحقن <code>ConfigService</code>. ماذا ينكسر وقت تشغيل Nest حتى لو نجح عرض الأنواع في المحرر، وما الاستيراد الصحيح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>import type</code> يمحو <code>ConfigService</code> من JavaScript، فـ <code>design:paramtypes</code> لا يحصل على الدالة البناء، والحاوية لا تجد الرمز. الواجهة أصلًا لا تُحقن. الصحيح:</p>
+<pre><code class="language-ts">import { ConfigService } from &#39;./config.service.js&#39;;
+</code></pre>
+<p>وأبقِ <code>import type</code> للواجهة فقط إن استخدمتها كنوع ممحو. الخدمة التي في constructor تُستورد كقيمة، ويبقى <code>emitDecoratorMetadata</code> وزينة الصنف حتى تُصدر الأنواع.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

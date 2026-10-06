@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transformation و Validation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-transformation-and-validation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Transformation و Validation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز وظيفتي الأنبوب: تحويل شكل القيمة، أو الحكم عليها ثم تمريرها أو رفضها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خلط الوظيفتين في صنف واحد بلا اسم يجعل الفشل غامضًا: هل <code>NaN</code> نتيجة تحويل أم رفض؟ الصفحة تفصل الحالتين حتى تختار الأنبوب باسمه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>أنبوب التحويل يرجع قيمة من نوع آخر، مثل نص إلى عدد صحيح. أنبوب التحقق يرجع القيمة نفسها إن صلحت، ويرمي إن فسدت. أنبوب واحد قد يفعل الاثنين، والأوضح أن يكون الاسم صادقًا مع الأثر الأساسي.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Pipes:</p>
+<ul>
+<li>Transformation: تحويل المدخل إلى الشكل المطلوب، والمثال الشائع من نص إلى عدد.</li>
+<li>Validation: تقييم المدخل. إن كان صالحًا يمر كما هو، وإلا يُرمى استثناء.</li>
+</ul>
+<p>في الحالتين يعمل الأنبوب على المعاملات المتجهة إلى المعالج، قبل الاستدعاء. الاستثناء من أنبوب تحقق يمنع تنفيذ الدالة. هذا سبب توصية الصفحة بأن يكون التحقق من بيانات الخارج على حدود النظام هنا.</p>
+<p><code>ParseIntPipe</code> المدمج تحويل وفحص معًا: إما عدد صحيح أو <code>400</code>. درسه التفصيلي لاحق. هنا القاعدة: إن رجعت قيمة جديدة فأنت حوّلت. إن رميت فأنت رفضت. إرجاع القيمة بلا تغيير بعد فحص ناجح هو تحقق خالص.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تحويل:   &quot;18&quot;  →  18
+تحقق:    &quot;INV-18&quot; إن طابق النمط → &quot;INV-18&quot;
+         &quot;18&quot; إن خالف النمط → BadRequestException
+</code></pre>
+<p>الخدمة في الحالة الأولى تستلم عددًا. في الثانية تستلم النص نفسه أو لا تُستدعى.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  BadRequestException,
+  Injectable,
+  type PipeTransform,
+} from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class InvoiceCodePipe implements PipeTransform&lt;string, string&gt; {
+  transform(value: string): string {
+    if (!/^INV-\d+$/.test(value)) {
+      throw new BadRequestException(&#39;Invoice code must look like INV-18&#39;);
+    }
+    return value;
+  }
+}
+</code></pre>
+<p>هذا تحقق: النجاح يعيد النص نفسه.</p>
+<pre><code class="language-ts">@Injectable()
+export class CentsPipe implements PipeTransform&lt;string, number&gt; {
+  transform(value: string): number {
+    const cents = Number(value);
+    if (!Number.isInteger(cents)) {
+      throw new BadRequestException(&#39;cents must be an integer&#39;);
+    }
+    return cents;
+  }
+}
+</code></pre>
+<p>هذا تحويل مع رفض عند الفشل: النص <code>&quot;2500&quot;</code> يصبح العدد <code>2500</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>InvoiceCodePipe</code> لا يبني كائنًا جديدًا. القاعدة شكل الرمز.</li>
+<li><code>CentsPipe</code> يغيّر نوع القيمة التي يراها المعالج. الخدمة تجمع قروشًا كأعداد لا كنصوص.</li>
+<li>الرمي في الاثنين <code>BadRequestException</code>، والرمز الافتراضي <code>400</code>.</li>
+<li>لا قاعدة بيانات في أي منهما. جلب فاتورة بالرمز أنبوب تحويل من نوع آخر، مسموح، لكنه يخفي استعلامًا داخل المعامل. أبقِ الجلب في الخدمة حتى يبقى الأنبوب حدًا رخيصًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>transform</code> تُستدعى بالقيمة الخام. ناتجها يستبدل المعامل قبل الدالة. الصفحة تقول ذلك صراحة عن حالة التحويل: ما يرجع من <code>transform</code> يحل محل القيمة السابقة.</p>
+<p>في التحقق الخالص، الإرجاع هو القيمة الأصلية بعد الحكم. الإطار لا يفرّق بين النوعين بواجهة ثانية. الفرق في ما تفعله داخل الدالة.</p>
+<p>إن حوّلت ثم فحصت في الصنف نفسه، فشل الفحص يرمي والقيمة المحوّلة لا تصل. نجاحه يمرر القيمة الجديدة. <code>ParseIntPipe</code> المدمج يعمل بهذا الشكل، ولذلك يُذكر في الصفحتين معًا.</p>
+<p>الأنبوب لا يغيّر معاملات أخرى. <code>CentsPipe</code> على <code>amount</code> لا يلمس <code>code</code>.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /invoices</code> فيه حقل استعلام <code>cents=2500</code> ومسار لاحق <code>GET /invoices/INV-18</code>.</p>
+<ul>
+<li><code>CentsPipe</code> على الاستعلام يجعل الخدمة تستلم <code>2500</code> لا <code>&quot;2500&quot;</code>.</li>
+<li><code>InvoiceCodePipe</code> على المسار يرفض <code>GET /invoices/drop</code> قبل الخدمة.</li>
+<li>Middleware التتبع يعمل في الحالتين ولا يعرف الفرق. الحارس إن وجد يعمل قبلهما ولا يحوّل <code>cents</code>.</li>
+</ul>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية صنف <code>ValidateCentsPipe</code> بينما يرجع عددًا. الاسم يقول تحققًا والأثر تحويل. سمِّه بما يرجع أو بما يرفض.</li>
+<li>إرجاع <code>null</code> عند الفشل بدل الرمي. المعالج يعمل بقيمة فارغة ويظن أن الطلب سليم.</li>
+<li>فحص الدور داخل أنبوب التحويل. السماح للحارس.</li>
+<li>تحويل كيان كامل من قاعدة البيانات داخل الأنبوب ثم نسيان أن الفشل الشبكي يصبح خطأ معامل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>التحويل حين يكون نوع المعامل في الدالة غير نوع السلك، والنص إلى عدد أشهر مثال. التحقق حين تكون القاعدة «القيمة إما مقبولة كما هي أو مرفوضة».</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتغيير جسم الرد، أو لختم الطلب، أو لقاعدة تحتاج عدة حقول من طبقات مختلفة مع قرار صلاحية. عدة حقول في DTO ستجتمع في <code>ValidationPipe</code> لاحقًا، ما زالت أنبوبًا، لكن موضوعها كائن لا نص مسار واحد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>تحويل</th>
+<th>تحقق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عند النجاح</td>
+<td>قيمة جديدة غالبًا</td>
+<td>القيمة نفسها</td>
+</tr>
+<tr>
+<td>عند الفشل</td>
+<td>استثناء إن كان التحويل مستحيلًا</td>
+<td>استثناء</td>
+</tr>
+<tr>
+<td>مثال هذا الدرس</td>
+<td><code>CentsPipe</code></td>
+<td><code>InvoiceCodePipe</code></td>
+</tr>
+<tr>
+<td>مدمج لاحق</td>
+<td><code>ParseIntPipe</code></td>
+<td><code>ValidationPipe</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أنبوب يرجع <code>value.trim()</code>. هل هذا تحويل أم تحقق خالص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تحويل. النص الذي يصل إلى المعالج غير النص الخام إن وُجدت مسافات. لا يوجد رمي.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>تريد رفض <code>cents</code> السالب وتمرير الموجب كعدد. أي أثرين يجتمعان في <code>transform</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تحويل من نص إلى عدد، ثم تحقق: إن كان سالبًا ارمِ <code>BadRequestException</code>، وإن كان موجبًا أرجع العدد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>زميل أعاد كائن الفاتورة من قاعدة البيانات داخل الأنبوب حتى «تصل الدالة جاهزة». ما الحد الذي كسره بالنسبة إلى خدمة الفواتير؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأنبوب صار طبقة جلب لا حدًا على القيمة. فشل القاعدة وشكل الاستعلام واختبار المعالج كلها تعلّقت بمعامل. الإبقاء على الرمز كنص مفحوص، والجلب داخل <code>InvoicesService</code>، يبقي كل مسؤولية في طبقتها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يرجع أنبوب التحقق عند النجاح؟</li>
+<li>ماذا يفعل أنبوب التحويل بالقيمة السابقة؟</li>
+<li>لماذا يمنع الرمي تشغيل المتحكم؟</li>
+<li>أي الوظيفتين يغلب على <code>InvoiceCodePipe</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التحويل يستبدل القيمة. التحقق يمررها أو يرمي. الواجهة واحدة، والاسم والأثر يجب أن يتفقا. الحدود الرخيصة على معامل واحد تعيش هنا، والجلب في الخدمة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يعرض الأنابيب المدمجة في <code>@nestjs/common</code> حتى لا تكتب <code>CentsPipe</code> إن كان <code>ParseIntPipe</code> يكفي.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

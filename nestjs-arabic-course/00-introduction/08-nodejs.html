@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Node.js</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-nodejs.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Node.js</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم البيئة التي تعمل داخلها NestJS: عملية JavaScript على الخادم، حلقة أحداث، و HTTP كمواطن من الدرجة الأولى.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المتصفح يشغّل JavaScript مربوطًا بصفحة. Backend يحتاج عملية تبقى تعمل، تفتح منفذًا، وتتحدث إلى ملفات وشبكة وقواعد بيانات.</p>
+<p>Node.js يعطي JavaScript هذه البيئة. NestJS إطار يشتغل فوقها، لا بديل عنها. إذا أوقفت Node، توقفت Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Node.js بيئة تشغيل (runtime) لـ JavaScript خارج المتصفح. تبني على محرك V8، وتضيف مكتبة قياسية للشبكات والملفات والعمليات.</p>
+<p>موقع Node يصفها بأنها asynchronous event-driven JavaScript runtime، مصممة لبناء تطبيقات شبكية قابلة للتوسع.</p>
+<h2>التعريف التقني</h2>
+<p>عملية Node تشغّل JavaScript على خيط رئيسي واحد. العمل الذي ينتظر القرص أو الشبكة لا يحتل هذا الخيط طوال الانتظار: Node يسلّم الإدخال/الإخراج للنظام، ويعود ليشغّل JavaScript عندما تصل النتيجة عبر callback أو Promise.</p>
+<p>هذا هو نموذج الحدث. الموقع الرسمي يقارنه بنموذج الخيوط (threads): خيط لكل اتصال أثقل وأصعب. Node يخدم اتصالات كثيرة على خيط JavaScript واحد ما دام عملك لا يحسب طويلًا على هذا الخيط.</p>
+<p>وجود خيط واحد لـ JavaScript لا يعني أن الجهاز يستخدم نواة واحدة فقط. <code>worker_threads</code> وعمليات <code>cluster</code> و <code>child_process</code> موجودة. لن نوزع العمل الآن. سنذكر الحد حتى لا تظن أن <code>async</code> يسرّع حسابًا ثقيلًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب HTTP وصل
+      |
+      v
+خيط JavaScript يشغّل دالتك
+      |
+      +--&gt; إذا استدعت قاعدة البيانات بشكل غير حاجز
+      |         الخيط يتفرغ لطلب آخر
+      |         والنتيجة ترجع لاحقًا كـ Promise
+      |
+      +--&gt; إذا حسبت 2 ثانية في حلقة for
+                كل الطلبات الأخرى تنتظر
+</code></pre>
+<p>NestJS تعيش في هذا النموذج. Controller الذي ينام داخل حلقة ثقيلة يوقف بقية التطبيق على هذه العملية.</p>
+<h2>أبسط مثال</h2>
+<p>المثال الرسمي من صفحة About، بنسخة ESM التي تناسب مشاريع Nest الحديثة:</p>
+<pre><code class="language-ts">import { createServer } from &#39;node:http&#39;;
+
+const hostname = &#39;127.0.0.1&#39;;
+const port = 3000;
+
+const server = createServer((req, res) =&gt; {
+  res.statusCode = 200;
+  res.setHeader(&#39;Content-Type&#39;, &#39;text/plain&#39;);
+  res.end(&#39;Hello World&#39;);
+});
+
+server.listen(port, hostname, () =&gt; {
+  console.log(`Server running at http://${hostname}:${port}/`);
+});
+</code></pre>
+<p>تشغيله، بعد حفظه في <code>server.ts</code> وترجمته، أو عبر أداة تشغيل TypeScript تملكها، يفتح العملية. أبقِ التفاصيل العملية للفصل <code>02</code>. هنا الهدف هو سلوك Node.</p>
+<h2>شرح المثال</h2>
+<p>مر سطرًا بسطر في درس HTTP. أضف ما يخص Node:</p>
+<ul>
+<li>لا يوجد استدعاء اسمه &quot;ابدأ حلقة الأحداث&quot;. صفحة About توضح أن Node يدخل حلقة الأحداث بعد تنفيذ السكربت، ويخرج عندما لا تبقى callbacks. <code>listen</code> يسجّل مقبضًا يبقى مفتوحًا، لذلك العملية لا تخرج بعد آخر سطر.</li>
+<li>الدالة التي مررتها إلى <code>createServer</code> callback. Node يستدعيها عند الطلب. أنت لا تستدعيها في حلقة <code>while</code> كتبتها بنفسك.</li>
+<li><code>res.end</code> لا يوقف العملية. ينهي استجابة واحدة.</li>
+</ul>
+<p>هذا هو قلب الجملة التي ستسمعها عن الإطارات: <strong>الإطار يستدعي كودك</strong> في الوقت المناسب. Node بدأ بذلك قبل Express و Nest.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>صورة مبسطة، كافية الآن:</p>
+<ol>
+<li>السكربت يشتغل من أعلاه إلى آخره ويسجّل المعالجات.</li>
+<li><code>listen</code> يطلب من النظام قبول اتصالات TCP.</li>
+<li>حلقة الأحداث تنتظر: شبكة، مؤقتات، ملفات.</li>
+<li>عند اكتمال طلب HTTP، تُستدعى دالتك.</li>
+<li>إذا وصلت دالتك إلى عملية I/O غير متزامنة، تُسجَّل تكملة العمل (Promise أو callback) وتعود الدالة. الخيط يخدم غيرك.</li>
+<li>عند وصول نتيجة الإدخال/الإخراج، التكملة تدخل الطابور وتعمل على الخيط نفسه.</li>
+</ol>
+<p>صفحة About تقول أيضًا: لا شيء تقريبًا في Node يؤدي I/O بشكل مباشر حاجز، إلا إذا استدعيت النسخ المتزامنة من المكتبة القياسية. النسخ المتزامنة، مثل قراءة ملف بطريقة <code>Sync</code>، توقف الخيط. سنبتعد عنها في مسارات الطلب.</p>
+<p>HTTP في Node مواطن من الدرجة الأولى، مصمم مع الانتباه للتدفق (streaming) والتأخير المنخفض. جملة الموقع: هذا يجعل Node مناسبًا كأساس لمكتبة ويب أو Framework. Express بُني على <code>node:http</code>. Nest بُنيت على Express أو Fastify، وهما على Node.</p>
+<h2>مثال عملي</h2>
+<p>قراءة كتاب من قاعدة بيانات، بشكل غير حاجز. الكود توضيحي بلغة JavaScript المألوفة، وليس Nest بعد:</p>
+<pre><code class="language-ts">import { createServer } from &#39;node:http&#39;;
+
+const server = createServer((req, res) =&gt; {
+  void loadBook()
+    .then((book) =&gt; {
+      res.statusCode = 200;
+      res.setHeader(&#39;Content-Type&#39;, &#39;application/json&#39;);
+      res.end(JSON.stringify(book));
+    })
+    .catch(() =&gt; {
+      res.statusCode = 500;
+      res.end();
+    });
+});
+
+server.listen(3000);
+
+function loadBook(): Promise&lt;{ id: string; title: string }&gt; {
+  return Promise.resolve({ id: &#39;2&#39;, title: &#39;Refactoring&#39; });
+}
+</code></pre>
+<ul>
+<li>المعالج لا ينتظر بحلقة. يعيد Promise.</li>
+<li><code>void</code> يخبر القارئ أننا لا ننتظر الـ Promise هنا. Node سيكملها عندما تُحل.</li>
+<li><code>JSON.stringify</code> يصنع جسم الاستجابة الذي درسته.</li>
+<li><code>catch</code> يمنع سقوط العملية بصمت عند فشل غير معالج داخل هذه السلسلة. في Nest ستتحول هذه الأخطاء إلى Exception Filters. السلوك هنا يدوي لأننا على Node الخام.</li>
+</ul>
+<p>لو استبدلت <code>loadBook</code> بحساب يستغرق ثانيتين على الخيط، الطلبات الأخرى على هذه العملية تتأخر ثانيتين حتى لو كانت قاعدة البيانات حرة.</p>
+<h2>npm</h2>
+<p>Node يأتي مع npm: أداة تثبّت الحزم في المشروع وتدير السكربتات. NestJS نفسها حزمة، و Express حزمة، و Prisma حزمة. الفصل <code>02</code> يفرّق npm و pnpm وأوامر <code>nest</code>. الآن: كود الخادم الذي نكتبه يعتمد على مكتبات نعلنها في <code>package.json</code>، ولا ننسخها يدويًا إلى المشروع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الظن أن <code>async/await</code> ينقل العمل إلى خيط آخر. <code>await</code> يعلّق الدالة هي فقط، ويحرر خيط JavaScript أثناء انتظار Promise. الحساب الثقيل بعد <code>await</code> ما زال على الخيط نفسه.</li>
+<li>استدعاء دوال <code>Sync</code> داخل معالجة الطلب.</li>
+<li>فتح خادم Node لكل مسار. خادم واحد يوجه المسارات. Express و Nest يقومان بهذا التوجيه.</li>
+<li>معاملة سقوط Promise من غير <code>catch</code> كأنه تفصيل. في الإنتاج يفشل الطلب وقد يُسقط العملية حسب إصدار Node وإعداداته. الإطارات تعطي مكانًا موحدًا لهذا، وسنصله.</li>
+</ul>
+<h2>متى نختار Node؟</h2>
+<p>عندما نريد Backend بـ JavaScript أو TypeScript، وفريقنا يشارك اللغة مع الواجهة، والعمل الغالب انتظار شبكة وقاعدة بيانات لا حساب صور طويل على الخيط.</p>
+<p>NestJS تفترض هذا الاختيار. التوثيق: Nest إطار لتطبيقات Node.js الخادمية، ومكتوب بـ TypeScript، ويشغّل TypeScript و JavaScript.</p>
+<h2>متى نعيد النظر؟</h2>
+<p>عندما يكون العمل حسابًا مستمرًا على المعالج (ترميز فيديو، تدريب نموذج) داخل مسار الطلب. عندها نخرج العمل من خيط الطلب: طابور وعمليات أخرى. فصل Queues مبني على هذه الحقيقة، لا على رغبة في أدوات إضافية.</p>
+<p>استخدام كل أنوية الجهاز لخادم HTTP يأتي مع <code>cluster</code> أو مع عدة عمليات خلف Nginx. صفحة About تذكر <code>child_process.fork</code> و <code>cluster</code>. التفاصيل في فصل الأداء والإنتاج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>متصفح</th>
+<th>Node.js</th>
+<th>NestJS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يشغّل JavaScript</td>
+<td>نعم</td>
+<td>نعم</td>
+<td>يعمل فوق Node</td>
+</tr>
+<tr>
+<td>يفتح منفذ خادم</td>
+<td>لا بالشكل العام</td>
+<td>نعم</td>
+<td>نعم عبر Node</td>
+</tr>
+<tr>
+<td>يفرض Modules و DI</td>
+<td>لا</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>يعطيك <code>node:http</code></td>
+<td>لا</td>
+<td>نعم</td>
+<td>يستخدمه عبر Express أو Fastify</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>رتب ما الذي يشتغل فوق ماذا: NestJS، Node.js، نظام التشغيل، Express.</p>
+<details>
+<summary>الحل</summary>
+
+<p>نظام التشغيل، ثم عملية Node.js، ثم Express (أو Fastify) فوق <code>node:http</code>، ثم NestJS فوق Express أو Fastify. ترتيبك من الأسفل إلى الأعلى بهذا الشكل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تبقى العملية تعمل بعد تنفيذ آخر سطر في مثال <code>createServer</code>، بينما سكربت يطبع <code>hello</code> ثم ينتهي يخرج فورًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>listen</code> يبقي مقبض استماع مفتوحًا، فحلقة الأحداث ما زال عندها عمل تنتظره. سكربت الطباعة لا يسجّل مؤقتًا ولا منفذًا ولا عملية معلّقة، فتخرج Node عندما تنتهي الـ callbacks، كما تصف صفحة About.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلبان وصلَا معًا. الأول يستدعي <code>await</code> على قاعدة بيانات تأخذ 50ms. الثاني يحسب أعدادًا أولية على الخيط لمدة ثانيتين قبل أي <code>await</code>. صف أثر الثاني على الأول إذا بدأ الثاني أولًا، بجملتين.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الثاني يحتل خيط JavaScript ثانيتين، فالأول لا تبدأ دالته، أو لا تكمل، حتى يُعاد التحكم إلى الحلقة. <code>await</code> في الأول لا يعمل أثناء انشغال الخيط بالحساب. انتظار قاعدة البيانات لا يزاحم الخيط، أما الحساب المتصل فيفعل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تقدم Node ولا يقدمه المتصفح لكاتب Backend؟</li>
+<li>لماذا لا يسرّع <code>async</code> حلقة حساب طويلة؟</li>
+<li>ماذا يبقي عملية مثال <code>listen</code> حية؟</li>
+<li>أين يقع Express بالنسبة إلى <code>node:http</code> و NestJS؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Node.js تشغّل JavaScript كخادم شبكي على حلقة أحداث. الإدخال والإخراج غير الحاجز يناسب كثيرًا من الطلبات. الحساب الطويل على الخيط يوقف الجميع. NestJS إطار فوق هذه البيئة، لا بيئة بديلة.</p>
+<h2>ماذا بعد؟</h2>
+<p>نستطيع كتابة خادم بـ <code>node:http</code> فقط. الفرق التالي: هل نستدعي نحن المكتبة في كل خطوة، أم الإطار هو الذي يستدعي كودنا داخل هيكل جاهز؟ هذا فرق Library و Framework، وهو سبب وجود طبقات فوق Node.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Node.js — About: <a href="https://nodejs.org/en/about">https://nodejs.org/en/about</a></li>
+<li>Node.js — HTTP: <a href="https://nodejs.org/api/http.html">https://nodejs.org/api/http.html</a></li>
+<li>Node.js — The Node.js event loop (للعودة إليه في فصل الأداء): <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick">https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick</a></li>
+<li>NestJS — Introduction: <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+<li>NestJS — First steps (متطلبات Node لتشغيل Nest): <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

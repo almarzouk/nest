@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Resilience</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-resilience.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Resilience</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع حد زمني وقاطع وبديل حول نداء رف إلى فهرس أو شريك بطيء، عبر <code>@nestjs/resilience</code>، من غير إعادة <code>POST</code> مالي بلا مفتاح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>publish</code> ينتظر اقتباس الشحن حتى تنتهي مهلة المتصفح. أو يعيد المحاولة خمس مرات على خصم رصيد فيتكرر الخصم. عندما يسقط الشريك تبقى كل الطلبات معلقة خلفه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحزمة تضع سياسات على مداخل التطبيق: مهلة، إعادة، قاطع، حاجز تزامن، وبديل. المهلة على HTTP تصبح 504. القاطع المفتوح 503 مع <code>Retry-After</code>. إعادة <code>POST</code> الذي له أثر تكون مع <code>@Idempotent</code> من الحزمة المجاورة لا وحدها. داخل الخدمة نفس السياسات ككائنات لا كديكور فقط.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/resilience</code> ثم <code>ResilienceModule</code>. الديكورات من الحزمة: <code>@Timeout</code> و <code>@Retry</code> و <code>@Fallback</code> و <code>@Bulkhead</code> مع <code>@Resilience</code>. <code>@Timeout</code> يجيب 504. القاطع المفتوح 503. <code>@Fallback</code> يقدر أن يعيد تقديرًا ثابتًا عند <code>CircuitOpenError</code>. الديكور على المتحكم والـ resolver ورسائل الخدمات المصغرة والبوابة. <code>ResilienceService</code> يبني سياسة للكود داخل الخدمة. لا تضعوا السياسة على خصم Stripe بلا مفتاح idempotency.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نداء شريك
+  مهلة → 504
+  أخطاء متكررة → قاطع → 503
+  POST مالي → لا إعادة بلا مفتاح
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Get } from &#39;@nestjs/common&#39;;
+import { Resilience, Timeout } from &#39;@nestjs/resilience&#39;;
+
+@Get(&#39;quote&#39;)
+@Resilience(Timeout(&#39;2s&#39;))
+quote() {
+  return this.carrier.quote();
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>ثانيتان ميزانية للمدخل لا حلقة داخلية بلا سقف.</li>
+<li>انتهاء المهلة 504 لا 500 غامض.</li>
+<li>القراءة آمنة للإعادة أكثر من النشر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المعترض العام للحزمة يطبّق الديكور على المدخل.</li>
+<li>إن تجاوز النداء المهلة يُلغى الانتظار ويُكتب 504.</li>
+<li>إن تراكمت الأعطال يفتح القاطع ويرد 503 فورًا مع <code>Retry-After</code> حتى لا تُضرب الخدمة الميتة.</li>
+<li><code>@Fallback</code> يعمل عند فتح القاطع إن عرّفتم بديلًا.</li>
+<li><code>@Retry</code> يعيد النداء. على <code>POST</code> الذي ينشئ أثرًا اربطوه بـ <code>@Idempotent</code> كما تفعل صفحة Resilience في مثالها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اقتباس شحن لغلاف رف ليس نشر الكتاب. إن فتح القاطع أعيدوا سعر شحن افتراضيًا معلنًا في العقد، ولا تنشروا المشروع بناءً على هذا الافتراض كأنه تأكيد الناقل.</p>
+<pre><code class="language-ts">import { CircuitOpenError, Fallback, Resilience, Timeout } from &#39;@nestjs/resilience&#39;;
+
+@Resilience(Timeout(&#39;2s&#39;), Fallback(CircuitOpenError, () =&gt; ({ amount: 1500, estimated: true })))
+</code></pre>
+<p><code>publish</code> نفسه لا يُلف بإعادة عمياء. حالة المشروع تُكتب في قاعدتكم مرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Retry</code> على <code>POST /billing/checkout</code> بلا مفتاح.</li>
+<li>مهلة أطول من مهلة الموازن فيُقطع العميل والنداء يكمل.</li>
+<li>بديل القاطع يكتب <code>published</code>.</li>
+<li>وضع الديكور على دالة خاصة وظن أنه يعمل؛ الصفحة تخص المداخل، وداخل الخدمة استخدموا السياسة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حول اعتمادية خارجية قد تبطؤ أو تسقط، على مدخل واضح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا به عزل المستأجر ولا توقيع الويب هوك. ولا تعيدوا أثرًا غير مكرر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>السياسة</th>
+<th>رد HTTP النموذجي</th>
+<th>على النشر المالي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Timeout</td>
+<td>504</td>
+<td>ميزانية انتظار لا تكرار أثر</td>
+</tr>
+<tr>
+<td>قاطع مفتوح</td>
+<td>503 و <code>Retry-After</code></td>
+<td>لا تفعيل خطة</td>
+</tr>
+<tr>
+<td>Retry</td>
+<td>نفس المسار</td>
+<td>مع <code>@Idempotent</code> فقط</td>
+</tr>
+<tr>
+<td>Fallback</td>
+<td>جسم بديل</td>
+<td>قراءة لا كتابة حالة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرى العميل عندما تتجاوز مهلة الاقتباس؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol start="504">
+<li>القاطع المفتوح لاحقًا 503 مع <code>Retry-After</code>.</li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا إعادة Checkout بلا مفتاح خطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل محاولة قد تنشئ جلسة أو أثرًا جديدًا. الصفحة تربط إعادة <code>POST</code> الآمنة بـ <code>@Idempotent</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>البديل أعاد <code>estimated: true</code>. هل <code>PlanPolicy</code> تعتبر الخطة <code>active</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. البديل اقتباس عرض. حالة الاشتراك تبقى من الحدث الموقّع. لا تكتبوا <code>active</code> من مسار الاحتياطي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة؟</li>
+<li>ما رمز المهلة ورمز القاطع؟</li>
+<li>أين تعمل الديكورات؟</li>
+<li>متى تُمنع الإعادة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/resilience</code> يحد النداء الخارجي بمهلة وقاطع وبديل. 504 و 503 ردود مدخل لا أسرار. الأثر المالي لا يُعاد بلا مفتاح.</p>
+<h2>ماذا بعد؟</h2>
+<p>المفتاح الذي يجعل الإعادة آمنة هو درس <code>@nestjs/idempotency</code> على مسار رف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Resilience: <a href="https://docs.nestjs.com/reliability/resilience">https://docs.nestjs.com/reliability/resilience</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

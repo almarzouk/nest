@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>شباك التذاكر والتقارير. أجب ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>لماذا لا يطبع <code>tap</code> قبل أن يشترك أحد في التيار؟</li>
+<li>أي عامل يغلّف <code>{ data }</code> من غير أن يصلح للسجل؟</li>
+<li>ماذا ترجع بدل <code>handle</code> حين تريد قيمة مخزنة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>التيار كسول. Nest هو من يشترك على تيار <code>intercept</code>.</li>
+<li><code>map</code>. السجل يستخدم <code>tap</code>.</li>
+<li><code>of(cached)</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>اربط ثلاثة آثار:</p>
+<ul>
+<li>مدة <code>GET /tickets</code> ترى المصفوفة الخام.</li>
+<li>العميل على متحكم التذاكر يرى <code>{ data }</code>.</li>
+<li><code>GET /reports/sales</code> ينتهي بـ <code>408</code> بعد خمس ثوانٍ بلا إصدار، و <code>400</code> يبقى <code>400</code>.</li>
+</ul>
+<p>اذكر المستوى والعامل، لا حزمة تخزين.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>TicketLogInterceptor</code> على دالة <code>GET /tickets</code> بـ <code>tap</code> فيرى الخام قبل الغلاف. <code>TicketEnvelopeInterceptor</code> على <code>TicketsController</code> بـ <code>map</code>. <code>ReportTimeoutInterceptor</code> على دالة التقرير: <code>timeout(5000)</code> ثم <code>catchError</code> يحوّل <code>TimeoutError</code> فقط إلى <code>RequestTimeoutException</code> ويعيد رمي الباقي.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>مع اعتراض عام للسجل وآخر للغلاف على المتحكم، ظهر في السجل العام <code>{ data: [&#39;t1&#39;] }</code> لا <code>[&#39;t1&#39;]</code>. ثم نُقل السجل إلى الدالة فصار يطبع المصفوفة. فسر الوجهين. ماذا يحدث لرفض الحارس ولخطأ ابتُلع بـ <code>try/catch</code> داخل <code>list</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخروج من المسار إلى العام. السجل العام آخر من يرى القيمة بعد <code>map</code> الغلاف. سجل الدالة أول من يراها وهي خام. الحارس قبل المعترضات فلا يدخل <code>tap</code>. <code>try/catch</code> الذي يرجع قيمة يجعل التيار ينجح، ففرع الخطأ لا يعمل ويرى <code>map</code> القيمة التي رجعتها الدالة.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

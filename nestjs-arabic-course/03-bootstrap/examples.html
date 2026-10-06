@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>إقلاع القالب</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<ol>
+<li>تحميل الملف يلصق Metadata.</li>
+<li><code>create</code> يبني الجذر <code>AppModule</code> والحاوية ويربط <code>GET /</code> عبر محوّل Express.</li>
+<li><code>listen</code> يفتح 3000 إن لم يوجد <code>PORT</code>.</li>
+<li>الطلب يستخدم نسخة <code>AppService</code> التي بُنيت مع السياق لا نسخة جديدة.</li>
+</ol>
+<h2>فشل متعمد تتعلم منه</h2>
+<p>احذف <code>AppService</code> من <code>providers</code> مؤقتًا وشغّل <code>start:dev</code>. الإقلاع يتوقف لأن الحاوية لا تحل اعتماد المتحكم. أرجع السطر. هذا أثر <code>abortOnError</code> الافتراضي: العملية لا تبقى متاحة بنصف حاوية.</p>
+<h2>رسم صغير</h2>
+<pre><code class="language-text">AppController -&gt; AppService
+</code></pre>
+<p>ورقة واحدة، ولا عبور وحدات بعد.</p>
+<h2>ماذا بعد؟</h2>
+<p>تمارين الفصل ثم Modules.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

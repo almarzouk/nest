@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Webhook</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-webhooks.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Webhook</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استقبال أحداث Stripe في رف على مسار عام، والتحقق بسر الويب هوك على <code>rawBody</code>، ثم مزامنة الاشتراك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المسار يستخدم <code>@Body()</code> ثم <code>constructEvent</code> على نص أُعيد تسلسله فيفشل التوقيع الصحيح. أو ينجح أي JSON فيه <code>type: customer.subscription.updated</code> لأن السر غير مستخدم. أو يكتب <code>active</code> من مسار success «إلى أن نربط الويب هوك».</p>
+<h2>الفكرة ببساطة</h2>
+<p>Stripe يوقّع البايتات ويضع <code>Stripe-Signature</code>. <code>stripe.webhooks.constructEvent(rawBody, signature, webhookSecret)</code> يرمي إن فسد التوقيع. بعدها تفرّعون على <code>event.type</code> وتستدعون مزامنة الاشتراك. تردون 200 بعد الحفظ. هذا نفس شكل الوارد العام، بأداة Stripe لا بـ HMAC مكتوب يدويًا إن استخدمتم SDK.</p>
+<h2>التعريف التقني</h2>
+<p><code>rawBody: true</code> في <code>NestFactory.create</code> كما في صفحة Raw body. لا <code>bodyParser: false</code>. السر <code>STRIPE_WEBHOOK_SECRET</code> غير مفتاح API السري؛ لكل وجهة ويب هوك سر. <code>@Public()</code> على المسار مع هذا التحقق. الأحداث التي تهم رف في هذا الفصل: <code>checkout.session.completed</code> لربط المعرّفات إن نقصت، و <code>customer.subscription.updated</code> و <code>customer.subscription.deleted</code> و <code>invoice.payment_failed</code>. <code>constructEvent</code> يرفض الطابع القديم حسب تسامح المكتبة. لا تحدّثوا الحالة من غير أن يمر البناء.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Stripe-Signature + Buffer
+→ constructEvent
+→ switch type
+→ syncFromStripe
+→ 200
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Post()
+@HttpCode(200)
+handle(@Req() req: RawBodyRequest&lt;Request&gt;, @Headers(&#39;stripe-signature&#39;) signature: string) {
+  const event = this.stripe.webhooks.constructEvent(req.rawBody!, signature, this.secret);
+  return { type: event.type };
+}
+</code></pre>
+<p>أضيفوا الاستيرادات من <code>@nestjs/common</code> ونوع <code>Request</code> من <code>express</code>. <code>rawBody!</code> بعد فحص الغياب برمي 400.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>constructEvent</code> هو التحقق. لا تثقوا بـ <code>event.type</code> قبله.</li>
+<li>الرد 200 هنا مبكر للشرح. الإنتاج يحفظ ثم يرد، كما في درس إعادة المحاولة.</li>
+<li>المفتاح في الترويسة اسمه <code>stripe-signature</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Stripe يرسل الحدث إلى عنوانكم.</li>
+<li>Nest يبقي Buffer.</li>
+<li><code>constructEvent</code> يتحقق من HMAC والطابع.</li>
+<li>المعالج يجد المنظمة عبر <code>customer</code> ويستدعي <code>mapStripeStatus</code>.</li>
+<li>الفشل قبل الحفظ يعيد 500 حتى يعيد Stripe. التوقيع الفاسد 400.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">async onEvent(event: { type: string; data: { object: { customer?: string; status?: string; id: string } } }) {
+  if (event.type === &#39;customer.subscription.updated&#39; || event.type === &#39;customer.subscription.deleted&#39;) {
+    const object = event.data.object;
+    if (!object.customer || !object.status) return;
+    await this.subs.syncFromStripe(object.customer, object.status, object.id);
+  }
+}
+</code></pre>
+<p><code>checkout.session.completed</code> يمكنه حفظ <code>subscription</code> و <code>customer</code> إن لم يُحفظا، من غير وضع <code>active</code> إن كانت حالة الاشتراك ما زالت غير مدفوعة. لا تشتقوا <code>active</code> من اسم الحدث <code>completed</code> وحده.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سر API مكان سر الويب هوك.</li>
+<li>تفعيل الخطة داخل فرع success في الواجهة لأن الحدث تأخر.</li>
+<li><code>constructEvent(JSON.stringify(req.body), ...)</code>.</li>
+<li>معالجة كل الأنواع بتحديث أعمى إلى <code>active</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كقناة وحيدة لكتابة <code>Subscription.status</code> بعد إطلاق Checkout.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستقبلوا الحدث على مسار جلسة الموظف. ولا تستخدموا وجهة اختبار الإنتاج بسر التطوير.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>يكتب <code>active</code>؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /billing/checkout</code></td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>GET /billing/success</code></td>
+<td>لا</td>
+</tr>
+<tr>
+<td>ويب هوك بعد <code>constructEvent</code></td>
+<td>حسب <code>mapStripeStatus</code> فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الترويسة التي يقرأها <code>constructEvent</code> مع الـ Buffer؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Stripe-Signature</code>، مع سر الوجهة <code>STRIPE_WEBHOOK_SECRET</code>، لا مفتاح السر العام للحساب وحده.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>checkout.session.completed</code> لا يكفي ليضع <code>active</code> دائمًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اكتمال الجلسة قد يسبق حالة الاشتراك التي تفهمونها، أو يرتبط بدفع لم يُحصَّل. اقرأوا حالة الاشتراك من الحدث المناسب ومرّروها على <code>mapStripeStatus</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>التوقيع صحيح والعميل غير موجود في رف. ماذا تردون ولماذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا تحدّثوا منظمة عشوائية. سجّلوا الحدث المجهول. رد 200 بعد تسجيل آمن يمنع إعادات لا تنتهي إن كان الحدث ليس لكم، أو 500 إن كان الخلل مؤقتًا في القاعدة. لا تفتحوا خطة من metadata فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُمرَّر إلى <code>constructEvent</code> غير السر؟</li>
+<li>لماذا سر الويب هوك غير مفتاح API؟</li>
+<li>أي مسار لا يكتب الحالة؟</li>
+<li>متى 400 ومتى 500؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ويب هوك Stripe يتحقق بـ <code>constructEvent</code> على <code>rawBody</code> و <code>Stripe-Signature</code>. بعدها تُزامَن الحالة من نوع الحدث. success URL لا تستدعي هذا المسار نيابة عنكم.</p>
+<h2>ماذا بعد؟</h2>
+<p>إعادة ضغط زر Checkout أو إعادة Stripe للحدث تحتاج مفاتيح. الدرس التالي idempotency على أوامر Stripe وعلى معرّف الحدث.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Stripe — Webhooks: <a href="https://docs.stripe.com/webhooks">https://docs.stripe.com/webhooks</a></li>
+<li>NestJS — Raw body: <a href="https://docs.nestjs.com/faq/raw-body">https://docs.nestjs.com/faq/raw-body</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

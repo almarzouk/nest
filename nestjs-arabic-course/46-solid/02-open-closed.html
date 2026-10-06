@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Open/Closed</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-open-closed.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Open/Closed</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إضافة سلوك جديد بتسجيل مزود يطبّق عقدًا، مع إبقاء المنسق مغلقًا أمام تعديل الفروع كلما ظهرت قناة دفع أو نوع شحن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>if (type === &#39;card&#39;) ... else if (type === &#39;cash&#39;)</code> داخل <code>CheckoutService</code> يتضخم مع كل مزود. كل إضافة تفتح الملف الأكثر حساسية. مبدأ الفتح والإغلاق: الكود مفتوح للتوسيع ومغلق للتعديل. في Nest التوسيع مزود جديد في <code>providers</code>، والتعديل الذي يبقى هو سطر التسجيل لا سلسلة الشروط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عرّف عقد <code>Payment</code> بدالة <code>pay</code>. كل قناة صنف <code>@Injectable</code> يطبّق العقد. المنسق يستقبل القائمة أو يختار من خريطة حقنتها. إضافة المحفظة صنف جديد ورمز في الوحدة. <code>pay</code> في المنسق لا يكتسب فرعًا.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export interface Payment {
+  readonly code: string;
+  pay(totalMinor: number): Promise&lt;void&gt;;
+}
+
+export const PAYMENTS = Symbol(&#39;PAYMENTS&#39;);
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import type { Payment } from &#39;./payment.js&#39;;
+
+@Injectable()
+export class CardPayment implements Payment {
+  readonly code = &#39;card&#39;;
+
+  async pay(totalMinor: number): Promise&lt;void&gt; {
+    void totalMinor;
+  }
+}
+</code></pre>
+<p>التسجيل بمصفوفة عبر مصنع أو بحقن متعدد إن استعملت نمطًا يدويًا:</p>
+<pre><code class="language-ts">{
+  provide: PAYMENTS,
+  useFactory: (card: CardPayment, cash: CashPayment) =&gt; [card, cash],
+  inject: [CardPayment, CashPayment],
+}
+</code></pre>
+<pre><code class="language-ts">@Injectable()
+export class CheckoutService {
+  constructor(@Inject(PAYMENTS) private readonly payments: Payment[]) {}
+
+  async charge(code: string, totalMinor: number): Promise&lt;void&gt; {
+    const payment = this.payments.find((item) =&gt; item.code === code);
+    if (!payment) {
+      throw new Error(`قناة غير معروفة: ${code}`);
+    }
+    await payment.pay(totalMinor);
+  }
+}
+</code></pre>
+<p>إضافة <code>WalletPayment</code>: صنف، وعنصر في <code>inject</code> والمصفوفة. جسم <code>charge</code> ثابت. هذا الإغلاق العملي. تعديل العقد <code>pay</code> نفسه ما زال تغييرًا على الجميع، فاجعل العقد صغيرًا.</p>
+<p>لا تحتاج <code>DiscoveryService</code> لقناتين. عندما تصبح القنوات إضافات بلا لمس الوحدة، المسح بالمزخرف يوسع التسجيل. حتى ذلك الحين القائمة صريحة وأوضح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عقد ثابت
+  CardPayment   \
+  CashPayment    -&gt; CheckoutService.charge يبحث بالرمز
+  WalletPayment /
+</code></pre>
+<p>الملف الذي يكبر هو مجلد القنوات لا المنسق.</p>
+<h2>أبسط مثال</h2>
+<p>المقاطع أعلاه. اختبار يمرر <code>useValue</code> بمصفوفة فيها مزيف <code>code: &#39;card&#39;</code>. لا فرع بطاقة داخل الاختبار ولا داخل <code>charge</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>find</code> اختيار من قائمة مفتوحة. الفشل عند رمز مجهول صريح. لا <code>default</code> صامت يخصم من بطاقة. تسجيل القناة في الوحدة هو نقطة التعديل الوحيدة المقصودة، وهي بيانات تكوين لا سياسة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية تبني كل تنفيذ.</li>
+<li>المصنع يجمعها في مصفوفة خلف <code>PAYMENTS</code>.</li>
+<li><code>charge</code> يبحث ولا يعرف الأصناف بالاسم.</li>
+<li>تنفيذ جديد يُبنى مع الإقلاع إن أُضيف إلى <code>inject</code>.</li>
+<li>نسيان التسجيل يعني رمزًا مجهولًا عند النداء، لا مسارًا قديمًا صامتًا.</li>
+<li>العقد الذي يعيد أنواع Stripe يكسر الإغلاق لأن المنسق سيتعرف على التفاصيل.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>شحن: <code>ShippingQuote</code> بعقد <code>quote(weight): Money</code>. <code>StandardShipping</code> و <code>ExpressShipping</code>. <code>CheckoutService</code> يطلب العرض بالرمز الذي اختاره الزبون. تغيير سعر السريع يمس صنفًا واحدًا. إضافة نقطة استلام صنف ثالث. لا تفتح <code>CheckoutService</code> إلا إذا تغيّر تسلسل «احسب ثم ادفع ثم احفظ».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>عقد فيه دالة لكل قناة.</li>
+<li><code>switch</code> يبقى وينادي الأصناف، فالتعديل المزدوج.</li>
+<li>اكتشاف أصناف من القرص بلا تسجيل ظاهر فيستغرب الفريق من يعمل في الإنتاج.</li>
+<li>وراثة عميقة بدل تركيب مزودات.</li>
+<li>جعل المنسق <code>global</code> حتى «يرى» كل القنوات. الاستيراد أوضح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عائلة سلوك تتسع: دفع، شحن، تصدير ملف، إشعار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>فرعان ثابتان لن يتغيرا. <code>if</code> أقصر من أربعة ملفات. لا تجرد قبل النسخة الثالثة إن كان الفريق ما زال يكتشف القاعدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>إضافة قناة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>switch</code> في الخدمة</td>
+<td>تعديل الخدمة</td>
+</tr>
+<tr>
+<td>قائمة <code>Payment</code></td>
+<td>صنف وتسجيل</td>
+</tr>
+<tr>
+<td>وراثة قاعدة ضخمة</td>
+<td>تعديل الأب غالبًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يبقى ثابتًا عند إضافة <code>WalletPayment</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جسم <code>charge</code> الذي يبحث بـ <code>code</code> وينادي <code>pay</code>. يتغير الصنف الجديد وسطر التسجيل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا عقد <code>pay</code> الذي يعيد كائن Stripe يضعف الإغلاق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المنسق سيكتب فروعًا على حقول Stripe، فكل قناة جديدة قد تعدّل المنسق من جديد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تستبدل المصنع الصريح بـ <code>DiscoveryService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تُضاف القنوات من وحدات لا يجوز أن تعدّل وحدة الدفع عند كل إضافة، مع مزخرف ومسح عند الإقلاع. لقناتين أو ثلاث القائمة الصريحة أصدق.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يُغلق وما الذي يُفتح؟</li>
+<li>أين سطر التعديل المقبول؟</li>
+<li>متى <code>if</code> أفضل من عقد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>وسّع السلوك بصنف يطبّق عقدًا صغيرًا وسجّله في الوحدة. أبقِ المنسق على الاختيار والنداء، وعدّل العقد فقط عندما تتغير السياسة المشتركة.</p>
+<h2>ماذا بعد؟</h2>
+<p>Liskov Substitution: التنفيذ البديل يجب أن يحترم عقد المستدعي.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

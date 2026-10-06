@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>طبقات داخل وحدة</h2>
+<p><code>BooksController</code> ينادي <code>BooksService.create(dto)</code> والخدمة تنادي <code>prisma.book.create</code>. المتحكم بلا عميل. مهمة طابور لاحقة تنادي الخدمة نفسها.</p>
+<h2>حد تصدير</h2>
+<pre><code class="language-ts">@Module({
+  controllers: [BooksController],
+  providers: [BooksService],
+  exports: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<p>حذف <code>exports</code> يكسر حقن الطلبات. هذا حد رخيص يبقى في المشروع الصغير.</p>
+<h2>منفذ عندما يظهر محول ثانٍ</h2>
+<p><code>CreateBook</code> يحقن <code>BOOKS</code> من نوع <code>BooksPort</code>. <code>PrismaBooksAdapter</code> في <code>useClass</code>. اختبار <code>new CreateBook(fake)</code> بلا HTTP. لا تضع هذا القالب على <code>GET /health</code>.</p>
+<h2>سياق لغة</h2>
+<p><code>Money</code> بلا معرف يرفض السالب. <code>Order.addLine</code> بوابة التجميع. الكتالوج لا يكتب سطور الطلب. العبور <code>bookId</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>لا <code>prisma</code> في الملفات <code>*.controller.ts</code>.</li>
+<li>لا <code>@Global()</code> على وحدة ميزة.</li>
+<li>منفذ جديد مربوط بمحول ثانٍ أو باختبار سياسة، لا بكل مسار.</li>
+<li>كلمتان بمعنى مختلف تعيشان في وحدتين.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

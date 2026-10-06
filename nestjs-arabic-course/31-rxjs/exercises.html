@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>متى يبدأ عمل <code>Observable</code> البارد؟</li>
+<li>أي معامل يغيّر الجسم وأي معامل يسجّل الزمن؟</li>
+<li>أي خطأ يصدره <code>timeout</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>عند <code>subscribe</code>، وNest تشترك إن أرجعت التيار من المعترض.</li>
+<li><code>map</code> يغيّر، و <code>tap</code> يسجّل.</li>
+<li><code>TimeoutError</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>اكتب سلسلة معترض لمسار ISBN: مهلة 800ms، غلاف <code>{ data }</code> عند النجاح، و <code>504</code> عند المهلة، مع تمرير <code>HttpException</code> كما هو.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>next.handle().pipe(timeout(800), map((data) =&gt; ({ data })), catchError(...))</code>. داخل <code>catchError</code>: إن كان الخطأ <code>TimeoutError</code> فأعد <code>throwError</code> بـ <code>GatewayTimeoutException</code>. إن كان <code>HttpException</code> فأعد رميه. لا <code>of(null)</code> ولا <code>retry</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>مراجع أضاف <code>retry(2)</code> و <code>Subject</code> على المعترض، واشترك يدويًا ثم أرجع التيار، على <code>POST /books</code>. ما الذي يتكرر، وما الذي قد يختلط بين طلبين؟</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>الاشتراك اليدوي مع الإرجاع يشغّل السلسلة مرتين.</li>
+<li><code>retry</code> قد يعيد أثر الإنشاء.</li>
+<li><code>Subject</code> المشترك على مزوّد يدفع أجسام الطلبات إلى مشتركين آخرين.</li>
+<li>المسار الصحيح تيار بارد لكل طلب، بـ <code>map</code> أو <code>tap</code> فقط، والخدمة <code>async</code> بلا إعادة محاولة عمياء.</li>
+</ul>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

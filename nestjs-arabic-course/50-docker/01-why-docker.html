@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا Docker</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-docker.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا Docker</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ماذا يثبّت Docker لك قبل كتابة ملف: نفس Node ونفس اعتماديات النظام على جهازك وعلى الخادم، وشبكة تسمي فيها Postgres باسم خدمة لا بـ <code>localhost</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>«يعمل على جهازي» لأن Node عندك 22 وزميلتك 18، أو لأن Redis مثبت محليًا وأنت نسيت أن صورة الإنتاج بلا Redis. الحاوية تغلف العملية ونظام الملفات الذي تراه. Compose يشغّل التطبيق والقاعدة معًا بأسماء ثابتة. هذا لا يستبدل حدود الـ Modules. هو يشغّل ما بنيته.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صورة تُبنى من Dockerfile. حاوية تشغيل لتلك الصورة. Compose يعرّف عدة حاويات على شبكة واحدة. اسم الخدمة <code>postgres</code> يُحل إلى عنوان تلك الحاوية. من داخل حاوية <code>api</code>، <code>localhost</code> هو <code>api</code> فقط. لذلك سلسلة الاتصال تستعمل <code>postgres</code> و <code>redis</code>.</p>
+<h2>التعريف التقني</h2>
+<p>Docker يبني طبقات من أوامر الملف ويخزنها. التشغيل يضيف طبقة قابلة للكتابة تختفي مع الحاوية إن لم تربط حجمًا. بيانات Postgres تحتاج volume حتى تبقى بعد <code>down</code>.</p>
+<p>لا تشغّل <code>nest start --watch</code> كأمر إنتاج. التطوير على الجهاز أو خدمة <code>command</code> منفصلة في ملف تطوير. إنتاج الصورة: بناء ثم <code>node dist/main.js</code>.</p>
+<p>إصدار Node في الصورة يجب أن يلبي تشغيل Nest: 20.19 أو أحدث على خط 20، أو 22.12 أو أحدث على خط 22. اختر وسمًا صريحًا مثل <code>node:22.14-bookworm-slim</code> حتى لا يسحب وسم <code>latest</code> إصدارًا لم تجربه. مولّدات CLI على جهازك قد تطلب أحدث من ذلك، والصورة تشغّل الناتج المبني لا المولّد.</p>
+<p>الصورة ليست سرًا. لا تنسخ <code>.env</code> فيها. مرر المتغيرات عند التشغيل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Dockerfile -&gt; صورة
+تشغيل -&gt; حاوية
+Compose: api , postgres , redis على شبكة
+من api: المضيف postgres لا localhost
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>على الجهاز Postgres على <code>127.0.0.1</code>. داخل Compose:</p>
+<pre><code class="language-text">DATABASE_URL=postgresql://app:app@postgres:5432/app
+REDIS_URL=redis://redis:6379
+</code></pre>
+<p>نفس الكود يقرأ المتغير. الذي يتغير العنوان لا مصدر Prisma.</p>
+<h2>شرح المثال</h2>
+<p><code>postgres</code> اسم الخدمة في ملف Compose الذي سيأتي. إن كتبت <code>localhost</code> فعميل Prisma يتصل بنفسه ويفشل أو يتصل بشيء غير القاعدة. هذا الخطأ يتكرر مع Redis و NATS و Rabbit من الفصل السابق.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المحرك يبني الصورة من الطبقات.</li>
+<li>التشغيل ينشئ حاوية من الصورة.</li>
+<li>Compose ينشئ شبكة ويربط الأسماء.</li>
+<li>عملية Node ترى متغيرات البيئة التي مررتها.</li>
+<li>المنفذ <code>3000</code> داخل الحاوية لا يظهر على جهازك حتى تنشر <code>ports</code>.</li>
+<li>حذف الحاوية بلا volume يحذف بيانات القاعدة التي كانت في نظام الملفات العابر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>فريق يشغّل <code>docker compose up</code> فيراجع نفس إصدار Node ونفس Postgres. لا دليل تثبيت Redis على macOS في المستودع. الإنتاج يستعمل نفس Dockerfile مع متغيرات أخرى. اختلاف كلمة السر لا اختلاف في <code>apt install</code> يدوي على الخادم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وسم <code>node:latest</code> بلا تثبيت.</li>
+<li><code>start:dev</code> في الإنتاج فيبقي المترجم والمراقبة.</li>
+<li><code>localhost</code> للقاعدة داخل الشبكة.</li>
+<li>نسخ أسرار إلى الصورة.</li>
+<li>اعتبار Docker تقسيم خدمات صغيرة. حاوية التطبيق قد تبقى Monolith.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تريد تشغيلًا قابلًا للتكرار للتطبيق مع Postgres و Redis.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحوّل كل وحدة Nest إلى حاوية. ولا تستبدل اختبار السياسة بتشغيل الحاوية كل مرة. الحاوية لاختبار الترجمة والتشغيل، والمزيف للسياسة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>مضيف القاعدة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عملية على الجهاز</td>
+<td><code>127.0.0.1</code></td>
+</tr>
+<tr>
+<td>حاوية على شبكة Compose</td>
+<td>اسم الخدمة</td>
+</tr>
+<tr>
+<td>صورة الإنتاج</td>
+<td>متغير من المنصة، غالبًا اسم خدمة أو عنوان مُدار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحل اسم <code>postgres</code> داخل الحاوية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عنوان حاوية خدمة Postgres على شبكة Compose، لا جهازك ولا حاوية <code>api</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>localhost</code> من <code>api</code> لا يصل إلى Postgres في خدمة أخرى؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>localhost</code> يشير إلى الحاوية التي تنفذ العملية، أي <code>api</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تضع <code>npm run start:dev</code> أمرًا لصورة الإنتاج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه وضع مراقبة وتطوير يعتمد على المصدر والمترجم. الإنتاج يشغّل <code>node dist/main.js</code> بعد بناء ثابت.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يبقى بعد حذف الحاوية بلا volume؟</li>
+<li>أي إصدارات Node تشغّل التطبيق؟</li>
+<li>هل الصورة مكان الأسرار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Docker يكرر تشغيل Nest مع القاعدة والذاكرة. على شبكته الأسماء هي المضيفات، و <code>localhost</code> يبقى الحاوية نفسها، وأمر الإنتاج ليس <code>start:dev</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>Dockerfile: كيف تُبنى الصورة التي تشغّل الناتج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Docker — نظرة عامة على الصور والحاويات: <a href="https://docs.docker.com/get-started/">https://docs.docker.com/get-started/</a></li>
+<li>NestJS — Deployment (البناء ثم التشغيل): <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

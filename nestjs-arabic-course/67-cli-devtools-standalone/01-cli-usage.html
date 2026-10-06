@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أوامر Nest CLI</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-cli-usage.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أوامر Nest CLI</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنشاء مشروع رف وتشغيله وتوليد ملفاته بأوامر <code>nest</code> كما يوثقها NestJS 12 في أكتوبر 2026.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ مجلد قديم يخلط نظام الوحدات وأداة الاختبار. أمر <code>generate</code> يدويًا ينسى تسجيل المتحكم في الوحدة. نسخة CLI عامة قديمة تولّد شكلًا لا يطابق الحزم في المشروع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@nestjs/cli</code> يبني الهيكل ويولّد الملفات ويشغّل البناء. <code>nest new</code> يسأل عن نظام الوحدات: ESM هو الافتراضي ويأتي مع Vitest، و CommonJS يأتي مع Jest. التطبيق المولَّد يستخدم oxlint و Prettier. المترجم الافتراضي في الوضع العادي <code>tsc</code>. أوامر مثل <code>build</code> و <code>start</code> و <code>generate</code> و <code>info</code> تكفي ليوم العمل قبل أي أداة أسرع.</p>
+<h2>التعريف التقني</h2>
+<p>التثبيت الذي تفترضه الوثائق: <code>npm install -g @nestjs/cli</code>، أو <code>npx @nestjs/cli@latest</code> بلا تثبيت عام. ثنائي CLI يعمل على Node.js 20.11 أو أحدث، بينما مخططات <code>nest new</code> و <code>nest generate</code> و <code>nest upgrade</code> في <code>@nestjs/schematics</code> تطلب Node.js 22.22.3+ أو 24.15+ أو 26+. <code>nest new my-nest-project</code> ثم <code>npm run start:dev</code> يفتح <a href="http://localhost:3000">http://localhost:3000</a> ويعيد الترجمة عند حفظ الملف. <code>nest generate controller projects</code> (والاسم المختصر <code>g</code>) ينشئ الملفات ويسجّلها. <code>nest info</code> يعرض نسخ الحزم. <code>nest upgrade</code> يرفع المشروع إلى الإصدار الرئيسي الأحدث. <code>nest --help</code> و <code>nest generate --help</code> يعرضان الخيارات. علم <code>--dry-run</code> أو <code>-d</code> يطبع ما سيُنشأ بلا كتابة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">nest new  → ESM + Vitest + oxlint + Prettier
+nest g    → ملف + تسجيل في الوحدة
+nest start --watch → ترجمة ثم عملية
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npx @nestjs/cli@latest new raf-api
+cd raf-api
+npm run start:dev
+</code></pre>
+<p>عند السؤال اختاروا ESM. سكربت <code>start:dev</code> في المشروع المولَّد هو مسار التطوير. لا تكتبوا ESLint في <code>package.json</code>؛ المولَّد يضع oxlint و Prettier.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>ESM يعني <code>&quot;type&quot;: &quot;module&quot;</code> واستيرادًا بلاحقة <code>.js</code> في ملفات TypeScript.</li>
+<li>الاختبار <code>vitest run</code> لا <code>jest</code> ما دمتم على الافتراضي.</li>
+<li>CommonJS خيار صريح حين تحتاجونه، ومعه Jest. لا تخلطوا المشغّلين في مستودع واحد بلا قرار.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>new</code> ينسخ الهيكل القياسي: <code>src</code> و <code>nest-cli.json</code> و <code>tsconfig.json</code> و <code>package.json</code>.</li>
+<li>الوضع القياسي يترجم بـ <code>tsc</code>. وضع المساحة الأحادية، لاحقًا، يبدّل الافتراضي إلى Rspack.</li>
+<li><code>generate</code> يشغّل مخطط <code>@nestjs/schematics</code> ويحدّث الوحدة.</li>
+<li><code>start:dev</code> يراقب الملفات ويعيد البناء. هذا إعادة تشغيل للتطوير، ودرس إعادة التحميل الساخن يفصله عن HMR.</li>
+<li>ثنائي Node بلا ICU يفشل في أوامر تعتمد التدويل. <code>node -p process.versions.icu</code> يجب أن يطبع نسخة لا <code>undefined</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>قبل توليد <code>ProjectsController</code> في رف:</p>
+<pre><code class="language-bash">npx nest generate controller projects --dry-run
+npx nest generate controller projects
+npx nest info
+</code></pre>
+<p><code>--dry-run</code> يعرض المسارات. بعد التوليد تأكدوا أن <code>ProjectsModule</code> يستورد المتحكم. <code>nest build</code> يملأ <code>dist</code> للنشر، و <code>node dist/main.js</code> هو شكل التشغيل بعد البناء في درس Docker من المشروع الختامي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>CLI عام قديم ومشروع Nest 12 فيختلف شكل <code>nest-cli.json</code>.</li>
+<li>اختيار CommonJS ثم استيراد ESM بلاحقة <code>.js</code> و Vitest معًا.</li>
+<li>إضافة ESLint لأن مقالًا قديمًا ذكره، بينما المولَّد على oxlint.</li>
+<li>تشغيل <code>generate</code> من مجلد غير جذر المشروع فيُنشأ الملف خارج <code>src</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند إنشاء الخدمة، وتوليد وحدة أو متحكم أو مزود، ومعرفة النسخ المثبتة، وترقية الإطار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا يغني عن قراءة <code>nest-cli.json</code> حين يصبح المستودع مساحة عمل. ولا يستبدل <code>@nestjs/resilience</code> أو صندوق الصادر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأمر</th>
+<th>الناتج في رف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>nest new</code></td>
+<td>تطبيق ESM و Vitest و oxlint و Prettier</td>
+</tr>
+<tr>
+<td><code>nest g resource projects</code></td>
+<td>وحدة ومسار REST للمسودات</td>
+</tr>
+<tr>
+<td><code>nest build</code></td>
+<td><code>dist</code> للحاوية</td>
+</tr>
+<tr>
+<td><code>nest info</code></td>
+<td>نسخ <code>@nestjs/*</code> على الجهاز</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما مشغّل الاختبار في مشروع <code>nest new</code> إن تركتم ESM؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Vitest. CommonJS هو الذي يأتي مع Jest. الاثنان يستخدمان oxlint.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>npx @nestjs/cli@latest</code> أحيانًا أوضح من تثبيت <code>-g</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التثبيت العام نسخة واحدة لكل المشاريع على الجهاز. <code>npx</code> يشغّل نسخة تديرونها مع المشروع. الوثائق تفترض العام لسهولة الأمثلة وتذكر <code>npx</code> بديلًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>node -p process.versions.icu</code> طبع <code>undefined</code> وفشل <code>nest new</code>. ماذا ينقص الثنائي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>دعم ICU. ثنائيات Node الرسمية من موقع Node تتضمنه. استبدلوا الثنائي ثم أعيدوا الأمر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الافتراضي: ESM أم CommonJS؟</li>
+<li>أي أداة lint في التطبيق المولَّد؟</li>
+<li>ماذا يفعل <code>--dry-run</code>؟</li>
+<li>أي مترجم يفترضه الوضع القياسي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>nest</code> ينشئ رف على ESM و Vitest و oxlint و Prettier، ويولّد الملفات، ويبني بـ <code>tsc</code> في الوضع العادي. نسخة CLI ومخططات التوليد تتبعان حدود Node المذكورة في الصفحة.</p>
+<h2>ماذا بعد؟</h2>
+<p>حين تتشارك واجهة رف وعامل التصدير الكود، يتحول المجلد إلى مساحة عمل ومكتبات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

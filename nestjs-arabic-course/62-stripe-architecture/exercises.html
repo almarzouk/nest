@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — من يكتب الحالة</h2>
+<p>رتّبوا: إنشاء الجلسة، فتح success، <code>constructEvent</code> ناجح بحالة <code>active</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكتابة المحلية إلى <code>active</code> في الخطوة الثالثة فقط وبعد ربط العميل بالمنظمة. الخطوتان الأوليان لا تغيّران الحالة إلى مدفوع.</p>
+</details>
+
+<h2>تمرين متوسط — توقيع</h2>
+<p>اختبار يمرر <code>JSON.stringify(body)</code> إلى <code>constructEvent</code> ويفشل مع توقيع Stripe الصحيح. ما المدخل البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>req.rawBody</code> بعد <code>{ rawBody: true }</code>، مع ترويسة <code>Stripe-Signature</code> وسر الوجهة.</p>
+</details>
+
+<h2>تمرين متقدم — ضغطة مزدوجة وحدث مكرر</h2>
+<p>صمموا مفتاحين مختلفين لسيناريو: زر الترقية أُعيد خلال ثانية، ثم <code>evt_9</code> وصل مرتين.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>idempotencyKey</code> الثابت <code>checkout:org:plan</code> على <code>sessions.create</code> حتى ترجع نفس الجلسة. قيد فريد على <code>evt_9</code> قبل <code>syncFromStripe</code> والبريد حتى لا يتكرر الأثر. success URL لا يحمل أي مفتاح كتابة.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

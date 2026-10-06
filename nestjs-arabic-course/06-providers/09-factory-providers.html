@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Factory Providers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-factory-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Factory Providers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء قيمة بـ <code>useFactory</code> عندما يعتمد الإنشاء على مزودات أخرى أو على خطوة غير <code>new</code> لصنف واحد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عميل البحث يحتاج <code>SearchOptions</code> المسجّلة، وربما اسم منطقة قد يغيب. <code>useValue</code> قيمة ثابتة قبل أن تُحل الخيارات. <code>useClass</code> يبني صنفًا ولا يعيد كائن مكتبة حسبما تقرره دالة. المصنع دالة ترجع القيمة بعد أن تمرر Nest وسائط <code>inject</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>useFactory</code> هي الدالة، و <code>inject</code> مصفوفة رموز تُحل وتُمرَّر بالترتيب نفسه. ما ترجعه الدالة هو قيمة الرمز في <code>provide</code>. الدالة قد تكون <code>async</code>، وNest تنتظر الوعد لأن المصانع المتزامنة وغير المتزامنة مدعومة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">{
+  provide: &#39;SEARCH_CLIENT&#39;,
+  useFactory: (options: SearchOptions, region?: string) =&gt; {
+    return new SearchClient(options.host, region ?? &#39;jeddah&#39;);
+  },
+  inject: [SearchOptions, { token: &#39;SEARCH_REGION&#39;, optional: true }],
+}
+</code></pre>
+<p>العنصر العادي في <code>inject</code> إلزامي. الكائن <code>{ token, optional: true }</code> يجعل الغياب <code>undefined</code> لذلك الوسيط. القائمتان متوازيتان: أول رمز أول معامل.</p>
+<p>المصنع الذي لا يحتاج أحدًا يترك <code>inject</code> فارغة أو يحذفها.</p>
+<p>تصدير الرمز النصي يكون <code>exports: [&#39;SEARCH_CLIENT&#39;]</code> أو تصدير كائن الوصفة نفسه. الرمز هو هوية التصدير.</p>
+<p><code>SearchOptions</code> تبقى مسجّلة في <code>providers</code> بجانب الوصفة، باختصار أو بغيره. المصنع لا يسجلها نيابة عنك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حل SearchOptions
+حل SEARCH_REGION أو undefined
+    -&gt; useFactory(options, region)
+    -&gt; SearchClient
+    -&gt; يُخزَّن تحت SEARCH_CLIENT
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+import { SearchService } from &#39;./search.service.js&#39;;
+
+@Injectable()
+export class SearchOptions {
+  readonly host = &#39;https://search.internal&#39;;
+}
+
+const searchClientProvider = {
+  provide: &#39;SEARCH_CLIENT&#39;,
+  useFactory: (options: SearchOptions) =&gt; {
+    return { host: options.host, limit: 20 };
+  },
+  inject: [SearchOptions],
+};
+
+@Module({
+  providers: [SearchOptions, searchClientProvider, SearchService],
+})
+export class SearchModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>القيمة المرجَعة كائن بسيط فيه المضيف والحد. الرمز نص، لذلك ستحقنه الخدمة بـ <code>@Inject(&#39;SEARCH_CLIENT&#39;)</code>.</li>
+<li><code>inject: [SearchOptions]</code> يسبق نداء الدالة. داخل الدالة لا تستدعِ الحاوية يدويًا.</li>
+<li>ترتيب <code>providers</code> لا يغني عن <code>inject</code>.</li>
+<li>الحد <code>20</code> قرار المصنع، لا حقلًا يقرأه Controller من الاستعلام.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند حل <code>&#39;SEARCH_CLIENT&#39;</code> تحل Nest كل عنصر في <code>inject</code> أولًا، بما في ذلك المصانع التي تعتمد عليها تلك الرموز، ثم تستدعي الدالة. إن أعادت <code>Promise</code> تنتظرها قبل تخزين القيمة تحت الرمز. مع Singleton يتم ذلك مرة عند الإقلاع. مع <code>scope: Scope.REQUEST</code> على الوصفة يتكرر النداء لكل طلب، والعدوى التي عرفتها في Scope تبقى سارية.</p>
+<p>وسيط اختياري غائب يصل <code>undefined</code>. وسيط إلزامي غير مسجّل يفشل الإقلاع برسالة حل الاعتماديات.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class SearchOptions {
+  get host() {
+    return process.env.SEARCH_HOST ?? &#39;https://search.internal&#39;;
+  }
+}
+
+export const searchClientProvider = {
+  provide: &#39;SEARCH_CLIENT&#39;,
+  useFactory: async (options: SearchOptions, region?: string) =&gt; {
+    const client = new SearchClient(options.host);
+    await client.warmup(region ?? &#39;jeddah&#39;);
+    return client;
+  },
+  inject: [SearchOptions, { token: &#39;SEARCH_REGION&#39;, optional: true }],
+};
+
+class SearchClient {
+  constructor(private readonly host: string) {}
+
+  async warmup(region: string) {
+    return { host: this.host, region };
+  }
+}
+
+@Module({
+  providers: [SearchOptions, searchClientProvider],
+  exports: [&#39;SEARCH_CLIENT&#39;],
+})
+export class SearchModule {}
+</code></pre>
+<p><code>warmup</code> تعمل مرة ضمن Singleton قبل إكمال الإقلاع. <code>&#39;SEARCH_REGION&#39;</code> إن سُجّلت بـ <code>useValue</code> تُمرَّر كنص؛ إن غابت تبقى جدة. ضع <code>SearchClient</code> في ملفها عند نموها. وجودها هنا يوضح أن <code>new</code> داخل المصنع ملكك، بينما <code>SearchOptions</code> ملك الحاوية.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ترتيب <code>inject</code> مختلف عن ترتيب المعاملات</td>
+<td>المنطقة تصل مكان <code>SearchOptions</code></td>
+</tr>
+<tr>
+<td>نسيان تسجيل <code>SearchOptions</code></td>
+<td>فشل الحل قبل نداء المصنع</td>
+</tr>
+<tr>
+<td><code>useFactory</code> تقرأ Provider بـ <code>new</code> بدل <code>inject</code></td>
+<td>نسخة ثانية خارج السجل</td>
+</tr>
+<tr>
+<td>تصدير <code>SearchClient</code> بينما <code>provide</code> نص</td>
+<td>المستورد يبحث عن رمز لم يُسجَّل</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتكون القيمة من مزودات، أو من خطوة غير متزامنة، أو من كائن مكتبة وسائطه محسوبة. الاتصال الذي يحتاج <code>warmup</code> مثال واضح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لصنف تبنيه Nest كما هو. <code>useClass</code> أقصر. ولثابت لا يقرأ مزودًا. <code>useValue</code> يكفي. المصنع الذي يعيد <code>new MailNotifier()</code> من غير وسائط إضافية هو <code>useClass</code> في صورة أطول.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>useFactory</code></th>
+<th><code>useClass</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الناتج</td>
+<td>ما ترجعه الدالة</td>
+<td>نسخة الصنف</td>
+</tr>
+<tr>
+<td>الوسائط</td>
+<td>مصفوفة <code>inject</code> بالترتيب</td>
+<td><code>constructor</code> للصنف المبني</td>
+</tr>
+<tr>
+<td>عمل غير متزامن</td>
+<td>الدالة <code>async</code> تُنتظَر</td>
+<td>البناء نفسه متزامن والتهيئة اللاحقة في حياة الصنف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين تأتي معاملات <code>useFactory</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>من رموز <code>inject</code> بعد حلها، بالترتيب نفسه.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تسمح بغياب <code>&#39;SEARCH_REGION&#39;</code> من غير إسقاط الإقلاع؟</p>
+<details><summary>الحل</summary>
+
+<p>ضعها في <code>inject</code> بهذا الشكل: <code>{ token: &#39;SEARCH_REGION&#39;, optional: true }</code>، وتعامل الوسيط المقابل كقيمة قد تكون <code>undefined</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>await client.warmup()</code> داخل مصنع Singleton يؤخر <code>listen</code>، وما الذي يتغير مع <code>scope: Scope.REQUEST</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الحل يتم عند الإقلاع للـ Singleton، فالإقلاع ينتظر الوعد. مع <code>REQUEST</code> يتكرر المصنع لكل طلب، فزمن <code>warmup</code> يدخل في زمن ذلك الطلب، والسلسلة التي تحقن الرمز تصبح لكل طلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يخزن الرمز: الدالة أم قيمة إرجاعها؟</li>
+<li>كيف يُعلَم عنصر <code>inject</code> الاختياري؟</li>
+<li>كيف تصدّر رمزًا نصيًا أنتجه المصنع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useFactory</code> دالة ترجع قيمة الرمز بعد حل <code>inject</code> بالترتيب. الوعد يُنتظَر، والوسيط الاختياري كائن <code>{ token, optional: true }</code>، وباقي الرموز تبقى مسجّلة بجانب الوصفة.</p>
+<h2>ماذا بعد؟</h2>
+<p>اسم ثانٍ للنسخة نفسها: Existing Providers.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Factory providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers#factory-providers-usefactory">https://docs.nestjs.com/fundamentals/custom-providers#factory-providers-usefactory</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

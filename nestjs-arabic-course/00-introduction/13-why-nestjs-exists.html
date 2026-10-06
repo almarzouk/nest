@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا أُنشئت NestJS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="13-why-nestjs-exists.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا أُنشئت NestJS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة وعد الإطار من توثيقه، وربطه بآلام المشروع الكبير، من غير البدء ببناء تطبيق.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد درس Express بقي السؤال: إذا كان Node و Express قادرين على إرجاع JSON، فما الذي ينقص حتى يتوقف الفريق عن إعادة اختراع هيكل مختلف في كل مجلد؟</p>
+<p>ينقص مكان افتراضي لكل مسؤولية، وطريقة واحدة لإنشاء الكائنات وربطها، بحيث يصبح الاختبار واستبدال قطعة أقل كلفة من فتح كل المعالجات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>NestJS إطار لبناء تطبيقات Node.js خادمية بكفاءة وقابلية للنمو. يعطيك معمارية جاهزة بدل أن يترك كل فريق يخترع معماريته من الصفر فوق Express.</p>
+<p>الجملة المحورية في التوثيق: المشكلة التي بقيت من غير حل كافٍ هي <strong>architecture</strong>.</p>
+<h2>التعريف التقني</h2>
+<p>من الصفحة الأولى في التوثيق، بصياغة عربية ملتزمة بالمعنى:</p>
+<p>Nest (NestJS) إطار لبناء تطبيقات Node.js على جهة الخادم، فعالة وقابلة للتوسع. يستخدم JavaScript الحديث، ومبني مع دعم كامل لـ TypeScript، مع إمكانية كتابة JavaScript عادي. يجمع عناصر من:</p>
+<ul>
+<li><strong>OOP</strong> — Object-Oriented Programming: أصناف، وواجهات، وتغليف.</li>
+<li><strong>FP</strong> — Functional Programming: دوال، وتجنب حالة مشتركة حيث يناسب ذلك.</li>
+<li><strong>FRP</strong> — Functional Reactive Programming: تيارات أحداث يمكن تحويلها. في Nest تظهر هذه الفكرة عبر RxJS في Interceptors وفي عميل HTTP. لن نستخدم RxJS في هذا الفصل.</li>
+</ul>
+<p>تحت الغطاء تستخدم Nest إطارات HTTP قوية مثل Express، وهو الافتراضي، ويمكن ضبطها لتستخدم Fastify. هي طبقة فوق هذه الإطارات، وتعرض لك واجهاتها عندما تريد مكتبات المنصة نفسها.</p>
+<p>الهدف المعلن: تطبيقات قابلة للاختبار، قابلة للتوسع، ارتباطها ضعيف (loosely coupled)، وقابلة للصيانة. المعمارية مستوحاة بشدة من Angular.</p>
+<p>الحزم الدنيا إذا بنيت مشروعًا بيديك من غير CLI، كما يقول التوثيق: <code>@nestjs/core</code> و <code>@nestjs/common</code> و <code>rxjs</code> و <code>reflect-metadata</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قرار الفريق اليوم          ما الذي يوفّره Nest
+
+أين يعيش HTTP؟             Controller
+أين تعيش القاعدة؟          Provider مثل Service
+من ينشئ من؟                حاوية IoC تسجّل Providers
+ما حدود الميزة؟            Module
+ماذا قبل الدالة وبعدها؟    مسار طلب بأسماء ثابتة
+على أي خادم HTTP؟          Express افتراضيًا، أو Fastify
+</code></pre>
+<p>الإطار لا يكتب قواعد متجرك. يكتب أماكنها.</p>
+<h2>أبسط مثال</h2>
+<p>الوعد في سطر إقلاع واحد، من First steps في التوثيق الحالي. <strong>هذا معاينة. لا تحفظ الوسومات الآن، ولا تنشئ مشروعًا في هذا الدرس.</strong></p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p>المعنى البشري:</p>
+<ol>
+<li>هناك نقطة دخول اسمها <code>bootstrap</code>.</li>
+<li><code>NestFactory.create</code> تبني التطبيق انطلاقًا من <code>AppModule</code>، لا من قائمة مسارات مسطحة.</li>
+<li><code>listen</code> يفتح HTTP. المنفذ من المتغير <code>PORT</code> إن وُجد، وإلا <code>3000</code>.</li>
+</ol>
+<p>الامتداد <code>.js</code> داخل الاستيراد أسلوب TypeScript عندما يخرج المشروع ESM. الفصل <code>02</code> يشرحه. وجوده في التوثيق الحالي مقصود.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>NestFactory</code> مصنع التطبيق. أنت لا تبني خادم Express بيدك في الحالة الافتراضية. المصنع يفعل ذلك عبر منصة Express.</li>
+<li><code>AppModule</code> جذر شجرة الوحدات. منه تعرف Nest ماذا تسجّل. اسمه في التوثيق Root Module.</li>
+<li><code>await</code> لأن بناء التطبيق قد ينتظر تهيئة غير متزامنة. تفاصيل ذلك مع Dynamic Modules لاحقًا.</li>
+<li><code>listen</code> قريب من <code>app.listen</code> في Express، على كائن تطبيق Nest لا على Express مباشرة.</li>
+<li>إذا فشل إنشاء التطبيق، العملية تخرج برمز <code>1</code> افتراضيًا. التوثيق يذكر خيار <code>abortOnError: false</code> لمن يريد رمي الخطأ بدل الإنهاء. هذا تفصيل إقلاع للفصل <code>03</code>.</li>
+</ul>
+<p>في Express كنت أنت المصنع: <code>const app = express()</code> ثم عشرات <code>app.get</code>. في Nest المصنع يقرأ هيكلًا أعلنته بأصناف.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>صورة أولى، ستُعاد بدقة في Bootstrap و Dependency Injection:</p>
+<ol>
+<li>الإقلاع يقرأ الـ Root Module.</li>
+<li>يقرأ بياناته: وحدات يستوردها، ومتحكمات، ومزوّدات. البيانات مكتوبة بـ Decorator اسمه <code>@Module</code>. لا تفك تركيبه اليوم.</li>
+<li>يبني <strong>application graph</strong>: وصف داخلي لعلاقات الوحدات والمزوّدات. التوثيق يستخدم هذا الاسم في فصل Modules.</li>
+<li>حاوية الحقن تنشئ المزوّدات بالترتيب الذي تسمح به الاعتماديات، غالبًا نسخة واحدة لكل مزوّد (Singleton) طوال عمر التطبيق. الاستثناءات اسمها Scopes وتأتي في فصل متأخر لأن استخدامها من غير سبب يكلف أداءً.</li>
+<li>طبقة HTTP — Express افتراضيًا — تُركَّب وتُربط المسارات التي أعلنتها المتحكمات.</li>
+<li><code>listen</code> يفتح المنفذ. قبلها الكائنات موجودة والتوجيه جاهز.</li>
+</ol>
+<p>لماذا Decorators وليس ملف إعداد JSON ضخم؟ حتى يبقى وصف الصنف بجانب الصنف: المتحكم يعلن مساره فوق الكلاس، والمزوّد يعلن أنه قابل للحقن. الوصف هذا Metadata يقرأها الإطار عند الإقلاع عبر Reflection. فصل TypeScript يشرح الآلية قبل أن نكتب وسمًا بأيدينا.</p>
+<p>لماذا TypeScript؟ لأن المعلومات التي يقرأها الإطار — أنواع معاملات البناء مثلًا — تعتمد على قدرات اللغة وعلى <code>reflect-metadata</code>. JavaScript ممكن، والتوثيق يقول إنه يحتاج Babel لأن Nest تستخدم ميزات لغة حديثة. الدورة تلتزم TypeScript كما تفعل أمثلة التوثيق.</p>
+<h2>مثال عملي</h2>
+<p>ارجع إلى <code>POST /orders</code> المزدحم في الدرس السابق، وارسم فقط <strong>أماكن</strong> Nest من غير كود إطار:</p>
+<table>
+<thead>
+<tr>
+<th>قطعة في المعالج القديم</th>
+<th>المكان الذي ستتعلمه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.post(&#39;/orders&#39;, ...)</code></td>
+<td>Controller: يستقبل HTTP ويعيد نتيجة</td>
+</tr>
+<tr>
+<td>حساب الإجمالي وقاعدة الشحن</td>
+<td>Service: بلا <code>req</code> و <code>res</code></td>
+</tr>
+<tr>
+<td><code>db.query</code></td>
+<td>طبقة بيانات تستدعيها الخدمة. Prisma لاحقًا</td>
+</tr>
+<tr>
+<td>فحص الجسم</td>
+<td>Pipe مع DTO</td>
+</tr>
+<tr>
+<td>&quot;من المستخدم؟&quot;</td>
+<td>Guard، ثم أداة مصادقة في فصلها</td>
+</tr>
+<tr>
+<td><code>{ error: &#39;nope&#39; }</code> المتفرق</td>
+<td>Exception Filter بشكل واحد</td>
+</tr>
+<tr>
+<td><code>new</code> العميل وقاعدة البيانات</td>
+<td>تسجيل Provider داخل Module</td>
+</tr>
+<tr>
+<td>ملف يستورد كل شيء</td>
+<td>Module للطلبات يصدّر ما يجوز للغير استخدامه</td>
+</tr>
+</tbody></table>
+<p>هذا الجدول هو سبب إنشاء الإطار، مكتوب كخريطة تعلم. إذا حفظت الصف الأول ونسيت الباقي، ستعيد مشروع Express داخل Controller.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتقاد أن Nest تستبدل HTTP أو Express. هي ترتب كودك فوقهما.</li>
+<li>اعتقاد أن المعمارية تحدث تلقائيًا بعد <code>nest new</code>. القالب يعطيك ملفًا من كل نوع. القرار أين تضع القاعدة يبقى عليك، والأماكن تصبح أصعب للتجاوز.</li>
+<li>البدء بـ Microservices لأن الصفحة الرئيسية تقول scalable. التوسع الأول الذي يقصده هيكل الوحدات هو نمو الكود والفريق داخل تطبيق واحد. فصل الخدمات قرار لاحق.</li>
+<li>تجاهل JavaScript الممكن. التوثيق يدعمه، والدورة تختار TypeScript لأنه مسار الأمثلة الرسمية ومسار CLI الافتراضي.</li>
+</ul>
+<h2>متى نختار NestJS؟</h2>
+<p>عندما تبني Backend على Node سيعيش أكثر من نموذج أولي، وسيعمل عليه أكثر من شخص، وتريد اختبار الوحدات، وحدودًا بين الميزات، ومسار طلب له أسماء مشتركة مع توثيق يستطيع أي مطور قراءته.</p>
+<h2>متى لا نختارها؟</h2>
+<p>سكربت من عشرين سطرًا، أو تعلم صريح لـ HTTP عبر <code>node:http</code> فقط، أو فريق قرر البقاء على Express وبنى معمارية واضحة يلتزم بها. الإطار ذو الرأي تكلفة تعلم. هذه الدورة تدفع التكلفة لأن الهدف Backend إنتاجي مفهوم، لا أقصر ملف ممكن.</p>
+<h2>مقارنة مع ما قاله التوثيق عن Angular</h2>
+<p>Angular إطار واجهات يعطي وحدات وحقنًا و Decorators. Nest استلهمت هذا الشكل لجهة الخادم حتى يشعر من يعرف Angular أن الخريطة مألوفة، وحتى من لا يعرفه يحصل على الخريطة نفسها. الدرس 15 يفصل ما يُنقل وما لا يُنقل. لست بحاجة إلى تعلم Angular لتكمل الدورة.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اذكر الحزم الأربع الدنيا التي يسميها التوثيق لمشروع Nest من غير CLI.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@nestjs/core</code> و <code>@nestjs/common</code> و <code>rxjs</code> و <code>reflect-metadata</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اربط كل كلمة من فقرة Philosophy بسبب من درس Express الكبير: testable، loosely coupled، maintainable.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>testable: لأن القاعدة يمكن أن تُستخرج من <code>req</code> و <code>db</code> العام وتُختبر بحقن بدائل.</li>
+<li>loosely coupled: لأن المسار لا يعرف أعمدة SQL إذا وقف عند عقد خدمة.</li>
+<li>maintainable: لأن المطور الجديد يجد نوع الملف من اسم المسؤولية لا من اجتهاد المجلد <code>helpers</code>.</li>
+</ul>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>شخص يقول: &quot;Nest مجرد Express مع أصناف&quot;. وافق على النصف الصحيح وصحح النصف الناقص، من غير أن تشرح DI شرحًا كاملًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p>النصف الصحيح: على الإعداد الافتراضي هناك Express تحت الغطاء والطلب ما زال HTTP. النصف الناقص: Nest تضيف بناء التطبيق من وحدات، وحاوية تنشئ المزوّدات، ومسار طلب بأسماء Guard و Pipe و Interceptor و Filter، و Metadata تُقرأ عند الإقلاع. هذه طبقة معمارية فوق التوجيه، لا تسمية أخرى لـ <code>app.get</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما المشكلة التي تحددها صفحة Nest الأولى قبل أن تذكر أي Decorator؟</li>
+<li>ماذا يجمع الإطار من OOP و FP و FRP، وأين ستقابل FRP لاحقًا؟</li>
+<li>ماذا يستقبل <code>NestFactory.create</code> في المثال الرسمي؟</li>
+<li>ما الحزم الدنيا من غير CLI؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>NestJS وُجدت لأن توجيه Express لا يفرض معمارية. الإطار يعطيك وحدات، وحقن اعتماديات، ومسار طلب ذا أسماء، فوق Express أو Fastify، ويفضل TypeScript. الوعد يتحقق إذا وضعت كل مسؤولية في مكانها، لا إذا استوردت الحزمة فقط.</p>
+<h2>ماذا بعد؟</h2>
+<p>مثال الإقلاع أخفى سؤالًا: إذا كانت Nest فوق Express، فماذا يبقى من Express، ولماذا يوجد Fastify أصلًا؟ الدرس التالي عن المنصة والمحوّل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Introduction: <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Modules (application graph): <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — Platform agnosticism: <a href="https://docs.nestjs.com/fundamentals/platform-agnosticism">https://docs.nestjs.com/fundamentals/platform-agnosticism</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

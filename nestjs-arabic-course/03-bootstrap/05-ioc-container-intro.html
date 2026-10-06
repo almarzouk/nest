@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IoC Container</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-ioc-container-intro.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>IoC Container</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية الحاوية التي تنشئ الكائنات عند الإقلاع، وتأجيل خوارزمية الحل إلى فصل Dependency Injection.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إذا أنشأ المتحكم الخدمة بـ <code>new</code>، فهو يعرف كيف تُبنى ويعرف اعتمادياتها. الحاوية تعكس ذلك: الصنف يعلن الاحتياج، والحاوية تنشئ السلسلة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>IoC container مخزن ينشئ المزوّدات المسجّلة ويعيد النسخة نفسها عندما تُطلب، في الوضع الافتراضي. Inversion of Control يعني أن الإطار يملك <code>new</code>.</p>
+<h2>التعريف التقني</h2>
+<p>عند <code>NestFactory.create</code> تُملأ الحاوية من <code>providers</code> في الوحدات. مفتاح المزوّد الافتراضي هو الصنف نفسه. الطلب لا ينشئ خدمة جديدة لكل <code>GET</code> في الـ scope الافتراضي المسمى DEFAULT، وهو singleton على عمر التطبيق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">التسجيل عند الإقلاع:  AppService -&gt; صنف
+الطلب من المتحكم:     أحتاج AppService
+الحاوية:              هذه النسخة الوحيدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  controllers: [AppController],
+  providers: [AppService],
+})
+export class AppModule {}
+</code></pre>
+<pre><code class="language-ts">constructor(private readonly appService: AppService) {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>السطر في <code>providers</code> تسجيل.</li>
+<li>السطر في constructor طلب.</li>
+<li>لا <code>new AppService()</code> في المتحكم.</li>
+<li>الحاوية ترى النوع من Metadata إن توفرت الزينة وإصدار التصميم، وتطابقها بالتسجيل.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>تبسيط آمن حتى فصل DI:</p>
+<ol>
+<li>جمع التسجيلات من الرسم.</li>
+<li>إنشاء من لا يعتمد على أحد أولًا.</li>
+<li>تمرير النسخ إلى من يعتمد عليها.</li>
+<li>حفظ النسخة.</li>
+<li>عند طلب HTTP استخدام النسخة المحفوظة.</li>
+</ol>
+<p>إن غاب التسجيل تفشل الخطوة 3 عند الإقلاع، غالبًا قبل <code>listen</code>. هذا أفضل من فشل صامت عند أول طلب.</p>
+<h2>مثال عملي</h2>
+<p>اختبار يستبدل الخدمة: يبني حاوية اختبار ويسجّل كائنًا وهميًا تحت الرمز نفسه. المتحكم لا يتغير لأنه لا ينشئ الخدمة. هذا سبب تصميم الحاوية، وتفصيل <code>TestingModule</code> في فصل الاختبار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>new</code> داخل دالة المتحكم &quot;لأن أوضح&quot;.</li>
+<li>تسجيل الصنف في وحدتين فتصبح نسختان. التوثيق في Modules يقول إن تسجيل الخدمة في كل وحدة يعطي كل وحدة نسخة، بينما تصديرها من وحدة واحدة واستيراد تلك الوحدة يشارك النسخة.</li>
+<li>البحث عن الخدمات بـ <code>app.get</code> داخل منطق العمل.</li>
+</ul>
+<h2>متى نعتمد على الحاوية؟</h2>
+<p>لكل خدمة ومتحكم في الدورة.</p>
+<h2>متى ننشئ كائنًا بـ new؟</h2>
+<p>لكائنات عابرة ليست مزوّدات: DTO يبنيه الأنبوب، أو <code>Date</code>، أو خطأ <code>new HttpException</code>. هذه ليست خدمات تطبيق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>new</code> في المتحكم</th>
+<th>الحاوية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يعرف الاعتماديات</td>
+<td>المتحكم</td>
+<td>التسجيل</td>
+</tr>
+<tr>
+<td>النسخة الافتراضية</td>
+<td>جديدة كل ندائك</td>
+<td>واحدة للتطبيق</td>
+</tr>
+<tr>
+<td>الاستبدال في الاختبار</td>
+<td>صعب</td>
+<td>تسجيل بديل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تُسجَّل <code>AppService</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>في <code>providers</code> داخل الوحدة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا فشل الحقن يظهر غالبًا عند الإقلاع لا عند أول نقرة؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن الحاوية تنشئ الرسم عند <code>create</code> قبل فتح المنفذ.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمتان مسجّلتان في وحدتين مختلفتين بالصنف نفسه من غير تصدير وحدة مشتركة. كم نسخة تتوقع حسب وصف التوثيق للوحدات؟</p>
+<details><summary>الحل</summary>
+
+<p>نسختان. المشاركة تحتاج تصدير المزوّد من وحدة واستيراد تلك الوحدة، لا إعادة تسجيل الصنف في كل مكان.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يقلب IoC بالنسبة إلى <code>new</code>؟</li>
+<li>ما مفتاح المزوّد الافتراضي؟</li>
+<li>متى تُنشأ نسخة DEFAULT؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحاوية تنشئ المسجَّل عند الإقلاع وتحقن النسخة. المتحكم يعلن النوع ولا يبني الخدمة. تفاصيل الحل في فصل DI.</p>
+<h2>ماذا بعد؟</h2>
+<p>العلاقات بين هذه النسخ اسمها Dependency Graph.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

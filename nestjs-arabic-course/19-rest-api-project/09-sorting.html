@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sorting</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-sorting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Sorting</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>السماح لـ <code>GET /posts</code> بترتيب النتائج بحقل واتجاه من قائمة ثابتة، مع إبقاء ترتيب افتراضي مستقر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>orderBy: { id: &quot;asc&quot; }</code> يخفي المقال الجديد في آخر صفحة. إن قبلت <code>?sort=</code> كنص يُمرَّر إلى Prisma، العميل يطلب عمودًا غير موجود أو حقلًا لا تريد كشفه، أو يرسل اتجاهًا يكسر الاستعلام.</p>
+<h2>الفكرة ببساطة</h2>
+<p>معاملان: <code>sort</code> و <code>order</code>. القيم المسموحة لـ <code>sort</code> هي <code>id</code> و <code>title</code>. القيم المسموحة لـ <code>order</code> هي <code>asc</code> و <code>desc</code>. الغياب يعني <code>id</code> تصاعديًا كما في درس الترقيم. أي قيمة أخرى <code>400</code>. الترتيب يُطبَّق مع <code>skip</code> حتى لا تتداخل الصفحات.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { IsIn, IsOptional } from &quot;class-validator&quot;;
+
+export class ListPostsQueryDto {
+  @IsOptional()
+  @IsIn([&quot;id&quot;, &quot;title&quot;])
+  sort: &quot;id&quot; | &quot;title&quot; = &quot;id&quot;;
+
+  @IsOptional()
+  @IsIn([&quot;asc&quot;, &quot;desc&quot;])
+  order: &quot;asc&quot; | &quot;desc&quot; = &quot;asc&quot;;
+}
+</code></pre>
+<p>أبقِ حقول الصفحة والفلتر في الصنف نفسه حتى يبقى استعلام القائمة عقدًا واحدًا.</p>
+<p>في الخدمة لا تبنِ المفتاح من نص مفتوح إن استطعت تجنّب ذلك. بعد <code>@IsIn</code> القيمة مضيّقة:</p>
+<pre><code class="language-ts">const orderBy =
+  query.sort === &quot;title&quot;
+    ? { title: query.order }
+    : { id: query.order };
+
+return this.prisma.post.findMany({
+  where,
+  orderBy,
+  skip,
+  take: query.pageSize,
+});
+</code></pre>
+<p>الفرع يرضي المدقّق ويمنع مفتاحًا خارج القائمة حتى لو تعطّل الأنبوب في اختبار نسيت فيه <code>ValidationPipe</code>.</p>
+<p>رتّب ثانيًا بـ <code>id</code> حين تختار <code>title</code>، حتى لا تتبادل صفوف بنفس العنوان بين الطلبات:</p>
+<pre><code class="language-ts">orderBy: [{ title: query.order }, { id: &quot;asc&quot; }]
+</code></pre>
+<p>Prisma يقبل مصفوفة <code>orderBy</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">sort=title order=asc
+        |
+ قائمة بيضاء
+        |
+ ORDER BY title ASC, id ASC
+        |
+ ثم skip/take
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-http">GET /posts?published=true&amp;sort=title&amp;order=asc&amp;page=1&amp;pageSize=20 HTTP/1.1
+</code></pre>
+<p>العناصر المنشورة فقط، مرتبة بالعنوان ثم بالمعرّف، وأول عشرين بعد هذا الترتيب لا قبل الترتيب.</p>
+<h2>شرح المثال</h2>
+<p>التصفية أولًا في <code>WHERE</code>، ثم الترتيب، ثم القطع. لو قطعت ثم رتّبت في الذاكرة لكانت الصفحة عشوائية بالنسبة للعميل. كل ذلك في استعلام القاعدة لا في <code>Array.prototype.sort</code> بعد جلب الكل.</p>
+<p>الافتراضي <code>id</code> يناسب الإدراج الزمني التقريبي ما دام المفتاح متزايدًا. إن صار المعرّف UUID لاحقًا، الافتراضي يتغيّر إلى حقل وقت. لا تغيّره في هذا المشروع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>من غير فهرس مناسب، الترتيب على <code>title</code> مع <code>OFFSET</code> كبير يكلّف فرزًا أوسع. الجدول التعليمي صغير. الفصل <code>26</code> يربط الاتجاه والفهرس. هنا يكفي أن الاسم لا يُحقن في SQL كنص لاصق: Prisma يربط الترتيب كبنية استعلام.</p>
+<p>تعارض مع عميل يطلب <code>sort=body</code>: <code>@IsIn</code> يفشل التحقق قبل الخدمة.</p>
+<h2>مثال عملي</h2>
+<p>ثلاثة عناوين <code>جيم</code> و <code>ألف</code> و <code>باء</code> كلها منشورة. <code>sort=title&amp;order=asc</code> يعيد ألف ثم باء ثم جيم. <code>order=desc</code> يعكسها. كرّر الطلب وتوقع الترتيب نفسه، وبفضل <code>id</code> الثانوي لا تتبدّل صفوف متساوية العنوان. <code>sort=password</code> يعيد <code>400</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير <code>query.sort</code> مباشرة كمفتاح من غير قائمة.</li>
+<li>ترتيب في الذاكرة بعد <code>findMany</code> بلا <code>take</code>.</li>
+<li>صفحات بلا ترتيب فتتغيّر عند كل إدراج في الوسط.</li>
+<li>نسيان أن الفلتر والفرز يشتركان في DTO واحد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يعرض العميل عمودًا قابلًا للنقر، والعمود من القائمة البيضاء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفرز حسب طول النص أو حسب عدد التعليقات قبل أن يوجد هذا الحقل في الاستعلام بوعي. احسبه في الخدمة أو في SQL تكتبه أنت، لا من اسم دالة يرسلها العميل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>ترتيب ثابت <code>id</code></th>
+<th><code>sort</code> مسموح</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صفحات مستقرة</td>
+<td>صفحات تتبع العمود</td>
+</tr>
+<tr>
+<td>بلا معامل</td>
+<td>يحتاج <code>@IsIn</code></td>
+</tr>
+<tr>
+<td>يكفي أول نسخة</td>
+<td>يلزم واجهة فيها عناوين</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الترتيب إن غاب <code>sort</code> و <code>order</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>id</code> تصاعديًا، من قيم الافتراضي في DTO.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُضاف <code>id</code> كترتيب ثانٍ مع <code>title</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عناوين متساوية بلا مفتاح كسر تتبدّل بين الطلبات، فتتكرر أو تختفي عناصر على حدود الصفحات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عميل يريد <code>sort=commentsCount</code>. ماذا ينقص قبل قبول الاسم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حقل أو تجميع حقيقي في الاستعلام، ثم إضافته إلى <code>@IsIn</code> والفرع الذي يبني <code>orderBy</code>. قبول الاسم قبل وجود العمود يعيد <code>400</code> أو خطأ Prisma. لا تمرّر النص مباشرة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي قيم مسموحة لـ <code>sort</code>؟</li>
+<li>أين يُرفض <code>sort=body</code>؟</li>
+<li>لماذا الترتيب قبل <code>skip</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الترتيب قائمة بيضاء واتجاهان، مع افتراضي مستقر ومفتاح كسر <code>id</code>. النص الحر لا يصبح اسم عمود.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./10-walking-a-request.html">تتبع Request كامل</a> يسير بطلب إنشاء مقال عبر الطبقات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

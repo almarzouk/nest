@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>مجموعة للجذر</h2>
+<pre><code class="language-ts">export interface OrdersRepository {
+  findById(id: string): Promise&lt;Order | null&gt;;
+  save(order: Order): Promise&lt;void&gt;;
+}
+</code></pre>
+<p><code>cancel</code> على الكيان ثم <code>save</code>. لا <code>saveLine</code> من المتحكم.</p>
+<h2>مساعد ORM يبقى في الحافة</h2>
+<pre><code class="language-ts">constructor(@InjectRepository(BookEntity) private readonly books: Repository&lt;BookEntity&gt;) {}
+</code></pre>
+<p>الاسم <code>BooksStore</code> صادق. صفحة JSON تعيد DTO لا <code>BookEntity</code>.</p>
+<h2>Prisma خلف المنفذ</h2>
+<pre><code class="language-ts">async findById(id: string): Promise&lt;Order | null&gt; {
+  const row = await this.prisma.order.findUnique({ where: { id } });
+  if (row === null) return null;
+  return new Order(row.id, row.status as &#39;open&#39; | &#39;cancelled&#39;);
+}
+</code></pre>
+<p><code>PrismaService</code> Singleton. <code>save</code> يستعمل <code>$transaction</code> إن كتب أكثر من جدول.</p>
+<h2>ذاكرة للاختبار</h2>
+<pre><code class="language-ts">{ provide: ORDERS, useValue: inMemoryOrders() }
+</code></pre>
+<p>قواعد الإلغاء على هذا المزيف. اختبار واحد على Postgres يتحقق من العمود بعد <code>save</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>واجهة الدومين لا تستورد <code>@prisma/client</code>.</li>
+<li>الغياب <code>null</code> في Prisma وفي الذاكرة.</li>
+<li>تقرير المبيعات ليس دالة على مستودع الجذر.</li>
+<li>لا <code>Scope.REQUEST</code> على العميل لأجل المستخدم.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

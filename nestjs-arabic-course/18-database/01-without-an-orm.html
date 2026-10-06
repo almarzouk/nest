@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>قاعدة البيانات قبل أي ORM</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-without-an-orm.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>قاعدة البيانات قبل أي ORM</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية الاتصال والجدول والاستعلام قبل أي مكتبة تخفي SQL، حتى لا يصبح Prisma أو TypeORM سحرًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مصفوفة <code>books</code> داخل الخدمة تموت مع العملية، ولا يراها تطبيق ثانٍ، ولا تنجو من إعادة التشغيل. وضع جملة SQL داخل دالة المسار يخلط HTTP بشكل الصف، ويصعّب اختبار القاعدة من غير طلب.</p>
+<h2>الفكرة ببساطة</h2>
+<p>قاعدة البيانات عملية أخرى تحتفظ بالجداول. التطبيق يفتح اتصالًا، يرسل SQL بمعاملات مربوطة، ويقرأ صفوفًا. Nest لا يختار القاعدة. توثيق البيانات يقول إن الربط في أدناه هو تحميل مشغّل Node المناسب وكشفه كمزوّد.</p>
+<h2>التعريف التقني</h2>
+<p>PostgreSQL قاعدة علائقية. الجدول مجموعة صفوف بأعمدة معروفة. المفتاح الأساسي يميّز الصف. الاستعلام نص SQL. المعاملات المربوطة، مثل <code>$1</code> في مشغّل <code>pg</code>، تفصل النص عن القيمة حتى لا يُبنى الاستعلام بلصق مدخل المستخدم.</p>
+<p>عميل رفيع:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy } from &quot;@nestjs/common&quot;;
+import { Pool } from &quot;pg&quot;;
+
+@Injectable()
+export class LibraryPool implements OnModuleDestroy {
+  readonly pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
+  async onModuleDestroy() {
+    await this.pool.end();
+  }
+}
+</code></pre>
+<p>هذا ليس ORM. لا نماذج، لا ترحيل، لا كائن <code>book</code>. الصف مصفوفة حقول أو كائن بأسماء الأعمدة كما رجعت من SQL. الدروس التالية تسمي PostgreSQL ثم تشرح ماذا يضيف ORM، ثم تغلف Prisma.</p>
+<p>لا تقرأ <code>process.env</code> هنا في المشروع النهائي. بعد فصل الإعداد، العنوان يأتي من <code>ConfigService.getOrThrow(&quot;DATABASE_URL&quot;)</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Controller -&gt; BooksService -&gt; LibraryPool.query(sql, params) -&gt; PostgreSQL
+                                      |
+                                 صفوف خام
+</code></pre>
+<p>الخدمة تترجم الصف إلى شكل المكتبة. المتحكم لا يرى <code>Pool</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { Pool } from &quot;pg&quot;;
+
+@Injectable()
+export class BooksReader {
+  constructor(private readonly pool: Pool) {}
+
+  async findTitle(id: number): Promise&lt;string | null&gt; {
+    const result = await this.pool.query(
+      &quot;select title from books where id = $1&quot;,
+      [id],
+    );
+    const row = result.rows[0] as { title: string } | undefined;
+    return row?.title ?? null;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>$1</code> موضع القيمة، و <code>[id]</code> القيمة. المشغّل يرسلهما منفصلين. عنوان الكتاب الذي يحتوي <code>&#39;</code> لا يكسر الجملة. إن لم يوجد صف، <code>rows</code> فارغة والنتيجة <code>null</code>، فيحوّلها المتحكم لاحقًا إلى <code>404</code>.</p>
+<p><code>Pool</code> مجموعة اتصالات تُعاد، لا اتصال جديد لكل استعلام إن ضبطتها كمزوّد واحد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>query</code> ينتظر الشبكة. Node لا يحجز الخيط الرئيسي أثناء انتظار PostgreSQL. النتيجة تصل كحدث ثم تكمل الدالة. إن سقطت القاعدة، الوعد يُرفض ويصل إلى مرشح الاستثناءات إن لم تمسكه الخدمة.</p>
+<p>المخطط نفسه غير موجود في هذا الكود. شخص أنشأ الجدول بأداة أو بسطر <code>CREATE TABLE</code>. من غير أثر محفوظ لذلك الأمر، بيئة الزميل لا تعرف الأعمدة. هذا النقص هو سبب الترحيل لاحقًا.</p>
+<h2>مثال عملي</h2>
+<p>جدول <code>books</code> فيه <code>id</code> و <code>title</code>. مسار <code>GET /books/3</code> يستدعي <code>BooksReader</code> لا <code>pool.query</code> داخل المتحكم. اختبار الخدمة يمرّر <code>Pool</code> مزيفًا يرجع صفًا واحدًا، من غير PostgreSQL. اختبار آخر يشغّل قاعدة حقيقية ويثبت أن <code>$1</code> يعيد عنوان الكتاب <code>3</code> فقط.</p>
+<p>انسخ الجملة إلى المتحكم وستحتاج في كل اختبار إلى HTTP وقاعدة معًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>لصق <code>id</code> داخل نص SQL.</li>
+<li>فتح <code>new Pool()</code> داخل كل دالة مسار.</li>
+<li>إرجاع <code>result.rows</code> خامًا إلى العميل وفيه أعمدة لم يقصدها العقد.</li>
+<li>اعتبار المصفوفة في الذاكرة بديلًا دائمًا بعد أول تجربة ناجحة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لفهم الطبقة التي يجلس فوقها أي ORM، ولأداة إدارة تكتب SQL صريحًا بمعرفة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كمسار بناء كل موارد المكتبة يدويًا إن كان الفريق سيعتمد Prisma. الدرس يبني الحدس، والفصل يكمل على عميل مولَّد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مصفوفة في الخدمة</th>
+<th><code>pg</code> و SQL</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تموت مع العملية</td>
+<td>تبقى بعد إعادة التشغيل</td>
+</tr>
+<tr>
+<td>بلا مخطط مشترك</td>
+<td>جدول بأعمدة</td>
+</tr>
+<tr>
+<td>بلا معاملات</td>
+<td><code>$1</code> يفصل القيمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تعيش جملة <code>select</code> في المثال، وأين لا تعيش؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>BooksReader</code>. المتحكم يستدعي <code>findTitle</code> ولا يفتح <code>Pool</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>[id]</code> وليس دمج <code>id</code> في نص الجملة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الموضع <code>$1</code> معامل مربوط. القيمة لا تصبح جزءًا من نص الأمر، فلا تغيّر معنى الاستعلام.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>زميل أنشأ الجدول من شاشة رسومية. لماذا تفشل نسختك من التطبيق على قاعدة فارغة رغم أن الكود نفسه يعمل عنده؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أثر <code>CREATE TABLE</code> ليس في المستودع. الترحيل لاحقًا يحفظ SQL الذي يبني الجدول حتى يُعاد على أي بيئة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضيع عند إيقاف العملية إن كانت الكتب في مصفوفة؟</li>
+<li>ما دور <code>$1</code>؟</li>
+<li>لماذا لا يُستدعى <code>pool.query</code> من المتحكم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>قبل ORM هناك اتصال واستعلام وصف. الخدمة تملك SQL، والمخطط ما زال بلا أثر محفوظ. PostgreSQL هو محرك الدورة لهذا الجدول.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-postgresql.html">PostgreSQL</a> يسمي القاعدة والمخطط والجدول والمفتاح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Databases: <a href="https://docs.nestjs.com/data/overview">https://docs.nestjs.com/data/overview</a></li>
+<li>node-postgres — Queries: <a href="https://node-postgres.com/features/queries">https://node-postgres.com/features/queries</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

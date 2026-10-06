@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>34 — مهام مُختبرة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>34 — مهام مُختبرة</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new tested-tasks</code></p>
+<h2>ماذا تبني</h2>
+<p>لوحة مهام صغيرة مع اختبار خدمة واختبار HTTP. القالب ESM يستخدم Vitest. لا تختبر حظ الذاكرة العشوائية.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>من هنا لا يُعد المسار منتهيًا لأن curl نجح مرة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>TestingModule</li>
+<li>وهم للمستودع</li>
+<li>supertest</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>تغطية 100%</li>
+<li>اختبار المتصفح</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>لوحة المهام. ESM من nest new يعني Vitest لا Jest.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/38-testing/README.html">38-testing</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>اختبار الوحدة لا يفتح منفذًا.</li>
+<li>الرحلة تنشئ مهمة وتتوقع 201 ثم قائمة فيها العنوان.</li>
+<li>النقل الممنوع متوقع 409.</li>
+<li>لا تعتمد على ترتيب اختبارات يشارك ذاكرة عامة. نظّف أو ابنِ وحدة جديدة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/tasks</code></td>
+<td>201</td>
+<td>مغطى برحلة</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/tasks/:id/status</code></td>
+<td>409</td>
+<td>انتقال ممنوع مغطى</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new tested-tasks</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>اختبر canMove من غير Nest.</li>
+<li>اختبر الخدمة بوهم إن فصلت التخزين، أو بالمصفوفة مع تنظيف.</li>
+<li>رحلة واحدة بـ supertest على التطبيق الكامل.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/tasks/transitions.spec.ts
+test/tasks.e2e-spec.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">const moduleRef = await Test.createTestingModule({
+  providers: [TasksService],
+}).compile();
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>jest.fn داخل قالب Vitest.</li>
+<li>اختبار يتصل بقاعدة التطوير.</li>
+<li>ترتيب اختبارين يعتمد على بقايا الأول.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>npm test أخضر.</li>
+<li>حالة 409 مغطاة.</li>
+<li>تعرف الفرق بين اختبار الخدمة واختبار HTTP.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف اختبارًا يفشل إن رجع 404 لقائمة فارغة.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 34» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../33-public-docs/README.html">33. توثيق الكتالوج</a></li>
+<li>التالي: <a href="../35-ops-health/README.html">35. صحة وإيقاف</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

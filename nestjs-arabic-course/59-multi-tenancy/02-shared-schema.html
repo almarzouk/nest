@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Single DB / Shared Schema</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-shared-schema.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Single DB / Shared Schema</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>عزل مكتبات رف بعمود <code>tenantId</code> داخل نفس الجداول ونفس القاعدة، وهو نموذج المسبح (pool): تكلفة تشغيل منخفضة وقيد إجباري على كل استعلام.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عشر مكتبات صغيرة لا تحتمل قاعدة لكل واحدة، وتريد ترحيل Prisma واحدًا. من غير عمود مشترك، إما تكررون الجداول يدويًا أو تخلطون الصفوف. من غير قيد في كل استعلام، العمود موجود والكشف ما زال يعيد كتب الجار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل صف عمل يحمل <code>tenantId</code>. القائمة والفرد والتعديل والحذف تضيف <code>where: { tenantId }</code>. فهرس القائمة يبدأ بهذا العمود. العزل منطقي داخل المحرك لا في اتصال منفصل. خطأ واحد في استعلام يكفي لتسريب.</p>
+<h2>التعريف التقني</h2>
+<p>Pool يعني مخططًا مشتركًا وقاعدة مشتركة. Prisma model واحد لـ <code>Book</code>. لا <code>search_path</code> يتغير لكل طلب. العزل عقد استعلام: لا <code>findMany</code> بلا المستأجر، ولا <code>findUnique({ where: { id } })</code> لأن المعرّف قد يُخمَّن عبر المكتبات إن كان تسلسليًا أو متسربًا. استخدموا <code>findFirst({ where: { id, tenantId } })</code> أو مفتاحًا مركبًا. القيد الفريد الذي كان <code>isbn</code> يصبح <code>@@unique([tenantId, isbn])</code>. الكاش والمهام والطوابير تحمل المفتاح نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">books
+  id | tenantId | title
+  b1 | lib_a    | موسم
+  b2 | lib_b    | موسم
+استعلام lib_a لا يرى b2
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model Book {
+  id       String @id
+  tenantId String
+  title    String
+  isbn     String
+
+  @@unique([tenantId, isbn])
+  @@index([tenantId, status, publishedAt(sort: Desc)])
+}
+</code></pre>
+<p>أضيفوا <code>status</code> و <code>publishedAt</code> إن كانت القائمة كما في درس الفهرس. الشكل هنا يثبت أن التفرد والفهرس يبدأان بالمستأجر.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>ISBN يتكرر بين مكتبتين ولا يتكرر داخل واحدة.</li>
+<li>الفهرس الذي لا يبدأ بـ <code>tenantId</code> قد يخدم بحثًا عالميًا لا تريدهون.</li>
+<li>الحذف <code>deleteMany({ where: { id } })</code> بلا مستأجر خطر حتى لو أعاد صفًا واحدًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>السياق يعطي <code>tenantId</code> بعد العضوية.</li>
+<li>الخدمة تمرره وسيطًا صريحًا إلى دالة المستودع لا تقرأه من متغير عام غير مربوط بالطلب.</li>
+<li>Prisma يرسل <code>WHERE tenantId = $1 AND id = $2</code>.</li>
+<li>صفر صفوف يعني غيابًا داخل المكتبة (404) حتى لو وُجد المعرّف عند جار.</li>
+<li>اختبار يسجّل مكتبة ثانية ويتأكد أن الأولى لا تراها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  list(tenantId: string) {
+    return this.prisma.book.findMany({
+      where: { tenantId, status: &#39;published&#39; },
+      take: 20,
+      orderBy: { publishedAt: &#39;desc&#39; },
+    });
+  }
+
+  find(tenantId: string, id: string) {
+    return this.prisma.book.findFirst({ where: { id, tenantId } });
+  }
+}
+</code></pre>
+<p><code>tenantId</code> وسيط إجباري في التوقيع حتى لا تُستدعى الدالة «بلا مكتبة». من يملأ الوسيط حارس أو interceptor يقرأ السياق، لا حقل الجسم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>findUnique</code> على <code>id</code> فقط.</li>
+<li><code>update({ where: { id }, data })</code> يعدل كتاب جار إن تسرّب المعرّف.</li>
+<li>تقرير إداري بلا مستأجر يُنسخ إلى مسار عام بالخطأ.</li>
+<li>فهارس بلا <code>tenantId</code> ثم بطء يبدو كأنه خطأ Nest.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عدد مكتبات كبير وخطة متشابهة، وفريق يستطيع فرض مراجعة «كل استعلام مقيّد». هذا الافتراضي المعتاد لرف في البداية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يفرض عميل كبير قاعدة مستقلة أو منع مشاركة القرص مع غيره. ذلك silo. وعندما تحتاجون عزل صلاحيات SQL على مستوى schema لا عمود تطبيقي فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Pool (هذا الدرس)</th>
+<th>Schema لكل مستأجر</th>
+<th>قاعدة لكل مستأجر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الترحيل</td>
+<td>مرة</td>
+<td>لكل schema أو أداة خاصة</td>
+<td>لكل قاعدة</td>
+</tr>
+<tr>
+<td>التسريب</td>
+<td>استعلام ناقص</td>
+<td><code>search_path</code> خاطئ</td>
+<td>اتصال خاطئ</td>
+</tr>
+<tr>
+<td>تكلفة التشغيل</td>
+<td>الأدنى</td>
+<td>وسط</td>
+<td>الأعلى</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>@@unique([isbn])</code> يكسر مكتبتين تستخدمان نفس الرقم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن القيد عالمي على الجدول المشترك. الصحيح <code>@@unique([tenantId, isbn])</code> حتى يتكرر الرقم بين المستأجرين لا داخل أحدهم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>findUnique({ where: { id } })</code> أعاد كتاب مكتبة أخرى. ما التعديل وما الرمز للعميل الذي لا يملك الصف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>findFirst({ where: { id, tenantId } })</code>. إن لم يُوجد الصف داخل المستأجر فالنتيجة غياب 404 حتى لو كان <code>id</code> موجودًا في جدول الجار. لا تعيدوا الصف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اكتب شرط مراجعة PR يمنع الدمج.</p>
+<details>
+<summary>الحل</summary>
+
+<p>أي <code>prisma.book.*</code> في مسار طلب بلا <code>tenantId</code> في <code>where</code> يُرفض، إلا دالة تقرير منصة تعيش في وحدة إدارة منفصلة ولا تُستورد من <code>BooksController</code>. اختبار تكامل ينشئ مستأجرين ويتوقع قائمة فارغة للثاني.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يعيش العزل في نموذج pool؟</li>
+<li>لماذا المفتاح الفريد مركب؟</li>
+<li>ما خطر <code>where: { id }</code> وحده؟</li>
+<li>متى لا يكفي هذا النموذج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المخطط المشترك يعزل بـ <code>tenantId</code> على كل صف وكل استعلام وكل قيد تفرد يخص الكتالوج. التكلفة تشغيلية منخفضة وثمن الخطأ تسريب عرضي من استعلام ناقص.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعض المكتبات تريد فصلًا أقوى داخل نفس خادم Postgres: schema باسمها. الدرس التالي هذا النموذج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>PostgreSQL — Row security (حد إضافي ممكن بجانب عقد التطبيق): <a href="https://www.postgresql.org/docs/current/ddl-rowsecurity.html">https://www.postgresql.org/docs/current/ddl-rowsecurity.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

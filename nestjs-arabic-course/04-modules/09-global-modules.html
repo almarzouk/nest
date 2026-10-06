@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Global Modules</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-global-modules.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Global Modules</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفهم <code>@Global()</code>: المزوّدات المصدَّرة تصبح متاحة للحقن في كل وحدة بلا إضافتها إلى <code>imports</code>، ولماذا يبقى هذا النمط ضيقًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وحدة الإعداد أو التسجيل تُستورد في كل Feature Module. القائمة تتكرر، ونسيان سطر واحد يكسر الإقلاع. العالمي يلغي تكرار الاستيراد لمزوّد عابر للتطبيق كله.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Global()</code> لا يلغي التغليف. ما زلت تكتب <code>exports</code>. الفرق أن المستوردين لا يحتاجون سطر <code>imports</code> لهذه الوحدة.</p>
+<h2>التعريف التقني</h2>
+<p>تضع <code>@Global()</code> فوق <code>@Module</code>. تسجّل الوحدة مرة واحدة، عادة في <code>AppModule</code> عبر <code>imports</code>. بعد ذلك يجوز حقن ما ذكرته في <code>exports</code> في أي مكان. التوثيق يطلب تسجيل الوحدة العالمية مرة واحدة، ويصف جعل كل شيء عالميًا بأنه يضعف وضوح الحدود.</p>
+<p>المزوّد غير الموجود في <code>exports</code> يبقى غير مرئي حتى داخل وحدة معلّمة بـ <code>@Global()</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule imports ConfigModule   // مرة واحدة
+@Global ConfigModule exports ConfigService
+أي بنّاء في التطبيق يستطيع حقن ConfigService
+PriceTable غير المصدَّر ما زال خاصًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Global, Module } from &quot;@nestjs/common&quot;;
+import { ConfigService } from &quot;./config.service.js&quot;;
+
+@Global()
+@Module({
+  providers: [ConfigService],
+  exports: [ConfigService],
+})
+export class ConfigModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [ConfigModule, BooksModule, OrdersModule],
+})
+export class AppModule {}
+</code></pre>
+<p><code>BooksService</code> يحقن <code>ConfigService</code> حتى لو لم تذكر <code>BooksModule</code> وحدة <code>ConfigModule</code> في <code>imports</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>@Global()</code> يوسّع رؤية المصدَّرات بعد تسجيل الوحدة في الجذر. <code>BooksModule</code> لا تذكر <code>ConfigModule</code>. الحذف من <code>exports</code> يعيد الاختباء رغم بقاء <code>@Global()</code>.</p>
+<p>التسجيل مرتين لا يفيد. مكان التسجيل المعتاد هو الوحدة الجذر حتى يُبنى السياق قبل الوحدات التي تحقن المزوّد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الوحدات العالمية تُعالَج بحيث تدخل مصدَّراتها سياق الوحدات الأخرى. هذا توفير لسطر الاستيراد، لا نطاق حقن جديد. النطاق الافتراضي ما زال singleton لذلك التسجيل.</p>
+<p>في ترتيب Middleware، توثيق دورة الطلب يذكر أن الوحدات العامة تُربَط قبل الوحدة الجذر ثم البقية. أثر <code>@Global()</code> إذن ليس &quot;مزوّدًا سحريًا&quot; فقط، بل يغيّر أيضًا ترتيب بعض الربط. هذا سبب إضافي لإبقائه نادرًا.</p>
+<h2>مثال عملي</h2>
+<p><code>ConfigModule</code> من <code>@nestjs/config</code> يُستعمل غالبًا كوحدة عامة بعد <code>forRoot</code> حتى يُحقن <code>ConfigService</code> في أي خدمة. بقية ميزات المتجر، الكتب والطلبات، تبقى وحدات عادية تُستورد حيث تُستخدم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Global()</code> بلا <code>exports</code>، ثم الدهشة أن الحقن لا يرى المزوّد.</li>
+<li>تعليم <code>BooksModule</code> عالمية حتى تصل <code>OrdersModule</code> إلى الكتب. الاستيراد الصريح أدق.</li>
+<li>تسجيل الوحدة العالمية داخل كل ميزة بدل مرة واحدة في الجذر.</li>
+<li>قياس الراحة بعدد الأسطر المحذوفة وتجاهل أن الرسم البياني صار مخفيًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمزوّد عابر حقًا: إعداد التطبيق، أو مسجّل واحد يتوقع كل جزء أن يجده. وسطر التسجيل يبقى في <code>AppModule</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لميزات النطاق: مستخدمون، كتب، فواتير، صلاحيات. هذه تُستورد في الوحدات التي تعتمدها حتى تبقى الحافة ظاهرة في <code>imports</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>استيراد صريح</th>
+<th><code>@Global()</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين تُذكر الوحدة</td>
+<td>في كل مستهلك</td>
+<td>مرة في الجذر</td>
+</tr>
+<tr>
+<td><code>exports</code></td>
+<td>مطلوب للمشاركة</td>
+<td>مطلوب أيضًا</td>
+</tr>
+<tr>
+<td>قراءة الرسم</td>
+<td>ظاهرة في ملف الوحدة</td>
+<td>تحتاج معرفة من علّم الوحدة عالمية</td>
+</tr>
+</tbody></table>
+<p>مقابل Shared Module العادي: المشترك يُستورد. العالمي مشترك زائد إعفاء من الاستيراد.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>@Global()</code> يصدّر كل <code>providers</code> تلقائيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. تبقى <code>exports</code> هي الواجهة. العالمي يغيّر من يلزم أن يكتب <code>imports</code>، لا ما هو مصدَّر.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>ConfigModule</code> عالمية ومصدّرة ومسجّلة في <code>AppModule</code>. لماذا ما زال خطأ أن تسجّلها مرة ثانية داخل <code>BooksModule</code> &quot;للاحتياط&quot;؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التوثيق يطلب تسجيل الوحدة العالمية مرة واحدة. التسجيل الثاني يربك الرسم وقد يصنع سياقًا مكررًا. الجذر يكفي.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عندك <code>LoggerModule</code> تستخدمها أربع وحدات، و <code>TaxRules</code> تستخدمها الفواتير فقط. أيهما أقرب إلى <code>@Global()</code>، وما شكل الثاني؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسجّل مرشح أضيق للعالمي إن كان عابرًا للتطبيق كله، مع <code>exports</code> وتسجيل واحد. <code>TaxRules</code> تبقى في <code>BillingModule</code> بلا <code>@Global()</code>، وتُحقن هناك فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>@Global()</code> وما الذي لا يفعله؟</li>
+<li>أين تُسجَّل الوحدة العالمية عادة؟</li>
+<li>لماذا تعليم كل الوحدات عالمية يضعف الحدود؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Global()</code> يجعل المصدَّرات مرئية بلا تكرار <code>imports</code>، بعد تسجيل واحد. التغليف عبر <code>exports</code> يبقى. الميزات العادية تُستورد بالاسم.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يعيد تصدير وحدة من وحدة أخرى، حتى يستهلك التطبيق واجهة واحدة بدل سلسلة استيرادات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/modules">Modules</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

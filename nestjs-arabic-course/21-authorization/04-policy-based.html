@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Policy-based Authorization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-policy-based.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Policy-based Authorization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جمع قواعد السماح في دوال سياسة: كل دالة تجيب عن فعل واحد، وقد ترى المستخدم والصف معًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>RBAC يقول إن المحرر ينشر، لكن مسودة Ada ليست للمحرر إن كان المنتج «صاحب المسودة فقط، والمحرر يرى المنشور». الشرط يتوزع بين الحارس والخدمة فيختلف <code>GET</code> عن <code>PATCH</code>. سياسة واحدة تُستدعى من الاثنين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>السياسة كائن دوال. الاسم فعل: <code>publish</code>، <code>update</code>، <code>read</code>. المدخلات المستخدم وربما المقال. المخرج الذي يسمح هو قرار موجب واضح. الفحص الذي لا يحتاج صفًا يمكن أن يعيش على المسار. الفحص الذي يحتاج المقال يحدث بعد تحميل الصف في الخدمة، حتى لا يُجلب السجل مرتين بطريقة مختلفة.</p>
+<h2>التعريف التقني</h2>
+<p>هذا الدرس ما زال بلا مزخرفات الحزمة. الشكل الذي ستطابقه الصفحة:</p>
+<pre><code class="language-ts">export class PostPolicy {
+  publish(user: PublicUser | null, post: { authorId: number; published: boolean }) {
+    if (!user) return false;
+    return user.roles.includes(&quot;editor&quot;) || user.id === post.authorId;
+  }
+
+  read(_user: PublicUser | null, post: { published: boolean }) {
+    return post.published;
+  }
+}
+</code></pre>
+<p>في منتج المكتبة قد يكون النشر للمحرر فقط. المثال يجمع الاحتمالين حتى ترى أن السياسة مكان الشرط المركب. ثبّت قاعدة واحدة في الكود الحقيقي ولا تترك الاحتمالين معًا.</p>
+<p>الضيف يقرأ المنشور فقط إن كانت الدالة تسمح. المسودة ترجع <code>false</code> للضيف. الحارس العام للمصادقة قد يمنع الوصول قبل السياسة. إن كان الكتالوج <code>@Public()</code> أو اختياريًا، السياسة ترى <code>null</code>.</p>
+<p>الفشل بعد معرفة المستخدم <code>403</code>. الفشل لأن المقال غير موجود <code>404</code> قبل السياسة أو بعدها حسب ما تعد به: كثير من واجهات ترجع <code>404</code> للمسودة حتى لا تكشف وجودها. ذلك قرار منتج داخل الخدمة حول نتيجة السياسة، لا داخل جدول الأدوار.</p>
+<p>الحزمة لاحقًا تشترط أن <code>true</code> الحرفي فقط يسمح، وأي قيمة أخرى تمنع. اكتب الدوال لذلك من الآن: لا ترجع كائن المقال كأنه «حقيقة».</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">PostPolicy.publish(user, post) -&gt; true أو false
+        |
+ مسار بلا صف: فعل عام مثل create
+ خدمة بعد التحميل: فعل على هذا المقال
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Injectable()
+export class PostPolicy {
+  update(user: PublicUser | null, post: { authorId: number }) {
+    return !!user &amp;&amp; user.id === post.authorId;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>التعديل لصاحب المعرّف فقط، ولو كان محررًا. هذا متعمَّد في المثال ليختلف عن RBAC الذي يعطي المحرر كل شيء. إن أراد المنتج أن يعدّل المحرر أي مقال، الشرط يتغير هنا لا في عشرة متحكمات.</p>
+<p><code>@Injectable()</code> يجهّز الحقن حين تنتقل السياسة إلى وحدة Nest في الدرس التالي. اليوم يمكن اختبار <code>new PostPolicy().update(ada, post)</code> من غير HTTP.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الخدمة تحمّل المقال بـ <code>findOne</code>. إن غاب، <code>404</code>. إن وُجد، تنادي السياسة. عند <code>false</code> ترمي <code>ForbiddenException</code> إن كان المستخدم معروفًا والمقال ظاهرًا له، أو <code>NotFoundException</code> إن كنت تخفي المسودات. ثم تنفّذ <code>update</code>. لا تكتب ثم تفحص.</p>
+<p>اختبار السياسة جدول: صاحب، غير صاحب، <code>null</code>، محرر إن أضفت فرعه. من غير قاعدة ومن غير رمز.</p>
+<h2>مثال عملي</h2>
+<p>Ada صاحبة المقال <code>3</code> تعدّل العنوان فتنجح. Basil القارئ على المقال نفسه يأخذ رفضًا. ضيف على <code>GET</code> لمقال <code>published: false</code> لا يرى الجسم. محرر ينشر عبر <code>publish</code> إن أضفت شرط الدور هناك فقط. <code>CommentsService</code> لا تنسخ شرط صاحب المقال. إن احتاجت الحذف، فسياسة تعليق أو دالة على <code>PostPolicy</code> تُستدعى بالاسم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>السياسة تكتب في Prisma. هي قرار، والخدمة تكتب.</li>
+<li>شرط في الحارس وشرط مختلف في الخدمة للفعل نفسه.</li>
+<li>إرجاع المقال من الدالة بدل منطقي.</li>
+<li><code>404</code> و <code>403</code> بلا قرار موحّد للمسودة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يجتمع دور وملكية وحالة صف في قاعدة واحدة تُعاد من أكثر من مسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفعل لا قاعدة له بعد، مثل قراءة عامة بلا تمييز. حارس المصادقة يكفي حتى تظهر قاعدة حقيقية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>RBAC</th>
+<th>سياسة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>فعل عام للدور</td>
+<td>فعل قد يرى الصف</td>
+</tr>
+<tr>
+<td>جدول ثابت</td>
+<td>دالة</td>
+</tr>
+<tr>
+<td>لا يعرف <code>authorId</code></td>
+<td>مكان <code>authorId</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُفحص تعديل المقال، قبل التحميل أم بعده؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعد تحميل الصف، لأن القرار يحتاج <code>authorId</code>. الغياب <code>404</code> قبل النداء أو إن لم يوجد صف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُحدَّث القاعدة في <code>PostPolicy.update</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>السياسة تجيب بنعم أو لا. الكتابة في <code>PostsService</code> بعد القرار، حتى تُختبر السياسة بلا Prisma.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مسودة لغير صاحبها. متى تختار <code>404</code> بدل <code>403</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حين لا تريد أن يؤكد الوجود لشخص لا يحق له الرؤية. صاحب المسودة يمكن أن يأخذ <code>403</code> على فعل لا يملكه أو أن ينجح في <code>update</code>. القرار يُكتب بجانب النداء في الخدمة ويُختبر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا ترجع دالة السياسة؟</li>
+<li>أي القواعد لا يعبّر عنها الدور وحده؟</li>
+<li>من ينفّذ الكتابة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>السياسة دالة لكل فعل، ترى المستخدم وربما الصف، وتُستدعى من الخدمة حين يلزم السجل. الدور يبقى أحد المدخلات لا المكان الوحيد للشرط.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-nestjs-authorization.html">@nestjs/authorization</a> يحوّل هذا الشكل إلى <code>@Policy</code> و <code>@Can</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

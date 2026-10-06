@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>File Storage</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-file-storage.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>File Storage</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حفظ غلاف كتاب رف على قرص مسمّى في <code>@nestjs/storage</code>، وإبقاء الفاتورة خلف عنوان موقّع، مع فحص نوع البايتات لا نوع المتصفح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>رفع يثق بـ <code>Content-Type</code> فيصل SVG فيه سكربت باسم صورة. أو الملف كله في ذاكرة العملية. أو مفتاح الغلاف بلا <code>organizationId</code> فيُستبدل غلاف مكتبة أخرى. أو الفاتورة على قرص عام.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@nestjs/storage</code> يعطي كل مكان اسمًا وقرصًا وواجهة واحدة: <code>put</code> و <code>get</code> و <code>list</code> و <code>delete</code> وعناوين عامة وموقّعة. الأقراص: محلي، S3 المتوافق (يشمل R2 و MinIO و B2) عبر <code>fetch</code> بلا AWS SDK، وذاكرة للاختبار. الحزمة لا تحلّل الرفع. <code>FileInterceptor</code> يبقى، و <code>uploadToDisk()</code> محرك تخزين يبث إلى القرص. المفتاح العشوائي لا يطمس ملفًا آخر. هذه إضافة حين تظهر الملفات، لا جزءًا من مسار التعلم الأساسي.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/storage</code>. <code>StorageModule</code> مع أقراص من <code>LocalDisk</code> أو <code>S3Disk</code>. <code>@InjectDisk(&#39;covers&#39;)</code> يحقن <code>StorageDisk</code>. على Express، <code>FileInterceptor</code> من <code>@nestjs/platform-express</code> وخيار <code>storage: uploadToDisk({ disk, contentTypes, cacheControl })</code>. المحرك يقرأ أول البايتات، يرفض نوعًا خارج القائمة بـ 415 قبل الكتابة، ويرفض تجاوز <code>limits.fileSize</code> بـ 413 بلا ملف جزئي. <code>@UploadedFile()</code> يعيد <code>StoredUpload</code>: <code>key</code> و <code>disk</code> و <code>contentType</code> و <code>etag</code>. <code>mimetype</code> يبقى ادّعاء العميل؛ اعتمدوا <code>contentType</code>. على Fastify الاستيراد من <code>@nestjs/platform-fastify/multipart</code> مع <code>@fastify/multipart</code>. <code>serveFile</code> للتطوير فقط. الإنتاج يضع CDN أمام القرص العام. الخاص يُخدم بـ <code>serveSignedUrl</code> أو عنوان موقّع. <code>ParseFilePipe</code> بعد المعترض والملف صار مخزنًا؛ مع البث افحصوا النوع في المحرك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حقل cover → بايتات → 415 أو 413 أو مفتاح uuid
+المفتاح يشمل المنظمة
+فاتورة → قرص خاص وعنوان موقّع
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Post(&#39;projects/:id/cover&#39;)
+@UseInterceptors(
+  FileInterceptor(&#39;cover&#39;, {
+    storage: uploadToDisk({
+      disk: &#39;covers&#39;,
+      contentTypes: [&#39;image/png&#39;, &#39;image/jpeg&#39;],
+    }),
+    limits: { fileSize: 2_000_000, files: 1 },
+  }),
+)
+upload(@Param(&#39;id&#39;) id: string, @UploadedFile() file: StoredUpload | undefined) {
+  if (!file) throw new BadRequestException(&#39;Attach cover&#39;);
+  return this.covers.replace(currentTenantId(), id, file.key);
+}
+</code></pre>
+<p><code>currentTenantId()</code> من سياق موثوق لا من جسم الرفع.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الامتداد في المفتاح يأتي من النوع المكتشف لا من اسم الملف.</li>
+<li><code>replace</code> يحفظ المفتاح على مشروع المنظمة ويحذف السابق إن نجح التحديث.</li>
+<li>فشل إيجاد المشروع يحذف المفتاح الجديد حتى لا تبقى يتيمًا، بنفس ترتيب صفحة الصور.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>multer يمرر التيار إلى <code>uploadToDisk</code>.</li>
+<li>الكشف من البايتات يرفض HTML أو SVG غير المسموح قبل <code>put</code>.</li>
+<li>الحجم الزائد يُرفض بلا إتمام كتابة.</li>
+<li>المفتاح UUID فلا يستبدل غلافًا مخزّنًا في ذاكرة CDN تحت نفس الاسم.</li>
+<li>قرص S3 في الإنتاج نفس واجهة <code>StorageDisk</code>. الاختبار يبدّل قرص الذاكرة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مفتاح الغلاف <code>org_nile/...</code> يُبنى في الخدمة بعد ما يحل الحارس المنظمة. عميل يرسل <code>tenantId</code> في النموذج لا يدخل المفتاح. الفواتير على قرص <code>invoices</code> بلا <code>publicUrl</code>. المعالج يعيد عنوانًا موقّعًا قصير العمر بعد التأكد أن الفاتورة لتلك المنظمة. التطوير المحلي يستخدم <code>serveSignedUrl</code> كما في الصفحة حتى يعمل التوقيع بلا شبكة CDN. لا تضعوا سر الدلو في المستودع؛ <code>@nestjs/config</code> يقرأ الإعداد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فحص <code>file.mimetype</code> فقط.</li>
+<li><code>ParseFilePipe</code> و <code>FileTypeValidator</code> على ملف بُثّ أصلًا إلى القرص.</li>
+<li>قرص واحد عام للأغلفة والفواتير.</li>
+<li>حذف الغلاف القديم قبل نجاح تحديث الصف فيضيع الاثنان عند الفشل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>أغلفة وملحقات ومصدّرات ملفات، مع قرص لكل سياسة وصول.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا به جسم JSON للمسودة. ولا ترفعوا عبر هذا المسار حدث ويب هوك خامًا؛ ذلك <code>rawBody</code> على مسار التوقيع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القرص</th>
+<th>غلاف</th>
+<th>فاتورة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عام + CDN</td>
+<td>مناسب</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>خاص + توقيع</td>
+<td>عند الحاجة</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>ذاكرة</td>
+<td>اختبار</td>
+<td>اختبار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا 415 قبل كتابة الملف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النوع يُكتشف من البايتات. إن لم يكن ضمن <code>contentTypes</code> يتوقف المحرك قبل تخزين أي بايت.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين <code>mimetype</code> و <code>contentType</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>mimetype</code> ادّعاء العميل. <code>contentType</code> نتيجة الكشف ويُحفظ مع الملف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عنوان موقّع سُرّب. ماذا يحد الضرر، وما الذي لا يصلحه التوقيع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قصر العمر وإبقاء القرص خاصًا يقللان النافذة. التوقيع لا يعوّض عزل المنظمة: من يملك عنوان فاتورته يصل إليها حتى انتهاء المدة. لا تبنوا المفتاح من معرف يرسله جسم الطلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة وأي زخرفة حقن؟</li>
+<li>من يحلّل تعدد الأجزاء؟</li>
+<li>ماذا يعيد تجاوز الحجم؟</li>
+<li>أين تعيش الفاتورة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>uploadToDisk</code> يبث غلاف رف بعد فحص البايتات والحجم. المفتاح عشوائي ومقيّد بالمنظمة في الخدمة. الفاتورة على قرص خاص وعنوان موقّع.</p>
+<h2>ماذا بعد؟</h2>
+<p>القارئ قد يتابع حالة التصدير لحظة بلحظة. الدرس التالي Server-Sent Events.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — File storage: <a href="https://docs.nestjs.com/application/file-storage">https://docs.nestjs.com/application/file-storage</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

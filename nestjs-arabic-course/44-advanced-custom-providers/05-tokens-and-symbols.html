@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tokens و Symbols</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-tokens-and-symbols.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Tokens و Symbols</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار رمز الحقن: صنف، أو سلسلة، أو <code>Symbol</code>، أو صنف مجرد، ولماذا الواجهة وحدها لا تكفي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>constructor(private logger: LoggerService)</code> يعمل عندما <code>LoggerService</code> قيمة وقت التشغيل. <code>interface Logger</code> تُمحى في JavaScript فلا يوجد مفتاح تبحث عنه الحاوية. سلسلة <code>&#39;LOGGER&#39;</code> تعمل وتصادم إن استعملتها مكتبة أخرى. <code>Symbol</code> هوية فريدة إن شارك الجميع المرجع نفسه. الصنف المجرد يجمع العقد والرمز في أثر واحد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الرمز ما يوضع في <code>provide</code> وفي <code>@Inject</code> أو في نوع المعامل إن كان صنفًا. الواجهة للنوع فقط. صدّر الرمز من ملف واحد واستورده، لا تنشئ <code>Symbol(&#39;LOGGER&#39;)</code> مرتين فهما رمزان مختلفان.</p>
+<h2>التعريف التقني</h2>
+<p>سلسلة، كما في التوثيق، وتُجمع في ثابت:</p>
+<pre><code class="language-ts">export const CONNECTION = &#39;CONNECTION&#39;;
+</code></pre>
+<pre><code class="language-ts">constructor(@Inject(CONNECTION) private readonly connection: Connection) {}
+</code></pre>
+<p><code>Symbol</code>:</p>
+<pre><code class="language-ts">export interface LoggerPort {
+  log(message: string): void;
+}
+
+export const LOGGER_SERVICE = Symbol(&#39;LOGGER_SERVICE&#39;);
+</code></pre>
+<pre><code class="language-ts">{
+  provide: LOGGER_SERVICE,
+  useClass: PinoLoggerService,
+}
+</code></pre>
+<pre><code class="language-ts">constructor(@Inject(LOGGER_SERVICE) private readonly logger: LoggerPort) {}
+</code></pre>
+<p>الواجهة <code>LoggerPort</code> تصف الشكل فقط. <code>Symbol</code> هو المفتاح. وصفه في <code>Symbol(&#39;...&#39;)</code> للتشخيص في السجلات لا للمساواة. المساواة بـ <code>===</code> على المرجع المصدَّر.</p>
+<p>صنف مجرد يبقى دالة في التشغيل، فيصلح رمزًا ونوعًا:</p>
+<pre><code class="language-ts">export abstract class LoggerService {
+  abstract log(message: string): void;
+}
+</code></pre>
+<pre><code class="language-ts">{
+  provide: LoggerService,
+  useClass: PinoLoggerService,
+}
+</code></pre>
+<pre><code class="language-ts">constructor(private readonly logger: LoggerService) {}
+</code></pre>
+<p>بلا <code>@Inject</code> لأن <code>design:paramtypes</code> يرى الصنف المجرد. التوثيق يفضّل هذا عندما أثر واحد يكفي، ويفضّل <code>Symbol</code> للمكتبات حتى لا تتصادم السلاسل، والواجهة عندما لا تحتاج حقنًا أصلًا.</p>
+<p>تعداد TypeScript يصلح رمزًا أيضًا إن بقيت قيمته وقت التشغيل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">واجهة     -&gt; نوع فقط، تُمحى
+سلسلة     -&gt; مفتاح سهل التصادم، ثابت مصدَّر
+Symbol    -&gt; مفتاح فريد بالمرجع المصدَّر
+صنف / مجرد -&gt; مفتاح + نوع، وحقن بلا @Inject
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>LOGGER_SERVICE</code> مع <code>PinoLoggerService</code>. وحدة الكتب تحقن الرمز وتستدعي <code>log</code>. اختبار يغطي <code>{ provide: LOGGER_SERVICE, useValue: { log() {} } }</code>. لا تستعمل سلسلة <code>&#39;LOGGER_SERVICE&#39;</code> في الاختبار و <code>Symbol</code> في التطبيق. الرمز يجب أن يتطابق بالمرجع.</p>
+<h2>شرح المثال</h2>
+<p>ملف <code>logger.token.ts</code> يصدّر <code>Symbol</code> مرة. كل المستوردين يحصلون على المرجع ذاته تحت ESM ما دام المسار واحدًا. إنشاء الرمز داخل الدالة المصنع لكل وحدة ينتج مفاتيح لا تجدها الحاوية عند الحقن.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>provide</code> يسجل المفتاح في خريطة الحاوية.</li>
+<li>للمعامل ذي النوع الصنفي، metadata تحفظ الصنف كمفتاح.</li>
+<li>للمعامل ذي الواجهة، metadata فارغة أو <code>Object</code>، لذلك <code>@Inject</code> إجباري.</li>
+<li><code>@Inject(symbol)</code> يخزن المرجع في metadata الحقن.</li>
+<li>حل لاحق يبحث بالمساواة. <code>Symbol(&#39;X&#39;)</code> جديد لا يساوي المصدَّر.</li>
+<li>التصدير من الوحدة يجب أن يذكر المفتاح نفسه: <code>exports: [LOGGER_SERVICE]</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>منفذ مستودع، والعقد واجهة، والرمز <code>Symbol</code> لأن الدومين لا يستورد Prisma:</p>
+<pre><code class="language-ts">export const BOOKS = Symbol(&#39;BOOKS&#39;);
+
+export interface BooksPort {
+  findTitle(id: string): Promise&lt;string | null&gt;;
+}
+</code></pre>
+<pre><code class="language-ts">{ provide: BOOKS, useClass: PrismaBooksAdapter }
+</code></pre>
+<p>خدمة التطبيق <code>@Inject(BOOKS) books: BooksPort</code>. المحوّل في وحدة بنية تحتية. هذا يمهّد لفصل المستودع. هنا المطلوب أن الرمز يعيش في ملف يراه الطرفان من غير أن تصبح الواجهة مفتاحًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>provide: &#39;BooksPort&#39;</code> في ملف و <code>@Inject(Symbol(&#39;BooksPort&#39;))</code> في آخر.</li>
+<li>إنشاء <code>Symbol</code> داخل <code>forRoot</code> كل مرة.</li>
+<li>توقع حقن الواجهة بلا رمز.</li>
+<li>سلسلة عامة <code>&#39;CONFIG&#39;</code> تتصادم مع مكتبة.</li>
+<li>نسيان تصدير <code>Symbol</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>Symbol</code> لمكتبة أو لعقد بلا صنف. الصنف المجرد عندما تريد حقنًا مباشرًا. السلسلة لأمثلة صغيرة داخل تطبيق واحد مع ثابت مصدَّر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخترع رمزًا لصنف مسجّل أصلًا بالاختصار. ولا تضع البيانات السرية داخل وصف <code>Symbol</code>. الوصف يظهر في أدوات التصحيح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>يبقى وقت التشغيل</th>
+<th><code>@Inject</code></th>
+<th>تصادم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صنف مجرد</td>
+<td>نعم</td>
+<td>غير لازم</td>
+<td>هوية الصنف</td>
+</tr>
+<tr>
+<td>سلسلة</td>
+<td>نعم</td>
+<td>لازم</td>
+<td>ممكن بالاسم</td>
+</tr>
+<tr>
+<td><code>Symbol</code> المصدَّر</td>
+<td>نعم</td>
+<td>لازم</td>
+<td>نادر إن وُحّد المرجع</td>
+</tr>
+<tr>
+<td>واجهة</td>
+<td>لا</td>
+<td>لا تصلح وحدها</td>
+<td>—</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يُحقن <code>interface BooksPort</code> مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يُمحى عند الترجمة ولا يوجد مفتاح في الحاوية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى <code>Symbol(&#39;A&#39;)</code> لا يجد المزود المسجّل بـ <code>Symbol(&#39;A&#39;)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يُنشأ كل واحد بنداء منفصل. الهوية مرجع الرمز لا النص. صدّر واحدًا واستورده.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار صنفًا مجردًا بدل <code>Symbol</code> لعقد المسجّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تريد أن يكون الأثر نفسه العقد ورمز الحقن، فتكتب المعامل بنوع الصنف المجرد بلا <code>@Inject</code>. <code>Symbol</code> أنسب إن كان يجب فصل المفتاح عن أي صنف في مكتبة مشتركة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُصدَّر مع المزود النصي؟</li>
+<li>ما دور وصف <code>Symbol</code>؟</li>
+<li>أين تضع الواجهة بالنسبة للرمز؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الرمز مفتاح تشغيل: صنف، سلسلة ثابتة، أو <code>Symbol</code> واحد مصدَّر. الواجهة تبقى للنوع بجانب المفتاح، لا بدلًا منه.</p>
+<h2>ماذا بعد؟</h2>
+<p>Async Factories: المصنع الذي تُنتظر قيمته قبل أن يُحقن أحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

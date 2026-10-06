@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Producers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-producers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Producers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إدراج مهمة غلاف بعد حفظ الكتاب، بحقن الطابور الذي سجّلته، وبحمولة معرفات فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المتحكم الذي ينادي <code>Queue</code> من <code>bullmq</code> مباشرة ينشر اسم الطابور وشكل الحمولة في طبقة HTTP. وإن أدرجت المهمة قبل <code>insert</code> ثم فشل الحفظ، يقص العامل كتابًا غير موجود. المنتج خدمة صغيرة تُستدعى بعد نجاح القاعدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@InjectQueue(coverQueueName)</code> يحقن <code>Queue</code>. <code>add(jobName, payload)</code> يكتب المهمة. <code>jobName</code> مثل <code>resize</code>. الحمولة <code>{ bookId, coverKey }</code>. لا كائن Prisma ولا <code>Buffer</code>. المتحكم يحفظ ثم يستدعي المنتج ثم يرد <code>201</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { InjectQueue } from &#39;@nestjs/bullmq&#39;;
+import { Queue } from &#39;bullmq&#39;;
+import { coverQueueName } from &#39;./queue-names.js&#39;;
+
+export interface ResizePayload {
+  bookId: string;
+  coverKey: string;
+}
+
+@Injectable()
+export class CoversProducer {
+  constructor(@InjectQueue(coverQueueName) private readonly covers: Queue) {}
+
+  enqueueResize(payload: ResizePayload) {
+    return this.covers.add(&#39;resize&#39;, payload, {
+      jobId: `resize:${payload.bookId}`,
+    });
+  }
+}
+</code></pre>
+<p><code>jobId</code> الثابت يجعل إعادة الإدراج للكتاب نفسه لا تنشئ مهمتين متوازيتين بالاسم نفسه بينما الأولى ما زالت قائمة، حسب سلوك BullMQ في تجاهل التكرار. هذا يساعد إن أعاد الزائر <code>POST</code> التحديث. لا تعتمد عليه بدل جعل القص نفسه آمنًا للتكرار.</p>
+<p><code>add</code> يعيد وعدًا بالمهمة المخزّنة. لا تنتظر <code>waitUntilFinished</code> في مسار الزائر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksService.create
+  prisma.book.create
+  covers.enqueueResize({ bookId, coverKey })
+  return { id, coverStatus: &#39;pending&#39; }
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async create(input: { title: string; coverKey: string }) {
+  const book = await this.prisma.book.create({
+    data: { title: input.title, coverKey: input.coverKey, coverStatus: &#39;pending&#39; },
+  });
+  await this.covers.enqueueResize({ bookId: book.id, coverKey: book.coverKey });
+  return book;
+}
+</code></pre>
+<p><code>coverKey</code> أتى من الرفع، وليس من كائن الملف. <code>coverStatus</code> عمود حتى تستطيع الواجهة الاستعلام إن تأخر العامل.</p>
+<h2>شرح المثال</h2>
+<p>الترتيب: صف ثم مهمة. إن رمى <code>add</code>، الكتاب موجود والقص غير مجدول. السجل يجب أن يظهر ذلك، ومسار لاحق يستطيع إعادة <code>enqueueResize</code> لأن <code>jobId</code> مرتبط بالكتاب. لا تحذف الكتاب لأن Redis تعطل لحظة. لا تمرر <code>book</code> الناتج من Prisma إلى <code>add</code>. الحقلان نصان.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>InjectQueue</code> يحل المزود الذي صنعه <code>registerQueue</code> بالاسم. <code>add</code> يسلسل JSON إلى Redis ويعيد معرف المهمة. العامل الذي ينام على الطابور يستيقظ على نسخة أخرى أو على العملية نفسها إن كان <code>@Processor</code> فيها. المنتج لا يعرف أي عملية ستنفذ. لذلك ممنوع تمرير دالة أو اتصال قاعدة داخل الحمولة.</p>
+<h2>مثال عملي</h2>
+<p>تحديث الغلاف يعيد الإدراج:</p>
+<pre><code class="language-ts">await this.prisma.book.update({
+  where: { id: bookId },
+  data: { coverKey, coverStatus: &#39;pending&#39; },
+});
+await this.covers.enqueueResize({ bookId, coverKey });
+</code></pre>
+<p>إن كانت المهمة القديمة ما زالت تعمل على <code>coverKey</code> السابق، القص يجب أن يكتب الناتج فقط إن كان المفتاح في القاعدة ما زال هو مفتاح المهمة. ذلك فحص داخل المستهلك، لأن المنتج لا يلغي العمل الجاري بمجرد <code>add</code> جديد إلا إذا صممت إلغاءً صريحًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>add(&#39;resize&#39;, book)</code> و <code>book</code> نموذج Prisma.</li>
+<li><code>job.finished()</code> قبل <code>return</code> في المتحكم.</li>
+<li>إدراج المهمة ثم الحفظ.</li>
+<li>حقن <code>Queue</code> في المتحكم ونسخ اسم الطابور هناك.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بعد كل حفظ يجعل عملًا مؤجلًا مستحقًا: غلاف جديد أو بريد بعد انتقال الحالة إلى منشور.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل التحقق من DTO. العامل ليس مكان <code>class-validator</code>. ولا لكل <code>GET</code>. القراءة مخبأ أو استعلام، لا طابور.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستدعاء</th>
+<th>ماذا ينتظر الزائر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>await enqueueResize</code></td>
+<td>تأكيد Redis فقط</td>
+</tr>
+<tr>
+<td><code>await job.waitUntilFinished()</code></td>
+<td>انتهاء القص</td>
+</tr>
+<tr>
+<td>قص متزامن في الخدمة</td>
+<td>انتهاء القص أيضًا، بلا إعادة محاولة من الطابور</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة تحقن الطابور باسمه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@InjectQueue(coverQueueName)</code> من <code>@nestjs/bullmq</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>jobId</code> المشتق من <code>bookId</code> مفيد عند إعادة الحفظ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يحد من مهمتين نشطتين بالهوية نفسها للكتاب، فيقل التوازي المكرر. القص ما زال يجب أن يتحمل التكرار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فشلت <code>add</code> بعد <code>create</code>. ماذا يبقى، وماذا لا تفعله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكتاب في القاعدة بلا مهمة. لا تحذفه تلقائيًا. سجّل الفشل وأعد الإدراج. الزائر يمكن أن يرى <code>pending</code> مع علم أن الجدولة ستُعاد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما حقول <code>ResizePayload</code>؟</li>
+<li>لماذا لا يُمرَّر نموذج Prisma؟</li>
+<li>متى يُستدعى المنتج نسبة إلى <code>insert</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المنتج يحقن الطابور بالاسم ويضيف <code>{ bookId, coverKey }</code> بعد الحفظ. الرد لا ينتظر القص.</p>
+<h2>ماذا بعد؟</h2>
+<p>المستهلك الذي يقرأ هذه الحمولة وينفذ <code>process</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

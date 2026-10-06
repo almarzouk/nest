@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Namespaced Config</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-namespaced-config.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Namespaced Config</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تجميع إعداد ميزة واحدة تحت اسم، مثل <code>database</code>، وحقنه ككائن بدل قراءة مفاتيح مبعثرة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>DATABASE_HOST</code> و <code>DATABASE_PORT</code> و <code>DATABASE_NAME</code> تتكرر في خدمات الكتب والإعارات والتقارير. كل خدمة تعيد <code>parseInt</code> على المنفذ. حين تنتقل القاعدة إلى عنوان واحد <code>DATABASE_URL</code>، البحث يلمس كل الملفات.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>registerAs(&quot;database&quot;, factory)</code> يبني كائنًا ويسمّيه. <code>load: [databaseConfig]</code> يدمجه عند <code>forRoot</code>. القراءة تكون <code>config.get(&quot;database.host&quot;)</code> أو بحقن الرمز <code>databaseConfig.KEY</code> مع النوع <code>ConfigType</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>registerAs</code> مُصدَّر من <code>@nestjs/config</code>. داخل المصنع، <code>process.env</code> يحتوي المفاتيح بعد دمج <code>.env</code> وبيئة التشغيل. المصنع مكان التحويل: <code>parseInt</code> للمنفذ، ورفض القيمة غير العددية.</p>
+<pre><code class="language-ts">export default registerAs(&quot;database&quot;, () =&gt; ({
+  host: process.env.DATABASE_HOST,
+  port: parseInt(process.env.DATABASE_PORT ?? &quot;&quot;, 10) || 5432,
+}));
+</code></pre>
+<p><code>ConfigModule.forFeature(databaseConfig)</code> تسجيل جزئي داخل وحدة الميزة إن كان الملف يعيش معها، بعد <code>forRoot</code> في الجذر.</p>
+<p><code>databaseConfig.asProvider()</code> يحوّل النطاق إلى تعريف مزوّد جاهز لـ <code>forRootAsync</code> في وحدة أخرى:</p>
+<pre><code class="language-ts">{
+  imports: [ConfigModule.forFeature(databaseConfig)],
+  useFactory: (configuration) =&gt; configuration,
+  inject: [databaseConfig.KEY],
+}
+</code></pre>
+<p>هكذا تصل خيارات القاعدة إلى <code>TypeOrmModule.forRootAsync</code> من غير نسخ المصنع. درس <code>forRootAsync</code> يفتح هذا الشكل. هنا نكتفي ببناء النطاق وقراءته.</p>
+<p><code>validationSchema</code> لا يفحص الكائن الناتج. افحص الحقول داخل المصنع أو افحص المتغيرات الخام في المخطط ثم ابنِ الكائن منها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">DATABASE_HOST, DATABASE_PORT
+        |
+ registerAs(&quot;database&quot;)
+        |
+ { host, port }
+        |
+ get(&quot;database.host&quot;)    أو    @Inject(databaseConfig.KEY)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { registerAs } from &quot;@nestjs/config&quot;;
+
+export const databaseConfig = registerAs(&quot;database&quot;, () =&gt; {
+  const port = Number(process.env.DATABASE_PORT ?? &quot;5432&quot;);
+  if (!Number.isInteger(port)) {
+    throw new Error(&quot;DATABASE_PORT must be an integer&quot;);
+  }
+  return {
+    host: process.env.DATABASE_HOST ?? &quot;localhost&quot;,
+    port,
+    name: process.env.DATABASE_NAME ?? &quot;library&quot;,
+  };
+});
+</code></pre>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { ConfigModule } from &quot;@nestjs/config&quot;;
+import { databaseConfig } from &quot;./database.config.js&quot;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      load: [databaseConfig],
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الاسم <code>&quot;database&quot;</code> هو بادئة القراءة المنقّطة. <code>host</code> الافتراضي <code>localhost</code> مقبول للتطوير، واسم القاعدة <code>library</code> كذلك. لا تضع كلمة المرور في افتراضي. إن كان الإنتاج يعتمد على <code>DATABASE_URL</code> واحد، المصنع يقرأ ذلك المفتاح ويرجع <code>{ url }</code> بدل ثلاثة حقول.</p>
+<p>رمي الخطأ من المصنع يوقف الإقلاع لأن <code>load</code> يعمل أثناء تهيئة <code>ConfigModule</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل دالة في <code>load</code> تُستدعى وتُخزَّن نتيجتها تحت اسمها إن كانت ناتج <code>registerAs</code>، أو تُدمج كجذر إن كانت مصنعًا بلا اسم. <code>get(&quot;database.port&quot;)</code> ينزل في الكائن. حقن <code>databaseConfig.KEY</code> يعيد الكائن كاملًا بنوع <code>ConfigType&lt;typeof databaseConfig&gt;</code>، فيرى المترجم <code>port</code> و <code>host</code> ولا يقبل مفتاحًا مخترعًا على هذا الكائن.</p>
+<p><code>forFeature</code> يحمّل النطاق أثناء تهيئة تلك الوحدة. التوثيق يطلب قراءة هذه القيم من <code>onModuleInit</code> لا من بنّاء وحدة أخرى قد تُهيّأ قبلها.</p>
+<h2>مثال عملي</h2>
+<p><code>catalog.config.ts</code> يجمع <code>CATALOG_URL</code> و <code>CATALOG_TIMEOUT_MS</code> تحت اسم <code>catalog</code>. خدمة الفهرس تحقن <code>ConfigType</code> مرة واحدة وتبني <code>HttpModule</code> أو عميلًا بمهلة عددية. خدمة الكتب لا تعرف أسماء المتغيرات. حين تنتقل المهلة من <code>3000</code> إلى قيمة بيئة، يتغيّر ملف النطاق فقط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>load: [databaseConfig]</code> ثم قراءة <code>database.host</code> والحصول على <code>undefined</code>.</li>
+<li>تكرار <code>parseInt</code> في الخدمات بعد أن أصبح مكانه المصنع.</li>
+<li>افتراض أن مخطط Zod على البيئة يحوّل حقول الكائن المسمّى تلقائيًا.</li>
+<li>استدعاء <code>forFeature</code> من غير <code>forRoot</code> في الجذر، فيغيب دمج <code>.env</code> قبل المصنع.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما لميزة أكثر من مفتاح مترابط: اتصال قاعدة، عميل HTTP، بريد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمفتاح واحد مثل <code>PORT</code> يُقرأ في <code>main.ts</code>. نطاق من حقل واحد يزيد ملفاتًا بلا تجميع حقيقي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مفاتيح مسطحة</th>
+<th><code>registerAs</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>get(&quot;DATABASE_PORT&quot;)</code> في كل خدمة</td>
+<td>كائن <code>database</code> يُحقن مرة</td>
+</tr>
+<tr>
+<td>التحويل مبعثر</td>
+<td>التحويل في المصنع</td>
+</tr>
+<tr>
+<td>مناسب لمفتاح وحيد</td>
+<td>مناسب لخيارات ميزة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما وسيط <code>registerAs</code> الأول، وماذا تطلب من <code>ConfigService</code> لقراءة <code>port</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأول اسم النطاق، مثل <code>&quot;database&quot;</code>. القراءة <code>get(&quot;database.port&quot;)</code> أو حقن <code>databaseConfig.KEY</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>asProvider()</code> يرجع <code>imports</code> و <code>useFactory</code> و <code>inject</code>. لماذا يوجد <code>forFeature</code> داخل <code>imports</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تُحمَّل دالة النطاق في الوحدة التي ستستهلك الكائن، ويُحقن <code>databaseConfig.KEY</code> في المصنع. هذا شكل <code>forRootAsync</code> الذي يستلم خيارات جاهزة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>وحدتان تستدعيان <code>ConfigModule.forFeature(databaseConfig)</code>، ووحدة ثالثة تقرأ الكائن من بنّائها فترى <code>undefined</code>. ما توجيه التوثيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترتيب تهيئة الوحدات غير مضمون. اقرأ ناتج التسجيل الجزئي في <code>onModuleInit</code> بعد تهيئة الاعتمادات، أو حمّل النطاق مرة عبر <code>load</code> في <code>forRoot</code> بالجذر إن كان كل التطبيق يحتاجه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يحدث <code>parseInt</code> لمنفذ القاعدة؟</li>
+<li>ما الفرق بين <code>get(&quot;DATABASE_PORT&quot;)</code> و <code>get(&quot;database.port&quot;)</code>؟</li>
+<li>هل <code>validationSchema</code> يفحص كائن <code>registerAs</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>النطاق يجمع مفاتيح الميزة في مصنع واحد. القراءة المنقّطة أو <code>ConfigType</code> تمنع تكرار التحويل. تمرير هذا الكائن إلى وحدة أخرى هو دور <code>forRootAsync</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./07-typed-config.html">Typed Config</a> يقيّد أسماء المفاتيح على <code>ConfigService</code> نفسه عبر واجهة و <code>infer</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Session في NestJS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-nestjs-session.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Session في NestJS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة وسيط الجلسة كما في صفحة Nest، وتمييزه عن جلسة <code>@nestjs/authentication</code> التي تحمل هوية المكتبة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>app.use(session({ secret: &quot;my-secret&quot; }))</code> من مقال يجعل كل زائر يملك سجلًا في الذاكرة، والسر ضعيفًا، والهوية مكررة بجانب <code>__Host-sid</code>. على Fastify الواجهة مختلفة: <code>@fastify/secure-session</code> لا <code>express-session</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المنصة الافتراضية Express: وسيط <code>express-session</code> يوقّع كعكة المعرّف ويضع كائنًا على الطلب. <code>@Session()</code> يقرأ ذلك الكائن. Fastify: مكوّن <code>secure-session</code> ثم <code>session.get</code> و <code>session.set</code>، أو <code>@Session()</code> أيضًا. هذا الوسيط مناسب لسلة أو عداد زيارات في تطبيق يعرض HTML. هوية API الدورة تبقى جلسة الحزمة بمخزن تكتبه أنت.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Session. Express:</p>
+<pre><code class="language-bash">npm i express-session
+npm i -D @types/express-session
+</code></pre>
+<pre><code class="language-ts">import session from &quot;express-session&quot;;
+
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+  }),
+);
+</code></pre>
+<p>الصفحة تقول إن المخزن الافتراضي للذاكرة ليس للإنتاج. <code>secret</code> يوقّع كعكة المعرّف، ويمكن أن يكون مصفوفة للتدوير: الأول يوقّع والكل يتحقق. <code>resave: false</code> لا يعيد الكتابة إن لم يتغير السجل. <code>saveUninitialized: false</code> لا يحفظ جلسة جديدة لم تُعدَّل، وهذا أنسب لدخول حقيقي ويقلل السجلات.</p>
+<p><code>cookie.secure: true</code> موصى به مع HTTPS. خلف وكيل اضبط <code>trust proxy</code> وإلا فلن تُرسل الكعكة الآمنة.</p>
+<pre><code class="language-ts">@Get(&quot;visits&quot;)
+visits(@Session() session: Record&lt;string, any&gt;) {
+  session.visits = session.visits ? session.visits + 1 : 1;
+  return { visits: session.visits };
+}
+</code></pre>
+<p><code>@Session()</code> من <code>@nestjs/common</code>. نوع Express من حزمة <code>express</code> إن قرأت <code>req.session</code> عبر <code>@Req()</code>.</p>
+<p>Fastify في الصفحة نفسها: <code>@fastify/secure-session</code> مع <code>secret</code> أطول من <code>32</code> حرفًا و <code>salt</code>، ثم <code>session.set(&quot;visits&quot;, n)</code>.</p>
+<p>لا تضع <code>passwordHash</code> على <code>session</code>. لا تستخدم هذا الوسيط لـ <code>POST /posts</code> في الدورة ما دام <code>SessionAuth</code> يثبت المستخدم. جلستان تعني كعكتين وسرين ومخزنين.</p>
+<p>إنتاج <code>express-session</code> يحتاج مخزنًا مثل <code>connect-pg-simple</code> أو ما يعادله، وهذا خارج مثال الصفحة. حزمة المصادقة توثّق واجهة <code>SessionStore</code> مباشرة. للهوية اتبع تلك الواجهة على Prisma.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">express-session -&gt; req.session -&gt; عداد أو سلة
+@nestjs/authentication -&gt; __Host-sid -&gt; هوية المكتبة
+لا تجمع الاثنين على نفس معنى «من المستخدم»
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Session } from &quot;@nestjs/common&quot;;
+
+@Controller(&quot;stats&quot;)
+export class StatsController {
+  @Get(&quot;visits&quot;)
+  visits(@Session() session: { visits?: number }) {
+    const visits = (session.visits ?? 0) + 1;
+    session.visits = visits;
+    return { visits };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>العداد تفضيل جهاز لا حساب. ضياع الكعكة يبدأ العد من جديد. هذا صادق للدالة. لو كان <code>visits</code> صلاحية نشر لكان كارثة، لأن أي متصفح يحصل على كعكة موقّعة جديدة بعد أن يكتب الوسيط سجلًا. الهوية لا تُستنتج من وجود <code>req.session</code> فارغ.</p>
+<p><code>saveUninitialized: false</code> قد لا يحفظ الجلسة حتى تُسند خاصية. الإسناد هنا يعدّل السجل فيُحفظ.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الوسيط يقرأ كعكة المعرّف، يتحقق من التوقيع، يحمّل السجل من المخزن، ويكتبه في نهاية الطلب إن تغيّر. مخزن الذاكرة يربط السجل بالعملية. إعادة التشغيل تنسى العداد. نسختان خلف موازن لا تشاركان العد. هذا مقبول لتجربة محلية وغير مقبول لحساب دخول.</p>
+<p>حزمة المصادقة لا تمر عبر هذا الوسيط لتثبت <code>@CurrentUser()</code>. مزوّدها يقرأ كعكتها. تشغيل الوسيط بلا داعٍ يضيف كعكة ثانية على كل زائر إن تركت <code>saveUninitialized</code> على سلوك يحفظ الجلسة الفارغة.</p>
+<h2>مثال عملي</h2>
+<p>أبقِ <code>StatsController</code> خارج مسار الهوية إن أردت تجربة الصفحة الرسمية. <code>GET /stats/visits</code> يزيد العدد. <code>GET /me</code> ما زال يعتمد كعكة الحزمة فقط. احذف الوسيط من <code>main.ts</code> إن لم يوجد قارئ <code>@Session()</code> حتى لا توزّع كعكة إضافية. سر <code>SESSION_SECRET</code> من البيئة إن بقي الوسيط، بطول عشوائي، لا <code>&quot;my-secret&quot;</code> من المثال التعليمي في الإنتاج.</p>
+<p>على Fastify بدّل التسجيل إلى <code>secure-session</code> كما في الصفحة، ولا تستدعِ <code>express-session</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>السر <code>&quot;my-secret&quot;</code> في الإنتاج.</li>
+<li>مخزن الذاكرة لهوية المستخدمين.</li>
+<li>جلسة Express موازية لـ <code>__Host-sid</code>.</li>
+<li>تخزين الدور على <code>req.session</code> ونسيانه عند سحب الصلاحية.</li>
+<li>نسخ إعداد Express إلى Fastify.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لبيانات واجهة صغيرة على تطبيق Express أو Fastify حسب صفحتهما، حين لا تكون حزمة المصادقة هي المخزن.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بديلًا عن <code>SessionStore</code> في <code>@nestjs/authentication</code> لمشروع الدورة. الهوية لها مسار واحد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>express-session</code></th>
+<th>جلسة الحزمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>req.session</code> و <code>@Session()</code></td>
+<td><code>@CurrentSession()</code></td>
+</tr>
+<tr>
+<td>مثال الصفحة للوسيط</td>
+<td><code>__Host-sid</code></td>
+</tr>
+<tr>
+<td>مخزن افتراضي ذاكرة للتجربة</td>
+<td>الإنتاج واجهة مخزن</td>
+</tr>
+<tr>
+<td>عداد الزيارات</td>
+<td>حساب المستخدم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين يُستورد <code>@Session()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/common</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>saveUninitialized: false</code> مناسب لصفحة الدخول؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يُنشأ سجل لكل زائر لم يسجّل الدخول ولم تُعدَّل جلسته، فيقل التخزين وتُحترم المتصفحات التي لم توافق على كعكة بعد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المشروع على Fastify ونسخت لقطة <code>app.use(session(...))</code>. لماذا لا تُحفظ الزيارة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>express-session</code> وسيط Express. صفحة Nest على Fastify تسجّل <code>@fastify/secure-session</code> عبر <code>app.register</code>، والقراءة بـ <code>session.get</code> و <code>session.set</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحذّر التوثيق عن المخزن الافتراضي؟</li>
+<li>أي جلسة تثبت مستخدم المكتبة؟</li>
+<li>ماذا يفعل <code>secret</code> في الوسيط؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>صفحة Session توثّق وسيط المنصة لسجل مثل عداد، وتحذّر من الذاكرة في الإنتاج. هوية الدورة تبقى كعكة الحزمة ومخزنها. لا تُنشئ جلستين لمعنى الدخول نفسه.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> لكعكة سمة بجانب جلسة الدخول من غير خلط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Session: <a href="https://docs.nestjs.com/http/session">https://docs.nestjs.com/http/session</a></li>
+<li>NestJS — Cookies: <a href="https://docs.nestjs.com/http/cookies">https://docs.nestjs.com/http/cookies</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

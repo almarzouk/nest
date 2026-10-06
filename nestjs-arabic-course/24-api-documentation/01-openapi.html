@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenAPI</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-openapi.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OpenAPI</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وصف عقد المقالات بلغة OpenAPI حتى يقرأ العميل المسارات والأجسام من غير تخمين الكود.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>POST /posts</code> يقبل <code>title</code> و <code>published</code> ويرفض <code>authorId</code>. الواجهة تعرف ذلك من مراجعة Nest أو من تجربة <code>400</code>. عميل الجوال ينسخ شكلًا قديمًا فيه <code>authorId</code>. الوثيقة الغائبة تجعل كل مستهلك يعيد الاكتشاف، والأمثلة في المحادثات تختلف عن الأنبوب.</p>
+<h2>الفكرة ببساطة</h2>
+<p>OpenAPI وصف مستقل عن اللغة لواجهات REST: مسارات، طرق، معاملات، أجسام، استجابات، وأمن. الملف JSON أو YAML. Swagger UI صفحة تعرض هذا الملف وتجرّب الطلبات. Nest يبني الوثيقة من المتحكمات والمزخرفات عبر <code>@nestjs/swagger</code>. هذا الدرس يثبت ماذا تصف الوثيقة. تركيب <code>SwaggerModule</code> في الدرس التالي.</p>
+<h2>التعريف التقني</h2>
+<p>المواصفة تسمي المسار path والعملية الطريقة على ذلك المسار. <code>GET /posts</code> و <code>POST /posts</code> عمليتان على مسار واحد. كل عملية لها معاملات واستجابات. النماذج في <code>components.schemas</code>.</p>
+<p>وثيقة المكتبة، بصورة مختصرة، تعلن:</p>
+<ul>
+<li><code>paths./posts.get</code> مع استعلام <code>page</code> و <code>pageSize</code>.</li>
+<li><code>paths./posts.post</code> بجسم فيه <code>title</code> بلا <code>authorId</code>، واستجابة <code>201</code>.</li>
+<li>أمنًا باسم يعرّف الكعكة أو <code>bearer</code>، على المسارات التي يغطيها الحارس.</li>
+</ul>
+<p>الحقل في الوثيقة يطابق DTO الذي يمر على <code>ValidationPipe</code>. إن قالت الوثيقة إن <code>role</code> جزء من التسجيل بينما DTO يرفضه، فالعميل المولَّد سيرسل حقلًا يأخذ <code>400</code>. الوثيقة تتبع الكود، لا العكس، حين نولّدها من Nest.</p>
+<p>OpenAPI لا يتحقق من الطلب وقت التشغيل. الأنبوب والحارس يفعلان ذلك. الوثيقة عقد للقراءة والتوليد والاختبار.</p>
+<p>الإصدار في <code>DocumentBuilder</code> يطابق ما تعرضه الحزمة. حقول الوسوم الهرمية في OpenAPI 3.2 تحتاج <code>setOpenAPIVersion(&#39;3.2.0&#39;)</code>، كما في صفحة العمليات، وإلا يبقى المستند <code>3.0.0</code> وترفضها المدققات الصارمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">متحكم + DTO
+  -&gt; وثيقة OpenAPI
+  -&gt; Swagger UI أو عميل مولَّد
+الطلب الحقيقي ما زال يمر على pipe و guard
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-yaml">paths:
+  /posts:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              required: [title]
+              properties:
+                title:
+                  type: string
+      responses:
+        &quot;201&quot;:
+          description: Created
+</code></pre>
+<h2>شرح المثال</h2>
+<p>العقد يقول إن الإنشاء يحتاج <code>title</code>. لا <code>authorId</code>. الاستجابة <code>201</code> لأن <code>@Post()</code> في Nest يعيد ذلك افتراضيًا إن نجحت الكتابة. هذا YAML يوضح الشكل. في المشروع لن تكتبه يدويًا لكل حقل. <code>SwaggerModule.createDocument</code> يملأه من التطبيق.</p>
+<p>عميل يولَّد من YAML قديم يبقى يرسل <code>authorId</code> حتى تعيد نشر الوثيقة بعد حذف الحقل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المستهلك يقرأ <code>openapi</code> ثم <code>paths</code> ثم العملية. أدوات التوليد تبني دوالًا من <code>operationId</code>. الافتراضي في Nest يركّب <code>operationId</code> من اسم المتحكم والطريقة. يمكن تغييره بمصنع في خيارات الوثيقة، في الدرس التالي.</p>
+<p>تجربة «Execute» في Swagger ترسل طلب HTTP حقيقي إلى التطبيق. إن كان المسار محميًا تفشل التجربة بـ <code>401</code> حتى تُضبط بيانات الأمن في الواجهة. الوصف وحده لا يفتح الحارس.</p>
+<h2>مثال عملي</h2>
+<p>قبل إضافة الحزمة، اكتب على ورقة مسارات المقالات: قائمة، إنشاء، قراءة، تحديث، حذف، وتعليقات تحت <code>posts/:postId/comments</code>. علّم أيها <code>@Public</code> وأيها يحتاج جلسة. هذه القائمة تصبح مجموعات في الوثيقة. المسار العام يُعرض بلا قفل، والمسار المحمي يُعرض مع قفل بعد درس الأمن.</p>
+<p>لا تضع أمثلة كلمات مرور حقيقية في الوثيقة التي تُنشر مع المستودع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار Swagger UI بديلًا عن الاختبار.</li>
+<li>وثيقة تُحدَّث يدويًا وتنسى حذف <code>authorId</code>.</li>
+<li>نشر وثيقة الإنتاج وفيها عنوان داخلي أو سر في مثال.</li>
+<li>ظن أن المواصفة ترفض الجسم الزائد. الأنبوب يرفضه.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يستهلك أكثر من عميل واحد API، أو حين يريد الفريق تجربة المسارات من المتصفح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كتحقق وقت التشغيل. طلب يخالف الوثيقة قد يصل إن لم يوجد أنبوب. الوثيقة شرح وعقد توليد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>وثيقة مولَّدة</th>
+<th>ملاحظات في المحادثة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تتبع المتحكمات</td>
+<td>تتقادم</td>
+</tr>
+<tr>
+<td>عميل يمكن توليده</td>
+<td>كل فريق ينسخ شكلًا</td>
+</tr>
+<tr>
+<td>تجربة من <code>/api</code></td>
+<td>تجربة من ذاكرة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الفرق بين المسار والعملية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسار عنوان مثل <code>/posts</code>. العملية طريقة HTTP على ذلك المسار، مثل <code>GET</code> أو <code>POST</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا حذف <code>authorId</code> من DTO لا يكفي لعميل مولَّد قديم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العميل بُني من وثيقة سابقة. أعد توليد الوثيقة ثم العميل بعد تغيير العقد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مسار <code>@Public</code> للقراءة ومسار إنشاء محمي. ماذا يجب أن ترى الوثيقة حتى لا تُجرَّب الكتابة بلا هوية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القراءة بلا متطلب أمن، والإنشاء مربوط بمخطط الكعكة أو <code>bearer</code> الذي ستضيفه في <code>DocumentBuilder</code>. الوثيقة لا تُسقط الحارس، لكنها تُظهر القفل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل OpenAPI يفحص الطلب؟</li>
+<li>ماذا يصف <code>components.schemas</code>؟</li>
+<li>لماذا لا تُكتب أسرار في الأمثلة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>OpenAPI عقد المسارات والعمليات. في Nest يُبنى من الكود حتى لا ينفصل عن DTO. التحقق يبقى في الأنبوب والحارس.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-swagger-module.html">SwaggerModule</a> يركّب الوثيقة على <code>/api</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — OpenAPI: <a href="https://docs.nestjs.com/openapi/introduction">https://docs.nestjs.com/openapi/introduction</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

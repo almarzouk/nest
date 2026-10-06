@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة مخارج لـ API المقالات. الاستيراد ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — مستخدم عام</h2>
+<p><code>UserResponse</code> فيه <code>id</code> و <code>email</code> و <code>role</code> ومنشئ ينسخ هذه الثلاثة. <code>UsersService.findPublic</code> يستعمل <code>select</code> بالأعمدة نفسها. <code>GET /me</code> يعيد <code>new UserResponse(...)</code> تحت <code>ClassSerializerInterceptor</code>. اختبار يرفض وجود <code>passwordHash</code> و <code>$scrypt$</code>.</p>
+<h2>مثال 2 — مقال بلا كيان مؤلف</h2>
+<p><code>PostResponse</code> فيه <code>id</code> و <code>title</code> و <code>published</code> و <code>authorId</code>. القراءة لا تستعمل <code>include</code> لصف المستخدم كاملًا. <code>@ApiOkResponse({ type: PostResponse })</code> يطابق الجسم. مسودة غير المالك لا تُجلب، لا تُخفى بعد الجلب فقط.</p>
+<h2>مثال 3 — خطأ وبريد مكرر</h2>
+<p><code>P2002</code> يصبح <code>ConflictException(&quot;Email already registered&quot;)</code>. لا <code>meta</code> ولا صف. تسجيل الدخول يسجّل <code>userId</code> بعد النجاح لا <code>RegisterDto</code>. مثال Swagger للبريد <code>ada@library.test</code> من غير تجزئة.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>GET /me</code> و <code>POST /users</code> يستعملان <code>UserResponse</code>.</li>
+<li>كائن <code>validate</code> لا يُعاد كما هو إن كان فيه عمود السر.</li>
+<li><code>api-json</code> بلا <code>passwordHash</code>.</li>
+<li>ملف تنزيل <code>StreamableFile</code> لا يمر على حذف الحقول، لذلك لا تضع سرًا في ملف عام.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Shared Modules</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-shared-modules.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Shared Modules</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعرف متى تخرج مزوّدًا يستخدمه أكثر من Feature Module إلى وحدة مشتركة، وكيف تصل إليه الوحدات عبر <code>imports</code> و <code>exports</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>BooksService</code> و <code>OrdersService</code> تحتاجان تسجيل وقت أو اتصالًا واحدًا. إن نسخت الصنف داخل كل وحدة صار عندك نسختان، وإن جعلت كل شيء في <code>AppModule</code> عادت الوحدة الجذر كيسًا بلا حدود.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الوحدة المشتركة تملك المزوّد وتصدّره. كل وحدة ميزة تستوردها حين تحتاجها. المشاركة قرار في <code>exports</code>، لا في نسخ الملف.</p>
+<h2>التعريف التقني</h2>
+<p>Shared Module في Nest وحدة عادية: <code>providers</code> فيها ما تريد مشاركته، و <code>exports</code> يجعله مرئيًا لمن يضع الوحدة في <code>imports</code>. التوثيق يصف هذا النمط مع إعادة التصدير: وحدة وسيطة تستورد وحدة ثم تعيد تصديرها فيمر ما صدّرته إلى المستورد التالي.</p>
+<p>لا يغيّر الاسم &quot;Shared&quot; سلوك الإطار. <code>@Module</code> لا يملك مفتاحًا اسمه shared. السلوك كله من <code>imports</code> و <code>exports</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">LoggerModule
+  providers: [LoggerService]
+  exports: [LoggerService]
+
+BooksModule imports LoggerModule
+OrdersModule imports LoggerModule
+النسختان تحصلان على LoggerService نفسه ما دام التسجيل واحدًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { LoggerService } from &quot;./logger.service.js&quot;;
+
+@Module({
+  providers: [LoggerService],
+  exports: [LoggerService],
+})
+export class LoggerModule {}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { BooksController } from &quot;./books.controller.js&quot;;
+import { BooksService } from &quot;./books.service.js&quot;;
+import { LoggerModule } from &quot;../logger/logger.module.js&quot;;
+
+@Module({
+  imports: [LoggerModule],
+  controllers: [BooksController],
+  providers: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>LoggerModule</code> تسجّل <code>LoggerService</code> وتصدّرها. <code>BooksModule</code> لا تعيد كتابة المزوّد في <code>providers</code>. الاستيراد يكفي حتى يحقن <code>BooksService</code> المسجّل.</p>
+<p><code>OrdersModule</code> تكرر الاستيراد نفسه. الحاوية ترى تسجيلًا واحدًا للصنف القادم من الوحدة المصدّرة، فتتشارك النسختان تلك النسخة في النطاق الافتراضي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع يمشي Nest على <code>imports</code>. مزوّدات الوحدة المستورَدة التي ظهرت في <code>exports</code> تُضاف إلى سياق المستورد. المزوّد غير المصدَّر يبقى داخل وحدته حتى لو كان الملف قابلًا للاستيراد في TypeScript.</p>
+<p>إعادة وضع <code>LoggerService</code> في <code>providers</code> عند <code>BooksModule</code> تسجيل جديد. النطاق الافتراضي singleton يكون لكل تسجيل، فتصير نسخة الكتب غير نسخة الطلبات.</p>
+<h2>مثال عملي</h2>
+<p>في متجر صغير، <code>ClockModule</code> تصدّر ساعة واحدة تُستخدم في الطلبات والفواتير حتى لا يختلف &quot;الآن&quot; بين الميزتين أثناء الاختبار. الاختبار يستبدل الوحدة المستوردة، لا كل خدمة على حدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية المجلد <code>shared</code> ثم نسيان <code>exports</code>، فيفشل الحقن رغم أن الملف مستورَد في TypeScript.</li>
+<li>وضع كل مزوّدات التطبيق في وحدة واحدة اسمها Shared حتى تضيع حدود الميزات.</li>
+<li>إعادة تسجيل الصنف في كل Feature Module مع استيراد الوحدة، فتظن أنك تشارك وأنت تنشئ نسخًا.</li>
+<li>جعل الوحدة <code>@Global()</code> لأن ثلاث وحدات تحتاجها. الاستيراد الصريح أوضح، والعالمي يُشرح في درس لاحق ويبقى نادرًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما مزوّدًا واحدًا، بلا إعداد معقّد، تحتاجه أكثر من وحدة ميزة: سجل، ساعة، مساعد تنسيق. وعندما تريد أن يبقى إنشاء النسخة في مكان واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما المزوّد خاص بميزة واحدة. <code>BooksService</code> تعيش في <code>BooksModule</code> وتُصدَّر فقط إذا طلبتها وحدة أخرى. وعندما تحتاج الوحدة خيارات عند الإقلاع، فذلك Dynamic Module لاحقًا، لا مجلد مشترك ساكن.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>نسخ الصنف في كل وحدة</th>
+<th>Shared Module</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عدد النسخ</td>
+<td>تسجيل لكل وحدة</td>
+<td>تسجيل واحد إن لم تُعد التسجيل</td>
+</tr>
+<tr>
+<td>الحدود</td>
+<td>كل ميزة تملك نسختها</td>
+<td>الوحدة المشتركة تملك النسخة وتصدّرها</td>
+</tr>
+<tr>
+<td>الاستيراد</td>
+<td>لا حاجة لاستيراد وحدة</td>
+<td><code>imports: [LoggerModule]</code></td>
+</tr>
+</tbody></table>
+<p>مقابل <code>@Global()</code>: المشترك تطلبه كل وحدة في <code>imports</code>. العالمي يوفّر ذلك الاستيراد، ودرسه التالي يبيّن ثمن الغموض.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مفتاحين في <code>@Module</code> يجعلان <code>IdService</code> متاحًا لـ <code>BooksModule</code> من غير أن تعيد تسجيله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>providers: [IdService]</code> و <code>exports: [IdService]</code> في الوحدة المالكة، ثم <code>imports</code> لتلك الوحدة داخل <code>BooksModule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>AuditService</code> مسجّل في <code>AuditModule</code> ومصدَّر. <code>BooksModule</code> تستورد <code>AuditModule</code> وتضع <code>AuditService</code> أيضًا في <code>providers</code>. كم نسخة في النطاق الافتراضي بين الوحدتين، ولماذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تسجيلان، إذن نسختان. استيراد الوحدة يشارك تسجيل <code>AuditModule</code>. إعادة الصنف في <code>providers</code> تسجيل إضافي داخل <code>BooksModule</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>صمم وحدات لمتجر فيه كتب وطلبات. الاثنان يكتبان سطرًا في <code>AuditService</code>، و<code>OrdersService</code> يقرأ <code>BooksService</code> ليتأكد أن الكتاب موجود. ما الذي يُصدَّر، وما الذي يبقى خاصًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>AuditModule</code> تصدّر <code>AuditService</code> ويستوردها الاثنان. <code>BooksModule</code> تصدّر <code>BooksService</code> لأن الطلبات تحتاجه. <code>OrdersService</code> و <code>BooksController</code> لا يُصدَّران إن لم تحتجهما وحدة أخرى. <code>AppModule</code> تستورد <code>BooksModule</code> و <code>OrdersModule</code> فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يجعل وحدة &quot;مشتركة&quot; في Nest: اسم المجلد أم <code>exports</code>؟</li>
+<li>لماذا تفشل مشاركة النسخة إذا أعادت كل ميزة تسجيل الصنف؟</li>
+<li>متى يبقى المزوّد داخل وحدة الميزة ولا ينتقل إلى وحدة مشتركة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوحدة المشتركة وحدة <code>@Module</code> تصدّر ما يتكرر استعماله. الوحدات الأخرى تستوردها. المشاركة تسجيل واحد ظاهر عبر <code>exports</code>، لا نسخ ملفات ولا جعل كل شيء عالميًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يسمي القاعدة التي رأيتها هنا: التغليف. ما لا يُصدَّر لا يُحقن من الخارج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/modules">Modules</a></li>
+<li><a href="https://docs.nestjs.com/providers">Providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

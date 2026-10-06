@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Microservices</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-microservices.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Microservices</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف خدمة Nest الصغيرة كتطبيق بطبقة نقل غير HTTP، متى تفصلها، وكيف تُنشأ بـ <code>createMicroservice</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تقسيم المجلدات لا يعزل العطل. الخدمة الصغيرة عملية مستقلة تتحدث برسالة. في Nest هي تطبيق يستعمل ناقلًا بدل HTTP أو معه. التوثيق يبنيها بـ <code>NestFactory.createMicroservice</code>. تفصل عندما تحتاج نشرًا وحد فشل مستقلين لسياق حدّه واضح في الـ Modular monolith. تفصل قبل ذلك فتنقل الدورة إلى الشبكة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عملية الكتالوج تبقى HTTP للواجهة. عملية الفوترة تستمع على ناقل. العقد نمط رسالة لا مسارًا داخليًا. كل عملية لها إصدارها. لا استيراد TypeScript بين المستودعين إلا لمكتبة عقد صغيرة إن اخترت مشاركتها. الفشل الجزئي طبيعي: الفوترة قد تكون غائبة والكتالوج يعرض الكتب.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة <code>@nestjs/microservices</code>.</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { MicroserviceOptions, Transport } from &#39;@nestjs/microservices&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.createMicroservice&lt;MicroserviceOptions&gt;(
+    AppModule,
+    { transport: Transport.TCP },
+  );
+  await app.listen();
+}
+await bootstrap();
+</code></pre>
+<p>TCP هو الافتراضي في التوثيق. <code>listen</code> هنا يبدأ نقل الخدمة لا منفذ HTTP. التطبيق الهجين يبني HTTP بـ <code>create</code> ثم <code>connectMicroservice</code> ثم <code>startAllMicroservices()</code> ثم <code>listen</code> للمنفذ.</p>
+<p>المفاهيم السابقة تبقى: حقن، حراس، Pipes، فلاتر، على حدود يدعمها النقل. <code>@MessagePattern</code> مكان <code>@Get</code> لطلب ينتظر ردًا. <code>@EventPattern</code> لحدث بلا رد.</p>
+<p>كل عملية <code>enableShutdownHooks()</code> حتى تغلق اتصال الناقل عند <code>SIGTERM</code>.</p>
+<p>لا تشارك قاعدة يكتبها الطرفان. لكل خدمة ملكية بياناتها. النسخة عبر رسالة أو واجهة قراءة. المشاركة تعيد الـ Monolith بتعطّل أوضح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">متصفح -&gt; HTTP Catalog process
+Catalog -&gt; رسالة -&gt; Billing process
+كل عملية تنشر وحدها وتسقط وحدها
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>عملية الفوترة بالمقطع أعلاه. المعالج:</p>
+<pre><code class="language-ts">import { Controller } from &#39;@nestjs/common&#39;;
+import { MessagePattern } from &#39;@nestjs/microservices&#39;;
+
+@Controller()
+export class InvoiceController {
+  @MessagePattern({ cmd: &#39;invoice.sum&#39; })
+  sum(data: number[]): number {
+    return data.reduce((total, item) =&gt; total + item, 0);
+  }
+}
+</code></pre>
+<p>العميل في درس <code>ClientProxy</code> يرسل <code>{ cmd: &#39;invoice.sum&#39; }</code>. النمط جزء من العقد مثل المسار.</p>
+<h2>شرح المثال</h2>
+<p><code>createMicroservice</code> لا يفتح REST. الاختبار بـ <code>supertest</code> لا يرى هذا المعالج. الاختبار يستدعي الدالة أو عميل الناقل. <code>sum</code> مثال التوثيق على نمط <code>{ cmd: &#39;sum&#39; }</code> مصغّرًا للفوترة. المنطق الحقيقي يبقى خدمة بلا تفاصيل النقل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العملية تتصل بالناقل أو تفتح مقبس TCP.</li>
+<li>رسالة تحمل نمطًا وحمولة.</li>
+<li>الإطار يطابق النمط إلى دالة المتحكم.</li>
+<li>الناتج يرجع لمسار الطلب-الرد أو يُهمل في الحدث.</li>
+<li>عملية ثانية لا تشارك ذاكرة <code>EventBus</code> المحلي.</li>
+<li>إعادة النشر لعملية لا تعيد تشغيل الأخرى.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>استخرج الفوترة فقط. الكتالوج HTTP هجين يرسل أمر إصدار. الفوترة تملك جداول الفاتورة. الكتالوج يحتفظ <code>invoiceId</code>. عند تعطل الفوترة يعرض الكتالوج الكتب ويُظهر تعذر الدفع. لا تنقل البحث والكتالوج معًا «ليكون التقسيم كاملًا».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>خدمة لكل جدول.</li>
+<li>قاعدة مشتركة للكتابة.</li>
+<li>TCP بين حاويات بلا اتفاق منفذ في شبكة Docker (العنوان اسم الخدمة لا <code>localhost</code> عند العبور بين الحاويات).</li>
+<li>نسيان أن <code>@MessagePattern</code> يُIgnore خارج المتحكم.</li>
+<li>استخراج بلا حد وحدة سابق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>نشر مستقل وحد فشل مستقل لسياق جاهز، مع ناقل تشغّله.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتجميل المجلدات أو لمسار CRUD واحد. الـ Modular monolith أرخص.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Modular monolith</th>
+<th>Microservice</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>main</code></td>
+<td><code>create</code> + HTTP</td>
+<td><code>createMicroservice</code> أو هجين</td>
+</tr>
+<tr>
+<td>العقد الداخلي</td>
+<td>دالة مصدَّرة</td>
+<td>نمط رسالة</td>
+</tr>
+<tr>
+<td>السقوط</td>
+<td>العملية كلها</td>
+<td>العملية المعنية</td>
+</tr>
+<tr>
+<td>البيانات</td>
+<td>ملكية منطقية</td>
+<td>ملكية عملية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفتح <code>createMicroservice</code> مع <code>Transport.TCP</code> بدل <code>NestFactory.create</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مستمع نقل للرسائل، لا تطبيق HTTP وحده. <code>listen</code> يبدأ ذلك النقل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مشاركة جدول الفاتورة كتابةً من الكتالوج تلغي العزل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن تعطّل المخطط أو القفل يضرب العمليتين، والملكية لم تنتقل مع العملية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تبقي HTTP للواجهة وتستمع للناقل في نفس العملية أثناء انتقال تدريجي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تطبيق هجين: <code>create</code> ثم <code>connectMicroservice</code> ثم <code>startAllMicroservices</code> ثم <code>listen</code>. الهدف المؤقت نقل الفوترة لا إبقاء الهجين إلى الأبد بلا سبب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الحزمة؟</li>
+<li>أين يُكتب النمط؟</li>
+<li>ماذا يبقى مشتركًا في الذاكرة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الخدمة الصغيرة عملية بنقل رسائل وعقد نمط وملكية بيانات. أنشئها بـ <code>createMicroservice</code> بعد حدود الـ Modular monolith، لا بدلًا من تلك الحدود.</p>
+<h2>ماذا بعد؟</h2>
+<p>أساليب التواصل: طلب ينتظر ردًا، وحدث يُنشر بلا انتظار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

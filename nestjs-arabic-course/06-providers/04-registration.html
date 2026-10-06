@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Registration داخل Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-registration.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Registration داخل Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط الرمز بالوصفة داخل <code>@Module</code> حتى تستطيع الحاوية إنشاء Provider عند الحل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Injectable()</code> على الملف لا يضيف الصنف إلى أي Module. Controller في <code>LendingModule</code> يطلب <code>FeesService</code>، والإقلاع يفشل لأن سياق تلك الـ Module لا يملك الرمز. التسجيل هو الربط الذي تبحث عنه الحاوية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>providers: [FeesService]</code> اختصار. التوثيق يوسّعه إلى <code>{ provide: FeesService, useClass: FeesService }</code>. المفتاح <code>provide</code> هو الرمز، و <code>useClass</code> الصنف الذي يُنشأ. عندما يتطابق الاسمان نستخدم الاختصار.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@Module({
+  controllers: [FeesController],
+  providers: [FeesService],
+})
+export class FeesModule {}
+</code></pre>
+<p>Controller في <code>controllers</code> حتى تُبنى مساراته، والخدمة في <code>providers</code> حتى يُحل <code>constructor</code>. خلط القائمتين لا يجعل الخدمة مسارًا ولا يجعل Controller وصفة حقن لمزوّد آخر.</p>
+<p>إن احتاجت <code>OrdersModule</code> الخدمة، تبقى الخدمة في <code>providers</code> الخاصة بـ <code>FeesModule</code> وتُضاف إلى <code>exports</code>. المستورِد يكتب <code>imports: [FeesModule]</code> ولا يعيد إدراج الصنف في <code>providers</code> إن كان يريد النسخة نفسها.</p>
+<p>إعادة إدراج <code>FeesService</code> في <code>providers</code> الخاصة بالمستورِد تسجيل ثانٍ ونسخة ثانية ضمن النطاق الافتراضي.</p>
+<p>الأشكال <code>useValue</code> و <code>useFactory</code> و <code>useExisting</code> تستبدل <code>useClass</code> في الكائن الطويل. دروسها بعد Scope. هذا الدرس يثبت مكان التسجيل ومعنى الاختصار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">provide: FeesService  -&gt;  الرمز الذي يطلبه constructor
+useClass: FeesService -&gt;  ما تبنيه الحاوية لهذا الرمز
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { FeesController } from &#39;./fees.controller.js&#39;;
+import { FeesService } from &#39;./fees.service.js&#39;;
+import { FeeRates } from &#39;./fee-rates.js&#39;;
+
+@Module({
+  controllers: [FeesController],
+  providers: [FeeRates, FeesService],
+  exports: [FeesService],
+})
+export class FeesModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>FeeRates</code> مسجّل لأن <code>FeesService</code> تحقنه، وهو غير مصدَّر.</li>
+<li><code>FeesService</code> مصدَّر لأن Module أخرى ستطلب الغرامة من غير أن تملك الجدول.</li>
+<li>ترتيب المصفوفة لا يحدد ترتيب الإنشاء. الحاوية تبني الاعتماديات من الأوراق نحو الجذر.</li>
+<li>الملفات مستوردة بلاحقة <code>.js</code> لأن المشروع ESM.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أثناء الإقلاع تُحوَّل كل خانة في <code>providers</code> إلى سجل: رمز ووصفة. الاختصار يصبح <code>useClass</code> للصنف نفسه. عند إنشاء <code>FeesController</code> تقرأ Nest نوع المعامل، تجد <code>FeesService</code> في سجل هذه الـ Module أو في ما استوردته وصُدّر إليها، ثم تنفذ الوصفة.</p>
+<p>البحث لا يشمل كل ملفات <code>src</code>. Module غير مستوردة من الجذر لا تدخل الرسم، وتسجيلها لا يعمل.</p>
+<p><code>nest g service fees</code> غالبًا يضيف الصنف إلى <code>providers</code>. راجع الملف بعد الأمر، خصوصًا إن ولّدت الخدمة من مجلد غير مجلد الـ Module.</p>
+<h2>مثال عملي</h2>
+<p>الجذر يركّب الميزة ولا يعيد تسجيل الخدمة:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { FeesModule } from &#39;./fees/fees.module.js&#39;;
+import { OrdersModule } from &#39;./orders/orders.module.js&#39;;
+
+@Module({
+  imports: [FeesModule, OrdersModule],
+})
+export class AppModule {}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { FeesModule } from &#39;../fees/fees.module.js&#39;;
+import { OrdersService } from &#39;./orders.service.js&#39;;
+
+@Module({
+  imports: [FeesModule],
+  providers: [OrdersService],
+})
+export class OrdersModule {}
+</code></pre>
+<p><code>OrdersService</code> تحقن <code>FeesService</code> لأن الاستيراد والتصدير وصلا الرمز. <code>FeeRates</code> ما زال غير مرئي هنا، وهذا مقصود.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Injectable()</code> من غير خانة <code>providers</code></td>
+<td>لا سجل للرمز</td>
+</tr>
+<tr>
+<td>نسخ الصنف إلى <code>providers</code> في كل Module</td>
+<td>نسخة Singleton لكل تسجيل</td>
+</tr>
+<tr>
+<td>وضع الخدمة في <code>exports</code> من غير <code>providers</code></td>
+<td>التصدير يشير إلى رمز غير مسجّل في هذه الـ Module</td>
+</tr>
+<tr>
+<td>الاعتماد على ترتيب الأسماء داخل المصفوفة</td>
+<td>الترتيب ليس جدول بناء</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>كلما أضفت Provider يُحقن داخل الـ Module نفسها أو خارجها. سجّل الاعتماديات في Module المالكة، وصَدّر ما تحتاجه الحدود الخارجية فقط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإعادة تسجيل خدمة مستوردة ومصدَّرة وأنت تريد النسخة المشتركة. استيراد الـ Module يكفي. التسجيل الثاني نسخة أخرى.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الكتابة</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>providers: [FeesService]</code></td>
+<td>الرمز هو الصنف، والوصفة <code>useClass</code> للصنف نفسه</td>
+</tr>
+<tr>
+<td><code>{ provide, useClass }</code></td>
+<td>الرمز والوصفة ظاهران عندما يختلفان لاحقًا</td>
+</tr>
+<tr>
+<td><code>exports: [FeesService]</code></td>
+<td>الرمز متاح لمن يستورد الـ Module</td>
+</tr>
+<tr>
+<td><code>imports: [FeesModule]</code></td>
+<td>إدخال الرموز المصدَّرة إلى سياق المستورِد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما المعادل الطويل لـ <code>providers: [FeesService]</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>{ provide: FeesService, useClass: FeesService }</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>OrdersModule</code> تستورد <code>FeesModule</code> والخدمة غير مصدَّرة. هل يكفي الاستيراد؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. <code>exports</code> في <code>FeesModule</code> يجب أن يحوي <code>FeesService</code>. الاستيراد يعرض ما صُدّر فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تسجيل <code>FeesService</code> مرة ثانية داخل <code>OrdersModule</code> يغيّر سلوك عدّاد داخل الخدمة؟</p>
+<details><summary>الحل</summary>
+
+<p>كل تسجيل Singleton نسخة لسياقه. العدّاد على نسخة الطلبات مستقل عن عدّاد نسخة <code>FeesModule</code>. الإبقاء على تسجيل واحد مع <code>exports</code> يشارك النسخة والعدّاد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يمثل <code>provide</code> في الشكل الطويل؟</li>
+<li>أين يُسجَّل Controller مقابل Service؟</li>
+<li>متى تعيد Module مستورِدة إدراج الصنف في <code>providers</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التسجيل يربط رمزًا بوصفة داخل Module. الاختصار <code>providers: [FeesService]</code> يعني أن الرمز والصنف واحد، والتصدير يشارك تلك النسخة لا نسخة جديدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>كتابة الطلب في <code>constructor</code>: Injection.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Provider registration: <a href="https://docs.nestjs.com/providers#provider-registration">https://docs.nestjs.com/providers#provider-registration</a></li>
+<li>NestJS — Standard providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers#standard-providers">https://docs.nestjs.com/fundamentals/custom-providers#standard-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>02 — ملاحظات في الذاكرة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>02 — ملاحظات في الذاكرة</h1>
+<p><strong>المستوى:</strong> مبتدئ<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new notes-memory</code></p>
+<h2>ماذا تبني</h2>
+<p>دفتر ملاحظات يعيش داخل مصفوفة في Service. إنشاء، وعرض، وتعديل العنوان، وحذف. بعد إعادة التشغيل الدفتر فارغ، وهذا مقصود.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>هنا تنفصل الخدمة عن المتحكم. المتحكم لا يملك المصفوفة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>@Injectable وتسجيل providers</li>
+<li>uuid للمعرّف</li>
+<li>404 عند الغياب</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>PostgreSQL</li>
+<li>مستخدم يملك الملاحظة</li>
+<li>ترقيم الصفحات</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>مشروع الصدى، وفصل Providers.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/06-providers/README.html">06-providers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>المعرّف يولَّد على الخادم لا من العميل.</li>
+<li>العنوان مطلوب وغير فارغ.</li>
+<li>الحذف لملاحظة غير موجودة 404 لا 204 صامت إن لم تجدها. إن وجدتها فـ 204.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/notes</code></td>
+<td>201</td>
+<td>ينشئ ملاحظة</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/notes</code></td>
+<td>200</td>
+<td>كل الملاحظات، [] إن خلت</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/notes/:id</code></td>
+<td>200</td>
+<td>واحدة أو 404</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td><code>/notes/:id</code></td>
+<td>200</td>
+<td>يعدّل العنوان أو المتن</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/notes/:id</code></td>
+<td>204</td>
+<td>يحذف</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new notes-memory</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>أنشئ NotesService فيها private notes = [].</li>
+<li>المتحكم يستدعي الخدمة فقط.</li>
+<li>ارفض عنوانًا فارغًا بـ BadRequestException قبل أن تتعلم DTO. في المشروع 11 ستستبدله بأنبوب.</li>
+<li>اكتب createdAt بـ new Date().toISOString().</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/notes/notes.service.ts
+src/notes/notes.controller.ts
+src/notes/notes.module.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">import { Injectable, NotFoundException } from &quot;@nestjs/common&quot;;
+import { randomUUID } from &quot;node:crypto&quot;;
+
+@Injectable()
+export class NotesService {
+  private readonly notes: Array&lt;{ id: string; title: string }&gt; = [];
+
+  create(title: string) {
+    const note = { id: randomUUID(), title };
+    this.notes.push(note);
+    return note;
+  }
+
+  findOne(id: string) {
+    const note = this.notes.find((item) =&gt; item.id === id);
+    if (!note) throw new NotFoundException();
+    return note;
+  }
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>وضع المصفوفة داخل المتحكم.</li>
+<li>قبول id من الجسم.</li>
+<li>إرجاع 404 لقائمة فارغة.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>الخمسة مسارات تعمل على الذاكرة.</li>
+<li>خدمتان مسجّلتان في وحدتين مختلفتين لا تشاركان المصفوفة إن جرّبت ذلك. في هذا المشروع وحدة واحدة تكفي.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف بحثًا ?q= على العنوان من غير قاعدة.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 2» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../01-echo-api/README.html">1. صدى الطلب</a></li>
+<li>التالي: <a href="../03-task-board/README.html">3. لوحة مهام</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

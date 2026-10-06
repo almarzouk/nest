@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>ما النطاق إن لم تكتب <code>scope</code> في <code>@Injectable()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Scope.DEFAULT</code>. نسخة واحدة للتطبيق، وخطافات دورة الحياة تعمل عليها.</p>
+</details>
+
+<h2>متوسط</h2>
+<p><code>AuditService</code> حقنت رمز <code>REQUEST</code> لتقرأ عنوان IP، و <code>OrdersController</code> يحقن <code>AuditService</code>. ماذا يصبح عمر المتحكم، وما البديل الذي يبقي الاثنين Singleton؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المتحكم يصعد إلى <code>REQUEST</code> لأن العدوى لا تُلغى. اقرأ IP في Guard أو Interceptor ومرره وسيطًا، أو ضعه في <code>AsyncLocalStorage</code>، وأبقِ <code>AuditService</code> على الافتراضي من غير حقن <code>REQUEST</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>عشرة مستأجرين، لكل منهم اتصال قاعدة خاص، والكتالوج كله يحقن مصدر البيانات. لماذا <code>REQUEST</code> العادي مكلف هنا، وما شرطا <code>durable</code> قبل أن تجربه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل طلب يعيد بناء المتحكم والكتالوج. مع عشرة مفاتيح يمكن استراتيجية <code>ContextIdFactory</code> تجمع <code>x-tenant-id</code>، والمصدر يُصرَّح <code>Scope.REQUEST</code> مع <code>durable: true</code> حتى تُعاد الشجرة للمستأجر نفسه. العدد الكبير من المفاتيح يجعل الخريطة تسريبًا، وعندها البقاء على عميل مشترك مع <code>where</code> أصح إن كان المخطط يسمح.</p>
+</details>
+
+<h2>سؤال ربط مع دورة الحياة</h2>
+<p>لماذا <code>$connect</code> على <code>PrismaService</code> العابرة أو نطاق الطلب لا يغني عن خطاف الإقلاع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خطافات التطبيق لا تُستدعى على <code>REQUEST</code>. والعابر يبني نسخة لكل مستهلك لا مرة للتطبيق، فتفتح أكثر من عميل. مكان الاتصال <code>onModuleInit</code> على Singleton واحد.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

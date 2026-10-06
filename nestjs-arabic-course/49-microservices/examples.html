@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>عملية واحدة</h2>
+<p><code>NestFactory.create</code> و <code>listen</code> ووحدات الكتالوج والفوترة. لا <code>createMicroservice</code>.</p>
+<h2>استخراج الفوترة</h2>
+<pre><code class="language-ts">const app = await NestFactory.createMicroservice&lt;MicroserviceOptions&gt;(AppModule, {
+  transport: Transport.TCP,
+  options: { host: &#39;0.0.0.0&#39;, port: 3001 },
+});
+await app.listen();
+</code></pre>
+<p>العميل <code>BILLING_HOST=billing</code> في Compose و <code>127.0.0.1</code> على الجهاز.</p>
+<h2>طلب-رد وحدث</h2>
+<pre><code class="language-ts">await lastValueFrom(this.billing.send({ cmd: &#39;invoice.issue&#39; }, { orderId }));
+this.billing.emit(&#39;invoice.issued&#39;, { orderId, invoiceId });
+</code></pre>
+<p><code>connect()</code> في <code>onApplicationBootstrap</code> إن كان الناقل شرطًا، و <code>close()</code> في <code>onModuleDestroy</code>.</p>
+<h2>طابور لا بث للبريد</h2>
+<p><code>Transport.RMQ</code> وطابور <code>invoices</code> و <code>durable: true</code> و <code>amqplib</code>. الإقرار بعد <code>issue</code> القابلة للتكرار. Redis Pub/Sub لإبطال كاش كل نسخة فقط.</p>
+<h2>خطأ عابر</h2>
+<pre><code class="language-ts">throw new RpcException({ message: &#39;order missing&#39; });
+</code></pre>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>لا قاعدة يكتبها الطرفان بعد الاستخراج.</li>
+<li>لا <code>localhost</code> بين حاويات.</li>
+<li><code>send</code> بلا اشتراك لا يرسل.</li>
+<li>Kafka بـ <code>groupId</code> مختلف لكل من يجب أن يرى كل الأحداث.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

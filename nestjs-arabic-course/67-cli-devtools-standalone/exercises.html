@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — الأداة</h2>
+<p>اربطوا: ESM، مساحة جديدة، تطوير أسرع على تطبيق قياسي، جلسة طرفية، مهمة بلا HTTP.</p>
+<ol>
+<li>Vitest</li>
+<li><code>&quot;builder&quot;: &quot;rspack&quot;</code></li>
+<li><code>npm run start -- -b swc</code></li>
+<li><code>repl()</code></li>
+<li><code>createApplicationContext</code></li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 افتراضي <code>nest new</code>. 2 monorepo في Nest 12. 3 باني SWC عبر سكربت npm. 4 ملف <code>repl.ts</code>. 5 تطبيق مستقل بلا <code>listen</code>.</p>
+</details>
+
+<h2>تمرين متوسط — أعلام قديمة</h2>
+<p>سكربت المساحة فيه <code>nest build --webpack --webpackPath webpack-hmr.config.js</code>. ماذا تستبدلون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>علما webpack مهملان. مساحة v12 تبني بـ Rspack عبر <code>&quot;builder&quot;: &quot;rspack&quot;</code>. المراقبة اليومية تبقى <code>nest start --watch</code>. وصفة HMR في الوثائق تستهدف webpack و CommonJS.</p>
+</details>
+
+<h2>تمرين متقدم — أمر التصدير</h2>
+<p><code>ExportInvoicesCommand</code> نجح على آلة المطوّر وصمت في Cron، والمنظمة لم تُفحص. ماذا ينقص التشغيل والتصميم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CommandFactory.run</code> يطفئ المسجّل بلا وسيط ثانٍ مثل <code>[&#39;error&#39;]</code>. المعرف علم <code>@Option</code> يُتحقق منه في المهمة مقابل سجل المنصة. <code>CommandFactory</code> يغلق السياق، لكن <code>@OnOneInstance</code> ما زال لازمًا إن شغّلت عدة آلات. الحارس لا يعمل لأن الأمر ليس مسار HTTP.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

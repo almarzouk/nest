@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Correlation IDs</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-correlation-ids.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Correlation IDs</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرفاق معرف واحد بكل أسطر الطلب نفسه، وتمريره إلى حمولة المهمة حتى يظهر في العامل بعد أن أغلق الزائر الاتصال.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سطر <code>POST /books</code> وسطر <code>isbn timed out</code> وسطر <code>resize failed</code> متباعدة في المجمع. بلا مفتاح مشترك لا تعرف أنها طلب الزائر نفسه. معرف التتبع يُولَّد عند الدخول ويُقرأ حيث يُكتب السجل، ويُنسخ إلى <code>{ bookId, requestId }</code> إن كان يجب أن يعيش بعد الرد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>وسيط HTTP يضع <code>requestId</code> من ترويسة <code>x-request-id</code> إن كانت آمنة، أو من <code>randomUUID()</code>. يخزنه في <code>AsyncLocalStorage</code> للعملية غير المتزامنة على الطلب. المسجّل يقرأ المخزن ويضيف الحقل. عند <code>queue.add</code> انسخ المعرف إلى الحمولة لأن العامل سياقًا آخر لا يرى التخزين المحلي للطلب.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { AsyncLocalStorage } from &#39;node:async_hooks&#39;;
+import { randomUUID } from &#39;node:crypto&#39;;
+
+export const requestContext = new AsyncLocalStorage&lt;{ requestId: string }&gt;();
+
+export function requestIdMiddleware(req: { headers: Record&lt;string, string | undefined&gt; }, _res: unknown, next: () =&gt; void) {
+  const incoming = req.headers[&#39;x-request-id&#39;];
+  const requestId = incoming &amp;&amp; /^[\w-]{8,64}$/.test(incoming) ? incoming : randomUUID();
+  requestContext.run({ requestId }, next);
+}
+</code></pre>
+<p>الشرط على الترويسة يمنع سطر سجل فيه مسافة أو حقن سطر جديد. لا تثق بطول غير محدود.</p>
+<p>في <code>write</code> داخل المسجّل:</p>
+<pre><code class="language-ts">const requestId = requestContext.getStore()?.requestId ?? null;
+</code></pre>
+<p>أضف الحقل إلى JSON. إن كان <code>null</code> فالسطر من مؤقت أو إقلاع لا من طلب، وهذا صادق.</p>
+<p>نسخ إلى الطابور:</p>
+<pre><code class="language-ts">await this.covers.add(&#39;resize&#39;, {
+  bookId: book.id,
+  coverKey: book.coverKey,
+  requestId: requestContext.getStore()?.requestId,
+});
+</code></pre>
+<p>العامل يسجّل <code>job.data.requestId</code> مع <code>bookId</code>. لا تعتمد على <code>AsyncLocalStorage</code> داخل <code>process</code> إلا إذا أنشأت سياقًا جديدًا من الحمولة في أول <code>process</code>. الأبسط قراءة الحقل من <code>job.data</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وسيط -&gt; requestId في AsyncLocalStorage
+  سطر HTTP
+  سطر ISBN
+  add { requestId }
+    عامل يقرأ job.data.requestId
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>سطر <code>request</code> وسطر <code>published</code> يحملان <code>requestId</code> نفسه. البحث في المجمع عن القيمة يعيد السلسلة.</p>
+<h2>شرح المثال</h2>
+<p>الوسيط يجب أن يغلّف <code>next()</code> داخل <code>run</code> حتى تبقى وعود المتحكم داخل السياق. استدعاء <code>run</code> ثم <code>next()</code> خارج الدالة يفقد المعرف عند أول <code>await</code>. هذا هو الخطأ الشائع مع <code>AsyncLocalStorage</code>.</p>
+<p>معرف من الموازن مقبول إن طابق النمط. وإلا ولّد واحدًا حتى لا يرفض الطلب بسبب ترويسة قبيحة، ولا تنسخ القبيحة إلى السجل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>AsyncLocalStorage</code> يتتبع استمرار <code>async</code> في Node للطلب. <code>emitAsync</code> والمستمع الذي يُستدعى من مسار الطلب يرث السياق إن بقي على السلسلة نفسها. <code>setInterval</code> في <code>@Interval</code> لا يرث طلبًا، فـ <code>requestId</code> هناك <code>null</code>. مهمة BullMQ تُنفَّذ لاحقًا على مكدس العامل، لذلك النسخ الصريح في الحمولة هو الجسر. لا تضع المعرف بدل <code>jobId</code>. <code>jobId</code> ما زال <code>resize:${bookId}</code> لمنع التكرار. <code>requestId</code> للتتبع فقط وقد يتعدد مع إعادة الحفظ.</p>
+<h2>مثال عملي</h2>
+<p>حمولة القص <code>{ bookId, coverKey, requestId? }</code>. العامل يسجّل <code>job.data.requestId ?? null</code> مع <code>bookId</code>. منتج قديم بلا الحقل لا يُفشل المهمة. المعرف للتتبع، والصف يُجلب بـ <code>bookId</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>next()</code> خارج <code>requestContext.run</code>.</li>
+<li>نسخ ترويسة خام فيها حرف سطر.</li>
+<li>توقع المعرف داخل <code>@Cron</code> بلا طلب.</li>
+<li>استخدام <code>requestId</code> كـ <code>jobId</code> فيضيع دمج مهام الكتاب الواحد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل طلب وارد في الإنتاج، ومع المهام التي تنشأ منه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن <code>bookId</code> في الحمولة. المعرف يربط السجلات ولا يجلب الصف. ولا تمرره إلى الزائر كسر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>السياق</th>
+<th>من أين يأتي المعرف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>طلب HTTP</td>
+<td>الوسيط و <code>AsyncLocalStorage</code></td>
+</tr>
+<tr>
+<td>مستمع على السلسلة نفسها</td>
+<td>التخزين نفسه</td>
+</tr>
+<tr>
+<td>عامل الطابور</td>
+<td><code>job.data.requestId</code></td>
+</tr>
+<tr>
+<td><code>@Cron</code></td>
+<td>لا طلب، الحقل <code>null</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تولّد إن غابت الترويسة أو كانت غير آمنة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>randomUUID()</code> ولا تُنسخ الترويسة القبيحة إلى السجل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يرى <code>process</code> التخزين المحلي للطلب تلقائيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العامل يعمل لاحقًا وربما في عملية أخرى. انسخ <code>requestId</code> إلى الحمولة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يكون <code>requestId</code> هو <code>jobId</code> لمهمة القص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>jobId</code> يمنع تكرار قص الكتاب (<code>resize:${bookId}</code>). معرف الطلب يتغير مع كل <code>POST</code> ولو للكتاب نفسه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُفحص شكل <code>x-request-id</code>؟</li>
+<li>أي حقل في JSON يربط السطور؟</li>
+<li>ماذا يُسجَّل في نبضة بلا طلب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>معرف الطلب يولد عند الدخول ويسافر عبر <code>AsyncLocalStorage</code> ثم يُنسخ إلى حمولة المهمة. هو للسجلات، و <code>bookId</code> يبقى مفتاح العمل.</p>
+<h2>ماذا بعد؟</h2>
+<p>اختبار الوحدة والتكامل والرحلة، حتى يثبت السجل والخدمة من غير تشغيل كل Redis في كل ملف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/techniques/logger">https://docs.nestjs.com/techniques/logger</a></li>
+<li>Node.js — <code>AsyncLocalStorage</code>: <a href="https://nodejs.org/api/async_context.html">https://nodejs.org/api/async_context.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

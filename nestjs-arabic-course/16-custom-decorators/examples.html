@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاث زينات على الشباك، كل ملف يصدّر زينة واحدة. الحارس العام يقرأ <code>@Public</code> ثم الهوية، وحارس الأدوار يقرأ <code>@Roles</code> بعده.</p>
+<h2>مثال 1 — المستخدم الحالي</h2>
+<pre><code class="language-ts">export const CurrentUser = createParamDecorator(
+  (data: keyof DeskUser | undefined, ctx: ExecutionContext) =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ user?: DeskUser }&gt;();
+    return data ? request.user?.[data] : request.user;
+  },
+);
+</code></pre>
+<p><code>refund(@CurrentUser(&#39;name&#39;) name: string)</code> لا يفتح <code>@Req()</code>. الحارس هو من يملأ <code>user</code> قبل أن تُبنى الوسائط.</p>
+<h2>مثال 2 — أدوار الدالة</h2>
+<pre><code class="language-ts">export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+</code></pre>
+<pre><code class="language-ts">@Roles([&#39;refund&#39;])
+@Post(&#39;refund&#39;)
+refund(@CurrentUser(&#39;name&#39;) name: string): { name: string } {
+  return { name };
+}
+</code></pre>
+<p><code>RolesGuard</code> يطابق <code>user.roles</code> بعد حارس الهوية. <code>guest</code> بلا <code>refund</code> يأخذ <code>403</code>. مسار بلا <code>@Roles</code> يمر من هذا الحارس.</p>
+<h2>مثال 3 — صحة معلَّمة</h2>
+<pre><code class="language-ts">export const Public = Reflector.createDecorator&lt;boolean&gt;();
+</code></pre>
+<pre><code class="language-ts">@Public(true)
+@Get(&#39;health&#39;)
+health(): { ok: true } {
+  return { ok: true };
+}
+</code></pre>
+<p>أول أسطر <code>IdentifyDeskGuard</code> حين يكون <code>APP_GUARD</code>:</p>
+<pre><code class="language-ts">const isPublic = this.reflector.getAllAndOverride(Public, [
+  context.getHandler(),
+  context.getClass(),
+]);
+if (isPublic) {
+  return true;
+}
+</code></pre>
+<p><code>GET /health</code> بلا <code>x-desk-name</code> ينجح. <code>POST /tickets</code> بلا الترويسة يبقى <code>401</code>. <code>exclude</code> غير مستخدم.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>experimentalDecorators</code> و <code>emitDecoratorMetadata</code> و <code>import &#39;reflect-metadata&#39;</code> كما ولّدها CLI.</li>
+<li>استيراد الزينة قيمة وبلاحقة <code>.js</code>.</li>
+<li><code>Roles</code> و <code>Public</code> تُقرآن بالمرجع لا بسلسلة منسوخة.</li>
+<li><code>@Public(true)</code> لا يُوضع على متحكم التذاكر.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

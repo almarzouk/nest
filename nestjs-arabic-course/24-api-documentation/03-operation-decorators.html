@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Decorators الخاصة بالعمليات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-operation-decorators.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Decorators الخاصة بالعمليات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعليم كل عملية مقالات وسمًا وملخصًا واستجابات يراها قارئ الوثيقة قبل تجربة الطلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>SwaggerModule</code> يسرد المسارات، لكن <code>POST /posts</code> يظهر بلا شرح، و <code>409</code> عند تكرار البريد غير مذكور، فيظن العميل أن الفشل الوحيد <code>400</code>. الوسوم الافتراضية من اسم الصنف تفرّق <code>Posts</code> عن <code>Comments</code> بشكل آلي قد لا يطابق لغة المنتج.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@ApiTags</code> يجمع المتحكم. <code>@ApiOperation</code> يضع ملخص العملية. <code>@ApiResponse</code> ومختصراته يعلنون الحالات التي تعرفها أنت. <code>@ApiHeader</code> يوثّق رأسًا تتوقعه. المزخرف يغيّر الوثيقة لا سلوك Nest. رمز الحالة الحقيقي يبقى من <code>@HttpCode</code> أو من الاستثناء.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Controller, Get, Param } from &quot;@nestjs/common&quot;;
+import {
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from &quot;@nestjs/swagger&quot;;
+
+@ApiTags(&quot;posts&quot;)
+@Controller(&quot;posts&quot;)
+export class PostsController {
+  @Get(&quot;:id&quot;)
+  @ApiOperation({ summary: &quot;Read one post&quot; })
+  @ApiOkResponse({ description: &quot;Published post, or the owner draft&quot; })
+  @ApiNotFoundResponse({ description: &quot;Unknown id&quot; })
+  findOne(@Param(&quot;id&quot;) id: string) {
+    return this.posts.findOne(id);
+  }
+}
+</code></pre>
+<p>مختصرات الصفحة تشمل <code>@ApiCreatedResponse</code> و <code>@ApiBadRequestResponse</code> و <code>@ApiUnauthorizedResponse</code> و <code>@ApiForbiddenResponse</code> و <code>@ApiConflictResponse</code> و <code>@ApiTooManyRequestsResponse</code>. اختر ما يرميه المسار فعلًا.</p>
+<p><code>DocumentBuilder.addGlobalResponse</code> يضيف حالة لكل العمليات، مثل <code>500</code>. لا تضع <code>404</code> عالميًا إن كانت بعض القوائم تعيد صفحة فارغة بـ <code>200</code>.</p>
+<p><code>@ApiHeader({ name, description })</code> على المتحكم إن كان كل مسار يحتاج الرأس. رأس الجلسة ليس هنا. الأمن له درس خاص. هذا الرأس لشيء مثل مفتاح تتبع داخلي إن وُجد.</p>
+<p><code>@ApiExtension(&#39;x-foo&#39;, value)</code> يضيف امتدادًا. الاسم بلا بادئة <code>x-</code> يرمي، حسب الصفحة.</p>
+<p>وسوم هرمية عبر <code>addTag</code> مع <code>parent</code> و <code>kind</code> تتطلب <code>setOpenAPIVersion(&#39;3.2.0&#39;)</code>. <code>@ApiTags</code> يتجاهل تلك الحقول ويسجّل تحذيرًا. الهرم في <code>DocumentBuilder</code> فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@ApiTags تجمع الصفحة
+@ApiOperation سطر يشرح الفعل
+@ApiOkResponse ما يعيده النجاح
+الاستثناء في الكود هو مصدر الرمز
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Post()
+@ApiOperation({ summary: &quot;Create a post for the current user&quot; })
+@ApiCreatedResponse({ description: &quot;Post stored&quot; })
+@ApiBadRequestResponse({ description: &quot;Validation failed&quot; })
+@ApiUnauthorizedResponse({ description: &quot;Sign in required&quot; })
+create(@Body() dto: CreatePostDto) {
+  return this.posts.create(dto);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الملخص يقول إن المؤلف هو المستخدم الحالي حتى لا يبحث القارئ عن <code>authorId</code> في الجسم. <code>201</code> يطابق <code>@Post</code> الناجح. <code>400</code> من الأنبوب. <code>401</code> من حارس المصادقة. <code>403</code> من السياسة يُذكر على التحديث لا على كل إنشاء إن كان الإنشاء للمحرر فقط. لا تعلن <code>204</code> إن كنت تعيد جسم المقال.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المزخرفات تخزن بيانات وصفية يقرأها <code>createDocument</code> عند بناء <code>paths./posts.post.responses</code>. Swagger UI يعرضها تحت العملية. الطلب التجريبي لا يختار الاستجابة من المزخرف. الخادم يختارها. إن رميت <code>NotFoundException</code> بلا <code>@ApiNotFoundResponse</code> تبقى الوثيقة ناقصة والسلوك صحيحًا.</p>
+<p><code>@ApiOperation</code> لا يستبدل تعليقًا يقرأه الناس في الكود إلا إن فعّلت إضافة CLI لاحقًا. المزخرف صريح وواضح في هذا الدرس.</p>
+<h2>مثال عملي</h2>
+<p>على <code>CommentsController</code> ضع الوسم <code>comments</code>. <code>POST /posts/:postId/comments</code> يأخذ <code>@ApiCreatedResponse</code> و <code>@ApiNotFoundResponse</code> حين يغيب المقال، و <code>@ApiUnauthorizedResponse</code> لأن التعليق يحتاج جلسة. <code>GET</code> العام يأخذ <code>@ApiOkResponse</code> فقط مع <code>400</code> إن فشل <code>postId</code>. راجع الوثيقة بعد التوليد وتأكد أن <code>409</code> يظهر على تسجيل البريد المكرر لا على إنشاء مقال بلا قيد فريد للعنوان.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ <code>@ApiOkResponse</code> على <code>@Post</code> الذي يعيد <code>201</code>.</li>
+<li>إعلان <code>200</code> لمسار يرمي <code>404</code>.</li>
+<li>وسم لكل طريقة داخل متحكم واحد فيتفتت التصفح.</li>
+<li>الاعتقاد أن المزخرف يغيّر رمز Nest.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل عملية يستهلكها عميل خارج الوحدة، خصوصًا الحالات غير <code>200</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاختراع حالات لا يرميها الكود. الوثيقة الكاذبة أسوأ من الوثيقة الناقصة لأن العميل يجهّز فروعًا لا تحدث.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مختصر الحالة</th>
+<th><code>@ApiResponse</code> العام</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>اسم يوضح الرمز</td>
+<td>تمرّر <code>status</code> بنفسك</td>
+</tr>
+<tr>
+<td>مناسب لـ 201 و 404 و 401</td>
+<td>مناسب لرمز بلا مختصر</td>
+</tr>
+<tr>
+<td>لا يغيّر التنفيذ</td>
+<td>لا يغيّر التنفيذ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مزخرف يضع سطر «Create a post»؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ApiOperation({ summary: &quot;Create a post&quot; })</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أي مختصر يناسب تكرار البريد <code>409</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ApiConflictResponse</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تضع <code>404</code> في <code>addGlobalResponse</code> لقوائم المقالات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصفحة الفارغة في هذه الدورة <code>200</code> مع مصفوفة فارغة. <code>404</code> العالمي يعلّم العميل أن القائمة تختفي عند الفراغ.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يأتي رمز الحالة فعليًا؟</li>
+<li>ماذا يجمع <code>@ApiTags</code>؟</li>
+<li>متى يلزم <code>setOpenAPIVersion(&#39;3.2.0&#39;)</code> للوسوم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>مزخرفات العملية تشرح الوسم والملخص والحالات. اجعلها مرآة للاستثناءات التي يرميها المسار، لا قائمة أمنيات.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-dto-documentation.html">توثيق DTO</a> خصائص الجسم في الوثيقة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Operations: <a href="https://docs.nestjs.com/openapi/operations">https://docs.nestjs.com/openapi/operations</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

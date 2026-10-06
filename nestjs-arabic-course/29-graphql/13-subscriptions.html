@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Subscriptions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="13-subscriptions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Subscriptions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بث حدث من الخادم إلى عميل GraphQL ما دام الاتصال مفتوحًا، عبر <code>graphql-ws</code> لا عبر بروتوكول الاشتراك القديم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>شاشة المسودات التي تعيد <code>query { books { title } }</code> كل ثانيتين تدفع الثمن على القائمة كلها. عندما ينشر محرر كتابًا، العميل يحتاج عنصرًا واحدًا. الاشتراك عملية ثالثة في المخطط: الخادم يدفع قيمة عندما يقع الحدث. اتصال HTTP العادي للـ query ينتهي مع الرد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تعلن <code>Subscription</code> في المخطط، وتكتب <code>@Subscription</code> تعيد مكررًا غير متزامن. النقل في Nest الحالي مفتاح <code>subscriptions[&#39;graphql-ws&#39;]</code>. حزمة <code>subscriptions-transport-ws</code> لم تعد مقبولة. GraphiQL يستطيع تشغيل الاشتراك عندما يكون هذا المفتاح مضبوطًا.</p>
+<h2>التعريف التقني</h2>
+<p>الإعداد، كما في صفحة البداية:</p>
+<pre><code class="language-ts">GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  autoSchemaFile: join(process.cwd(), &#39;src/schema.gql&#39;),
+  subscriptions: {
+    &#39;graphql-ws&#39;: true,
+  },
+});
+</code></pre>
+<p>بروتوكول العميل يجب أن يكون <code>graphql-transport-ws</code> الذي تتحدثه مكتبة <code>graphql-ws</code>. عميل Apollo القديم على البروتوكول السابق لا يتصل. لا تُبقِ المفتاح القديم «للتوافق» لأنه لم يعد جزءًا من الإعداد.</p>
+<p>محلل النشر:</p>
+<pre><code class="language-ts">import { Resolver, Subscription } from &#39;@nestjs/graphql&#39;;
+import { Book } from &#39;./book.model.js&#39;;
+
+@Resolver()
+export class BooksEventsResolver {
+  @Subscription(() =&gt; Book)
+  bookPublished() {
+    return this.events.asyncIterator(&#39;book.published&#39;);
+  }
+}
+</code></pre>
+<p><code>asyncIterator</code> هنا من <code>PubSub</code> في <code>graphql-subscriptions</code>، وهو ناشر داخل العملية. يكفي لفهم القناة. عدة نسخ من التطبيق لا ترى حدث بعضها عبر هذا الناشر. طابور أو Redis موضوع فصول لاحقة، لا إعدادًا تخفيه داخل الاشتراك في اليوم الأول.</p>
+<p>عند إنشاء الكتاب في الـ mutation، انشر بعد نجاح الحفظ:</p>
+<pre><code class="language-ts">await this.events.publish(&#39;book.published&#39;, { bookPublished: book });
+</code></pre>
+<p>اسم الخاصية في الحمولة يطابق اسم الحقل حتى يسلّم Apollo القيمة للمشترك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل يفتح websocket على /graphql
+  subscription { bookPublished { title } }
+mutation تنجح
+  publish
+    المشترك يستلم { data: { bookPublished: { title } } }
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>نص العميل:</p>
+<pre><code class="language-graphql">subscription {
+  bookPublished {
+    id
+    title
+  }
+}
+</code></pre>
+<p>اتركه مفتوحًا في GraphiQL. من لسان آخر نفّذ <code>createBook</code>. يظهر عنوان الكتاب في لسان الاشتراك من غير إعادة الاستعلام عن الرف.</p>
+<h2>شرح المثال</h2>
+<p>الاشتراك لا يجلب الرف الحالي. العميل الذي يفتح الشاشة الآن يحتاج <code>query</code> للحالة الحاضرة ثم <code>subscription</code> لما يلي. الخلط بينهما يرسم شاشة فارغة حتى يحدث النشر التالي. أغلق GraphiQL في الإنتاج كما سبق، واشترك من عميل الواجهة بمكتبة تفهم <code>graphql-ws</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>graphql-ws: true</code> يركب معالج الاشتراك على مسار GraphQL. الاتصال يعيش أطول من طلب POST. كل حدث من المكرر يُتحقق من حقوله كأنه رد عملية. إن رميت الكتاب كاملًا من Prisma، تسري الحقول المطلوبة فقط، وما زال النشر نفسه يحمل الكائن في الذاكرة. انشر الشكل الذي يعرفه <code>@ObjectType</code>، لا صف القاعدة.</p>
+<p>Context الاتصال ليس <code>req</code> الخاص بـ POST دائمًا. حارس <code>GqlAuthGuard</code> الذي يقرأ <code>req.headers</code> قد لا يرى هوية اتصال الـ websocket إلا إذا ملأت context في إعداد <code>graphql-ws</code> عند الاتصال. إن كان النشر عامًا للكتالوج المنشور، يمكن تأجيل ذلك. إن كان الحدث مسودة لمستخدم، لا تفتح الاشتراك بلا هوية على الاتصال.</p>
+<h2>مثال عملي</h2>
+<p>افتح الرف بـ <code>query { books { id title } }</code> وابقَ على <code>subscription { bookPublished { id title } }</code>. الواجهة تلحق الحمولة محليًا. الخادم لا يدمج القائمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مفتاح <code>subscriptions-transport-ws</code> من مقال قديم.</li>
+<li>توقع أن <code>PubSub</code> داخل العملية يبلغ نسخة ثانية من Nest.</li>
+<li>نسيان <code>query</code> الأولية والاكتفاء بالاشتراك.</li>
+<li>نشر كيان فيه حقول غير موجودة على <code>Book</code> ثم الاستغراب من فشل التسليم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لحدث نادر نسبيًا تشاهده شاشة مفتوحة: كتاب نُشر، توفر تغيّر، تعليق أضيف على صفحة مفتوحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بديلًا عن قائمة تُحدَّث مرة في الدقيقة. الاستعلام أرخص من إبقاء مقبس لكل زائر. ولا بديلًا عن طابور العمل في فصول لاحقة. الاشتراك يبلّغ من اتصل، ولا يحفظ العمل إن لم يكن أحد يستمع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الآلية</th>
+<th>عمر الاتصال</th>
+<th>من يدفع البيانات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Query</code></td>
+<td>طلب واحد</td>
+<td>العميل يسأل</td>
+</tr>
+<tr>
+<td><code>Subscription</code> + <code>graphql-ws</code></td>
+<td>مفتوح</td>
+<td>الخادم عند <code>publish</code></td>
+</tr>
+<tr>
+<td>إعادة الاستعلام</td>
+<td>طلبات متكررة</td>
+<td>العميل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مفتاح تضبطه في <code>subscriptions</code>؟</p>
+<details>
+<summary>الحل</summary>
+`'graphql-ws': true`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تحتاج الشاشة استعلامًا واشتراكًا معًا؟</p>
+<details>
+<summary>الحل</summary>
+الاستعلام يجلب الحالة الآن. الاشتراك يبلّغ بما يحدث بعد فتح الاتصال.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>PubSub</code> في هذا الدرس لا يكفي لنسختين من التطبيق خلف موازن؟</p>
+<details>
+<summary>الحل</summary>
+الناشر داخل العملية. الحدث الذي تنشره النسخة أ لا يصل مشتركًا على النسخة ب. الناقل المشترك موضوع لاحق.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما بروتوكول العميل المتوافق؟</li>
+<li>ماذا يطابق مفتاح الحمولة؟</li>
+<li>لماذا لا يغني الاشتراك عن حارس اتصال مختلف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاشتراك عملية ثالثة على قناة <code>graphql-ws</code>. انشر بعد الحفظ شكل <code>Book</code>، واترك الحالة الأولية لاستعلام. الناشر الداخلي لا يعبر حدود العملية.</p>
+<h2>ماذا بعد؟</h2>
+<p>WebSocket عام في Nest عبر بوابة، عندما لا يكون الحدث حقل GraphQL.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Quick start (Subscriptions): <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+<li>NestJS — Subscriptions: <a href="https://docs.nestjs.com/graphql/subscriptions">https://docs.nestjs.com/graphql/subscriptions</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

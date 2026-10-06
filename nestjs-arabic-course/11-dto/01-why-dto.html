@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا DTO</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-dto.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا DTO</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف DTO كشكل البيانات المسموح على حدود التطبيق، لا ككائن داخلي للخدمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>req.body</code> كائن حر. العميل يرسل <code>cents</code> و <code>role</code> و <code>id</code>. الخدمة التي تقبل الكائن كله تثق بحقول لم تعرضها في العقد، وقد تكتب <code>role</code> في قاعدة البيانات لأن المفتاح كان موجودًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Data Transfer Object كائن ينقل البيانات عبر حد. في HTTP الحد هو الطلب والرد. الصنف يسمي الحقول المسموحة. ما ليس في الصنف ليس جزءًا من العقد، حتى لو وصل في JSON.</p>
+<h2>التعريف التقني</h2>
+<p>DTO في Nest صنف TypeScript تعيش حقوله على معاملات المتحكم أو على قيمة يرجعها. <code>ValidationPipe</code> يقرأ الزينة على صنف الدخل. فصل التحقق يضبط ماذا يحدث للحقل الزائد. هذا الدرس يثبت السبب: الحدود تحتاج شكلًا مسمّى قبل أي خيار أنبوب.</p>
+<p>شكل الجدول في قاعدة البيانات شكل آخر. الكيان قد يملك <code>createdAt</code> و <code>passwordHash</code>. عقد الإنشاء لا يملكهما. عقد الرد قد يملك <code>id</code> و <code>createdAt</code> ولا يملك التجزئة.</p>
+<p>توثيق التحقق يقول إن قواعد <code>ValidationPipe</code> تعيش على صنف DTO، والصنف هو نوع المعامل أيضًا. الواجهة لا تكفي لذلك الأنبوب. درس المقارنة يلي هذا الدرس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل  --عقد دخل--&gt;  متحكم  --كيان--&gt;  مخزن
+عميل  &lt;--عقد خرج--  متحكم  &lt;--كيان--  مخزن
+</code></pre>
+<p>العقدان يلتقيان في المتحكم. الخدمة تتحدث بما تحتاجه، لا بكل ما احتمله JSON.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class CreateMemberDto {
+  fullName: string;
+  email: string;
+}
+</code></pre>
+<pre><code class="language-ts">@Post()
+create(@Body() dto: CreateMemberDto): { fullName: string } {
+  return { fullName: dto.fullName };
+}
+</code></pre>
+<p>الصنف بلا زينة بعد. هو تسمية للحقول التي تنوي قبولها. الزينة في درس <code>class-validator</code>. من غير أنبوب <code>whitelist</code>، الحقل الزائد ما زال على الكائن وقت التشغيل. التسمية هنا خطوة أولى حتى لا تكتب <code>any</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>fullName</code> و <code>email</code> هما ما تتحدث عنه الدالة.</li>
+<li>الإرجاع لا يعيد <code>dto</code> كاملًا. يرد باسم فقط حتى ترى أن الخارج قرار منفصل.</li>
+<li>لا <code>id</code> في الدخل. الخادم يملك المفتاح.</li>
+<li>الملف <code>create-member.dto.ts</code> يعيش بجانب الميزة لا داخل الخدمة كجدول.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>JSON يصبح كائنًا عاديًا في المحلّل. <code>@Body()</code> يمرره إلى المعامل. نوع TypeScript <code>CreateMemberDto</code> يوجه المحرر ولا يغيّر الكائن وحده. عند التشغيل الكائن ما زال بلا سلسلة نموذج ما لم يحوّله <code>class-transformer</code>.</p>
+<p>لذلك «عندي DTO» في التوقيع لا يساوي «الحقول الزائدة اختفت». الاختفاء خيار أنبوب لاحق. الفائدة المباشرة: الدالة لا تقرأ <code>req.body</code> الخام، والفريق يرى الحقول في ملف واحد.</p>
+<p>الخدمة <code>MembersService.create(dto)</code> تستلم الصنف لا الطلب. الاختبار يبني <code>{ fullName, email }</code> من غير HTTP.</p>
+<h2>مثال عملي</h2>
+<p>نادي قراءة يقبل عضوًا جديدًا. النموذج يرسل الاسم والبريد. مطور الواجهة أضاف <code>points: 999</code> من أداة تجربة. عقد الدخل لا يذكر <code>points</code>. الخدمة التي تقرأ <code>dto.fullName</code> و <code>dto.email</code> فقط لا تمنح نقاطًا. حين يُفعَّل <code>whitelist</code> لاحقًا تسقط <code>points</code> قبل الخدمة. حتى ذلك الوقت، الامتناع عن قراءة المفتاح الزائد هو الانضباط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير <code>req.body</code> إلى المستودع.</li>
+<li>جعل DTO نسخة من كل أعمدة الجدول، فيصبح تغيير عمود تغييرًا للعقد العام.</li>
+<li>إرجاع كيان العضو وفيه <code>passwordHash</code> لأن الدالة رجعت ناتج <code>save</code>.</li>
+<li>اعتبار الواجهة في ملف <code>types.ts</code> بديلًا كافيًا للأنبوب. الدرس التالي يشرح المسح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل جسم يدخل أو يخرج عبر HTTP حين يكون للعميل شكل ثابت: إنشاء، تحديث، عنصر في قائمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعدد في المسار حيث <code>ParseIntPipe</code> يكفي، ولسر داخلي لا يعبر الشبكة، ولكائن إعداد يُقرأ من البيئة. ذلك تكوين لا عقد عميل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>كيان المخزن</th>
+<th>DTO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يراه</td>
+<td>الخدمة والمستودع</td>
+<td>العميل عبر JSON</td>
+</tr>
+<tr>
+<td>الحقول</td>
+<td>أعمدة وحالة</td>
+<td>ما اتفقتم أن يعبر الحد</td>
+</tr>
+<tr>
+<td>التغيير</td>
+<td>هجرة قاعدة</td>
+<td>تغيير عقد، وقد يكسر عميلًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يكون <code>id</code> حقلًا في <code>CreateMemberDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المفتاح يولّده الخادم. العميل لا يختار معرّف السجل في عقد الإنشاء.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الخدمة رجعت كائن العضو كاملًا إلى المتحكم، والمتحكم رجعه كما هو. ما الحقل الذي يجب ألا يغادر العملية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أي سر مثل <code>passwordHash</code>. الخارج يحتاج شكلًا يسمي الحقول العامة فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عميل قديم يعتمد على <code>fullName</code>. أضفت <code>displayName</code> وأردت حذف <code>fullName</code> في الأسبوع نفسه. ما أثر ذلك على العقد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حذف حقل مستخدَم يكسر العميل. الإضافة ممكنة إن بقي <code>fullName</code>. تغيير العقد قرار إصدار لا تنظيف ملف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا ينقل DTO؟</li>
+<li>لماذا لا يكفي شكل الجدول؟</li>
+<li>هل التوقيع وحده يحذف الحقول الزائدة؟</li>
+<li>أين تعيش قاعدة النقاط: في قراءة المفتاح الزائد أم في عقد الدخل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>DTO شكل على الحد بين العميل والتطبيق. الدخل غير الكيان، والخارج غير الاثنين. التسمية في صنف هي بداية العقد، والتحقق والتحويل دروس تالية تثبتها وقت التشغيل.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يقارن هذا الصنف بواجهة TypeScript، ولماذا الواجهة لا تخدم <code>ValidationPipe</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

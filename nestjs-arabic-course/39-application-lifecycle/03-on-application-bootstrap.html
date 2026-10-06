@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OnApplicationBootstrap</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-on-application-bootstrap.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OnApplicationBootstrap</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل ما يحتاج رسم الوحدات كاملًا، مع بقاء المنفذ مغلقًا حتى ينتهي هذا الخطاف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>onModuleInit</code> مبكر لبعض العمل: عميل Microservice ما زال كسولًا، أو مهمة تحتاج Provider من وحدة شقيقة لم تُرتَّب معك في العمق نفسه. إن فتحت <code>listen</code> ثم بدأت هذا العمل، يصل طلب قبل أن يكتمل التسخين. <code>onApplicationBootstrap</code> يقع بعد تهيئة كل الوحدات وقبل الاستماع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد أن رأى كل Module خطاف البداية الخاص به، يمر Nest مرة ثانية بـ <code>onApplicationBootstrap</code> بالاتجاه نفسه: من الأوراق إلى الجذر، مع انتظار كل وحدة. ثم يبدأ الاستماع. الخطاف يقول: الرسم جاهز، والباب لم يُفتح.</p>
+<h2>التعريف التقني</h2>
+<p>الواجهة <code>OnApplicationBootstrap</code> تعرّف <code>onApplicationBootstrap(): void | Promise&lt;void&gt;</code>. التوثيق: تُستدعى مرة بعد تهيئة كل الوحدات، وقبل الاستماع للاتصالات.</p>
+<p>توثيق Microservices يضع <code>ClientProxy.connect()</code> هنا عندما تريد تأخير الإقلاع حتى يقوم الاتصال، لأن <code>ClientProxy</code> كسول ولا يتصل عند أول بناء. استدعاء <code>connect()</code> داخل هذا الخطاف يرفض الإقلاع إن كان الناقل غائبًا.</p>
+<p>الخطاف لا يعمل على أصناف <code>Scope.REQUEST</code>. و <code>app.close()</code> لا يستدعيه؛ له سلسلة إيقاف منفصلة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كل onModuleInit اكتمل
+  -&gt; onApplicationBootstrap من الأوراق إلى الجذر
+  -&gt; listen / startAllMicroservices
+</code></pre>
+<p>ما تضعه هنا يحجز cold start. ضيفه إن كان شرطًا لصحة أول طلب، وأجّله إلى أول استخدام إن كان اختياريًا.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnApplicationBootstrap } from &#39;@nestjs/common&#39;;
+import { ClientProxy } from &#39;@nestjs/microservices&#39;;
+
+@Injectable()
+export class BillingGateway implements OnApplicationBootstrap {
+  constructor(private readonly client: ClientProxy) {}
+
+  async onApplicationBootstrap(): Promise&lt;void&gt; {
+    await this.client.connect();
+  }
+}
+</code></pre>
+<p>حتى يكتمل <code>connect</code> لا يستدعي الإطار <code>listen</code>. طلب HTTP لا يجد عملية تقبل المقابس قبل ذلك.</p>
+<h2>شرح المثال</h2>
+<p><code>ClientProxy</code> يُحقن كاعتماد عادي، والاتصال الفعلي مؤجّل. الخطاف يجعل الفشل ظاهرًا أثناء الإقلاع. أغلق العميل في خطاف الإيقاف المناسب، لأن هذا الملف يفتح فقط. إن كان الناقل اختياريًا للمنتج، فالانتظار هنا يوقف المتجر كله لأجل تكامل جانبي، وذلك قرار منتج لا تفصيل إطار.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تنتهي سلسلة <code>onModuleInit</code> لكل الوحدات.</li>
+<li>تبدأ سلسلة <code>onApplicationBootstrap</code> بالترتيب نفسه: الأعمق ثم الأقرب للجذر، مع <code>await</code>.</li>
+<li>بعد آخر وحدة يستدعي Nest مسار الاستماع: <code>app.listen</code> أو ما يعادله في <code>createMicroservice</code>.</li>
+<li>رفض الوعد يمنع الاستماع. العملية تتوقف حسب <code>abortOnError</code> في مسار HTTP المعتاد.</li>
+<li>لا يوجد طلب، فلا <code>REQUEST</code> ولا مستخدم.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تسخين ذاكرة قراءة بعد أن أصبحت خدمات الكتالوج قابلة للحقن:</p>
+<pre><code class="language-ts">import { Injectable, OnApplicationBootstrap } from &#39;@nestjs/common&#39;;
+import { CatalogReader } from &#39;./catalog.reader.js&#39;;
+
+@Injectable()
+export class CatalogWarmup implements OnApplicationBootstrap {
+  constructor(private readonly reader: CatalogReader) {}
+
+  async onApplicationBootstrap(): Promise&lt;void&gt; {
+    await this.reader.preloadGenres();
+  }
+}
+</code></pre>
+<p><code>preloadGenres</code> يقرأ من قاعدة فُتحت في <code>onModuleInit</code> لوحدة أعمق. وضعه في <code>onModuleInit</code> الخاص بهذه الخدمة يغامر بترتيب الأشقاء. وضعه بعد <code>listen</code> يسمح لأول <code>GET /genres</code> أن يسبق التسخين. الخطاف الأوسط يمنع الاثنين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فتح منفذ يدويًا داخل الخطاف فيتكرر الاستماع مع <code>listen</code>.</li>
+<li>اتصال كسول لا يلزم أن يحجز الإقلاع، فيطول زمن النسخة في Kubernetes.</li>
+<li>افتراض أن Controllers استقبلت طلبًا. الاستماع لم يبدأ.</li>
+<li>تسجيل <code>setInterval</code> هنا ونسيان إيقافه، فتبقى العملية بعد <code>app.close()</code>.</li>
+<li>استخدامه على Gateway أو استراتيجية يجب أن تبقى Singleton ثم وسم الصنف <code>REQUEST</code>. الخطاف لن يعمل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>اتصال ناقل يجب أن ينجح قبل الباب، أو تسخين يعتمد على رسم مكتمل، أو فحص جاهزية داخلي تريد فشله قبل أن يراك المنسّق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>اتصال يخص وحدة واحدة ولا يحتاج الجيران: <code>onModuleInit</code>. تنظيف: خطافات الإيقاف. عمل كل طلب: مسار الطلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطاف</th>
+<th>الرسم</th>
+<th>الباب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>onModuleInit</code></td>
+<td>وحدتك محلولة، وحدات أعلى قد لا تكون</td>
+<td>مغلق</td>
+</tr>
+<tr>
+<td><code>onApplicationBootstrap</code></td>
+<td>كل الوحدات هُيئت</td>
+<td>ما زال مغلقًا حتى ينتهي</td>
+</tr>
+<tr>
+<td>أول طلب</td>
+<td>الرسم حي</td>
+<td>مفتوح</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل يصل <code>GET /health</code> أثناء <code>onApplicationBootstrap</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الخطاف يُستدعى قبل الاستماع للاتصالات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين يوثّق Nest نداء <code>ClientProxy.connect()</code> إن أردت حجز الإقلاع حتى يتصل العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>داخل <code>onApplicationBootstrap</code>. العميل كسول، والخطاف يؤخر متابعة الإقلاع حتى يكتمل <code>connect</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مهمة cron اختيارية تتصل ببريد خارجي. لماذا تبقيها خارج هذا الخطاف في خدمة المتجر الأساسية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الوعد المرفوض يوقف الاستماع. تكامل اختياري لا يجوز أن يمنع <code>listen</code>. ابدأه بعد الإقلاع أو التقط الفشل داخله إن قبلت العمل من دونه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق الزمني عن <code>onModuleInit</code>؟</li>
+<li>هل يُنتظر الـ <code>Promise</code>؟</li>
+<li>ماذا يحدث للباب إن رمى الخطاف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>onApplicationBootstrap</code> يعني أن كل الوحدات أُنهيت تهيئتها وأن المنفذ لم يُفتح بعد. ضع فيه ما يجب أن ينجح قبل أول اتصال خارجي.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>OnModuleDestroy</code>: أول خطاف في مرحلة الإنهاء.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+<li>NestJS — Microservices (ClientProxy.connect): <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reflector</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-reflector.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Reflector</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة metadata التي لصقها <code>SetMetadata</code> عبر <code>Reflector</code>، مع تغليب الدالة على الصنف أو دمج المصفوفات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>Reflect.getMetadata</code> مباشرة يكرر المفاتيح وقواعد «الدالة تغلب الصنف». الحارس الذي ينسخ القاعدة يخطئ في مسار عام على الصنف ومسار استثناء على الدالة. <code>Reflector</code> من <code>@nestjs/core</code> يجمع الاستعلام: مفتاح، وهدف أو قائمة أهداف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>احقن <code>Reflector</code> في Guard أو Interceptor. <code>get</code> يسأل هدفًا واحدًا. <code>getAllAndOverride</code> يمشي قائمة أهداف ويعيد أول قيمة معرّفة، فتضع الدالة أولًا ثم الصنف ليغلب المسار على المتحكم. <code>getAllAndMerge</code> يجمع المصفوفات من الأهداف. <code>Reflector.createDecorator</code> ينشئ مزخرفًا ورمز قراءة معًا حتى لا تكتب سلسلة المفتاح بيدك.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Reflector } from &#39;@nestjs/core&#39;;
+
+constructor(private readonly reflector: Reflector) {}
+</code></pre>
+<p>قراءة علم عام كما في توثيق الحراس:</p>
+<pre><code class="language-ts">const isPublic = this.reflector.getAllAndOverride&lt;boolean&gt;(IS_PUBLIC_KEY, [
+  context.getHandler(),
+  context.getClass(),
+]);
+</code></pre>
+<p><code>getHandler()</code> الدالة و <code>getClass()</code> الصنف، من <code>ExecutionContext</code> في الدرس الأخير من الفصل. ترتيب المصفوفة هو ترتيب التغليب: الأول المعرّف يفوز. لذلك الدالة قبل الصنف تعني أن <code>@Public()</code> على المسار يسمح حتى لو كان الصنف بلا العلم، وأن علمًا على الصنف يسري على الدوال التي لم تعرّف المفتاح.</p>
+<p><code>getAllAndMerge</code> عندما تجمع أدوار الصنف مع أدوار الدالة في قائمة واحدة بدل إسقاط أحدهما.</p>
+<p><code>get(key, target)</code> عندما تعرف أن المفتاح على الدالة فقط.</p>
+<p>مزخرف مولَّد:</p>
+<pre><code class="language-ts">import { Reflector } from &#39;@nestjs/core&#39;;
+
+export const Roles = Reflector.createDecorator&lt;string[]&gt;();
+</code></pre>
+<p>الاستعمال <code>@Roles([&#39;admin&#39;])</code>، والقراءة <code>this.reflector.get(Roles, context.getHandler())</code>. النوع على <code>createDecorator</code> يوثق القيمة. <code>DiscoveryService.createDecorator</code> مسار آخر للتصفية في الدرس الخاص به، لا تستبدله هنا من غير حاجة للاكتشاف.</p>
+<p><code>Reflector</code> نفسه Singleton تحقنه. لا تنشئ <code>new Reflector()</code> في كل طلب إلا في اختبار يعزل القراءة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المفتاح على الدالة؟ خذه
+وإلا على الصنف؟ خذه
+وإلا الافتراض في الحارس (غالبًا ممنوع)
+</code></pre>
+<p>هذا <code>getAllAndOverride</code> بالترتيب <code>[handler, class]</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { CanActivate, ExecutionContext, Injectable } from &#39;@nestjs/common&#39;;
+import { Reflector } from &#39;@nestjs/core&#39;;
+import { IS_PUBLIC_KEY } from &#39;./public.decorator.js&#39;;
+
+@Injectable()
+export class AuthGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.getAllAndOverride&lt;boolean&gt;(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+    const request = context.switchToHttp().getRequest&lt;{ user?: unknown }&gt;();
+    return Boolean(request.user);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المسار <code>@Public()</code> يعيد <code>true</code> من الدالة فينتهي الفحص. مسار بلا المزخرف يسقط إلى الصنف ثم إلى <code>undefined</code>، فيُشترط <code>user</code>. الحارس لا يستورد قائمة المسارات العامة. القائمة هي المزخرفات نفسها.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإطار يبني الحارس كمزود ويحقن <code>Reflector</code>.</li>
+<li>عند الطلب يمرر <code>ExecutionContext</code>.</li>
+<li><code>getAllAndOverride</code> يقرأ metadata الدالة ثم الصنف.</li>
+<li>أول قيمة ليست <code>undefined</code> تُعاد.</li>
+<li><code>false</code> قيمة معرّفة وتغلب ما على الصنف. لا تخلط «غير موجود» مع <code>false</code> إن كان للاثنين معنى مختلف. للعلم العام استعمل <code>true</code> أو الغياب.</li>
+<li>القراءة رخيصة نسبة إلى قاعدة البيانات. لا تغني عن التحقق من الرمز الموقّع. العلم يقول «لا تشترط جلسة»، ولا يمنح صلاحية.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>أدوار تُدمج:</p>
+<pre><code class="language-ts">const roles = this.reflector.getAllAndMerge&lt;string[]&gt;(&#39;roles&#39;, [
+  context.getHandler(),
+  context.getClass(),
+]);
+</code></pre>
+<p>صنف <code>@Roles(&#39;staff&#39;)</code> ودالة <code>@Roles(&#39;payroll&#39;)</code> ينتجان قائمة فيها الاثنان إن كان المخزن مصفوفات. غيّر إلى <code>getAllAndOverride</code> إن كانت الدالة يجب أن تستبدل أدوار الصنف لا أن تضيف إليها. الاتفاق يُكتب في الحارس ويُذكر بجانب المزخرف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>عكس ترتيب <code>[class, handler]</code> ثم استغراب أن الدالة لا تغلب.</li>
+<li>مفتاح المزخرف مختلف عن مفتاح <code>get</code>.</li>
+<li><code>new Reflector()</code> داخل الدالة فيتجاوز أي بديل اختبار.</li>
+<li>اعتبار القراءة تفويضًا. ما زلت تتحقق من الفاعل على الطلب.</li>
+<li><code>getAllAndMerge</code> على قيمة ليست مصفوفة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حارس أو معترض يقرأ لصقًا على المسار أو على المتحكم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقراءة جسم الطلب أو الترويسة. تلك <code>switchToHttp().getRequest()</code>. ولا لتسجيل مزودات جديدة. ذلك <code>providers</code> أو <code>DiscoveryService</code> إن كنت تمسح الرسم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الدالة</th>
+<th>الأهداف</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>get</code></td>
+<td>واحد</td>
+<td>قيمة ذلك الهدف أو فراغ</td>
+</tr>
+<tr>
+<td><code>getAllAndOverride</code></td>
+<td>بالترتيب</td>
+<td>أول قيمة معرّفة</td>
+</tr>
+<tr>
+<td><code>getAllAndMerge</code></td>
+<td>بالترتيب</td>
+<td>دمج المصفوفات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين تُحقن <code>Reflector</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/core</code>، كأي مزود في الـ <code>constructor</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>@Public()</code> على الدالة والصنف بلا علم. ماذا يعيد <code>getAllAndOverride</code> إن كانت الدالة أول عنصر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>true</code> من الدالة، ولا يكمل إلى الصنف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار <code>getAllAndMerge</code> لأدوار ومتى <code>getAllAndOverride</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الدمج إن كانت أدوار الدالة تُضاف إلى أدوار الصنف. التغليب إن كانت الدالة تستبدل قائمة الصنف بالكامل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني ترتيب مصفوفة الأهداف؟</li>
+<li>ماذا يوفّر <code>createDecorator</code> زيادة على <code>SetMetadata</code>؟</li>
+<li>لماذا <code>false</code> يختلف عن غياب المفتاح؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Reflector</code> يقرأ مفتاحًا من الدالة والصنف. غلّب بـ <code>getAllAndOverride</code> وادمج بـ <code>getAllAndMerge</code>، وثبّت المفتاح مع المزخرف.</p>
+<h2>ماذا بعد؟</h2>
+<p>Metadata: ماذا تلصق، وعلى أي هدف، وكيف تسمي المفتاح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom decorators: <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

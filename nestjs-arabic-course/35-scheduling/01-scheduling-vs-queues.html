@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scheduling مقابل Queues</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-scheduling-vs-queues.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Scheduling مقابل Queues</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار الساعة عندما يكون السبب مرور الوقت، والطابور عندما يكون السبب عملًا يجب أن يكتمل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تنظيف ملفات الرفع المؤقتة كل ساعة ليس حدثًا جاء من <code>POST</code>. وضعه في BullMQ ممكن عبر مهمة متأخرة تعيد جدولة نفسها، لكنه يخفي السؤال: من يوقظ العمل؟ العكس أيضًا: قص غلاف زائر داخل <code>@Cron</code> كل دقيقة يخلط موعد التفقد مع تنفيذ ثقيل بلا حمولة الكتاب الذي رفع للتو.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الجدولة تطلق دالة لأن التقويم أو الفترة حانتا. الطابور ينفّذ حمولة لأن منتجًا أدخلها، ويعيد المحاولة إن فشلت. إن اجتمعا، الدالة المجدولة تضع مهامًا في الطابور ولا تقص مئات الأغلفة داخل نفس النبضة.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>الأداة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>في الثالثة فجرًا أغلق مسودات متروكة</td>
+<td><code>@Cron</code></td>
+</tr>
+<tr>
+<td>كل 60 ثانية قس طول الطابور</td>
+<td><code>@Interval</code></td>
+</tr>
+<tr>
+<td>بعد 5 ثوانٍ من الإقلاع اطبع أن العامل جاهز</td>
+<td><code>@Timeout</code> من <code>@nestjs/schedule</code></td>
+</tr>
+<tr>
+<td>اقصِ غلاف الكتاب 42 الآن</td>
+<td>طابور <code>covers</code></td>
+</tr>
+<tr>
+<td>أعد القص إن فشل القرص</td>
+<td><code>attempts</code> على المهمة لا حلقة داخل <code>@Cron</code></td>
+</tr>
+</tbody></table>
+<p><code>@Timeout</code> هنا ليس <code>timeout()</code> من RxJS ولا <code>timeout</code> في Axios. الاسم يتكرر في الدورة بثلاث معانٍ. هذا الدرس عن مؤقت مرة واحدة بعد الإقلاع.</p>
+<p>Redis ما زال للطابور والمخبأ. الجدولة في العملية لا تحتاج Redis حتى تعمل، وهذا أيضًا حدها: كل نسخة من التطبيق ستشغّل <code>@Cron</code> إن لم تمنع ذلك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الساعة -&gt; دالة خفيفة -&gt; ربما queue.add لكل معرف
+الطلب -&gt; queue.add({ bookId })
+العامل -&gt; العمل الثقيل وإعادته
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تنظيف مجلد مؤقت، قرار الساعة:</p>
+<pre><code class="language-text">كل ساعة: امسح الملفات في var/tmp الأقدم من يوم
+</code></pre>
+<p>قص الغلاف، قرار الطلب:</p>
+<pre><code class="language-text">بعد create: enqueue { bookId, coverKey }
+</code></pre>
+<p>لا تنتظر الساعة التالية ليبدأ قص كتاب رُفع الآن، ولا ترفع حدثًا وهميًا كل ساعة إن لم يوجد ما يُقص.</p>
+<h2>شرح المثال</h2>
+<p>التنظيف يمشي على القرص بمعيار عمر الملف لا بمعرف زائر. التأخير ساعة مقبول. القص معياره كتاب بعينه وحالة <code>pending</code>، والتأخير المقبول ثوانٍ، والفشل له <code>attempts</code>. جمعهما في دالة واحدة يصعب الاختبار: إما تنتظر الساعة وإما تعيد تنفيذ القص بلا طابور.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>مؤقت Node داخل العملية يوقظ الدالة. إن نسخت التطبيق مرتين بلا قفل، التنظيف يعمل مرتين. لمسح ملفات قديمة قد يكون ذلك مزعجًا لا كارثيًا. لإرسال نشرة «كتاب اليوم» يصبح بريدًا مزدوجًا. القفل في Redis أو حصر الجدولة في عملية واحدة قرار تشغيل عندما يكون الأثر خارجيًا. الطابور أصلًا يوزع المهمة على عامل واحد. لذلك النشرة التي يجب ألا تتكرر: <code>@Cron</code> يضيف مهمة واحدة بـ <code>jobId</code> ثابت لليوم، والعامل يرسل.</p>
+<h2>مثال عملي</h2>
+<p>متجر الكتب:</p>
+<table>
+<thead>
+<tr>
+<th>العمل</th>
+<th>السبب</th>
+<th>المكان</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قص غلاف رُفع</td>
+<td>طلب</td>
+<td>طابور <code>covers</code></td>
+</tr>
+<tr>
+<td>إعادة قص فاشل</td>
+<td>فشل</td>
+<td><code>attempts</code></td>
+</tr>
+<tr>
+<td>مسح <code>var/tmp</code></td>
+<td>ساعة</td>
+<td><code>@Cron</code> أو <code>@Interval</code></td>
+</tr>
+<tr>
+<td>تذكير مسودات الأمس</td>
+<td>تقويم</td>
+<td><code>@Cron</code> يدرج مهام بريد بمعرفات</td>
+</tr>
+</tbody></table>
+<p>التذكير لا يرسل داخل <code>@Cron</code> حلقة بريد طويلة. يجمع المعرفات ويمررها للمنتج الذي تعرفه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Cron</code> فيه <code>await resize()</code> لكل الكتب المعلقة.</li>
+<li>مهمة BullMQ متكررة بلا سبب تقويمي فقط لتفادي تعلم الجدولة.</li>
+<li>نسيان أن النسختين ستوقظان الدالة.</li>
+<li>تسمية مهلة HTTP <code>@Timeout</code> في الملاحظات نفسها بلا الحزمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الجدولة للوقت. الطابور للعمل القابل للتجزئة والإعادة. معًا عندما توقظ الساعة كثيرًا من المهام.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تؤخر رد <code>POST</code> إلى أقرب <code>@Cron</code>. الزائر ليس دورة ساعة. ولا تستبدل <code>attempts</code> بتشغيل الدالة كل دقيقة على كل الصفوف الفاشلة إن كان الطابور يعرف المهمة الفاشلة أصلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>جدولة</th>
+<th>طابور</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المثير</td>
+<td>وقت</td>
+<td><code>add</code></td>
+</tr>
+<tr>
+<td>الحمولة</td>
+<td>قد لا توجد</td>
+<td><code>{ bookId }</code></td>
+</tr>
+<tr>
+<td>الإعادة</td>
+<td>ليست مدمجة كسياسة مهمة</td>
+<td><code>attempts</code></td>
+</tr>
+<tr>
+<td>عدة نسخ</td>
+<td>كل نسخة توقظ الدالة</td>
+<td>عامل واحد يأخذ المهمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>مسح الملفات المؤقتة كل ساعة: جدولة أم طابور؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جدولة. السبب مرور الوقت لا طلب زائر.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يُرسل بريد ألف مسودة داخل دالة <code>@Cron</code> مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن النبضة تطول وتفشل كلها معًا. الدالة تجمع المعرفات وتدرج مهامًا يعيد الطابور فشل كل بريد على حدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>نسختان وشغّلتا النشرة داخل <code>@Cron</code> بلا طابور. ماذا يحدث، وما الإصلاح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قد يُرسل البريد مرتين. الإصلاح: عملية جدولة واحدة، أو قفل، أو <code>@Cron</code> يدرج مهمة بـ <code>jobId</code> ليوم محدد والعامل يرسل مرة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مثير الطابور وما مثير الجدولة؟</li>
+<li>أي <code>@Timeout</code> ليس مهلة Axios؟</li>
+<li>متى تجتمع الأداتان؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الساعة توقظ، والطابور ينفّذ ويعيد. لا تقص الأغلفة داخل <code>@Cron</code>، ولا تؤجل طلب الزائر إلى الدقيقة التالية.</p>
+<h2>ماذا بعد؟</h2>
+<p>تسجيل <code>ScheduleModule.forRoot</code> حتى تعمل الزينة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Task scheduling: <a href="https://docs.nestjs.com/techniques/task-scheduling">https://docs.nestjs.com/techniques/task-scheduling</a></li>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

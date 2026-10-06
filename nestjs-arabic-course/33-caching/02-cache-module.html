@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CacheModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-cache-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>CacheModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل المخبأ كوحدة حتى يُحقن في خدمة ISBN، من الحزمة الحالية لا من <code>@nestjs/common</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>Map</code> على الخدمة تعمل حتى تتعدد النسخ والمسارات. Nest توفر <code>CacheModule</code> حتى يكون المخزن مزوّدًا قابلًا للاستبدال باختبار أو بـ Redis. استيراده من المكان القديم يثبّت API نُقلت.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحزمة <code>@nestjs/cache-manager</code> تصدّر <code>CacheModule</code>. <code>register</code> يضبط المخزن في الذاكرة افتراضيًا. الوحدة التي تستورده تحقن الرمز <code>CACHE_MANAGER</code>. اجعله متاحًا حيث تُحسب النتيجة، لا في كل متحكم.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm i @nestjs/cache-manager cache-manager
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { CacheModule } from &#39;@nestjs/cache-manager&#39;;
+import { IsbnService } from &#39;./isbn.service.js&#39;;
+
+@Module({
+  imports: [
+    CacheModule.register({
+      ttl: 10 * 60 * 1000,
+    }),
+  ],
+  providers: [IsbnService],
+})
+export class IsbnModule {}
+</code></pre>
+<p><code>ttl</code> في التوثيق الحالي بالميلي ثانية. <code>10 * 60 * 1000</code> عشر دقائق. القيمة <code>0</code> أو غياب <code>ttl</code> يعني عدم انتهاء الصلاحية في السلوك الافتراضي لـ cache-manager، فلا تتركه بلا قصد.</p>
+<p><code>isGlobal: true</code> إن كان المخزن واحدًا لكل التطبيق. من غيره استورد <code>CacheModule</code> في كل وحدة تحقن المدير، أو صدّر الوحدة. لتطبيق بدأ بمخبأ ISBN فقط، التسجيل داخل <code>IsbnModule</code> يكفي.</p>
+<p><code>CacheModule</code> الذي كان في <code>@nestjs/common</code> نُقل. الاستيراد الحالي من <code>@nestjs/cache-manager</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">IsbnModule
+  CacheModule.register ttl بالميلي ثانية
+  IsbnService تحقن CACHE_MANAGER
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تسجيل عالمي في الجذر عندما تشترك أكثر من وحدة في السياسة نفسها:</p>
+<pre><code class="language-ts">CacheModule.register({
+  isGlobal: true,
+  ttl: 10 * 60 * 1000,
+});
+</code></pre>
+<p>وحدة البريد التي لا تخزّن لا تتأثر بالمزوّد الزائد كثيرًا، لكن المهلة العالمية قد لا تناسب كل مفتاح. يمكن تمرير مدة عند <code>set</code> لاحقًا وتبقى هذه القيمة افتراضًا.</p>
+<h2>شرح المثال</h2>
+<p><code>register</code> بلا <code>stores</code> يبقي التخزين في ذاكرة العملية عبر cache-manager. لا Redis في هذا الدرس. إعادة تشغيل <code>nest start</code> تفرغ المفاتيح، وهذا مفيد في التطوير حتى لا تطارح عنوانًا قديمًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الوحدة الديناميكية تنشئ مزوّد <code>CACHE_MANAGER</code>. الحقن بالرمز لا بالاسم النصي. كل <code>get</code> و <code>set</code> يمر على المخزن الافتراضي. مع <code>isGlobal</code> النسخة واحدة في التطبيق. نسختان من العملية ما زالتا ذاكرتين. الإعداد لا يفتح منفذًا خارجيًا.</p>
+<h2>مثال عملي</h2>
+<p>أبقِ <code>HttpModule.registerAsync</code> بجانب <code>CacheModule.register</code> في <code>IsbnModule</code>. الأول للناشر والثاني للنسخة. لا تضع <code>CacheModule</code> داخل المتحكم ولا تعتمد على <code>CacheInterceptor</code> العالمي بعد. المعترض التلقائي على <code>GET</code> قد يحفظ جسمًا خاصًا بمستخدم إن نُسي شكل المفتاح. التخزين الصريح في <code>lookup</code> أوضح لعقد ISBN.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>import { CacheModule } from &#39;@nestjs/common&#39;</code>.</li>
+<li><code>ttl: 600</code> باعتقاد أنها ثوانٍ، فتنتهي القيمة خلال 600 ميلي ثانية.</li>
+<li><code>isGlobal</code> ثم مفاتيح بلا بادئة فتصطدم وحدة البريد مع ISBN.</li>
+<li>افتراض أن التسجيل وحده يخزّن نداء <code>lookup</code>. لا بد من <code>get</code> و <code>set</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما قررت مفتاحًا ومدة لنتيجة قراءة، وتريد استبدال المخزن لاحقًا بلا تغيير توقيع <code>lookup</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل وجود نتيجة تتكرر. تسجيل عالمي «لأن التطبيقات الناضجة تخزّن» يترك مفاتيح بلا مالك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستيراد</th>
+<th>الحالة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@nestjs/cache-manager</code></td>
+<td>التسجيل الحالي</td>
+</tr>
+<tr>
+<td><code>@nestjs/common</code></td>
+<td>المكان القديم المنقول</td>
+</tr>
+<tr>
+<td><code>Map</code> داخل الخدمة</td>
+<td>تجربة محلية بلا استبدال</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة يُستورد <code>CacheModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/cache-manager</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كم تساوي <code>ttl: 600</code> في الإعداد الحالي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>600 ميلي ثانية لا 600 ثانية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يكفي <code>register</code> ليخفف نداءات ISBN؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن التسجيل يوفر المخزن. <code>IsbnService</code> ما زالت تستدعي الناشر حتى تقرأ المفتاح وتكتبه بعد النجاح.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وحدة TTL في <code>register</code>؟</li>
+<li>ماذا يفعل <code>ttl</code> الافتراضي إن تُرك بلا انتهاء؟</li>
+<li>لماذا أُجّل <code>CacheInterceptor</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>CacheModule.register</code> من <code>@nestjs/cache-manager</code> يجهّز مخزنًا بمدة بالميلي ثانية. الحفظ الفعلي في الخدمة التي تعرف المفتاح.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>get</code> و <code>set</code> عبر <code>CACHE_MANAGER</code> حول <code>lookup</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Caching: <a href="https://docs.nestjs.com/data/caching">https://docs.nestjs.com/data/caching</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

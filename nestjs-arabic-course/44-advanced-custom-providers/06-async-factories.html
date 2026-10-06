@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Async Factories</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-async-factories.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Async Factories</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل <code>useFactory</code> ترجع <code>Promise</code> حتى تنتظر الحاوية القيمة قبل بناء من يحقن الرمز.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فتح عميل أو قراءة سر من مدير خارجي عملية غير متزامنة. إن رجعت المصنع كائنًا قبل <code>await</code>، فالخدمة تستعمل عميلًا غير متصل. إن فتحت في أول طلب، فأول زائر يرى الفشل الذي كان يجب أن يوقف الإقلاع. المصنع غير المتزامن جزء من بناء الرسم، وقد مر شكله في Asynchronous Providers. هنا مكانه بين أساليب المزود المخصص.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الدالة <code>async</code> أو التي ترجع <code>Promise</code> تُنتظر. الناتج المستقر يُخزن تحت <code>provide</code>. المستهلك يكتب المعامل كقيمة لا كوعد. رفض الوعد يوقف الإقلاع. الإغلاق ما زال مسؤوليتك على صنف له <code>onModuleDestroy</code> إن كانت القيمة كائن مكتبة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Inject, Injectable, Module } from &#39;@nestjs/common&#39;;
+import { ConfigService } from &#39;@nestjs/config&#39;;
+
+export const SEARCH = Symbol(&#39;SEARCH&#39;);
+
+@Module({
+  providers: [
+    {
+      provide: SEARCH,
+      useFactory: async (config: ConfigService) =&gt; {
+        const url = config.getOrThrow&lt;string&gt;(&#39;SEARCH_URL&#39;);
+        await ping(url);
+        return { url };
+      },
+      inject: [ConfigService],
+    },
+  ],
+  exports: [SEARCH],
+})
+export class SearchModule {}
+
+async function ping(url: string): Promise&lt;void&gt; {
+  void url;
+}
+
+@Injectable()
+export class SearchService {
+  constructor(@Inject(SEARCH) private readonly endpoint: { url: string }) {}
+}
+</code></pre>
+<p><code>inject</code> يُحل قبل النداء، كما في المصنع المتزامن. <code>ConfigModule</code> مستورد أو عام حتى يوجد <code>ConfigService</code>.</p>
+<p>هذا ليس <code>forRootAsync</code>. هناك المصنع يعيد خيارات ثم تولَّد مزودات الوحدة. هنا الرمز الواحد هو الناتج.</p>
+<p>لا تجمع <code>useValue</code> مع الانتظار على نفس العنصر. ابنِ القيمة في المصنع. الاختبار الذي لا يريد شبكة يغطي <code>SEARCH</code> بـ <code>useValue</code> بقيمة جاهزة، فيتخطى المصنع.</p>
+<p><code>scope: Scope.REQUEST</code> على مصنع <code>async</code> يعيد الاتصال لكل طلب. أبقِ الافتراضي للعميل المشترك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">اعتماديات inject جاهزة
+  -&gt; await factory
+  -&gt; القيمة تحت Symbol
+  -&gt; بناء SearchService
+رفض -&gt; لا listen
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>SearchModule</code> أعلاه. <code>getOrThrow</code> أو فشل <code>ping</code> يمنع فتح المنفذ. <code>SearchService</code> تقرأ <code>endpoint.url</code> من غير <code>await</code> في الـ <code>constructor</code>. أضف خطاف الإغلاق على خدمة تغلف العميل إن استبدلت <code>{ url }</code> بمقبض شبكة.</p>
+<h2>شرح المثال</h2>
+<p><code>Symbol</code> من الدرس السابق يمنع تصادم <code>&#39;SEARCH&#39;</code>. المصنع يلتقط العنوان من الإعداد لا من حرف داخل الخدمة، فيقدر الاختبار على تغطية الرمز. <code>void url</code> في <code>ping</code> التعليمية مكان نداء حقيقي مثل <code>fetch</code> لعنوان الصحة. لا تبتلع الرفض بـ <code>try/catch</code> فارغ وإلا اكتمل الإقلاع بلا بحث.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية ترى أن المصنع يعيد وعدًا.</li>
+<li>تبني <code>ConfigService</code> ثم تستدعي الدالة.</li>
+<li>تعلق بناء من يعتمد على <code>SEARCH</code> حتى التسوية.</li>
+<li>تخزن <code>{ url }</code> كـ Singleton.</li>
+<li>تبني <code>SearchService</code>.</li>
+<li>كائن <code>{ url }</code> بلا خطاف. عملية الإيقاف لا تغلق مقبضًا لم يُخزن داخل صنف <code>OnModuleDestroy</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>غلاف يملك الإغلاق:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class SearchClient implements OnModuleDestroy {
+  constructor(readonly url: string) {}
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.close();
+  }
+
+  private async close(): Promise&lt;void&gt; {
+    return undefined;
+  }
+}
+</code></pre>
+<p>المصنع: <code>const client = new SearchClient(url); await client.open(); return client;</code> والرمز <code>provide: SearchClient</code>. مع <code>enableShutdownHooks</code> يصل <code>SIGTERM</code> إلى <code>onModuleDestroy</code>. هذا يجمع المصنع غير المتزامن مع فصل دورة الحياة. <code>useClass</code> وحده لا ينتظر <code>open</code> قبل أن يحقن الجيران إلا إذا كان الانتظار داخل <code>onModuleInit</code> على الصنف نفسه. اختر خطاف الصنف عندما يكون الزوج فتحًا وإغلاقًا على النوع، ومصنعًا غير متزامن عندما تريد القيمة جاهزة قبل بناء المعتمدين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>await</code> ناقص داخل المصنع فيُخزن اتصال معلّق إن رجعت الكائن خطأً قبل الانتظار.</li>
+<li>تغطية الاختبار تنسى الرمز فتفتح شبكة.</li>
+<li>نطاق طلب على المصنع.</li>
+<li>التقاط الخطأ وإرجاع <code>null</code> ثم تعجب المستهلك.</li>
+<li>اعتبار هذا بديلًا عن <code>forRootAsync</code> لوحدة فيها خمسة مزودات. كرر المصنع لكل رمز أو ابنِ الوحدة الديناميكية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>رمز واحد قيمته تحتاج <code>await</code> مرة عند الإقلاع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>تهيئة صنف مسجّل أصلًا: <code>onModuleInit</code> أوضح للإغلاق. خيارات وحدة كاملة: <code>forRootAsync</code> أو <code>registerAsync</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>ماذا يُنتظر</th>
+<th>من يُغلق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useFactory</code> غير متزامن</td>
+<td>قيمة هذا الرمز</td>
+<td>غلاف بخطاف إن لزم</td>
+</tr>
+<tr>
+<td><code>onModuleInit</code></td>
+<td>عمل على نسخة بُنيت</td>
+<td><code>onModuleDestroy</code> على الصنف نفسه</td>
+</tr>
+<tr>
+<td><code>forRootAsync</code></td>
+<td>كائن خيارات</td>
+<td>مزودات الوحدة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل معامل <code>SearchService</code> من نوع <code>Promise</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الإطار ينتظر المصنع ويحقن القيمة المستقرة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف يتخطى الاختبار <code>ping</code> الشبكي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يغطي الرمز <code>SEARCH</code> بـ <code>{ provide: SEARCH, useValue: { url: &#39;http://search.test&#39; } }</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تفضّل <code>onModuleInit</code> على مصنع يرجع <code>SearchClient</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يكون الصنف مزودًا طبيعيًا وتريد <code>open</code> و <code>close</code> متجاورين على النوع نفسه بعد حقنه. المصنع أنسب لقيمة مكتبة أو عندما يجب ألا يُبنى المعتمد قبل انتهاء <code>await</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يوقف الإقلاع؟</li>
+<li>لماذا الرمز <code>Symbol</code> هنا متسق مع الدرس السابق؟</li>
+<li>ماذا لا يغلقه كائن عادي عند <code>SIGTERM</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المصنع غير المتزامن يؤخر من يعتمد على الرمز حتى تستقر القيمة. غطّه في الاختبار، وأغلق المقبض بصنف له خطاف إيقاف.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع الأساليب الأربعة والرموز.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

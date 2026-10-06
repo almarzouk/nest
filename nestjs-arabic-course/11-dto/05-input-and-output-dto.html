@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Input DTO و Output DTO</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-input-and-output-dto.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Input DTO و Output DTO</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل صنف ما يرسله العميل عن صنف ما يعيده الخادم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>return member</code> بعد <code>save</code> يرسل <code>passwordHash</code> و <code>internalNote</code> لأنهما على الكيان. عقد الإنشاء الذي يُعاد كما هو يخفي <code>id</code> الذي ولّده الخادم أو يسربه إن وضعت أسرارًا على صنف الدخل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Input DTO حقول مسموح أن تأتي من الخارج. Output DTO حقول مسموح أن تخرج على السلك. الكيان في الوسط قد يملك أكثر من الاثنين. المتحكم يترجم بينهما.</p>
+<h2>التعريف التقني</h2>
+<p>لا واجهة في Nest اسمها InputDto. التسمية قرار تصميم: <code>CreateMemberDto</code> للداخل، <code>MemberResponseDto</code> للخارج. <code>ValidationPipe</code> يفحص الداخل. الخارج لا يمر على ذلك الأنبوب إلا إذا أعدت قراءته كطلب.</p>
+<p>إرجاع الصنف الخارج من المتحكم يجعل شكل JSON قرارًا ظاهرًا في الملف. إرجاع الكيان يربط العميل بالأعمدة.</p>
+<p><code>ClassSerializerInterceptor</code> و <code>@Exclude()</code> أداة لاحقة في فصل التسلسل. هنا نبني كائن الرد في المتحكم أو في دالة <code>toResponse</code> حتى ترى الفرق من غير حزمة إضافية.</p>
+<p>الحقول التي يولّدها الخادم، <code>id</code> و <code>joinedAt</code>، تظهر في الخارج وتغيب عن الداخل. الحقول التي يملكها العميل، <code>password</code> في طلب التسجيل، تظهر في الداخل وتغيب عن الخارج. الخارج قد يحمل <code>email</code> ولا يحمل كلمة المرور ولا تجزئتها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreateMemberDto     password, email, fullName
+Member entity       + id, passwordHash, joinedAt, note
+MemberResponseDto   id, email, fullName, joinedAt
+</code></pre>
+<p>سهمان، لا كائن واحد يسافر في الاتجاهين.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsEmail, IsString, MinLength } from &#39;class-validator&#39;;
+
+export class CreateMemberDto {
+  @IsString()
+  fullName: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(8)
+  password: string;
+}
+</code></pre>
+<pre><code class="language-ts">export class MemberResponseDto {
+  id: string;
+  fullName: string;
+  email: string;
+  joinedAt: string;
+}
+</code></pre>
+<pre><code class="language-ts">@Post()
+create(@Body() dto: CreateMemberDto): MemberResponseDto {
+  const saved = this.members.create(dto);
+  return {
+    id: saved.id,
+    fullName: saved.fullName,
+    email: saved.email,
+    joinedAt: saved.joinedAt,
+  };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>password</code> على الدخل فقط. الخدمة تحوّله إلى تجزئة وتخزن التجزئة على الكيان.</li>
+<li>الرد يعدد الحقول. إضافة عمود <code>note</code> على الكيان لا تظهر للعميل إلا إذا أضفتها إلى <code>MemberResponseDto</code>.</li>
+<li>نوع الإرجاع يوثّق العقد للمترجم. وقت التشغيل ما يُسلسَل هو الكائن الذي رجعته.</li>
+<li><code>CreateMemberDto</code> عليه زينة لأنه يُفحص. صنف الرد في هذا الدرس شكل مسمّى. إخفاء الحقول بالزينة درس <code>class-transformer</code> ثم فصل التسلسل.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>ValidationPipe</code> يرى <code>CreateMemberDto</code> فقط. بعد النجاح تستلم الخدمة الدخل وتبني كيانًا. المتحكم ينتقي حقول الرد. Nest يسلسل القيمة المرجعة إلى JSON برمز <code>201</code> لـ <code>POST</code> ما لم تغيّر الرمز. التسلسل لا يحذف <code>passwordHash</code> إن كان المفتاح على الكائن المرجع.</p>
+<p>لذلك الحذف قرار قبل <code>return</code>. دالة <code>toResponse(member): MemberResponseDto</code> في مكان واحد أفضل من نسخ الكائن في كل مسار.</p>
+<p>قائمة الأعضاء تستخدم الشكل نفسه أو صنفًا أضيق مثل <code>MemberListItemDto</code> إن كانت القائمة بلا <code>joinedAt</code>. لا تُعد استخدام صنف الإنشاء كعنصر قائمة.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /members</code> بجسم فيه كلمة مرور يرجع <code>201</code> و <code>{ id, fullName, email, joinedAt }</code>. اختبار العقد يتأكد أن المفتاح <code>password</code> و <code>passwordHash</code> غائبان عن JSON. <code>GET /members/:id</code> يرجع <code>MemberResponseDto</code> أيضًا. <code>PATCH</code> يأخذ <code>UpdateMemberDto</code> المشتق من الإنشاء بلا <code>password</code> إن كان تغيير السر مسارًا آخر. ثلاثة عقود، كيان واحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>return saved</code> من المستودع.</li>
+<li>وضع <code>passwordHash</code> على <code>MemberResponseDto</code> «لأن الواجهة الإدارية تحتاجه» في مسار عام.</li>
+<li>فحص صنف الرد بـ <code>ValidationPipe</code> على <code>@Body()</code>. الرد ليس جسم طلب.</li>
+<li>جعل الدخل والخرج صنفًا واحدًا فيه كل الحقول الاختيارية. العميل يرسل <code>id</code> ويظن أنه يحدّث مفتاح الصف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما اختلف ما يُكتَب عما يُقرَأ: أسرار، حقول مولَّدة، ملاحظات داخلية، أشكال قائمة أقصر من شكل العنصر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمسار يعيد <code>{ ok: true }</code> بلا كيان. كائن صغير موضعي يكفي. ولمعامل مسار رقمي. ذلك ليس DTO جسم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Input</th>
+<th>Output</th>
+<th>كيان</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الاتجاه</td>
+<td>من العميل</td>
+<td>إلى العميل</td>
+<td>داخل العملية</td>
+</tr>
+<tr>
+<td><code>password</code></td>
+<td>نعم في التسجيل</td>
+<td>لا</td>
+<td>لا، توجد تجزئة</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>لا عند الإنشاء</td>
+<td>نعم</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>من يفحصه</td>
+<td><code>ValidationPipe</code></td>
+<td>اختبار العقد</td>
+<td>قاعدة البيانات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في أي صنف تعيش <code>password</code>، وفي أي صنف تعيش <code>joinedAt</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>password</code> في <code>CreateMemberDto</code>. <code>joinedAt</code> في <code>MemberResponseDto</code> وعلى الكيان، لا في عقد الإنشاء.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يرجع الاختبار فشلًا حين يظهر <code>passwordHash</code> في JSON رغم أن نوع الدالة <code>MemberResponseDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النوع وقت ترجمة. التسلسل يكتب مفاتيح الكائن الفعلي. الكيان رُجع كما هو. ابنِ كائن الرد بالحقول الأربعة فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>القائمة تحتاج <code>id</code> و <code>fullName</code>، والعنصر يحتاج أيضًا <code>email</code> و <code>joinedAt</code>. كيف تتجنب صنفًا واحدًا منتفخًا وصنفين بلا علاقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>MemberListItemDto</code> بالحقلين، و <code>MemberResponseDto</code> يمتد منه أو يُبنى بـ <code>IntersectionType</code> / <code>PickType</code> من صنف رد أوسع. الدخل يبقى <code>CreateMemberDto</code> ولا يُستخدم في القائمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا يساوي الكيان عقد الخارج؟</li>
+<li>من يفحص دخل التسجيل؟</li>
+<li>ماذا يتسلسل: النوع أم الكائن المرجع؟</li>
+<li>أين تُخزَّن التجزئة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>عقد الداخل وعقد الخارج صنفان. الكيان قد يكون أوسع من كليهما. المتحكم يختار ما يخرج حتى لا يسافر السر مع <code>return</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي زينة <code>class-validator</code> على عقد الدخل: القواعد التي يقرأها الأنبوب.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/techniques/serialization">Serialization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

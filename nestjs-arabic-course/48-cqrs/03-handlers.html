@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Handlers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-handlers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Handlers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ الأمر في <code>@CommandHandler</code> والاستعلام في <code>@QueryHandler</code>، وتسجيل الصنف كمزود حتى يكتشفه <code>CqrsModule</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كائن الأمر بلا معالج لا يغيّر حالة. وضع القاعدة في المتحكم أو في صنف الأمر يعيد الخلط. المعالج مكان <code>execute</code>: يجلب الجذر، ينادي دواله، ويحفظ عبر المستودع. الاستعلام معالج آخر لا يستدعي <code>save</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@CommandHandler(CancelOrderCommand)</code> على صنف يطبّق <code>ICommandHandler&lt;CancelOrderCommand&gt;</code> وفيه <code>execute(command)</code>. <code>@QueryHandler(GetOrderQuery)</code> كذلك مع <code>IQueryHandler</code>. الصنف في <code>providers</code>. <code>CqrsModule.forRoot()</code> في الوحدة الجذر يفعّل الاكتشاف. المتحكم يحقن <code>CommandBus</code> وينادي <code>execute(new CancelOrderCommand(id))</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { CommandHandler, type ICommandHandler } from &#39;@nestjs/cqrs&#39;;
+import { CancelOrderCommand } from &#39;./cancel-order.command.js&#39;;
+import { ORDERS, type OrdersRepository } from &#39;../orders/orders.repository.js&#39;;
+import { Inject } from &#39;@nestjs/common&#39;;
+
+@CommandHandler(CancelOrderCommand)
+export class CancelOrderHandler implements ICommandHandler&lt;CancelOrderCommand&gt; {
+  constructor(@Inject(ORDERS) private readonly orders: OrdersRepository) {}
+
+  async execute(command: CancelOrderCommand): Promise&lt;void&gt; {
+    const order = await this.orders.findById(command.orderId);
+    if (order === null) {
+      throw new Error(&#39;الطلب غير موجود&#39;);
+    }
+    order.cancel();
+    await this.orders.save(order);
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { CqrsModule } from &#39;@nestjs/cqrs&#39;;
+
+@Module({
+  imports: [CqrsModule.forRoot()],
+})
+export class AppModule {}
+</code></pre>
+<p><code>forRoot()</code> مرة. الخيارات مثل ناشر الأوامر ونوع إعادة رمي الاستثناءات غير المعالجة موثقة في الوصفة. الافتراض يكفي حتى تحتاج <code>rethrowUnhandled</code>.</p>
+<pre><code class="language-ts">constructor(private readonly commandBus: CommandBus) {}
+
+cancel(id: string) {
+  return this.commandBus.execute(new CancelOrderCommand(id));
+}
+</code></pre>
+<p><code>execute</code> على الحافلة يعيد وعد ناتج المعالج. معالج الاستعلام:</p>
+<pre><code class="language-ts">@QueryHandler(GetOrderQuery)
+export class GetOrderHandler implements IQueryHandler&lt;GetOrderQuery&gt; {
+  async execute(query: GetOrderQuery) {
+    return this.reader.view(query.orderId);
+  }
+}
+</code></pre>
+<p><code>reader</code> قارئ نموذج العرض لا <code>OrdersRepository.save</code>.</p>
+<p>الحافلات Singleton. إن احتجت مزود طلب داخل المعالج، الوصفة تطلب وسم النطاق على المزخرف نفسه مثل <code>@CommandHandler(CancelOrderCommand, { scope: Scope.REQUEST })</code> لأن الحافلة لا تصبح نطاق طلب تلقائيًا بالطريقة الساذجة. تجنّب ذلك لأجل المستخدم. مرر <code>userId</code> داخل الأمر.</p>
+<p>سجّل كل معالج في <code>providers</code> لوحدته. الاستيراد <code>CqrsModule</code> من غير أن يكون المعالج مزودًا يترك الأمر بلا معالج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Controller -&gt; CommandBus.execute(command)
+           -&gt; CancelOrderHandler.execute
+           -&gt; OrdersRepository
+QueryBus   -&gt; GetOrderHandler -&gt; قارئ العرض
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>المقاطع أعلاه. اختبار المعالج بـ <code>new CancelOrderHandler(memory)</code> ينادي <code>execute</code> بلا حافلة. اختبار الربط يستعمل <code>TestingModule</code> مع <code>CqrsModule</code> والمعالج ويتأكد أن الحافلة تصل إليه.</p>
+<h2>شرح المثال</h2>
+<p><code>execute</code> هو دالة الخدمة السابقة باسم ثابت تتوقعه الحزمة. المستودع نفسه من فصل الدومين. CQRS لم يستبدل Prisma ولم يستبدل الجذر. أضاف توجيهًا من نوع الأمر إلى صنف.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإقلاع يستكشف المزودات ذات المزخرف.</li>
+<li>يربط <code>CancelOrderCommand</code> بالمعالج.</li>
+<li><code>commandBus.execute</code> يجد الربط ويستدعي <code>execute</code>.</li>
+<li>الاستثناء يصعد للمستدعي في أوامر المتحكم عادة.</li>
+<li>معالج الأحداث مسار مختلف: الاستثناء غير الملتقط يذهب إلى <code>UnhandledExceptionBus</code> إلا إذا <code>rethrowUnhandled: true</code>.</li>
+<li>أمر بلا معالج فشل وقت النداء. لا مسار صامت.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>IssueInvoiceHandler</code> يحقن <code>ORDERS</code> و <code>INVOICES</code>. يقرأ الطلب المفتوح، يصدر الفاتورة، يحفظ التجميعين. <code>GetInvoiceViewHandler</code> يحقن قارئ SQL أو Prisma يعيد DTO اللوحة ولا يحقن <code>save</code>. وحدتان أو وحدة فوترة تسجل المعالجين وتستورد <code>CqrsModule</code> إن لم يكن <code>forRoot</code> عام الأثر عبر الجذر. اتبع تصدير الحزمة: <code>forRoot</code> في الجذر يكفي لرؤية المعالجات المسجّلة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان المعالج في <code>providers</code>.</li>
+<li><code>forRoot()</code> في كل ميزة مع إعداد متعارض.</li>
+<li>استعلام يستدعي <code>save</code>.</li>
+<li><code>Scope.REQUEST</code> على المعالج لتمرير المستخدم.</li>
+<li>اختبار عبر HTTP فقط فلا يفشل معالج بلا تسجيل إلا متأخرًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بعد أن صار للأمر والاستعلام معنيان مختلفان وتريد توجيه الحزمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>دالة <code>BooksService.create</code> كافية. المعالج الذي يستدعي الخدمة القديمة بلا فرق يعيد تسمية الطبقات.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Command handler</th>
+<th>Query handler</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المزخرف</td>
+<td><code>@CommandHandler</code></td>
+<td><code>@QueryHandler</code></td>
+</tr>
+<tr>
+<td>الواجهة</td>
+<td><code>ICommandHandler</code></td>
+<td><code>IQueryHandler</code></td>
+</tr>
+<tr>
+<td>الدالة</td>
+<td><code>execute</code></td>
+<td><code>execute</code></td>
+</tr>
+<tr>
+<td>التخزين</td>
+<td>كتابة عبر المستودع</td>
+<td>قراءة عبر نموذج العرض</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُسجَّل <code>CancelOrderHandler</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>providers</code> لوحدته، مع <code>CqrsModule.forRoot()</code> في جذر التطبيق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تختبر القاعدة بلا <code>CommandBus</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>new CancelOrderHandler(inMemoryOrders())</code> ثم <code>execute(new CancelOrderCommand(&#39;o1&#39;))</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تمرير <code>userId</code> في الأمر أفضل من <code>@CommandHandler(..., { scope: Scope.REQUEST })</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحافلات Singleton، ونطاق الطلب على المعالج يعيد بناءه لكل أمر ويسحب كلفة النطاق. الحقل في الأمر يبقي المعالج الافتراضي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يطابق الحافلة بالمعالج؟</li>
+<li>ماذا يفعل استعلام يستدعي <code>save</code>؟</li>
+<li>ما دور <code>forRoot</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المعالج <code>execute</code> المسجّل كمزود هو مكان القاعدة. الأمر يُوجَّه بـ <code>CommandBus</code> والاستعلام بـ <code>QueryBus</code>. اختبر المعالج مباشرة، واترك نطاق الطلب خارج الحافلة.</p>
+<h2>ماذا بعد؟</h2>
+<p>Event و EventBus و CommandBus و QueryBus: النشر بعد التغيير وكيف تتصل الحافلات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CQRS: <a href="https://docs.nestjs.com/recipes/cqrs">https://docs.nestjs.com/recipes/cqrs</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

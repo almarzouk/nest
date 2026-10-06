@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>catchError</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-catch-error.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>catchError</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التقاط فشل التيار داخل <code>pipe</code> وتحويله إلى خطأ HTTP مفهوم، أو تركه يكمل إلى المرشح عن قصد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>طلب خارجي أو متحكم يرمي داخل التيار. من غير معامل، المرشح يرى الخطأ كما صدر. أحيانًا تريد ترجمة فشل الكتالوج الخارجي إلى <code>502</code> قبل أن يصل العميل رسالة مكتبة. <code>try/catch</code> حول <code>return next.handle().pipe(...)</code> لا يلتقط فشلًا يحدث لاحقًا عند الاشتراك.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>catchError</code> يستلم الخطأ ويعيد تيارًا بديلًا. إن أعدت <code>throwError(() =&gt; err)</code> فالخطأ يكمل. إن أعدت <code>of({ data: [] })</code> فقد ابتلعت الفشل وصار الرد نجاحًا. في API المتجر الفشل يبقى فشلًا، والترجمة تكون إلى <code>HttpException</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { catchError, throwError } from &#39;rxjs&#39;;
+import { BadGatewayException } from &#39;@nestjs/common&#39;;
+
+source.pipe(
+  catchError((error: unknown) =&gt; {
+    return throwError(() =&gt; new BadGatewayException(&#39;catalog upstream failed&#39;));
+  }),
+);
+</code></pre>
+<p><code>catchError</code> يجب أن يعيد <code>Observable</code>. <code>throwError</code> تيار يخطئ فور الاشتراك. رمي الاستثناء داخل الدالة يعمل أيضًا مع الإصدارات الحديثة لأنه يُحوَّل إلى خطأ تيار، لكن إرجاع <code>throwError</code> أوضح في القراءة.</p>
+<p>لا تُرجع <code>of(null)</code> لخطأ مصادقة. ذلك <code>200</code> بجسم فارغ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المصدر يخطئ
+  catchError
+    throwError(HttpException) -&gt; المرشح -&gt; رمز HTTP
+    of(value)                 -&gt; نجاح كاذب
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>معترض كتالوج لا يبدّل النجاح، ويترجم أي فشل غير متوقع إلى بوابة سيئة عندما يكون المسار وكيلًا:</p>
+<pre><code class="language-ts">intercept(_context: ExecutionContext, next: CallHandler) {
+  return next.handle().pipe(
+    catchError((error: unknown) =&gt; {
+      if (error instanceof HttpException) {
+        return throwError(() =&gt; error);
+      }
+      return throwError(() =&gt; new BadGatewayException(&#39;catalog upstream failed&#39;));
+    }),
+  );
+}
+</code></pre>
+<p><code>NotFoundException</code> التي رماها المتحكم تبقى كما هي. الخطأ الغريب يصبح <code>502</code>.</p>
+<h2>شرح المثال</h2>
+<p>الفرع الأول يمرر أخطاء Nest التي تعرف رمزها. الفرع الثاني يمنع تسريب رسالة سائق أو مكدس إلى العميل. السجل التفصيلي مكانه <code>tap({ error })</code> قبل <code>catchError</code> أو داخل الفرع قبل <code>throwError</code>، لا داخل جسم <code>502</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الاشتراك يشغّل المصدر. عند <code>error</code> تتوقف <code>map</code> اللاحقة ولا يعمل <code>tap</code> على <code>next</code>. <code>catchError</code> يشترك في التيار البديل. <code>throwError</code> يصدر خطأ للمستمع الأعلى، وهو Nest، فيدخل <code>ExceptionFilter</code>. لذلك <code>try/catch</code> حول بناء <code>pipe</code> لا يرى <code>NotFoundException</code> التي تحدث داخل المتحكم عند التنفيذ. البناء نجح. الفشل جاء مع القيمة.</p>
+<h2>مثال عملي</h2>
+<p>على مسار REST للكتب اترك مرشح Nest الافتراضي. ضع <code>catchError</code> حيث تترجم حدود النظام: فشل بحث ISBN خارجي ستستدعيه في الفصل التالي. داخل الخدمة، بعد <code>firstValueFrom</code>، يمكنك <code>try/catch</code> العادي لأن الوعد رفض. داخل المعترض الذي ما زال على التيار، الأداة <code>catchError</code>.</p>
+<p>لا تلتقط الخطأ مرتين: مرة في الخدمة تحوله إلى <code>BadGatewayException</code> ومرة في المعترض تحوله إلى <code>500</code> عام فتفقد <code>502</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>catchError</code> يعيد كائنًا عاديًا لا تيارًا، فينكسر الاشتراك.</li>
+<li>ابتلاع الخطأ بـ <code>of([])</code> وصفحة الرف تبدو فارغة والبحث كان معطلًا.</li>
+<li><code>try/catch</code> حول <code>pipe</code> فقط.</li>
+<li>ترجمة <code>HttpException</code> المعروفة إلى <code>502</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند حدود تيار لا يملك المرشح سياقًا كافيًا: فشل منبع خارجي، أو إخفاء تفاصيل قبل الرمز.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكل <code>NotFoundException</code> من خدمة الكتب. المرشح يحوّلها إلى <code>404</code> بلا معامل. ولا تخفِ أخطاء التحقق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المعالجة</th>
+<th>الرد الذي يراه العميل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بلا <code>catchError</code></td>
+<td>ما يصنعه المرشح من الخطأ الأصلي</td>
+</tr>
+<tr>
+<td><code>throwError(() =&gt; httpException)</code></td>
+<td>رمز الاستثناء</td>
+</tr>
+<tr>
+<td><code>of(fallback)</code></td>
+<td>نجاح بالجسم البديل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يجب أن يعيد <code>catchError</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Observable</code>، مثل <code>throwError(...)</code> أو <code>of(...)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يلتقط <code>try/catch</code> حول <code>return next.handle().pipe(...)</code> خطأ المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المتحكم يعمل عند الاشتراك لا عند بناء التيار. الخطأ يسافر داخل التيار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى يكون <code>of([])</code> خطأ منتج في رف الكتب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يكون الفراغ ناتج عطل في المنبع لا ناتج بحث بلا كتب. العميل لا يفرّق بين الرف الفارغ والخدمة المعطلة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>كيف تمرر <code>HttpException</code> بلا تغيير؟</li>
+<li>أي رمز يناسب منبع ISBN معطلًا؟</li>
+<li>أين <code>try/catch</code> كافٍ؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>catchError</code> يبدّل تيار الخطأ. في المتجر ترجم الغريب وأعد رمي المعروف. لا تحوّل العطل إلى قائمة فارغة.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>timeout</code>: إيقاف الانتظار عندما لا تصل القيمة أصلًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>RxJS — <code>catchError</code>: <a href="https://rxjs.dev/api/index/function/catchError">https://rxjs.dev/api/index/function/catchError</a></li>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

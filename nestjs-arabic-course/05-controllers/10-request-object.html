@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request Object</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-request-object.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Request Object</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حقن كائن طلب المنصة بـ <code>@Req()</code> أو <code>@Request()</code>، ومعرفة متى يبقى <code>@Param</code> و <code>@Query</code> و <code>@Body</code> و <code>@Headers</code> أوضح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعض الحقول لا Decorator مخصصًا لها في الاستعمال اليومي: <code>originalUrl</code> و <code>protocol</code> و <code>hostname</code> معًا. تمرير <code>req</code> كاملًا إلى كل المعالجات يعيد التطبيق إلى دالة Express التي تعرف كل شيء. <code>@Req()</code> متاح للحالة التي تحتاج الكائن، والـ Decorators المخصصة تبقى للمدخلات المعتادة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Req()</code> يحقن طلب Express الافتراضي، أو طلب Fastify إن كان هو المحول. <code>@Request()</code> الاسم نفسه. للأنواع ثبّت <code>@types/express</code> واستورد النوع استيراد نوع فقط.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق يمرر الطلب هكذا:</p>
+<pre><code class="language-ts">findAll(@Req() request: Request)
+</code></pre>
+<p><code>import type { Request } from &#39;express&#39;</code> استيراد نوع. هذا آمن هنا لأن <code>Request</code> واجهة وصف، و <code>@Req()</code> لا يستخدم النوع كمفتاح حقن. <code>import type</code> على صنف Service يكسر الحقن، وذلك في فصل Dependency Injection.</p>
+<p>حقول شائعة على طلب Express: <code>params</code> و <code>query</code> و <code>headers</code> و <code>body</code> و <code>method</code> و <code>originalUrl</code> و <code>ip</code> و <code>protocol</code>. الحقول الأربعة الأولى لها Decorators. <code>@Ip()</code> يحقن <code>req.ip</code> وحده إن كان هو كل ما تحتاجه.</p>
+<p><code>@Req()</code> لا يبدّل أسلوب الاستجابة. الذي يبدّله <code>@Res()</code> و <code>@Next()</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المعالج يحتاج originalUrl + method + ip
+  -&gt; @Req()
+
+المعالج يحتاج معرف المسار فقط
+  -&gt; @Param(&#39;id&#39;)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Req } from &#39;@nestjs/common&#39;;
+import type { Request } from &#39;express&#39;;
+
+@Controller(&#39;audits&#39;)
+export class AuditsController {
+  @Get(&#39;incoming&#39;)
+  incoming(@Req() request: Request) {
+    return {
+      method: request.method,
+      url: request.originalUrl,
+      ip: request.ip,
+    };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Req()</code> و <code>@Request()</code> مترادفان. استورد أحدهما من <code>@nestjs/common</code>.</li>
+<li>الكائن المعاد يختار ثلاثة حقول. بقية الطلب لا تخرج في JSON.</li>
+<li><code>GET /audits/incoming?from=desk</code> يجعل <code>originalUrl</code> يتضمن المسار والاستعلام. <code>@Query(&#39;from&#39;)</code> كان يكفي لو لزم <code>from</code> فقط.</li>
+<li>الرمز 200 لأن الطريقة GET والقيمة كائن فيسلسلها Nest.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تمرر كائن المنصة الذي بنته للطلب. على Express هذا <code>req</code>. تغيير <code>request.query</code> داخل المعالج يغيّر الكائن نفسه الذي تراه أي طبقة لاحقة في الطلب نفسه. اقرأ الحقول وأعد قيمة جديدة.</p>
+<p><code>@Session()</code> و <code>@Cookies()</code> و <code>@SignedCookies()</code> و <code>@HostParam()</code> و <code>@Ip()</code> Decorators متخصصة موثّقة بجانب <code>@Req()</code>. استخدم المتخصص عندما يغطي حقلًا واحدًا. الكائن الكامل عندما تجمع حقول بروتوكول في أثر تدقيق واحد.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, Ip, Param, Req } from &#39;@nestjs/common&#39;;
+import type { Request } from &#39;express&#39;;
+import { AuditsService } from &#39;./audits.service.js&#39;;
+
+@Controller(&#39;audits&#39;)
+export class ResourceAuditsController {
+  constructor(private readonly audits: AuditsService) {}
+
+  @Get(&#39;resources/:id&#39;)
+  resource(
+    @Param(&#39;id&#39;) id: string,
+    @Ip() ip: string,
+    @Req() request: Request,
+  ) {
+    return this.audits.trace({
+      id,
+      ip,
+      protocol: request.protocol,
+      url: request.originalUrl,
+    });
+  }
+}
+</code></pre>
+<p><code>id</code> من المسار، و <code>ip</code> من <code>@Ip()</code>، والبروتوكول والعنوان الكامل من الكائن. الخدمة تتسلم أثرًا جاهزًا وتخزنه. المعالج لا يكتب جدول التدقيق بنفسه.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Req() request</code> ثم <code>request.body.isbn</code> في كل المسارات</td>
+<td>عقد الجسم يختفي داخل كائن واسع</td>
+</tr>
+<tr>
+<td><code>import { Request } from &#39;express&#39;</code> ظنًا أنه مزوّد Nest</td>
+<td><code>Request</code> نوع Express، والحقن يتم بـ <code>@Req()</code></td>
+</tr>
+<tr>
+<td>تعديل <code>request.headers</code> أثناء المعالجة</td>
+<td>الطبقات التالية في الطلب نفسه ترى التعديل</td>
+</tr>
+<tr>
+<td>توقع أن <code>@Req()</code> وحده يوقف تسلسل القيمة المعادة</td>
+<td>إيقاف الأسلوب القياسي يتم بـ <code>@Res()</code> أو <code>@Next()</code></td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لتجميع حقول بروتوكول لا يغطيها Decorator واحد: <code>originalUrl</code> مع <code>protocol</code> مع <code>method</code> في أثر تدقيق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقراءة <code>id</code> أو <code>page</code> أو JSON أو رأس واحد. <code>@Param</code> و <code>@Query</code> و <code>@Body</code> و <code>@Headers</code> تسمي المدخل في التوقيع. <code>@Ip()</code> يكفي لعنوان العميل وحده.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>ماذا يحقن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Req()</code> / <code>@Request()</code></td>
+<td>كائن طلب المنصة</td>
+</tr>
+<tr>
+<td><code>@Param</code> <code>@Query</code> <code>@Body</code> <code>@Headers</code></td>
+<td>جزء مسمّى من الطلب</td>
+</tr>
+<tr>
+<td><code>@Ip()</code></td>
+<td><code>req.ip</code> فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الحزمة التي تعطي نوع <code>Request</code> على محول Express؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@types/express</code>، والاستيراد <code>import type { Request } from &#39;express&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>المعالج يحتاج <code>page</code> فقط. أي توقيع أوضح من <code>@Req()</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Query(&#39;page&#39;) page?: string</code>. الاستعلام موثّق في الوسيط، وباقي <code>req</code> لا يدخل الدالة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>import type</code> لـ <code>Request</code> مقبول هنا بينما <code>import type</code> لصنف Service يكسر الحقن؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Req()</code> يحقن كائن المنصة من غير أن يبحث عن رمز <code>Request</code> في الحاوية. نوع Service في <code>constructor</code> هو مفتاح الحقن، و <code>import type</code> يمسح ذلك الرمز وقت التشغيل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الاسم المرادف لـ <code>@Req()</code>؟</li>
+<li>أي Decorator يحقن عنوان IP وحده؟</li>
+<li>هل <code>@Req()</code> يضع المعالج في وضع المكتبة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Req()</code> يفتح كائن طلب المنصة عندما تحتاج حقول بروتوكول مجتمعة. مدخلات المورد تبقى على Decorators الأجزاء، والأسلوب القياسي لإرجاع القيمة يبقى كما هو.</p>
+<h2>ماذا بعد؟</h2>
+<p>كائن الاستجابة ووضع المكتبة: Response Object و Library-specific Mode.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request object: <a href="https://docs.nestjs.com/controllers#request-object">https://docs.nestjs.com/controllers#request-object</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Drizzle و @nestjs/drizzle</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-drizzle.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Drizzle و @nestjs/drizzle</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة التكامل الرسمي لـ Drizzle: مخطط TypeScript، <code>DrizzleModule.forRoot</code>، وحقن <code>@InjectDrizzle()</code>، كبديل موثّق لا كمسار ثانٍ داخل المشروع.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>من يريد استعلامًا قريبًا من SQL مع أنواع مستنتجة قد يجد كيانات TypeORM ثقيلة والعميل المولَّد لـ Prisma خطوة توليد إضافية. Nest يوثّق <code>@nestjs/drizzle</code> لهذا الأسلوب. تجاهل الصفحة يجعل الفريق يخترع تهيئة مجمع لا تُغلق مع التطبيق.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تعرّف الجدول بدالة <code>pgTable</code>. تسجّل <code>DrizzleModule.forRoot</code> بدالة <code>drizzle</code> الخاصة بالمشغّل وسلسلة الاتصال. أي مزوّد يحقن قاعدة <code>NodePgDatabase</code> ويبني <code>select</code> و <code>insert</code>. لا <code>forFeature</code>. الجداول كائنات تستوردها حيث تكتب الاستعلام.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Drizzle في Nest. الحزم في تلك الصفحة تستخدم Drizzle ORM v1 على وسم <code>rc</code> وقت التوثيق، مع دعم أقدم من <code>0.35</code>:</p>
+<pre><code class="language-bash">npm install --save @nestjs/drizzle drizzle-orm@rc pg
+npm install --save-dev drizzle-kit@rc @types/pg
+</code></pre>
+<pre><code class="language-ts">import { drizzle } from &quot;drizzle-orm/node-postgres&quot;;
+
+DrizzleModule.forRoot({
+  drizzle,
+  connection: process.env.DATABASE_URL!,
+});
+</code></pre>
+<p>الوحدة تستدعي <code>drizzle()</code> مرة لكل تطبيق، فلكل اختبار e2e مجمعه الذي يُغلق عند الإيقاف. <code>autoCloseConnection</code> افتراضيًا <code>true</code>.</p>
+<p>خيارات <code>forRoot</code> تُقيَّم عند استيراد الملف، لذلك <code>DATABASE_URL</code> يجب أن يكون حاضرًا قبل ذلك، أو تستخدم <code>forRootAsync</code> وتقرأ <code>ConfigService</code>.</p>
+<pre><code class="language-ts">constructor(@InjectDrizzle() private readonly db: NodePgDatabase) {}
+</code></pre>
+<p>استعلام:</p>
+<pre><code class="language-ts">this.db.select().from(books);
+this.db.insert(books).values(input).returning();
+</code></pre>
+<p><code>eq</code> من <code>drizzle-orm</code> يبني الشرط. الأنواع <code>typeof books.$inferSelect</code> و <code>$inferInsert</code>.</p>
+<p>الترحيل عبر drizzle-kit، لا عبر <code>synchronize</code>. المعاملات في الصفحة عبر واجهة Drizzle على <code>db.transaction</code>. لا تخلطها مع <code>$transaction</code> في المشروع نفسه.</p>
+<p>MongoDB ليس هذا المسار. Drizzle هنا على PostgreSQL مثل بقية الدورة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">pgTable(&quot;books&quot;)  كائن مخطط
+DrizzleModule.forRoot
+@InjectDrizzle()  قاعدة واحدة لكل تطبيق
+select/insert     SQL منشئ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { integer, pgTable, text, boolean } from &quot;drizzle-orm/pg-core&quot;;
+
+export const books = pgTable(&quot;books&quot;, {
+  id: integer().primaryKey().generatedAlwaysAsIdentity(),
+  title: text().notNull(),
+  published: boolean().notNull().default(false),
+});
+
+export type Book = typeof books.$inferSelect;
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { InjectDrizzle } from &quot;@nestjs/drizzle&quot;;
+import { eq } from &quot;drizzle-orm&quot;;
+import type { NodePgDatabase } from &quot;drizzle-orm/node-postgres&quot;;
+import { books } from &quot;../db/schema.js&quot;;
+
+@Injectable()
+export class BooksService {
+  constructor(@InjectDrizzle() private readonly db: NodePgDatabase) {}
+
+  list() {
+    return this.db.select().from(books);
+  }
+
+  findOne(id: number) {
+    return this.db.select().from(books).where(eq(books.id, id));
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>books</code> جدول يمكن استيراده في الخدمة من غير تسجيل مزوّد لكل كيان. <code>eq</code> يربط القيمة بمعامل. <code>findOne</code> يرجع مصفوفة، فخذ العنصر الأول في الخدمة إن كان العقد كتابًا واحدًا أو غيابه.</p>
+<p>إن كان <code>connection</code> يُقرأ من <code>process.env</code> عند الاستيراد، انقل التسجيل إلى <code>forRootAsync</code> بعد <code>ConfigModule</code> حتى لا يتكرر شرط فصل الإعداد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المجمع يُنشأ مع التطبيق ويُغلق عند <code>app.close()</code> أو عند إشارة الإيقاف إن فُعّلت الخطافات، باستدعاء <code>end()</code> على عملاء المجمع. مشاركة كائن <code>db</code> مُنشأ عند أول استيراد بين عدة تطبيقات اختبار تكسر الإغلاق: أول <code>close</code> يقفل الباقي. الصفحة تحذّر من ذلك وتنصح بإنشاء القاعدة داخل المصنع لكل تطبيق.</p>
+<h2>مثال عملي</h2>
+<p>تجربة فرع قصيرة تقارن استعلام الإعارات بين Prisma و Drizzle على نسخة قاعدة تطوير. لا تُبقِ الوحدتين في <code>AppModule</code> بعد التجربة. اختر واحدة في درس الاختيار. ترحيلات drizzle-kit تبقى مجلد SQL خاصًا بها، فلا تخلطها مع مجلد <code>prisma/migrations</code> على القاعدة نفسها من غير خطة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير كائن <code>db</code> مشترك لكل تطبيقات الاختبار مع إغلاق تلقائي.</li>
+<li>لصق مدخل المستخدم في <code>sql.raw</code>.</li>
+<li>تشغيل Drizzle مع Prisma على الجداول نفسها في النسخة النهائية.</li>
+<li>نسيان أن خيارات <code>forRoot</code> المبكرة لا ترى <code>.env</code> إن لم يُحمَّل الملف قبل الاستيراد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>فريق يريد مخططًا في TypeScript واستعلامًا ظاهرًا، مع تكامل Nest الذي يغلق المجمع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإضافة أداة ثالثة بجانب Prisma الذي بنيت عليه خدمات الكتب والإعارات في هذا الفصل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Prisma</th>
+<th>Drizzle عبر Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مخطط واحد وعميل مولَّد</td>
+<td><code>pgTable</code> وأنواع مستنتجة</td>
+</tr>
+<tr>
+<td><code>PrismaService</code> تمتد العميل</td>
+<td><code>@InjectDrizzle()</code></td>
+</tr>
+<tr>
+<td>ترحيل Prisma</td>
+<td>drizzle-kit</td>
+</tr>
+<tr>
+<td>مسار الدورة</td>
+<td>بديل موثّق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مزخرف يحقن قاعدة Drizzle؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@InjectDrizzle()</code> من <code>@nestjs/drizzle</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لكل تطبيق اختبار مجمعه الخاص في هذا التكامل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>DrizzleModule</code> يستدعي <code>drizzle()</code> مرة لكل تطبيق ويغلق المجمع عند إيقاف ذلك التطبيق. مشاركة عميل واحد تجعل أول إيقاف يغلق القاعدة على الاختبارات الأخرى.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>forRoot({ connection: process.env.DATABASE_URL })</code> يرى <code>undefined</code> رغم <code>ConfigModule</code>. ما التعديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخيار يُحسب عند الاستيراد. استخدم <code>DrizzleModule.forRootAsync</code> واقرأ العنوان من <code>ConfigService</code> داخل <code>useFactory</code>، أو حمّل البيئة قبل الإقلاع بعلم <code>--env-file</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل يوجد <code>forFeature</code> في هذا التكامل؟</li>
+<li>من يغلق المجمع؟</li>
+<li>لماذا لا نثبّته مع Prisma في المكتبة النهائية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/drizzle</code> يسجّل قاعدة لكل تطبيق، والاستعلام منشئ على جداول TypeScript. هو البديل الموثّق الثاني بعد TypeORM، لا طبقة إضافية فوق Prisma.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./13-choosing-a-data-tool.html">متى تختار Prisma أو TypeORM أو Drizzle</a> يغلق الفصل بقرار واحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Drizzle: <a href="https://docs.nestjs.com/data/drizzle">https://docs.nestjs.com/data/drizzle</a></li>
+<li>NestJS — Databases: <a href="https://docs.nestjs.com/data/overview">https://docs.nestjs.com/data/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>المتصفح على المكتبة. الجوال ليس في هذه الأمثلة.</p>
+<h2>مثال 1 — سمة بلا هوية</h2>
+<p><code>PUT /preferences/theme</code> يستدعي <code>setCookie</code> باسم <code>library_theme</code> و <code>sameSite: &quot;lax&quot;</code> و <code>maxAge</code> ثلاثين يومًا بالثواني. <code>GET</code> يقرأ <code>@Cookies(&quot;library_theme&quot;)</code> ويعيد <code>light</code> عند الغياب. الكعكة ليست <code>HttpOnly</code> إن كان السكربت يبدل السمة قبل الرد. لا بريد فيها.</p>
+<h2>مثال 2 — دخول</h2>
+<p><code>POST /auth/sign-in</code> ناجح يضع <code>__Host-sid</code> عبر <code>SignInService</code>: <code>HttpOnly</code> و <code>Secure</code> و <code>SameSite=Lax</code>. الطلب التالي إلى <code>GET /me</code> يرسل الكعكة وحدها. الخروج يحذف السجل ويمسح الكعكة. القيمة ليست <code>userId</code>.</p>
+<h2>مثال 3 — ما لا يُجمع</h2>
+<p>لا <code>express-session</code> لحفظ <code>user</code> بجانب الحزمة. عداد <code>GET /stats/visits</code> فقط إن بقي الوسيط، مع سر من البيئة و <code>resave: false</code> و <code>saveUninitialized: false</code>، وبمعرفة أن ذاكرة العملية للتجربة.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>أداتا تطوير تعرضان كعكة الجلسة <code>Secure</code> على <code>localhost</code>.</li>
+<li><code>document.cookie</code> لا يظهر <code>__Host-sid</code>.</li>
+<li><code>maxAge</code> في <code>setCookie</code> بالثواني.</li>
+<li>إنتاج الجلسات ليس مخزن الذاكرة.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

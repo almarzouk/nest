@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مقارنته بـ Express Middleware</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-express-comparison.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مقارنته بـ Express Middleware</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تبيين ما الذي يتطابق بين Middleware في Express و Middleware في Nest، وأين يختلف التسجيل والمنصة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>من يأتي من Express يظن أن <code>app.use</code> هو المكان الوحيد، أو أن كائن <code>req</code> على Fastify هو نفسه كائن Fastify. الظنان يكسران نقل كود قديم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>العقد واحد مع محوّل Express: <code>(req, res, next)</code>. مكان التسجيل في Nest غالبًا <code>configure</code> على الوحدة، مع الإبقاء على <code>app.use</code> للدوال العامة التي لا تحتاج حقنًا.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Middleware تقول إن Middleware في Nest يعادل Express افتراضيًا، وتنقل قدرات Express: تنفيذ كود، تعديل الطلب أو الرد، إنهاء الدورة، واستدعاء <code>next()</code>.</p>
+<p>الفرق الذي تسميه الصفحة تحذيرًا: Express و Fastify يتعاملان مع Middleware بتوقيعات مختلفة. التفاصيل في فصل Fastify. لا تفترض أن <code>req</code> على Fastify هو <code>FastifyRequest</code>. الدعم هناك يمر بطبقة وسيطة، والتوقيع الذي يصلك قد يكون طلب Node الخام.</p>
+<p><code>app.use()</code> على تطبيق Nest يمرر الدالة إلى المنصة نفسها. التوثيق يفرّق: هذه الدالة خارج <code>MiddlewareModule</code>. الاستثناء الذي ترمية من Middleware مربوط عبر <code>MiddlewareConsumer</code> هو الذي تصل إليه طبقة استثناءات Nest بسهولة. من <code>app.use</code> فضّل رمي الخطأ أو <code>next(err)</code> بالطريقة التي تفهمها المنصة، واربط منطق Nest عبر <code>configure</code> حين تريد تلك الطبقة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Express القديم
+  app.use(helmet)
+  app.use(&#39;/loans&#39;, stampShelf)
+  app.get(&#39;/loans&#39;, handler)
+
+Nest على Express
+  app.use(stampShelf)          ← منصة، بلا حاوية DI
+  LoansModule.configure        ← NestMiddleware / دالة، مع forRoutes
+  handler داخل Controller
+</code></pre>
+<p>الدالة <code>stampShelf</code> يمكن أن تبقى كما كُتبت لـ Express. الذي يتغير عنوان السكن.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import type { NextFunction, Request, Response } from &#39;express&#39;;
+
+export function stampShelf(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  res.setHeader(&#39;x-shelf&#39;, &#39;loans&#39;);
+  next();
+}
+</code></pre>
+<p>في Express:</p>
+<pre><code class="language-ts">app.use(&#39;/loans&#39;, stampShelf);
+</code></pre>
+<p>في Nest، الدالة نفسها تُمرَّر إلى <code>consumer.apply(stampShelf)</code> أو إلى <code>app.use(stampShelf)</code>. جسم الدالة لا يتغير.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>التوقيع <code>Request</code> و <code>Response</code> و <code>NextFunction</code> من حزمة <code>express</code> صحيح لمحوّل Express، وهو الافتراض في أمثلة التوثيق.</li>
+<li><code>app.use</code> في <code>main.ts</code> يسجّل الدالة لكل المسارات التي تصل إلى المنصة، وبالترتيب الذي تنادي به <code>use</code>.</li>
+<li><code>apply</code> داخل الوحدة يقيّد المسارات لاحقًا بـ <code>forRoutes</code>. هذا القيد أداة Nest فوق العقد نفسه.</li>
+<li>دالة بلا اعتماديات تبقى دالة. الصنف يظهر حين تحتاج <code>constructor</code>، وذلك درس الصنف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>NestFactory.create</code> يبني محوّل HTTP. الافتراض الشائع Express.</li>
+<li><code>app.use(fn)</code> يضيف <code>fn</code> إلى سلسلة المنصة قبل مسارات Nest.</li>
+<li><code>configure</code> يجمع دوالًا وأصنافًا ويسجّلها عبر <code>MiddlewareModule</code> على المسارات المطابقة.</li>
+<li>عند الطلب تُنفَّذ سلسلة <code>app.use</code> أولًا، ثم Middleware الوحدات، كما في دورة الطلب.</li>
+<li>على Fastify، الصفحة تحذّر من اختلاف التوقيع. انسخ دالة Express إلى مشروع Fastify بعد قراءة ذلك الفصل، لا قبلها.</li>
+</ol>
+<p>حزم مثل التي تتوقع <code>(req, res, next)</code> تُستدعى داخل <code>apply</code> بالطريقة نفسها: <code>consumer.apply(someExpressMiddleware()).forRoutes(...)</code>. استدعِ المصنع إن كانت الحزمة تصدّر مصنعًا، ومرّر الناتج الذي هو دالة Middleware.</p>
+<h2>مثال عملي</h2>
+<p>مشروع إعارات كان <code>server.js</code> فيه <code>app.use(stampShelf)</code> ثم مسارات كتب. نقل المسارات إلى <code>LoansController</code> يبقي <code>stampShelf</code> كما هي. في <code>main.ts</code> سطر <code>app.use(stampShelf)</code> يعيد السلوك العام. حين تريد الختم على <code>/loans</code> فقط، انقل الدالة إلى <code>configure</code> في درس لاحق واترك <code>app.use</code> للختم الذي يخص كل طلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إعادة كتابة دالة Express كصنف مع أن لها صفر اعتماديات. التوثيق يفضّل الدالة في هذه الحالة.</li>
+<li>تمرير صنف إلى <code>app.use</code>. التسجيل العام عبر <code>app.use</code> لا يدخل حاوية الحقن. الصنف الذي يحتاج مزوّدًا يُربَط من الوحدة.</li>
+<li>افتراض أن <code>req.query</code> على Fastify بنفس شكل Express لأن الملف اسمه <code>middleware</code>. اقرأ تحذير الصفحة.</li>
+<li>وضع <code>express.json()</code> مرة ثانية. المحوّل سجّله. التكرار يفسد الجسم أو يرمي. الإيقاف الصريح هو <code>bodyParser: false</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تنقل دالة Middleware تعمل اليوم على Express، أو حين توثّق للفريق أن العقد لم يتغير وأن السكن هو الذي تغيّر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حين يكون السؤال «كيف أقيّد المسار» أو «كيف أحقن خدمة». ذلك <code>forRoutes</code> والصنف. المقارنة هنا فقط بين العقدين.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Express</th>
+<th>Nest على Express</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>التوقيع</td>
+<td><code>(req, res, next)</code></td>
+<td>التوقيع نفسه للدالة</td>
+</tr>
+<tr>
+<td>التسجيل العام</td>
+<td><code>app.use</code></td>
+<td><code>app.use</code> على <code>INestApplication</code></td>
+</tr>
+<tr>
+<td>التسجيل على مسار</td>
+<td><code>app.use(&#39;/loans&#39;, fn)</code></td>
+<td><code>apply(fn).forRoutes(...)</code></td>
+</tr>
+<tr>
+<td>الحقن</td>
+<td>تغلق على متغير خارجي</td>
+<td>صنف Middleware داخل الوحدة</td>
+</tr>
+<tr>
+<td>Fastify</td>
+<td>غير معني</td>
+<td>التوقيع قد يختلف، راجع فصل Fastify</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل تتغير معاملات <code>stampShelf</code> حين تنتقل من <code>app.use</code> في Express إلى <code>app.use</code> في Nest على المحوّل نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الدالة تبقى <code>(req, res, next)</code>. الذي يتغير مكان الاستدعاء.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تضع صنفًا يعتمد على <code>LoansService</code> داخل <code>app.use</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.use</code> تسجّله المنصة خارج حاوية DI. التوثيق يقول إن Middleware العام بهذه الطريقة لا يصل إلى الحاوية. الصنف يُربَط من <code>configure</code> في وحدة ترى الخدمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الفريق نقل <code>stampShelf</code> إلى Fastify لأن مقياس الأداء طلب ذلك، ثم صار <code>req.header</code> يرمي. ما أول صفحة تقرأها، وما الفرض الذي سقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صفحة Middleware تحذّر أن Express و Fastify يختلفان في التوقيع، وتشير إلى فصل Fastify. الفرض الساقط أن <code>req</code> ما زال كائن Express. الدالة تُراجَع على التوقيع الفعلي للمحوّل قبل إعادة استخدامها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يتطابق حرفيًا مع Express على محوّل Express؟</li>
+<li>أين يُسجَّل Middleware العام الذي لا يحتاج حقنًا؟</li>
+<li>لماذا تحذّر الصفحة عند ذكر Fastify؟</li>
+<li>من يلتقط استثناء Middleware المربوط بالمنصة مقارنة بالمربوط عبر الوحدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>العقد مع Express هو العقد نفسه. Nest يضيف سكنًا داخل الوحدة وحقنًا للأصناف، ويبقي <code>app.use</code> للدالة العامة. على Fastify التوقيع سؤال منفصل تجيب عنه صفحة المحوّل.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يكتب Middleware كدالة فقط: متى تكفي، وكيف تُمرَّر إلى <code>apply</code> من غير صنف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

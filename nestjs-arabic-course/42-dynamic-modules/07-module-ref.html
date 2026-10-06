@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ModuleRef</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-module-ref.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ModuleRef</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التنقل في قائمة المزودات وقت التشغيل بـ <code>ModuleRef</code>: <code>get</code> للنسخة المسجّلة، و <code>resolve</code> لنطاق طلب أو عابر، و <code>create</code> لصنف لم يُسجَّل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الحقن في الـ <code>constructor</code> يكفي لمعظم الخدمات. تحتاج الرمز لاحقًا عندما تفك طرف دورة، أو تختار صنفًا حسب شرط بعد الإقلاع، أو تبني مزودًا عابرًا أكثر من مرة. <code>new</code> المباشر يتخطى الحاوية. <code>ModuleRef</code> من <code>@nestjs/core</code> يبحث بالرمز داخلها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>احقن <code>ModuleRef</code>. <code>get(Token)</code> يعيد Singleton (أو متحكمًا أو حارسًا) مسجّلًا في الوحدة الحالية، ويرمي إن غاب. <code>{ strict: false }</code> يوسع البحث إلى السياق العام. <code>resolve(Token)</code> يبني شجرة فرعية فريدة للمزود ذي النطاق، و <code>ContextIdFactory</code> يشارك تلك الشجرة بين نداءات <code>resolve</code>. <code>create(Class)</code> يبني صنفًا لم يُسجل كمزود ويحقن ما يستطيع.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { ModuleRef } from &#39;@nestjs/core&#39;;
+import { Service } from &#39;./service.js&#39;;
+
+@Injectable()
+export class CatsService implements OnModuleInit {
+  private service!: Service;
+
+  constructor(private readonly moduleRef: ModuleRef) {}
+
+  onModuleInit(): void {
+    this.service = this.moduleRef.get(Service);
+  }
+}
+</code></pre>
+<p>خارج الوحدة: <code>this.moduleRef.get(Service, { strict: false })</code>.</p>
+<p>العابر:</p>
+<pre><code class="language-ts">const a = await this.moduleRef.resolve(TransientService);
+const b = await this.moduleRef.resolve(TransientService);
+</code></pre>
+<p><code>a === b</code> يعطي <code>false</code>. لجعلهما متساويين:</p>
+<pre><code class="language-ts">import { ContextIdFactory } from &#39;@nestjs/core&#39;;
+
+const contextId = ContextIdFactory.create();
+const a2 = await this.moduleRef.resolve(TransientService, contextId);
+const b2 = await this.moduleRef.resolve(TransientService, contextId);
+</code></pre>
+<p>معرف تصنعه أنت يجعل <code>REQUEST</code> داخل تلك الشجرة <code>undefined</code> حتى تسجّل طلبًا: <code>moduleRef.registerRequestByContextId(request, contextId)</code>.</p>
+<p>لشجرة الطلب الحالي: حقن <code>REQUEST</code> ثم <code>ContextIdFactory.getByRequest(this.request)</code> ومرر الناتج إلى <code>resolve</code>. هذا يلزمك أصلًا بنطاق طلب، مع كلفته.</p>
+<p><code>create</code>:</p>
+<pre><code class="language-ts">this.catsFactory = await this.moduleRef.create(CatsFactory);
+</code></pre>
+<p>الصنف لم يكن في <code>providers</code>. المفيد عندما تختار تنفيذًا بشرط. لا تستعمله بديلًا لتسجيل الخدمة العادية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">get      -&gt; نسخة موجودة، DEFAULT، strict للوحدة
+resolve  -&gt; شجرة جديدة لكل نداء، أو شجرة contextId
+create   -&gt; صنف خارج التسجيل
+</code></pre>
+<p><code>get</code> على <code>REQUEST</code> أو <code>TRANSIENT</code> ليس المسار الصحيح. التوثيق يحيل إلى <code>resolve</code>.</p>
+<h2>أبسط مثال</h2>
+<p>مقطع <code>onModuleInit</code> مع <code>get</code>. ضعه على الطرف الذي كان يسبب دورة: لا تحقن <code>OrdersService</code> في البناء، واجلبها بعد حل الوحدة. <code>{ strict: false }</code> إن كانت مسجّلة في وحدة أخرى مرئية.</p>
+<h2>شرح المثال</h2>
+<p><code>OnModuleInit</code> بعد حل اعتماديات الوحدة، فالتسجيل الساكن جاهز. الحقل <code>service</code> يُستخدم في الدوال بعدها. لا تنادِ <code>get</code> في <code>constructor</code>. إن رمى <code>get</code> فالرموز غير مسجّل في هذا النطاق، لا أن الحاوية معطلة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>ModuleRef</code> المرتبط بالصنف يرى سجل وحدته.</li>
+<li><code>get</code> يبحث بالمطابقة الافتراضية الصارمة.</li>
+<li><code>strict: false</code> يصعد إلى المزودات العامة والمصدَّرة في السياق الأوسع.</li>
+<li><code>resolve</code> ينشئ context id إن لم تمرره، ويبني الفرع، ويعيد نسخة ذلك الفرع.</li>
+<li>تكرار <code>resolve</code> بلا المعرف نفسه يعيد كائنًا آخر.</li>
+<li><code>create</code> يسلك الحقن لصنف خارج القائمة ثم يعيد النسخة لك، بلا تسجيل دائم كمزود وحدة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>معالج ملفات يختار <code>PdfRenderer</code> أو <code>HtmlRenderer</code> حسب اللاحقة، والصنفان غير مسجلين معًا دائمًا:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { ModuleRef } from &#39;@nestjs/core&#39;;
+import { PdfRenderer } from &#39;./pdf.renderer.js&#39;;
+
+@Injectable()
+export class RenderPicker {
+  constructor(private readonly moduleRef: ModuleRef) {}
+
+  async pdf(): Promise&lt;PdfRenderer&gt; {
+    return this.moduleRef.create(PdfRenderer);
+  }
+}
+</code></pre>
+<p>إن كان <code>PdfRenderer</code> يحتاج <code>PrismaService</code> مسجّلة، <code>create</code> يحقنها من الحاوية. إن كان يحتاج رمزًا غير موجود، يفشل البناء كما يفشل الإقلاع العادي. لتكرار الاستعمال سجّل الصنف في <code>providers</code> واحقنه، واترك <code>create</code> للقرار الشرطي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>get</code> لمزود <code>REQUEST</code> وتوقع طلب المستخدم.</li>
+<li><code>get</code> في <code>constructor</code>.</li>
+<li>نسيان <code>strict: false</code> لمزود من وحدة أخرى ثم ابتلاع الاستثناء بـ <code>forwardRef</code> جديد.</li>
+<li><code>resolve</code> في كل طلب من Singleton فيصنع أشجارًا بلا قياس.</li>
+<li><code>create</code> لكل نداء على صنف ثقيل بدل تسجيله مرة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>جلب متأخر لـ Singleton، عزل عابر بـ <code>resolve</code>، أو بناء شرطي بـ <code>create</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بدل حقن عادي تعرفه عند الإقلاع. الحاوية عندها تفشل باكرًا إن نقص رمز، وهذا أفضل من <code>get</code> اختياري يخفي الخطأ حتى أول طلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الدالة</th>
+<th>التسجيل مسبقًا</th>
+<th>النطاق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>get</code></td>
+<td>نعم</td>
+<td>Singleton في الوحدة، أو أوسع مع <code>strict: false</code></td>
+</tr>
+<tr>
+<td><code>resolve</code></td>
+<td>نعم</td>
+<td>طلب أو عابر، شجرة لكل context</td>
+</tr>
+<tr>
+<td><code>create</code></td>
+<td>لا</td>
+<td>يبني صنفًا ويحقن ما يجده</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة تأتي <code>ModuleRef</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@nestjs/core</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>نداءان <code>resolve(TransientService)</code> بلا <code>contextId</code>. هل المرجعان متساويان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. كل نداء شجرة فرعية فريدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تشارك <code>resolve</code> مع طلب HTTP الحالي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>احقن <code>REQUEST</code>، خذ المعرف بـ <code>ContextIdFactory.getByRequest(this.request)</code>، ومرره إلى <code>resolve</code>. الصنف الذي يحقن <code>REQUEST</code> يصبح نطاق طلب بالعدوى.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى <code>strict: false</code>؟</li>
+<li>لماذا <code>get</code> لا يناسب العابر؟</li>
+<li>ماذا لا يسجّله <code>create</code> تلقائيًا كمزود دائم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ModuleRef</code> بوابة الحاوية بعد البناء: <code>get</code> للموجود، <code>resolve</code> لذي النطاق، <code>create</code> لصنف خارج القائمة. الحقن العادي يبقى الطريق الأول.</p>
+<h2>ماذا بعد؟</h2>
+<p>Lazy-loading Modules: تحميل وحدة عند الحاجة، وحدود ما لا يُحمَّل متأخرًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Module reference: <a href="https://docs.nestjs.com/fundamentals/module-ref">https://docs.nestjs.com/fundamentals/module-ref</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

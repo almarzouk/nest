@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>whitelist و forbidNonWhitelisted</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-whitelist-and-forbid.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>whitelist و forbidNonWhitelisted</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إسقاط الحقول التي لا تملك زينة، أو رفض الطلب إن وصلت.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>ReserveSeatDto</code> يذكر <code>showId</code> و <code>seat</code>. العميل يرسل <code>role: &quot;admin&quot;</code> أو <code>price: 0</code>. من غير خيار، المفتاح يبقى على الكائن الذي تستلمه الدالة. خدمة تدمج الكائن في صف قد تكتب عمودًا لم تعرضه في العقد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>whitelist: true</code> يحذف كل خاصية بلا زينة فحص. <code>forbidNonWhitelisted: true</code> مع التبييض يرمي بدل الحذف. الصفحة تطلب الخيارين معًا للرفض.</p>
+<h2>التعريف التقني</h2>
+<p>الخياران من <code>ValidatorOptions</code> التي يرثها <code>ValidationPipe</code>:</p>
+<ul>
+<li><code>whitelist</code>: إن كان <code>true</code> تُجرَّد النتيجة من خصائص لا تستخدم أي زينة تحقق.</li>
+<li><code>forbidNonWhitelisted</code>: إن كان <code>true</code> فالخصائص خارج التبييض ترمي استثناء بدل إسقاطها.</li>
+</ul>
+<p>الحقل الذي تريد إبقاءه يحتاج زينة، حتى <code>@IsOptional()</code> مع قاعدة النوع إن كان اختياريًا. حقل بلا زينة يُعامل كأنه ليس في القائمة البيضاء.</p>
+<pre><code class="language-ts">app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+  }),
+);
+</code></pre>
+<p>من غير <code>forbidNonWhitelisted</code>، الجسم <code>{ showId, seat, role }</code> يصل إلى الدالة بلا <code>role</code>. مع الخيار، الجسم نفسه <code>400</code>.</p>
+<p><code>forbidNonWhitelisted</code> وحده لا يغني عن فهم التبييض: الصفحة تقول اضبطه بالإضافة إلى <code>whitelist</code>.</p>
+<p>هذا ليس <code>@Exclude()</code> من <code>class-transformer</code>. الإخفاء هناك استراتيجية تحويل. هنا القرار داخل فحص <code>class-validator</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حقل عليه زينة     يبقى
+حقل بلا زينة      يُحذف إن whitelist
+                  يرفض الطلب إن forbidNonWhitelisted أيضًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsInt, IsString, Min } from &#39;class-validator&#39;;
+
+export class ReserveSeatDto {
+  @IsString()
+  showId: string;
+
+  @IsInt()
+  @Min(1)
+  seat: number;
+}
+</code></pre>
+<pre><code class="language-ts">new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+})
+</code></pre>
+<p><code>{ &quot;showId&quot;: &quot;s1&quot;, &quot;seat&quot;: 4, &quot;role&quot;: &quot;admin&quot; }</code> يُرفض. الرسالة تشير إلى خاصية غير مسموحة. <code>{ &quot;showId&quot;: &quot;s1&quot;, &quot;seat&quot;: 4 }</code> يمر.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>role</code> بلا زينة على الصنف، فهو خارج القائمة.</li>
+<li>الرفض أفضل من الحذف حين تريد أن يعرف العميل أنه أرسل عقدًا خاطئًا، لا أن يختفي المفتاح بصمت.</li>
+<li>الحذف مناسب لتجاهل حقول يتسامح معها عميل قديم، إن قبلت أن الخطأ يمر بلا إشارة.</li>
+<li><code>seat</code> يبقى لأنه مزيّن، حتى لو فشلت <code>@Min</code> لسبب آخر. الخياران لا يعطّلان بقية القيود.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>validate</code> تستلم <code>whitelist</code> و <code>forbidNonWhitelisted</code>. المكتبة تمشي المفاتيح. مفتاح بلا قيود يُسجَّل كغير مبيّض. مع المنع تُضاف رسالة قيد. الأنبوب يرى أخطاء فيرمي <code>BadRequestException</code> قبل الدالة.</p>
+<p>مع التبييض من غير منع، الكائن الذي تكمل به النتيجة بلا تلك المفاتيح. الخدمة التي تقرأ <code>dto.role</code> تحصل على <code>undefined</code>. هذا أخف من الكتابة الصامتة، وأضعف من رفض صريح إن كان العميل يحتاج أن يصلح الطلب.</p>
+<p>الخياران عالميان فيؤثران على كل صنف يفحصه هذا الأنبوب، بما فيه صنف التحديث المشتق. حقل بلا زينة على الأم يُحذف أو يُرفض في التحديث أيضًا.</p>
+<h2>مثال عملي</h2>
+<p>صالة الحجوزات ترفض <code>role</code> و <code>price</code> و <code>id</code> إن أرسلها العميل مع الحجز. العقد الظاهر هو <code>showId</code> و <code>seat</code> فقط. اختبار يرسل المفاتيح الثلاثة الزائدة ويتوقع <code>400</code>. اختبار ثانٍ بلا <code>forbidNonWhitelisted</code> يتوقع أن <code>Object.keys</code> للناتج لا تحتوي <code>role</code>. الفرق قرار منتج: هل العميل يُبلَّغ أم يُتجاهل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>forbidNonWhitelisted: true</code> من غير <code>whitelist</code>. اتبع الصفحة: الاثنان معًا للرفض.</li>
+<li>حقل مطلوب نسيت زينته فصار يُحذف. كل حقل في العقد يحتاج زينة.</li>
+<li>الاعتقاد أن الخيار يمنع «المقعد مبيع». هو يمنع مفتاحًا غير معرّف لا قيمة أعمال.</li>
+<li>خلطه مع <code>z.strictObject()</code> في عملية تستخدم الصنف. خيار المخطط درس الأنبوب الآخر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>whitelist</code> كلما كان عقد الدخل أصغر من JSON الذي قد يصلك. <code>forbidNonWhitelisted</code> حين يجب أن يفشل العميل الذي يخترع حقولًا، لا أن ينجح بصمت.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا ترفض حقولًا ما زلت توثّقها كامتداد اختياري. ضع لها زينة <code>@IsOptional()</code> أولًا. ولا تستخدم الرفض بدل إصلاح خدمة تدمج <code>dto</code> كاملًا في SQL. الخدمة تقرأ حقولًا مسماة حتى مع التبييض.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الجسم فيه <code>role</code></th>
+<th><code>whitelist</code> فقط</th>
+<th>مع <code>forbidNonWhitelisted</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ما تستلمه الدالة</td>
+<td>الكائن بلا <code>role</code></td>
+<td>لا تُستدعى</td>
+</tr>
+<tr>
+<td>ما يراه العميل</td>
+<td>نجاح</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td>حقل بزينة</td>
+<td>يبقى ويُفحص</td>
+<td>يبقى ويُفحص</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحدث لمفتاح بلا زينة حين يكون <code>whitelist: true</code> فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يُحذف من الكائن الناتج. الطلب لا يُرفض بسبب ذلك المفتاح وحده.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يحتاج كل حقل مقبول زينة بعد تفعيل التبييض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التبييض يبقي ما عليه زينة تحقق فقط. حقل في العقد بلا <code>@IsString()</code> أو ما يشبهها يُسقط أو يرفض حسب الخيار الثاني.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عميل قديم يرسل <code>note</code> وأنت لم تعد تقرؤها، وعميل جديد يرسل <code>role</code> خطأً. أي سلوك تريد لكل مفتاح، وهل خيار واحد على الأنبوب يفرّق بينهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخيار عالم على الأنبوب: إما حذف كل غير المبيّض أو رفضه. لا يفرّق بين <code>note</code> و <code>role</code>. إن أردت قبول <code>note</code> فضعه بزينة اختيارية. إن أردت رفض الاثنين فـ <code>forbidNonWhitelisted</code>. التفريق الأدق عقدان أو إزالة المفتاح من العملاء القدامى ثم الرفض.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحذف <code>whitelist</code>؟</li>
+<li>ماذا يضيف <code>forbidNonWhitelisted</code>؟</li>
+<li>لماذا لا يكفي حقل TypeScript بلا زينة؟</li>
+<li>هل الخيار يرى حالة المقعد في المخزن؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>whitelist</code> يسقط ما ليس في العقد الزيني. <code>forbidNonWhitelisted</code> يحوّل ذلك إلى <code>400</code>. الحقول المقبولة تحمل زينة، والحقول الممنوعة تبقى خارج الصنف.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>transform</code> و <code>transformOptions</code>: متى يستلم المعالج نسخة الصنف، ومتى تُحوَّل الأنواع ضمنيًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

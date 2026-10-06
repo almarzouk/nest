@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>Middleware في هذا المجلد يعمل قبل أن تُختار دالة المتحكم بالكامل. الختم والترويسة place صحيح. شكل المعامل الذي تستلمه الدالة لم يُمس بعد.</p>
+<p>الفصل <code>10-pipes</code> يبدأ بعد Guards و Interceptors التي تسبق المعالج، أي بعد هذه الطبقة في دورة الطلب. الأنبوب يستلم قيمة المعامل لا كائن <code>req</code> كله. <code>transform</code> إما ترجع قيمة جديدة، مثل نص <code>&quot;4&quot;</code> يصبح العدد <code>4</code>، أو ترمي فيُلغى استدعاء المتحكم.</p>
+<p>سترى هناك <code>ParseIntPipe</code> و <code>ParseBoolPipe</code> و <code>ParseUUIDPipe</code> و <code>ParseArrayPipe</code> و <code>DefaultValuePipe</code>، ثم مقدمة <code>ValidationPipe</code> قبل أن يملك فصل DTO العقد الذي يفحصه الأنبوب بعمق.</p>
+<p>ما الذي تتركه هنا ولا تعيده داخل أنبوب:</p>
+<ul>
+<li>توليد <code>x-request-id</code> يبقى Middleware. الأنبوب لا يكتب ترويسة تتبع على كل الطلبات.</li>
+<li><code>exclude</code> الصحة يبقى قرار سلسلة Middleware. الأنبوب يُربَط على معامل أو مسار، وفحص الحياة الذي بلا معاملات لا يحتاج أنبوبًا.</li>
+<li>قرار الدور يبقى Guard، لا Pipe. الأنبوب لا يُسأل «هل يُسمح».</li>
+</ul>
+<p>ما الذي يصبح أوضح عندما تفتح المجلد التالي: طلب <code>GET /loans?page=abc</code> يمر على Middleware بنجاح ثم يفشل في الأنبوب برمز <code>400</code> قبل الخدمة. ذلك الفشل داخل منطقة الاستثناءات التي ترى فلاتر المسار، بخلاف الاستثناء الذي رميته من <code>use</code>.</p>
+<p>افتح <a href="../10-pipes/README.html"><code>10-pipes</code></a> عندما تستطيع أن تشير إلى سطر في مشروعك وتقول: هذا ظرف الطلب، وهذا لاحقًا شكل المعامل.</p>
+<p>قبل أن تفتح الملف الأول هناك، راجع طلبًا واحدًا على الورق:</p>
+<pre><code class="language-text">app.use(requestId)
+configure في وحدة الإعارة
+Guard إن وُجد
+Interceptor قبل المعالج
+Pipe على page
+LoansController
+الخدمة
+Interceptor على طريق العودة
+</code></pre>
+<p>الأنبوب لا يستبدل <code>requestId</code>. هو المحطة التي تمنع <code>page=abc</code> من الوصول إلى الخدمة. إن رمى الأنبوب، الفلاتر الخاصة بالمسار تستطيع رؤية الاستثناء، لأن المسار قد حُدد. هذا هو الفرق العملي الذي يبرر فصل الفصلين.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

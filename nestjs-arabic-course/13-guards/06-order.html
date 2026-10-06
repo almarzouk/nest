@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ترتيب Guards</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-order.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ترتيب Guards</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حفظ ترتيب الحراس: العام، ثم المتحكم، ثم المسار، وداخل الزينة ترتيب الكتابة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس التفويض يعمل قبل حارس الهوية فيقرأ <code>request.user</code> فارغًا ويرجع <code>403</code> لطلب كان يجب أن يكون <code>401</code>. الترتيب ليس ترتيب أهمية القاعدة في رأسك، بل ترتيب الربط في الدورة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>من صفحة Request lifecycle: الحراس العامون، ثم حراس المتحكم، ثم حراس المسار. داخل <code>@UseGuards(Guard1, Guard2)</code> يعمل <code>Guard1</code> ثم <code>Guard2</code>. عدة <code>APP_GUARD</code> تتبع ترتيب تسجيلها.</p>
+<h2>التعريف التقني</h2>
+<p>مثال الصفحة:</p>
+<pre><code class="language-ts">@UseGuards(Guard1, Guard2)
+@Controller(&#39;cats&#39;)
+export class CatsController {
+  @UseGuards(Guard3)
+  @Get()
+  getCats() {}
+}
+</code></pre>
+<p><code>Guard1</code> قبل <code>Guard2</code> وكلاهما قبل <code>Guard3</code>.</p>
+<p>«عام» يعني <code>useGlobalGuards</code> أو <code>APP_GUARD</code>. «متحكم» زينة قبل الصنف. «مسار» زينة قبل الدالة.</p>
+<p>أول <code>false</code> أو أول استثناء يوقف الباقي. لا يُستدعى الحارس التالي، ولا الأنبوب.</p>
+<p>الحارس لا يعكس الترتيب في طريق العودة. ليس Observable يلتف على الرد. طريق العودة للمعترضات. الحارس إما يمرر الطلب أو يوقفه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">APP_GUARD: IdentifyDeskGuard ثم AuditGuard
+@Controller @UseGuards(BoxPassGuard)
+@Post @UseGuards(RefundGuard)
+الترتيب: Identify → Audit → BoxPass → Refund
+</code></pre>
+<p>هذا إن كان التعريف والتدقيق عامين بهذا التسجيل، و <code>BoxPass</code> على الصنف، و <code>Refund</code> على الدالة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@UseGuards(IdentifyDeskGuard, BoxPassGuard)
+@Controller(&#39;tickets&#39;)
+export class TicketsController {
+  @UseGuards(RefundGuard)
+  @Post(&#39;refund&#39;)
+  refund(): { ok: true } {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p>على <code>POST /tickets/refund</code>: <code>IdentifyDeskGuard</code> ثم <code>BoxPassGuard</code> ثم <code>RefundGuard</code>. على <code>GET /tickets</code> يعمل الأولان فقط لأن <code>RefundGuard</code> على دالة أخرى.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الهوية قبل بوابة الشباك حتى تُلصَق <code>user</code> قبل أي <code>false</code> لاحق.</li>
+<li><code>RefundGuard</code> أخير على هذه الدالة. إن رجعت الهوية <code>401</code> فالاسترداد لا يُسأل.</li>
+<li>نقل <code>RefundGuard</code> إلى يسار <code>IdentifyDeskGuard</code> في قائمة واحدة يعكس المعنى. ضعه بعد من يلصق الهوية.</li>
+<li>حارس عام مسجّل قبل <code>IdentifyDeskGuard</code> في <code>providers</code> يسبق الاثنين حتى لو بدا أقل أهمية.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الطلب تمشي القائمة المجمّعة. كل <code>canActivate</code> ترى السياق نفسه، بما فيه ما لصقه الحارس السابق على <code>request</code>. لا توجد نسخة طلب لكل حارس.</p>
+<p>بعد آخر <code>true</code> تبدأ Interceptors العامة ثم Interceptors المتحكم ثم المسار، ثم الأنابيب. فشل متأخر في <code>RefundGuard</code> لا يترك أثر أنبوب لأن الأنبوب لم يبدأ.</p>
+<p>ترتيب Middleware لا يغيّر ترتيب الحراس. الختم يعمل قبل أول حارس مهما رتّبت <code>@UseGuards</code>.</p>
+<p>فلتر المسار يرى الاستثناء الذي يرميه أي حارس في هذه القائمة، لأن المسار مختار. أول فلتر يمسك الخطأ يوقف بقية الفلاتر.</p>
+<h2>مثال عملي</h2>
+<p>اختبار ترتيب يدفع أسماء الحراس في مصفوفة على الطلب. طلب الاسترداد يتوقع <code>[&#39;identify&#39;, &#39;box&#39;, &#39;refund&#39;]</code>. طلب القائمة يتوقع <code>[&#39;identify&#39;, &#39;box&#39;]</code>. إن ظهر <code>refund</code> قبل <code>identify</code> فالزينة أو تسجيل <code>APP_GUARD</code> مقلوب. أصلح الربط لا الشرط داخل <code>RefundGuard</code> حتى يتسامح مع مستخدم فارغ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>افتراض أن حارس الدالة يعمل قبل حارس الصنف لأنه «أقرب إلى الكود». الدورة تقول العكس: الصنف ثم الدالة، والعام قبلهما.</li>
+<li>حارس تفويض عام قبل حارس هوية عام بسبب ترتيب <code>providers</code>.</li>
+<li>انتظار أن <code>false</code> يجرّب الحارس التالي.</li>
+<li>قياس الترتيب من طريق الرد. الحارس لا يجري مرة ثانية بعد الخدمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما وُجد حارسان على المسار نفسه. اكتب الأسماء بالترتيب الذي يجب أن يراه الطلب، من الهوية إلى الإذن الأضيق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا ترتب الحراس لتعويض أنبوب أو Middleware. ولا تعتمد على ترتيب الملفات في المجلد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصدر</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>APP_GUARD</code> الأول</td>
+<td>أول الحراس</td>
+</tr>
+<tr>
+<td><code>APP_GUARD</code> التالي</td>
+<td>بعده</td>
+</tr>
+<tr>
+<td><code>@UseGuards</code> على الصنف من اليسار إلى اليمين</td>
+<td>بعد العام</td>
+</tr>
+<tr>
+<td><code>@UseGuards</code> على الدالة</td>
+<td>أخيرًا</td>
+</tr>
+<tr>
+<td>Pipe</td>
+<td>بعد كل الحراس و Interceptor السابق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في مثال الصفحة، من يعمل قبل <code>Guard3</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Guard1</code> ثم <code>Guard2</code>، لأنهما على المتحكم و <code>Guard3</code> على المسار.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>IdentifyDeskGuard</code> و <code>RefundGuard</code> كلاهما في <code>@UseGuards</code> على الدالة. أيهما تكتب أولًا ولماذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>IdentifyDeskGuard</code> أولًا حتى يلصق <code>user</code> قبل أن يقرر الاسترداد. الكتابة من اليسار إلى اليمين هي التنفيذ.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حارسان عامان في <code>providers</code>: التفويض ثم الهوية. ماذا يرى حارس التفويض، وكيف تصلح من غير دمج الصنفين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يرى الطلب قبل لصق الهوية لأن تسجيله أسبق. انقل تسجيل حارس الهوية فوق تسجيل التفويض في المصفوفة. الدورة تتبع ترتيب التسجيل لا اسم الصنف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب المستويات الثلاثة؟</li>
+<li>ماذا يعني ترتيب المعاملات داخل <code>@UseGuards</code>؟</li>
+<li>هل يُستدعى الأنبوب بعد <code>false</code>؟</li>
+<li>هل يعمل الحارس مرة أخرى على الرد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>العام ثم الصنف ثم الدالة، ومن اليسار إلى اليمين داخل الزينة. أول رفض يوقف الباقي. الهوية تُربَط قبل التفويض الذي يقرأها. الأنبوب لا يبدأ إلا بعد آخر <code>true</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع هوية وبوابة على متحكم التذاكر، ثم التمارين، ثم المعترضات التي تلتف حول الدالة بعد هذه البوابة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

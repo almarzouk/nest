@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@nestjs/authorization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-nestjs-authorization.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@nestjs/authorization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل سياسات المكتبة على الحزمة الرسمية: <code>@Policy</code> و <code>@Can</code> و <code>AuthorizationService</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>دوال السياسة التي كتبناها باليد تُنسى على مسار جديد، وتُعاد صياغتها في حارس مختلف عن الخدمة. الرمز عند الضيف يختلف عن الرمز عند المستخدم المعروف إن رمى كل مسار استثناءه الخاص.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>AuthorizationModule.forRoot()</code> بعد <code>AuthenticationModule</code>. الصنف عليه <code>@Policy()</code> ودواله abilities. <code>@Can(PostPolicy, &quot;create&quot;)</code> يشغّل القدرة قبل المعالج إن كانت تُستدعى بالمستخدم وحده. القدرة التي تحتاج المقال تُستدعى في الخدمة عبر <code>authorize</code> أو <code>can</code>. <code>true</code> الحرفي فقط يسمح.</p>
+<h2>التعريف التقني</h2>
+<p>ترتيب الوحدات من الصفحة: <code>AuthenticationModule</code> أولًا ثم <code>AuthorizationModule</code>. العكس يجعل حارس التفويض يرى ضيفًا قبل أن يضع حارس المصادقة <code>request.user</code>، فيرفض الإقلاع ويسمّي الحارسين.</p>
+<pre><code class="language-ts">@Module({
+  imports: [
+    AuthenticationModule.forRoot({ session: { absoluteTtl: &quot;14d&quot;, idleTtl: &quot;3d&quot; } }),
+    AuthorizationModule.forRoot(),
+    PostsModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<pre><code class="language-ts">import { Policy } from &quot;@nestjs/authorization&quot;;
+
+@Policy()
+export class PostPolicy {
+  create(user: PublicUser | null) {
+    return !!user?.roles.includes(&quot;editor&quot;);
+  }
+
+  update(user: PublicUser | null, post: { authorId: number }) {
+    return !!user &amp;&amp; user.id === post.authorId;
+  }
+}
+</code></pre>
+<p><code>@Can(PostPolicy, &quot;create&quot;)</code> على <code>POST /posts</code> لأن <code>create</code> تقبل المستخدم فقط وتقبل <code>null</code>. <code>@Can(PostPolicy, &quot;update&quot;)</code> لا يصلح على المسار: الحارس لا يملك المقال، والصفحة ترفض القدرة التي تحتاج سجلًا أو لا تقبل ضيفًا في هذا الموضع.</p>
+<p>في الخدمة، بعد تحميل المقال:</p>
+<pre><code class="language-ts">await this.authorization.authorize(PostPolicy, &quot;update&quot;, user, post);
+</code></pre>
+<p><code>can</code> ترجع منطقيًا. <code>authorize</code> ترمي <code>AuthorizationError</code> بسبب <code>unauthenticated</code> أو <code>forbidden</code>، والحزمة تحوّله إلى <code>401</code> أو <code>403</code> على HTTP. في عامل طابور يبقى الخطأ نفسه لأن الخدمة ليست HTTP حصرًا.</p>
+<p>اكتشف السياسات كمزوّدات في الوحدة، أو اسردها في خيار <code>policies</code>. <code>@Policy()</code> يجعل الصنف قابلًا للحقن. خطأ إملائي في اسم القدرة على <code>@Can</code> يفشل عند الإقلاع ويذكر القدرات الصالحة، كما في تحذير الصفحة عن اسم مثل <code>craete</code>.</p>
+<p><code>before()</code> على السياسة يسبق كل قدرة. أرجئه حتى تحتاج تجاوز مشرف، والصفحة تحذّر أنه يتخطى حتى القواعد التي يجب أن تسري على المشرف إن رجعت <code>true</code> دائمًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AuthenticationModule
+AuthorizationModule
+PostPolicy.create     -&gt; @Can على المسار
+PostPolicy.update     -&gt; authorize في الخدمة بعد التحميل
+true فقط              -&gt; سماح
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Post } from &quot;@nestjs/common&quot;;
+import { CurrentUser } from &quot;@nestjs/authentication&quot;;
+import { Can } from &quot;@nestjs/authorization&quot;;
+import { CreatePostDto } from &quot;./create-post.dto.js&quot;;
+import { PostPolicy } from &quot;./post.policy.js&quot;;
+import { PostsService } from &quot;./posts.service.js&quot;;
+import type { PublicUser } from &quot;../users/public-user.js&quot;;
+
+@Controller(&quot;posts&quot;)
+export class PostsController {
+  constructor(private readonly posts: PostsService) {}
+
+  @Post()
+  @Can(PostPolicy, &quot;create&quot;)
+  create(@CurrentUser() user: PublicUser, @Body() dto: CreatePostDto) {
+    return this.posts.create(user.id, dto);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المحرر يمر. القارئ المعروف يأخذ <code>403</code> لأن الهوية موجودة والقدرة رجعت غير <code>true</code>. الضيف على مسار غير عام أصلًا يوقفه حارس المصادقة بـ <code>401</code> قبل <code>@Can</code> إن كان المسار مغلقًا. إن فتحت المسار، <code>create</code> ترى <code>null</code> وترجع <code>false</code> فيصبح الرفض من التفويض.</p>
+<p>عدّل المقال في الخدمة لا بمزخرف:</p>
+<pre><code class="language-ts">await this.authz.authorize(PostPolicy, &quot;update&quot;, user, post);
+</code></pre>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>حارس التفويض العام يقرأ البيانات التي وضعها <code>@Can</code> وينادي القدرة بالمستخدم أو <code>null</code>. قدرات المسار لا تستقبل جسم المقال. لذلك التصميم: فعل عام على الحارس، فعل السجل بعد <code>find</code>. <code>authorize</code> لا يكتب SQL. بعد عودتها تكمل <code>prisma.post.update</code>.</p>
+<p>الكاش على URL قبل المعالج، مثل مفتاح بلا مستخدم، قد يخدم مقال Ada لـ Basil. الصفحة تحذّر من ذلك على المسارات التي تفحص السجل. لا تضع كاش استجابة عامًا على <code>GET /posts/:id</code> إن كانت المسودة مشروطة.</p>
+<h2>مثال عملي</h2>
+<p><code>PostPolicy</code> مزوّد في <code>PostsModule</code>. إنشاء المقال <code>@Can(..., &quot;create&quot;)</code>. تعديل العنوان يحمّل الصف ثم <code>authorize(..., &quot;update&quot;, user, post)</code>. اختبار السياسة <code>new PostPolicy()</code> من غير خادم، كما تقترح الصفحة لاستدعاء القدرة مباشرة، مع ملاحظة أن النداء المباشر يتخطى <code>before</code> إن أضفته لاحقًا.</p>
+<p>اسم <code>update</code> في المزخرف على مسار بلا مقال يفشل الإقلاع. هذا أفضل من رفض صامت لكل المستخدمين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>AuthorizationModule</code> قبل <code>AuthenticationModule</code>.</li>
+<li><code>@Can</code> على قدرة تحتاج المقال.</li>
+<li>اعتبار أي قيمة صادقة سماحًا. الصفحة تشترط <code>true</code>.</li>
+<li>سياسة تحدّث Prisma.</li>
+<li>كاش عام على مسار يفرّق المسودات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمسار الدورة بعد المصادقة، لكل فعل له قاعدة أوضح من «أي مستخدم داخل».</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل وجود قاعدة. <code>@Can</code> على قدرة ترجع <code>true</code> دائمًا ضوضاء. ولا تستبدل الحزمة بسلسلة شروط في المتحكم لأن المزخرف «طويل».</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>قدرة بلا صف</th>
+<th>قدرة بصف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Can</code></td>
+<td><code>authorize</code> في الخدمة</td>
+</tr>
+<tr>
+<td><code>create(user)</code></td>
+<td><code>update(user, post)</code></td>
+</tr>
+<tr>
+<td>قبل المعالج</td>
+<td>بعد <code>find</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي قيمة غير <code>true</code> تسمح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا شيء. حتى القيمة الصادقة غير <code>true</code> تمنع، حسب صفحة الحزمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفشل الإقلاع إن سجّلت التفويض قبل المصادقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حارس التفويض سيعمل قبل أن يُملأ المستخدم، فيرى ضيفًا. الحزمة تكتشف ترتيب الحارسين وترفض الإقلاع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد <code>@Can</code> على تعديل المقال. لماذا ترفض الصفحة ذلك، وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحارس لا يملك الصف، والقدرة <code>update</code> تحتاج المقال. البديل تحميل المقال في الخدمة ثم <code>authorizationService.authorize(PostPolicy, &quot;update&quot;, user, post)</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُستدعى <code>create</code>، وأين <code>update</code>؟</li>
+<li>ماذا يرمي <code>authorize</code> عند المنع؟</li>
+<li>كيف تُكتشف السياسة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/authorization</code> يضع السياسات في أصناف ترجع <code>true</code> للسماح. المسار يحمي الفعل العام، والخدمة تحمي الفعل على صف بعينه، بعد حارس المصادقة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-casl.html">CASL ومتى يناسب</a> خيار خارج الحزمة، لا مسار الدورة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

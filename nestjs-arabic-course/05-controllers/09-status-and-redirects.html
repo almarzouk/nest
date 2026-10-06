@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Status Codes و Redirects</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-status-and-redirects.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Status Codes و Redirects</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ضبط رمز نجاح الاستجابة بـ <code>@HttpCode</code>، وتحويل العميل بـ <code>@Redirect</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>POST</code> الذي يستبدل قسيمة بلا جسم ما زال يرسل 201. ورابط الدليل القديم يحتاج 301 إلى عنوان جديد. الرمز جزء من عقد HTTP، والـ Decorator يعلنه بجانب المعالج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>نجاح Nest الافتراضي 200، وطريقة POST تستخدم 201. <code>@HttpCode(204)</code> يستبدل ذلك على المعالج. <code>@Redirect(url, status)</code> يرسل تحويلًا، وافتراض الرمز 302 إن حُذف. إعادة كائن <code>{ url, statusCode }</code> تستبدل وسائط الـ Decorator.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@Post()
+@HttpCode(204)
+redeem() {
+  return;
+}
+</code></pre>
+<p><code>HttpCode</code> و <code>HttpStatus</code> من <code>@nestjs/common</code>. <code>HttpStatus.NO_CONTENT</code> هو 204، و <code>HttpStatus.OK</code> هو 200.</p>
+<p>عندما يعتمد الرمز على نتيجة متغيرة لخطأ، ارمِ استثناءً. Exception Filter يحوّله إلى استجابة، وذلك فصل لاحق. <code>@Res()</code> يقدر أن يكتب رمزًا أيضًا، وهو وضع المكتبة في الدرس التالي. للأسلوب القياسي استخدم <code>@HttpCode</code> عندما يكون الرمز ثابتًا على المعالج.</p>
+<p><code>@Redirect(url, statusCode)</code> : الرمز الافتراضي 302. القيمة المعادة من نوع <code>HttpRedirectResponse</code> تستبدل الوسائط:</p>
+<pre><code class="language-ts">return { url: &#39;https://docs.example.com/v5/&#39;, statusCode: 301 };
+</code></pre>
+<p>إن لم تُعد الدالة كائنًا، تبقى وسائط الـ Decorator.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /coupons/redeem     @HttpCode(204)  -&gt; 204 بلا جسم متعمد
+POST /coupons            بلا HttpCode    -&gt; 201 والجسم المعاد
+GET  /coupons/manual     @Redirect(...)  -&gt; 302 أو ما تعيده الدالة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, HttpCode, HttpStatus, Post } from &#39;@nestjs/common&#39;;
+import { CouponsService } from &#39;./coupons.service.js&#39;;
+
+@Controller(&#39;coupons&#39;)
+export class CouponsController {
+  constructor(private readonly coupons: CouponsService) {}
+
+  @Post(&#39;redeem&#39;)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  redeem() {
+    this.coupons.redeemCurrent();
+  }
+
+  @Post(&#39;search&#39;)
+  @HttpCode(HttpStatus.OK)
+  search() {
+    return this.coupons.searchActive();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>redeem</code> عملية POST بلا تمثيل جديد. 204 يطابق «تم، ولا جسم».</li>
+<li><code>search</code> عملية POST لأن جسم التصفية قد يكبر لاحقًا، والعقد يتفق على 200. من غير <code>@HttpCode</code> كان الرمز سيصبح 201.</li>
+<li><code>HttpStatus</code> أوضح من الرقم العاري عند القراءة، والرقم <code>204</code> مقبول أيضًا.</li>
+<li><code>redeem</code> لا تعيد قيمة. مع 204 هذا مقصود.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>طبقة الاستجابة تختار 201 لمُعالج <code>@Post</code> و 200 لغيره، ثم تطبق <code>@HttpCode</code> إن وُجد. <code>@Redirect</code> يملأ عنوان <code>Location</code> والرمز. إن أعادت الدالة <code>url</code> أو <code>statusCode</code> تُستبدل القيم المطابقة من الـ Decorator وتُحفظ البقية.</p>
+<p>الاستثناء الذي ترميه الخدمة لا يمر على <code>@HttpCode</code>. الرمز عندئذٍ يأتي من طبقة الاستثناءات، لا من رمز النجاح.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, Query, Redirect } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;coupons&#39;)
+export class CouponDocsController {
+  @Get(&#39;manual&#39;)
+  @Redirect(&#39;https://docs.example.com/coupons&#39;, 302)
+  manual(@Query(&#39;edition&#39;) edition?: string) {
+    if (edition === &#39;2024&#39;) {
+      return { url: &#39;https://docs.example.com/coupons/2024&#39;, statusCode: 301 };
+    }
+  }
+}
+</code></pre>
+<p><code>GET /coupons/manual</code> يحوّل بـ 302 إلى الدليل العام. <code>?edition=2024</code> يعيد كائنًا يستبدل العنوان والرمز إلى 301. الاستعلام هنا شرط للتحويل، وقراءة <code>@Query</code> نفسها مشروحة في درسها.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>توقع 200 من <code>@Post</code> الذي يعيد كائنًا</td>
+<td>الافتراضي 201 حتى يُضاف <code>@HttpCode(200)</code></td>
+</tr>
+<tr>
+<td>جسم JSON مع <code>@HttpCode(204)</code></td>
+<td>العقد يقول «بلا محتوى» والجسم يربك العميل</td>
+</tr>
+<tr>
+<td><code>@Redirect</code> مع نسيان أن الكائن المعاد يستبدل الوسائط</td>
+<td>طبعة 2024 تبقى على عنوان 302 العام</td>
+</tr>
+<tr>
+<td>رمي خطأ بأسلوب <code>@HttpCode(404)</code></td>
+<td>رمز النجاح لا يصف الفشل؛ الفشل استثناء</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p><code>@HttpCode</code> عندما يخالف الرمز الثابت الافتراض: 204 بعد تنفيذ، أو 200 على POST للبحث. <code>@Redirect</code> عندما يكون عنوان الاستجابة موقعًا آخر، ثابتًا أو حسب قيمة ترجعها الدالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لرمز يتغير مع كل خطأ مجال (رصيد، صلاحية). ذلك استثناء و Exception Filter. ولضبط رأس <code>Location</code> يدويًا مع باقي الأسلوب القياسي من غير تحويل جاهز؛ <code>@Redirect</code> يغطي حالة التحويل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>النتيجة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بلا Decorator على GET</td>
+<td>200 مع القيمة المعادة</td>
+</tr>
+<tr>
+<td>بلا Decorator على POST</td>
+<td>201 مع القيمة المعادة</td>
+</tr>
+<tr>
+<td><code>@HttpCode(status)</code></td>
+<td>يستبدل رمز النجاح لذلك المعالج</td>
+</tr>
+<tr>
+<td><code>@Redirect(url, status)</code></td>
+<td>تحويل، والافتراضي 302، والكائن المعاد يستبدل الوسائط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما رمز <code>POST /coupons</code> الذي يعيد <code>{ id: &#39;c1&#39; }</code> من غير <code>@HttpCode</code>؟</p>
+<details><summary>الحل</summary>
+
+<ol start="201">
+<li></li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تجعل <code>POST /coupons/search</code> يعيد 200 مع قائمة JSON؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@HttpCode(200)</code> أو <code>@HttpCode(HttpStatus.OK)</code> على المعالج، وأعد القائمة من الدالة. Nest ترسل القائمة JSON لأن القيمة كائن أو مصفوفة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>@Redirect(&#39;https://docs.example.com/coupons&#39;, 302)</code> والدالة تعيد <code>{ url: &#39;https://docs.example.com/coupons/2024&#39; }</code> فقط. ما الرمز وما العنوان؟</p>
+<details><summary>الحل</summary>
+
+<p>العنوان يصبح نسخة 2024 لأن <code>url</code> في الكائن يستبدل وسيط الـ Decorator. الرمز يبقى 302 لأن الكائن لم يمرر <code>statusCode</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رمز النجاح الافتراضي لغير POST؟</li>
+<li>ما الرمز الافتراضي لـ <code>@Redirect</code> عند حذف الوسيط الثاني؟</li>
+<li>ماذا يستبدل الكائن المعاد من معالج <code>@Redirect</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>200 و 201 هما افتراض Nest، و <code>@HttpCode</code> يثبّت غيرهما على المعالج. <code>@Redirect</code> يحوّل العميل، وإعادة <code>{ url, statusCode }</code> تخصّص التحويل لذلك الطلب.</p>
+<h2>ماذا بعد؟</h2>
+<p>كائن الطلب الخام للمنصة: Request Object.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Status code: <a href="https://docs.nestjs.com/controllers#status-code">https://docs.nestjs.com/controllers#status-code</a></li>
+<li>NestJS — Redirection: <a href="https://docs.nestjs.com/controllers#redirection">https://docs.nestjs.com/controllers#redirection</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

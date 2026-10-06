@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>رتّب الاتجاه: Prisma، Service، Controller.</p>
+<details>
+<summary>الحل</summary>
+
+<p>Controller ينادي Service تنادي Prisma. لا سهم من العميل إلى المتحكم.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>الفريق يقول «إلغاء» للشحنة والفاتورة. ماذا تسمي الدوال وأين تضعها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>cancelShipment</code> في وحدة الشحن و <code>voidInvoice</code> في الفوترة. منسق أعلى يستدعيهما إن لزم التسلسل. لا <code>cancel()</code> واحدة في وحدة متجر شاملة.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>مشروع فيه اثنا عشر مسار CRUD وفريق واحد. أي ثلاثة أساليب تؤجل، وأي حد تطبق هذا الأسبوع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أجّل CQRS والخدمات الشبكية ومنفذًا لكل قراءة. طبّق وحدة لكل ميزة وتصديرًا ضيقًا وإخراج Prisma من المتحكم.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

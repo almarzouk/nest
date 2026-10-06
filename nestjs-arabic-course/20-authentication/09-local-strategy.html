@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Local Strategy</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-local-strategy.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Local Strategy</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ دخول البريد وكلمة المرور كما في وصفة Passport: <code>LocalStrategy</code> و <code>AuthGuard(&#39;local&#39;)</code> ومسار <code>POST /auth/login</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استدعاء <code>passport.authenticate(&#39;local&#39;)</code> يدويًا داخل كل إطار يكرر ربط Express. كلمة المرور تُقارن في المتحكم بجانب <code>res.json</code>. فشل المستخدم الغائب برسالة غير فشل الكلمة الخاطئة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الاستراتيجية تقرأ الجسم، وتستدعي خدمة تتحقق من التجزئة، وترجع الشخص أو ترمي <code>401</code>. الحارس على مسار الدخول فقط يشغّل هذه الاستراتيجية. المسار نفسه لا يحمي بقية التطبيق. حماية البقية استراتيجية JWT في الدرس التالي، أو حزمة Security إن كان المشروع عليها أصلًا.</p>
+<h2>التعريف التقني</h2>
+<p>من الوصفة، مع بريد المكتبة:</p>
+<pre><code class="language-ts">@Injectable()
+export class LocalStrategy extends PassportStrategy(Strategy) {
+  constructor(private readonly auth: AuthService) {
+    super({ usernameField: &quot;email&quot; });
+  }
+
+  async validate(email: string, password: string) {
+    const user = await this.auth.validateUser(email, password);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    return user;
+  }
+}
+</code></pre>
+<p>توقيع <code>validate(username, password)</code> هو ما يتوقعه <code>passport-local</code>. المعامل الأول هنا بريد بسبب الخيار.</p>
+<pre><code class="language-ts">@Injectable()
+export class LocalAuthGuard extends AuthGuard(&quot;local&quot;) {}
+</code></pre>
+<pre><code class="language-ts">@Post(&quot;login&quot;)
+@UseGuards(LocalAuthGuard)
+login(@Req() req: { user: PublicUser }) {
+  return this.auth.issueSessionOrToken(req.user);
+}
+</code></pre>
+<p>الصفحة تستخدم <code>@Request()</code> من <code>@nestjs/common</code> أيضًا. بعد الحارس، <code>req.user</code> هو ناتج <code>validate</code>. إصدار JWT في الوصفة يتم هنا باستدعاء <code>@nestjs/jwt</code>، لا داخل <code>validate</code>. <code>validate</code> تثبت فقط.</p>
+<p><code>AuthService.validateUser</code> تجلب التجزئة، وتنادي <code>verify</code>، وترجع <code>{ id, email, name }</code> أو <code>null</code>. رسالة الرفض واحدة.</p>
+<p>سجّل <code>LocalStrategy</code> في <code>providers</code> مع <code>PassportModule</code> و <code>UsersModule</code>.</p>
+<p>هذه الوصفة لا تضع كعكة <code>__Host-sid</code> إلا إن كتبت ذلك بعد النجاح. مثال التوثيق الشهير يصدر <code>access_token</code> بعد الدخول المحلي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /auth/login
+  LocalAuthGuard
+    passport-local يقرأ email و password
+    validate -&gt; PublicUser أو 401
+  المعالج يرى req.user ويصدر دليلًا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { PasswordHasher } from &quot;@nestjs/authentication&quot;;
+import { UsersService } from &quot;../users/users.service.js&quot;;
+
+@Injectable()
+export class AuthService {
+  constructor(
+    private readonly users: UsersService,
+    private readonly hasher: PasswordHasher,
+  ) {}
+
+  async validateUser(email: string, password: string) {
+    const found = await this.users.findCredentials(email);
+    const ok = await this.hasher.verify(password, found?.passwordHash);
+    if (!ok || !found?.passwordHash) {
+      return null;
+    }
+    return found.user;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الخدمة صالحة حتى لو استبدلت Passport لاحقًا بـ <code>CredentialsService</code> في الحزمة الرسمية: المقارنة في مكان واحد. <code>findCredentials</code> ترجع التجزئة للدخول فقط، لا لمسار <code>GET /users/:id</code>.</p>
+<p>حارس المحلية لا يُوضع على <code>GET /posts</code>. ذلك الحارس يطالب بجسم فيه كلمة مرور في كل طلب. حماية القراءة استراتيجية أخرى أو جلسة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Passport يحلّل الجسم قبل المعالج. إن غاب <code>email</code> تفشل الاستراتيجية. <code>validate</code> تعمل داخل طلب الدخول فقط. النجاح يمرّر التحكم إلى <code>login</code>، وهناك توقّع الوصفة إصدار رمز. لا يُنشأ <code>req.user</code> على الطلبات التالية إلا إذا حملت تلك الطلبات دليلًا تفحصه استراتيجية أخرى.</p>
+<p><code>@UseGuards(LocalAuthGuard)</code> على الدخول يعني أن المعالج لا يُستدعى عند الفشل، فلا تسجّل نجاحًا كاذبًا.</p>
+<h2>مثال عملي</h2>
+<p>عميل المكتبة يرسل <code>{ &quot;email&quot;: &quot;ada@example.com&quot;, &quot;password&quot;: &quot;correct-horse&quot; }</code> إلى <code>POST /auth/login</code>. النجاح يرجع <code>{ &quot;access_token&quot;: &quot;...&quot; }</code> في شكل الوصفة. كلمة خاطئة <code>401</code> من غير جسم المستخدم. ثم يطلب <code>GET /posts</code> بالرمز، وهذا لن يمر على <code>LocalAuthGuard</code>. الدرس التالي يضع <code>JwtAuthGuard</code> على القراءة.</p>
+<p>إن كان مشروع الدورة على <code>@nestjs/authentication</code>، أبقِ هذا الملف مثال قراءة لا تستورده في <code>AppModule</code> مع <code>SessionAuth</code> على المسار نفسه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حارس <code>local</code> على كل المسارات.</li>
+<li>مقارنة كلمة المرور داخل <code>login</code> بعد أن أعادت <code>validate</code> التجزئة إلى العميل.</li>
+<li><code>username</code> في الجسم بينما الخيار يقول <code>email</code>.</li>
+<li>نسيان تسجيل الصنف كمزوّد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في مشروع يتبع وصفة Passport للخطوة الأولى: إثبات الكلمة ثم إصدار دليل في المعالج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحارس عام للتطبيق. ولا بجانب <code>SignInService</code> على نفس مسار الدخول من غير إزالة أحدهما.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>LocalStrategy</code></th>
+<th><code>SessionAuth</code> في الحزمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تثبت الكلمة في طلب الدخول</td>
+<td>تقرأ كعكة في الطلبات التالية</td>
+</tr>
+<tr>
+<td><code>AuthGuard(&#39;local&#39;)</code></td>
+<td>حارس الحزمة العام</td>
+</tr>
+<tr>
+<td><code>req.user</code> بعد Passport</td>
+<td><code>@CurrentUser()</code> بعد المزوّد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يُوضع <code>LocalAuthGuard</code> على <code>GET /me</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يتوقع جسم دخول بكلمة مرور. طلبات الهوية التالية تحمل رمزًا أو كعكة، لا الكلمة في كل مرة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يجب أن يرجع <code>validate</code> حتى لا يسرّب العمود السري إلى <code>req.user</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الشخص العام <code>{ id, email, name }</code> من غير <code>passwordHash</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الوصفة تصدر JWT في <code>login</code> لا في <code>validate</code>. ماذا تستفيد الاختبارات من هذا الفصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>validateUser</code> تُختبر بكلمة صحيحة وخاطئة من غير توقيع ولا HTTP. إصدار الرمز يُختبر على المعالج بعد مستخدم جاهز.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما توقيع <code>validate</code> في الاستراتيجية المحلية؟</li>
+<li>متى يُملأ <code>req.user</code>؟</li>
+<li>أين تُقارن التجزئة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Local Strategy تثبت البريد والكلمة لطلب دخول واحد وتضع شخصًا عامًا على الطلب. حماية بقية المسارات دليل آخر.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./10-jwt-strategy.html">JWT Strategy</a> تفحص <code>Bearer</code> في وصفة Passport.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

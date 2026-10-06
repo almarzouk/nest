@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Projects</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-projects.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Projects</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إضافة مورد المشروع في رف: كتاب قيد التجهيز داخل المنظمة، بقائمة 200 إن كانت فارغة وإنشاء 201، وكل استعلام مقيّد بـ <code>organizationId</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الكتب تُعلَّق على المستخدم. أو <code>GET /projects</code> بلا صفوف يعيد 404 فتظن الواجهة أن المسار خطأ. أو <code>POST</code> يعيد 200. أو <code>findUnique</code> على <code>id</code> فقط فيفتح كتاب الجار.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Project</code> له <code>title</code> و <code>status</code> يبدأ <code>draft</code> و <code>organizationId</code> من السياق. القائمة غلاف <code>{ data, nextCursor }</code>. الإنشاء 201. الفرد الغائب داخل المكتبة 404. النشر إلى <code>published</code> فعل لاحق يمكنه العيش هنا كـ <code>POST /projects/:id/publish</code> بشرط أن المالك فقط هو الموجود الآن؛ الخطة تُضاف في الدرس التالي فلا تمنعوا النشر قبلها إلا بتعليق في الكود يوضح أن الحارس قادم.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-prisma">model Project {
+  id             String @id
+  organizationId String
+  title          String
+  status         String
+  @@index([organizationId, status])
+}
+</code></pre>
+<p><code>POST /projects</code> لا يقبل <code>organizationId</code> في الجسم؛ يُكتب من السياق. <code>GET /projects</code> 200 و <code>data: []</code>. <code>@HttpCode(201)</code> على الإنشاء. التحديث <code>PATCH</code> على حقول العنوان فقط ما دام <code>draft</code>. لا GraphQL في هذه الشريحة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سياق المنظمة
+→ WHERE organizationId
+→ draft يُنشأ
+→ القائمة [] ما زالت 200
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Get()
+list() {
+  return this.projects.list(currentTenantId());
+}
+</code></pre>
+<p>الخدمة تعيد <code>{ data: rows, nextCursor: null }</code> حتى لو <code>rows</code> فارغة. لا <code>NotFoundException</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>المتحكم لا يمرر جسم المستأجر.</li>
+<li><code>list</code> تضع <code>take: 20</code>.</li>
+<li>الفهرس يخدم هذا <code>where</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>TenantGuard</code> يملأ السياق.</li>
+<li><code>POST</code> يدرج <code>draft</code> و <code>organizationId</code> ويعيد 201 مع <code>id</code>.</li>
+<li><code>GET /projects/:id</code> يستخدم <code>findFirst({ where: { id, organizationId } })</code>.</li>
+<li>غياب الصف 404 <code>project_not_found</code> بشكل الخطأ الموحّد.</li>
+<li>منظمة أخرى لا ترى الصف حتى لو عرفت <code>id</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Post()
+@HttpCode(201)
+create(@Body() body: { title: string }) {
+  return this.projects.create(currentTenantId(), body.title);
+}
+</code></pre>
+<pre><code class="language-ts">create(organizationId: string, title: string) {
+  return this.prisma.project.create({
+    data: { id: randomUUID(), organizationId, title, status: &#39;draft&#39; },
+  });
+}
+</code></pre>
+<p><code>randomUUID</code> من <code>node:crypto</code>. لا حالة <code>published</code> من جسم الإنشاء. النشر مسار منفصل حتى يُربَط بالخطة لاحقًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>404 للقائمة الفارغة.</li>
+<li>200 على الإنشاء.</li>
+<li><code>status</code> من العميل عند <code>POST</code> فيُنشر بلا سياسة.</li>
+<li>كاش قائمة بلا <code>organizationId</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما توجد منظمة. هذا قلب المنتج في الفصل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضيفوا فصول الكتاب والمراجعات. المشروع صف واحد في هذا النطاق. ولا تمنعوا الإنشاء بـ Stripe قبل درس الاشتراك؛ يمكنكم السماح بمسودات بلا خطة ثم قفل النشر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>رمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قائمة فارغة</td>
+<td>200 و <code>data: []</code></td>
+</tr>
+<tr>
+<td>إنشاء</td>
+<td>201 و <code>draft</code></td>
+</tr>
+<tr>
+<td>معرّف غائب في المكتبة</td>
+<td>404</td>
+</tr>
+<tr>
+<td>معرّف في مكتبة أخرى</td>
+<td>404 لنفس المستدعي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد <code>GET /projects</code> لمكتبة جديدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>200 و <code>{ data: [], nextCursor: null }</code> لا 404.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>status</code> ليس في جسم الإنشاء؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يرسل العميل <code>published</code> ويتجاوز الخطة. البداية <code>draft</code> دائمًا. النشر مسار لاحق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يعرض <code>id</code> مشروع دار النيل لترويسة مكتبة أخرى. ماذا تتوقعون؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol start="404">
+<li><code>where</code> فيه منظمة الترويسة. الصف لا يُعدَّل ولا يُكشف عنوانه.</li>
+</ol>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يمثّل <code>Project</code>؟</li>
+<li>من أين <code>organizationId</code>؟</li>
+<li>ما رمز القائمة الفارغة والإنشاء؟</li>
+<li>لماذا لا <code>findUnique</code> على المعرّف وحده؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المشروع كتاب <code>draft</code> داخل المنظمة. القائمة الفارغة 200 والإنشاء 201. العزل شرط على كل استعلام، والنشر العام لم يُربط بالخطة بعد.</p>
+<h2>ماذا بعد؟</h2>
+<p>النشر يحتاج اشتراكًا لا يُفعَّل من صفحة النجاح. الدرس التالي الدفع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>MDN — 201: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/201">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/201</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

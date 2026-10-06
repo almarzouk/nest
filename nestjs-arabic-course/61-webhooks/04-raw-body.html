@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Raw Body</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-raw-body.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Raw Body</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>الإبقاء على بايتات طلب الويب هوك كما وصلت في رف، عبر خيار <code>rawBody</code> في Nest، حتى ينجح HMAC.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Body()</code> يعطي كائنًا. التوقيع حُسب على النص <code>{&quot;id&quot;:&quot;evt_1&quot;}</code> من غير مسافات. إعادة التسلسل تنتج نصًا آخر فيفشل التوقيع الصحيح، أو يمر توقيع بنيتموه أنتم على النص الجديد فيصبح الفحص بلا معنى.</p>
+<h2>الفكرة ببساطة</h2>
+<p>فعّلوا الاحتفاظ بالجسم الخام عند إنشاء التطبيق. في المتحكم اطلبوا <code>RawBodyRequest</code> واقرأوا <code>rawBody</code> وهو <code>Buffer</code>. حلّلوا JSON فقط بعد نجاح التوقيع. الخيار يعمل مع محلّل الجسم المدمج؛ لا تطفئوا المحلّل بـ <code>bodyParser: false</code> ثم تتوقعون أن يملأ Nest الحقل.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Raw body: السبب الشائع هو تحقق توقيع الويب هوك. على Express:</p>
+<pre><code class="language-ts">const app = await NestFactory.create&lt;NestExpressApplication&gt;(AppModule, { rawBody: true });
+</code></pre>
+<p>على Fastify، المحول الوسيط الثاني والخيار <code>rawBody: true</code> الثالث، ثم <code>listen</code> مع <code>&#39;0.0.0.0&#39;</code> إن كان النشر خارج الجهاز كما في درس Fastify. نوع الطلب <code>RawBodyRequest&lt;Request&gt;</code> أو <code>RawBodyRequest&lt;FastifyRequest&gt;</code> وفيه <code>req.rawBody</code>. التحذير في الصفحة: الميزة تتطلب المحلّل العام المدمج. <code>useBodyParser</code> يحترم الخيار إن غيّرتم المحلّل. حد الحجم يُرفع من هناك إن كان الحدث أكبر من الافتراضي (100kb على Express).</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">بايتات على السلك
+  → rawBody Buffer  (للتوقيع)
+  → JSON.parse      (بعد التطابق فقط)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Post, type RawBodyRequest, Req } from &#39;@nestjs/common&#39;;
+import type { Request } from &#39;express&#39;;
+
+@Controller(&#39;webhooks/billing&#39;)
+export class RawBillingController {
+  @Post()
+  receive(@Req() req: RawBodyRequest&lt;Request&gt;) {
+    return { bytes: req.rawBody?.length ?? 0 };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>rawBody</code> قد يكون <code>undefined</code> إن نسيتم <code>{ rawBody: true }</code> أو عطّلتم المحلّل.</li>
+<li>لا توقّعوا <code>req.body</code> وهو كائن.</li>
+<li>أعيدوا 400 إن غاب الـ Buffer بدل حساب HMAC على سلسلة فارغة تنجح بالخطأ مع سر فارغ.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المحول يقرأ التيار.</li>
+<li>مع الخيار، يحتفظ بنسخة Buffer ويمرر النسخة إلى JSON parser ليملأ <code>body</code>.</li>
+<li>المتحكم يرى الاثنين.</li>
+<li>التوقيع يستخدم Buffer فقط.</li>
+<li><code>JSON.parse(req.rawBody.toString(&#39;utf8&#39;))</code> بعد التطابق يعطي الحدث. إن فشل التحليل فالجسم ليس JSON رغم توقيع صحيح: 400.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { BadRequestException } from &#39;@nestjs/common&#39;;
+import { signaturesMatch, sign } from &#39;./sign.js&#39;;
+
+export function eventFromRaw(secret: string, header: string | undefined, raw: Buffer | undefined) {
+  if (!raw || !header) throw new BadRequestException(&#39;missing signature&#39;);
+  if (!signaturesMatch(sign(secret, raw), header)) throw new BadRequestException(&#39;bad signature&#39;);
+  return JSON.parse(raw.toString(&#39;utf8&#39;)) as { id: string; type: string };
+}
+</code></pre>
+<p>هذا ترتيب رف الوارد. الصادر عند الشريك يجب أن يوثَّق بنفس القاعدة: وقّعوا الـ Buffer الذي ترسلونه في <code>fetch</code> لا كائنًا تعيدون بناءه لاحقًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>bodyParser: false</code> ثم انتظار <code>rawBody</code>. الصفحة تقول إن الميزة تعمل مع المحلّل المدمج فقط.</li>
+<li>نسيان المعامل الثالث على Fastify ووضع <code>rawBody</code> مكان المحول.</li>
+<li>قراءة الجسم كـ stream في وسيط آخر قبل Nest فيُستهلك التيار.</li>
+<li>تسجيل <code>rawBody</code> كاملًا في السجل فيظهر بيانات فوترة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على تطبيق يستقبل ويب هوك موقّعًا. فعّلوا الخيار مرة في <code>bootstrap</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحتاجونه لمسارات JSON العادية بلا توقيع على البايتات. الإبقاء العام رخيص عادة، لكن لا تطبعوا النسخة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المدخل</th>
+<th>صالح للتوقيع؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>req.rawBody</code></td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>req.body</code> كائن</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>JSON.stringify(req.body)</code></td>
+<td>لا كبديل عن الأصل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُفعَّل الخيار: على المتحكم أم في <code>NestFactory.create</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>create</code> عبر <code>{ rawBody: true }</code>، مع نوع Express أو كخيار ثالث مع Fastify.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>التوقيع ينجح في اختبار وحدة على Buffer ويفشل في e2e. ماذا تفحصون أولًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أن <code>bootstrap</code> يمرر <code>rawBody: true</code> وأن الاختبار الآلي لا يعيد تسلسل الجسم قبل الإرسال. قارنوا طول <code>req.rawBody</code> مع الجسم الذي وقّعتموه في الاختبار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حدث أكبر من حد Express الافتراضي. أين ترفعون الحد من غير إطفاء المحلّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.useBodyParser(&#39;json&#39;, { limit: &#39;...&#39; })</code> كما في صفحة Raw body. الدالة تحترم <code>rawBody</code>. لا <code>bodyParser: false</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما نوع <code>rawBody</code>؟</li>
+<li>لماذا يفشل HMAC بعد إعادة التسلسل؟</li>
+<li>ما شرط الصفحة بالنسبة لـ <code>bodyParser: false</code>؟</li>
+<li>أين يختلف موضع الخيار بين Express و Fastify؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>rawBody: true</code> يبقي <code>Buffer</code> بجانب JSON. التوقيع على الـ Buffer، والتحليل بعده. إطفاء المحلّل المدمج يلغي الميزة التي توثقها الصفحة.</p>
+<h2>ماذا بعد؟</h2>
+<p>التوقيع قد يفشل مؤقتًا أو ينجح بعد ما انقطع الرد. الدرس التالي كيف يعيد المزود وكيف تعيد رف الإرسال.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Raw body: <a href="https://docs.nestjs.com/faq/raw-body">https://docs.nestjs.com/faq/raw-body</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

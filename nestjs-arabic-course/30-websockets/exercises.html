@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>صفحة كتاب حيّة. الحفظ ما زال <code>POST</code>.</p>
+<h2>سهل</h2>
+<ol>
+<li>أين تُسجَّل البوابة؟</li>
+<li>أي مكتبة عميل توافق الافتراض؟</li>
+<li>هل <code>return</code> من <code>join</code> يبث للغرفة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>في <code>providers</code>.</li>
+<li><code>socket.io-client</code> إلى فضاء الاسم نفسه.</li>
+<li>لا. الإرجاع إقرار للمرسل. البث <code>emit</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>ارسم تسلسل نشر تعليق يراه قارئ آخر على الكتاب نفسه، من غير حفظ عبر المقبس.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>القارئ يفتح الصفحة ويتصل بـ <code>/comments</code> ثم <code>emit(&#39;join&#39;, { bookId })</code>.</li>
+<li>الكاتب <code>POST /books/:id/comments</code>.</li>
+<li>الخدمة تحفظ.</li>
+<li>المتحكم يستدعي <code>announce</code>.</li>
+<li><code>server.to(bookId).emit(&#39;comment&#39;, { id, text })</code>.</li>
+<li>واجهة القارئ تسمع <code>comment</code> وتلحق العنصر. إعادة التحميل تعتمد على <code>GET</code> لا على المقبس.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>الفضاء صار <code>/desk</code> للمسودات. عميل بلا رمز بقي متصلًا لأنه لم يرسل <code>join</code>. وعميل مصادق انضم إلى مسودة غيره عبر <code>bookId</code>. ماذا تغيّر في الخطاف وفي الرسالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>handleConnection</code> يقرأ <code>handshake.auth.token</code> ويستدعي التحقق. الفشل <code>disconnect</code> قبل أي استماع.</li>
+<li>النجاح يضع <code>userId</code> على <code>client.data</code> فقط، لا من جسم الرسالة.</li>
+<li><code>join</code> يستدعي خدمة الإذن <code>canReadDraft(bookId, userId)</code> قبل <code>client.join</code>.</li>
+<li>الأنبوب يرفض الحقول الزائدة. <code>WsException</code> للأخطاء التي يجب أن تراها الواجهة.</li>
+<li><code>handleDisconnect</code> ينظف الربط المحلي إن وُجد.</li>
+</ul>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

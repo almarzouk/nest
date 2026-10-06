@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notifications</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-notifications.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Notifications</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إدراج إشعار دعوة داخل معاملة عضوية رف، من غير انتظار البريد ومن غير إلغاء العضوية إن تعطل الإرسال.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>invite</code> ينادي SMTP ثم يحفظ العضو. المهلة تعيد 500 بلا عضوية أو مع عضوية مكررة عند إعادة المحاولة. نص الرسالة يُبنى في المتحكم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الدعوة تدرج <code>Membership</code> وصف <code>Notification</code> بحالة <code>pending</code> ونوع <code>member.invited</code>. الرد 201. عامل لاحق يرسل. الحمولة بلا رمز سرّي. التفضيل المغلق يضع <code>skipped</code> بدل إرسال.</p>
+<h2>التعريف التقني</h2>
+<p>جدول الإشعار فيه <code>organizationId</code> و <code>userId</code> و <code>kind</code> و <code>status</code>. <code>InviteService</code> يستخدم <code>prisma.$transaction</code>. لا SDK بريد في <code>ProjectsModule</code>. الرمز إن وُجد يعيش في جدول دعوة ويُقرأ عند الإرسال لا يُنسخ إلى <code>payload</code>. فشل العامل يترك <code>failed</code> والعضوية قائمة. هذا ليس سجل التدقيق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">COMMIT عضوية + pending
+201 للداعي
+عامل → sent | failed | skipped
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await tx.notification.create({
+  data: {
+    organizationId,
+    userId: inviteeId,
+    kind: &#39;member.invited&#39;,
+    status: &#39;pending&#39;,
+    payload: { organizationName },
+  },
+});
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاسم للعرض فقط.</li>
+<li>الحالة الابتدائية <code>pending</code> لا <code>sent</code>.</li>
+<li>الإدراج داخل <code>tx</code> مع العضوية.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المالك فقط (<code>members.invite</code>) يدعو.</li>
+<li>تُنشأ عضوية <code>editor</code> أو <code>clerk</code> لا <code>owner</code> ثانٍ بلا قاعدة.</li>
+<li>يُدرج الإشعار إن لم يكن التفضيل مغلقًا.</li>
+<li>الرد 201 بمعرّف العضوية.</li>
+<li>الإرسال خارج الطلب. إعادة الدعوة بنفس البريد تصطدم بمفتاح العضوية فـ 409 لا رسالة ثانية بلا داعي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Post(&#39;members&#39;)
+@HttpCode(201)
+invite(@CurrentUser(&#39;id&#39;) actorId: string, @Body() body: { email: string; role: &#39;editor&#39; | &#39;clerk&#39; }) {
+  return this.members.invite(currentTenantId(), actorId, body);
+}
+</code></pre>
+<p>الخدمة تتحقق من دور الفاعل عبر العضوية لا عبر الجسم. <code>role: &#39;owner&#39;</code> مرفوض بـ 400 في الأنبوب لأن النوع لا يسمح به.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>انتظار البريد قبل 201.</li>
+<li>رمز الدعوة داخل <code>payload</code>.</li>
+<li>إشعار بلا منظمة فيظهر لعضو في مكتبة أخرى.</li>
+<li>اعتبار الإشعار تدقيقًا للدعوة وحذف جدول التدقيق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مع أول دعوة. النشر يمكنه لاحقًا إدراج <code>project.published</code> بنفس الجدول إن أراد المنتج ذلك.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخطروا عن <code>GET /projects</code>. ولا تجعلوا فشل البريد يعيد <code>draft</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النتيجة</th>
+<th>العضوية</th>
+<th>الإشعار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نجاح الطلب</td>
+<td>موجودة</td>
+<td><code>pending</code> أو <code>skipped</code></td>
+</tr>
+<tr>
+<td>SMTP تعطل لاحقًا</td>
+<td>تبقى</td>
+<td><code>failed</code></td>
+</tr>
+<tr>
+<td>بريد عضو موجود</td>
+<td>409</td>
+<td>لا صف جديد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل 201 يعني أن البريد وصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. يعني أن العضوية وصف الإشعار التزما. الوصول حالة لاحقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُرفض <code>owner</code> في جسم الدعوة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يخلق العميل مالكًا. الدور المسموح <code>editor</code> أو <code>clerk</code>. نقل الملكية عملية منفصلة إن وُجدت.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>التفضيل مغلق. ماذا يُحفظ وماذا لا يُرسل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العضوية تُنشأ. الإشعار <code>skipped</code> أو لا صف بريد. لا حلقة إعادة لأن هذا ليس فشل مزود.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا داخل المعاملة؟</li>
+<li>ماذا يغيب عن الحمولة؟</li>
+<li>ما رمز الدعوة المكررة؟</li>
+<li>هل فشل البريد يحذف العضو؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الدعوة تلتزم عضوية وإشعار <code>pending</code> وترد 201. البريد لاحق. السر ليس في الحمولة، وفشل القناة لا يلغي العضوية.</p>
+<h2>ماذا بعد؟</h2>
+<p>من دعا ومن نشر يجب أن يُراجع. الدرس التالي سجل التدقيق في المشروع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+<li>NestJS — Mail: <a href="https://docs.nestjs.com/application/mail">https://docs.nestjs.com/application/mail</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

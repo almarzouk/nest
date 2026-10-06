@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>08 — مختصر روابط</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>08 — مختصر روابط</h1>
+<p><strong>المستوى:</strong> مبتدئ<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new link-shortener</code></p>
+<h2>ماذا تبني</h2>
+<p>ترسل عنوانًا طويلًا فترى رمزًا قصيرًا. زيارة الرمز تحوّل المتصفح إلى العنوان. الزيارة تُحسب.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>أول رد ليس JSON. @Redirect أو res.redirect بحذر، والعد زيادة حقيقية على GET للرابط القصير فقط لأن هذا عقد المختصر لا صفحة آمنة عامة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>رمز قصير يولَّد على الخادم</li>
+<li>302</li>
+<li>رفض ما ليس http أو https</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>نطاق مخصص</li>
+<li>مستخدمون</li>
+<li>منع الروابط الخبيثة بقائمة خارجية</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>بطاقات الدراسة.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/05-controllers/README.html">05-controllers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الرمز 6 أحرف من مجموعة بلا التباس.</li>
+<li>العنوان يبدأ بـ http:// أو https:// وإلا 400.</li>
+<li>تكرار العنوان نفسه يعيد الرمز القديم ولا ينشئ ثانيًا.</li>
+<li>GET /r/:code يزيد hits ثم يحوّل. GET /links للقائمة لا يزيد.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/links</code></td>
+<td>201</td>
+<td>ينشئ أو يعيد الموجود</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/links</code></td>
+<td>200</td>
+<td>الإدارة بلا تحويل</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/r/:code</code></td>
+<td>302</td>
+<td>تحويل أو 404</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new link-shortener</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>استخدم URL من جافاسكربت للتحقق.</li>
+<li>إن أعدت المورد الموجود فالرموز 200 لا 201. 201 للجديد فقط.</li>
+<li>للتحويل أعد كائن @Redirect أو اضبط Location. لا تخلط ذلك مع JSON.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/links/links.service.ts
+src/links/links.controller.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">import { Controller, Get, Param, Redirect } from &quot;@nestjs/common&quot;;
+
+@Controller()
+export class LinksController {
+  @Get(&quot;r/:code&quot;)
+  @Redirect()
+  open(@Param(&quot;code&quot;) code: string) {
+    const link = this.links.open(code);
+    return { url: link.url, statusCode: 302 };
+  }
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>الثقة بنص الرابط من غير URL.</li>
+<li>201 في كل مرة حتى للمكرر.</li>
+<li>زيادة العداد على مسار الإدارة.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>رابط غير صالح 400.</li>
+<li>الرمز المجهول 404.</li>
+<li>نفس العنوان لا يصنع رمزين.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>ارفض العناوين التي تشير إلى مضيفك نفسه حتى لا تصنع حلقة.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 8» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../07-study-cards/README.html">7. بطاقات دراسة</a></li>
+<li>التالي: <a href="../09-expense-ledger/README.html">9. دفتر مصروفات</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

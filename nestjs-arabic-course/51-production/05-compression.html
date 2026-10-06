@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compression</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-compression.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Compression</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تقليل حجم استجابات JSON النصية بالضغط، مع معرفة أن الوكيل العكسي غالبًا المكان الأنسب، وأن الملفات المضغوطة أصلًا لا تُضغط مرة ثانية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قائمة كتب كبيرة تستهلك عرض النطاق والوقت على العميل. الضغط يبدّل حجم الجسم مقابل دورة معالج على الخادم. على محول Express الحزمة <code>compression</code> وسيط على التطبيق. Fastify يستعمل <code>@fastify/compress</code>. إن كان Nginx أمام التطبيق، ضغطه هناك يمنع دفع الثمن مرتين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الوسيط يرى ترويسة <code>Accept-Encoding</code> ويرد <code>Content-Encoding: gzip</code> أو <code>br</code> عندما يستحق الحجم. العتبة تتجاوز الأجسام الصغيرة لأن الترويسة قد تكبرها. الصور و PDF المضغوطة تُستثنى. لا تضغط مسارًا فيه سر في عنوان إن كان السجل سيسجل العنوان، والضغط لا يخفي المحتوى عن من يملك TLS.</p>
+<h2>التعريف التقني</h2>
+<p>على Express كما في أسلوب Nest للوسيط:</p>
+<pre><code class="language-ts">import compression from &#39;compression&#39;;
+import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.use(compression());
+await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+</code></pre>
+<p>هذا <code>app.use</code> لمحول Express. على Fastify سجّل الإضافة الخاصة به لا حزمة Express. راجع محولك قبل النسخ.</p>
+<p>Nginx:</p>
+<pre><code class="language-nginx">gzip on;
+gzip_types application/json text/plain application/javascript;
+</code></pre>
+<p>إن فعّلت الاثنين فقد يضغط Nginx جسمًا مضغوطًا أو يكرر العمل. اختر طبقة واحدة. الوكيل يرى كل الاستجابات ويملك عتادًا مناسبًا. التطبيق يضغط إن لم يوجد وكيل أو إن كان الوكيل يمرر الجسم كما هو.</p>
+<p>العتبة الافتراضية في <code>compression</code> تتجاوز الاستجابات الصغيرة. ارفعها إن كانت قوائمك الكبيرة فقط هي المقصودة.</p>
+<p>HTTPS لا يلغي الفائدة. الضغط على النص قبل التشفير يقلل ما يُنقل. لا تضغط وتخزّن أسرارًا في وسيط مشترك بلا سياسة.</p>
+<p>قياس: قارن حجم الجسم ووقت المعالج قبل التعميم. مسار يعيد 200 بايت لا يحتاج gzip.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل يرسل Accept-Encoding
+طبقة واحدة تضغط JSON
+الصورة والPDF تمر
+لا ضغط مزدوج مع Nginx
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>app.use(compression())</code> خلف محول Express، والوكيل بلا <code>gzip</code> حتى تقيس. اطلب <code>GET /books</code> مع الترويسة وراقب <code>Content-Encoding</code>. ثم انقل الإعداد إلى Nginx واحذف وسيط التطبيق إن أصبح الوكيل هو الطبقة.</p>
+<h2>شرح المثال</h2>
+<p>الوسيط يغلّف الاستجابة. الأجسام التي يكتبها Nest كـ JSON مؤهلة. تدفق ملف خام قد لا يناسب الوسيط نفسه. رفع الملفات مسار مختلف ولا يُضغط كأنه JSON.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب يعلن الخوارزميات المقبولة.</li>
+<li>الوسيط أو Nginx يختار واحدة.</li>
+<li>الجسم يُضغط ثم يُرسل مع الترويسة.</li>
+<li>العميل يفك الضغط.</li>
+<li>طبقة ثانية قد تفسد الجسم أو تضيع المعالج.</li>
+<li>العتبة تترك الأجسام الصغيرة كما هي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>قائمة بحث كبيرة: ضغط JSON على Nginx <code>gzip_types application/json</code>. صور الغلاف من مخزن كائنات تُخدم كما هي. عطّل الضغط على <code>image/jpeg</code>. راقب CPU النسخة قبل إضافة Brotli. إن كان المعالج مشبعًا فالضغط في الوكيل على آلة منفصلة أرحم لحدث Node.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>ضغط في Nest و Nginx معًا.</li>
+<li>ضغط JPEG.</li>
+<li>افتراض أن Fastify يقبل <code>compression</code> الخاصة بـ Express.</li>
+<li>تفعيل على جسم 100 بايت وتوقع ربحًا.</li>
+<li>اعتبار الضغط تشفيرًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>JSON نصي كبير على مسار عام، في طبقة واحدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>ملفات مضغوطة أصلًا، وأجسام صغيرة، ومسار المعالج مشبع والوكيل يستطيع الحمل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>compression</code> على Express</td>
+<td>لا وكيل أو الوكيل يمرر</td>
+</tr>
+<tr>
+<td><code>@fastify/compress</code></td>
+<td>محول Fastify</td>
+</tr>
+<tr>
+<td><code>gzip</code> في Nginx</td>
+<td>الوكيل ينهي الاتصال للعميل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ترويسة يرسلها العميل ليقبل gzip؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Accept-Encoding</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُضغط صورة الغلاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن JPEG مضغوط أصلًا. إعادة الضغط تكلف معالجًا بلا ربح حجم يُذكر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>Nginx يضغط و <code>app.use(compression())</code> مفعّل. ماذا تغيّر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أبقِ الضغط في Nginx واحذف وسيط التطبيق حتى لا تُعالج الطبقة مرتين أو يفسد الترميز.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة لمحول Express؟</li>
+<li>لماذا طبقة واحدة؟</li>
+<li>ماذا لا يفعله الضغط للأسرار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>اضغط JSON الكبير في Nginx أو في وسيط المحول، لا في الاثنين. استثنِ الوسائط المضغوطة، وقِس المعالج قبل تعميم Brotli.</p>
+<h2>ماذا بعد؟</h2>
+<p>قائمة الأمن: ما الذي تغلقه قبل أن تعرض هذا الخادم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Compression: <a href="https://docs.nestjs.com/techniques/compression">https://docs.nestjs.com/techniques/compression</a></li>
+<li>NestJS — Performance: <a href="https://docs.nestjs.com/techniques/performance">https://docs.nestjs.com/techniques/performance</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

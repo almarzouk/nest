@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أغلق الدروس ثم أجب. الحلول تحت <code>الحل</code>.</p>
+<h2>سهل</h2>
+<p>أي مسار يُعاد تشغيل الحاوية إن فشل، وأيهما يُسحب من التوزيع فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فشل <code>/health/live</code> يعيد التشغيل. فشل <code>/health/ready</code> يسحب المرور ويبقي العملية.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>اكتب سطر المؤشر لـ Prisma بمهلة ثانية، والمفتاح <code>database</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>this.prismaHealth.pingCheck(&#39;database&#39;, this.prisma).withTimeout(1000)</code> داخل <code>health.check</code> وعلى دالة عليها <code>@HealthCheck()</code>.</p>
+</details>
+
+<h2>متوسط — الكاش</h2>
+<p>Redis يخزّن أغلفة الكتب فقط. الصفحات تُقرأ من Postgres عند غيابه. أي حالة تُرجعها، وما رمز HTTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>indicator.degraded(&#39;cache unreachable, serving without cache&#39;)</code>. الحالة العامة <code>degraded</code> و HTTP <code>200</code> ما دام مؤشر القاعدة <code>up</code>. النتيجة تحت <code>info</code> لا <code>error</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>طابور الفواتير على Redis، والجاهزية تستعمل <code>degraded</code> عند فشل <code>PING</code>. الطلبات تُقبل ولا تُنشر. ماذا تغيّر في المؤشر وفي مهلة المسبار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اجعل المؤشر <code>attempt(() =&gt; this.redis.ping()).withTimeout(1000)</code> أو <code>down</code> حتى يصير <code>status</code> القيمة <code>error</code> و HTTP <code>503</code>. اجعل مهلة المسبار أطول قليلًا من مهلة المؤشر حتى يصل الرد قبل أن ييأس المنسّق.</p>
+</details>
+
+<h2>متقدم — الإغلاق</h2>
+<p><code>gracefulShutdownTimeoutMs: 5000</code> وخطافات الإيقاف مطفأة. Kubernetes يرسل <code>SIGTERM</code>. ماذا يرى مسبار الجاهزية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Terminus لا يستقبل الإشارة بلا <code>enableShutdownHooks()</code>، فلا يظهر <code>shutting_down</code>. فعّل الخطافات في <code>bootstrap</code>. التأخير نفسه ينطبق على <code>SIGTERM</code> لا على <code>SIGINT</code>.</p>
+</details>
+
+<h2>سؤال ربط</h2>
+<p>لماذا <code>checkHeap</code> على الحياة أعاد تشغيل نسخًا سليمة بعد جمع القمامة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>checkHeap</code> يقارن <code>heapUsed</code> بعتبة بالبايت. الذروة ليست دليلًا أن الحلقة ماتت. الحياة تبقى ردًا رخيصًا. فحص الذاكرة، إن لزم، على مسار تشخيص لا على مسبار يقتل الحاوية.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Admin</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-admin.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Admin</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل إدارة منصة رف عن مالك المكتبة: مسار يقرأ عبر المنظمات بصلاحية منصة، من غير إعادة استخدام ترويسة المستأجر كتجاوز.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المالك يرسل <code>X-Tenant-Id</code> لمكتبة أخرى ويُقبل لأنه «أدمن» في مكتبته. أو دعم رف يعدّل الكتب بجسم <code>organizationId</code>. أو قائمة المنصة تستخدم نفس <code>ProjectsService.list</code> فتُقيَّد بالسياق الخطأ.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>PlatformRole</code> على المستخدم (<code>support</code> أو لا شيء) من قاعدة تتحكمون فيها لا من جسم. مسارات <code>/admin/...</code> حارس مختلف لا يقرأ ترويسة المستأجر كإذن. القراءة للدعم فقط. الكتابة على كتب العملاء خارج النطاق إلا تعليق حالة مكتبة. كل استعلام إداري يصرّح <code>organizationId</code> وسيطًا من مسار اختير بعد البحث لا من جسم حر بلا سجل.</p>
+<h2>التعريف التقني</h2>
+<p>لا تضعوا <code>support</code> في خريطة أدوار العضوية. العضوية داخل مكتبة. المنصة علم على <code>User</code> يمنحه تشغيلكم. <code>AdminGuard</code> يرفض الباقي بـ 403. <code>GET /admin/organizations</code> بلا عزل مستأجر واحد لأنه عبر الكل، وهذا الاستثناء الوحيد ويعيش في وحدة <code>AdminModule</code> لا تُستورد دوالها من <code>ProjectsController</code>. التدقيق بفاعل الدعم على فعل إداري.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مالك مكتبة → ترويسة + عضوية → مشاريعه
+دعم منصة   → علم support → قائمة منظمات
+لا سهم من الترويسة إلى تجاوز المنصة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Injectable()
+export class AdminGuard implements CanActivate {
+  canActivate(context: ExecutionContext) {
+    const req = context.switchToHttp().getRequest&lt;{ user?: { platformRole?: string } }&gt;();
+    if (req.user?.platformRole !== &#39;support&#39;) throw new ForbiddenException();
+    return true;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا ينظر إلى <code>X-Tenant-Id</code>.</li>
+<li>العلم من المستخدم المحمّل في <code>validate</code> من القاعدة.</li>
+<li>المالك العادي 403 حتى لو كان <code>owner</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الدعم يسجّل دخوله كأي مستخدم.</li>
+<li>الحارس يقرأ <code>platformRole</code>.</li>
+<li>القائمة تعيد منظمات بلا مشاريع الجار داخل استجابة مكتبة.</li>
+<li>فتح مكتبة للدعم مسار <code>/admin/organizations/:id</code> يمرر المعرّف صراحة إلى استعلام مكتوب في وحدة الإدارة.</li>
+<li><code>ProjectsService.list(currentTenantId())</code> لا تُستدعى من هنا حتى لا تعتمد على ترويسة يمكن نسيانها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Get(&#39;organizations&#39;)
+@UseGuards(AdminGuard)
+list() {
+  return this.admin.organizations();
+}
+</code></pre>
+<p><code>organizations()</code> استعلام منصة. لا <code>currentTenantId()</code>. اختبار يثبت أن <code>owner</code> يأخذ 403 على هذا المسار وأن الدعم لا يستطيع <code>POST /projects</code> بنيابة صامتة عبر الترويسة وحدها.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>دور <code>admin</code> داخل كل المنظمات.</li>
+<li>إعادة استخدام خدمة القائمة العادية بلا وسيط.</li>
+<li>قبول <code>organizationId</code> من جسم الدعم بلا تدقيق.</li>
+<li>إخفاء مسار المنصة عن سجل التدقيق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يحتاج الدعم أن يرى «أي مكتبة علّقت». ليس لعمل المحرر اليومي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تنشروا مشروع عميل من لوحة المنصة في هذا الفصل. ولا تمنحوا العلم من <code>POST /users</code> العام.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>مالك</th>
+<th>دعم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المستأجر</td>
+<td>ترويسة وعضوية</td>
+<td>لا ترويسة كإذن</td>
+</tr>
+<tr>
+<td>المشاريع</td>
+<td>مكتبته</td>
+<td>قراءة عبر مسار إداري</td>
+</tr>
+<tr>
+<td>منح العلم</td>
+<td>لا</td>
+<td>عملية تشغيل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>owner</code> يفتح <code>/admin/organizations</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. 403. العلم <code>support</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُستدعى <code>list(currentTenantId())</code> من الإدارة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن السياق قد يكون فارغًا أو ترويسة يتحكم بها العميل. استعلام الإدارة وسيطه معرّف مسار بعد ما نجح حارس المنصة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تمنعون الدعم من النشر نيابة عن مكتبة بحذف الترويسة فقط في المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>POST /projects</code> يبقى على <code>TenantGuard</code> والعضوية لا على علم المنصة. الدعم بلا عضوية يأخذ 403. لا فرع <code>if (support) skip tenant</code> في خدمة المشاريع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُخزَّن علم المنصة؟</li>
+<li>لماذا ليس دور عضوية؟</li>
+<li>أي مسار لا يقرأ <code>currentTenantId</code>؟</li>
+<li>ماذا يُمنع على الدعم في هذا الفصل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإدارة حارس علم منصة ومسارات لا تثق بالترويسة. مالك المكتبة ليس دعمًا. خدمة المشاريع لا تُفتح بشرط خاص للدعم.</p>
+<h2>ماذا بعد؟</h2>
+<p>العميل يريد عنوان المشروع وحالته في استعلام واحد. الدرس التالي سطح GraphQL محدود.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

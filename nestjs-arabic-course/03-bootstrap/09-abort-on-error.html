@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>abortOnError</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-abort-on-error.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>abortOnError</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة السلوك الافتراضي عندما يفشل إنشاء التطبيق، ومتى تغيّر <code>abortOnError</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خطأ إقلاع قد يُرمى كاستثناء أو ينهي العملية فورًا. إن لم تعرف الافتراضي، تظن أن <code>try/catch</code> حول <code>create</code> سيلتقط كل شيء وهو لا يفعل ذلك في الوضع الافتراضي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>إن فشل إنشاء التطبيق، العملية تخرج برمز <code>1</code>. هذا الافتراضي في First steps. لرمي الخطأ بدل الإنهاء: <code>abortOnError: false</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, { abortOnError: false });
+</code></pre>
+<p>الخيار الثاني هنا كائن خيارات لا محوّل Fastify. المحوّل كائن من نوع محوّل، والخيارات كائن فيه خصائص مثل <code>abortOnError</code>. لا تخلط التوقيعين عندما تصل إلى Fastify: التوقيع الكامل في التوثيق يفصل المحوّل عن الخيارات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">create فشل
+   |
+   +-- الافتراضي: process exit 1
+   +-- abortOnError: false : الخطأ يُرمى ويمكن catch
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>اترك الافتراضي في التطوير. فشل الحقن يجب أن يوقف العملية حتى لا تخدم نصف تطبيق.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>رمز الخروج <code>1</code> إشارة لأدوات التشغيل أن الإقلاع فشل.</li>
+<li>مع <code>false</code> تستطيع تسجيل الخطأ بأسلوبك ثم إنهاء العملية بنفسك.</li>
+<li>النجاح لا يتأثر بالخيار.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أثناء البناء قد يرمي الإطار لأنه لم يجد مزوّدًا. الطبقة حول <code>create</code> في الوضع الافتراضي تترجم هذا إلى إنهاء لا إلى Promise مرفوضة تصل إلى <code>catch</code> عندك. لذلك تجربة &quot;لففت create بـ try ولم أرَ شيئًا&quot; متوقعة. عطّل الخيار فقط إن كنت تحتاج رؤية الكائن الخطأ في سجلك ثم أعد إنهاء العملية. لا تبتلع الخطأ وتكمل <code>listen</code>.</p>
+<h2>مثال عملي</h2>
+<p>مزوّد ناقص: العملية تتوقف فورًا والرسالة في الطرفية تسمي الرمز. أصلح التسجيل وأعد <code>start:dev</code>. لا تضبط <code>abortOnError: false</code> لإخفاء الفشل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>catch</code> فارغ حول <code>create</code> مع توقع أنه يعمل في الافتراضي.</li>
+<li>متابعة <code>listen</code> بعد فشل البناء.</li>
+<li>تمرير <code>{ abortOnError: false }</code> مكان محوّل أو العكس.</li>
+</ul>
+<h2>متى تترك الافتراضي؟</h2>
+<p>في كل تطبيقات الدورة حتى يكون عندك مُشغّل يحتاج التقاط الخطأ بنفسه.</p>
+<h2>متى تعطله؟</h2>
+<p>عندما تريد تسجيلًا مخصصًا حول الإقلاع وما زلت ستوقف العملية عند الفشل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>abortOnError</th>
+<th>السلوك</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>افتراضي true</td>
+<td>خروج برمز 1</td>
+</tr>
+<tr>
+<td>false</td>
+<td>رمي يمكن التقاطه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما رمز الخروج الافتراضي عند فشل الإنشاء؟</p>
+<details><summary>الحل</summary>
+
+<p><code>1</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد لا يدخل <code>catch</code> رغم أن <code>create</code> فشلت؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن الافتراضي ينهي العملية بدل رمي الخطأ إلى المستدعي.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كتبت <code>catch</code> يسجل ثم لا يعيد رميًا ولا يخرج، مع <code>abortOnError: false</code>. ما خطر ذلك؟</p>
+<details><summary>الحل</summary>
+
+<p>قد تستمر العملية بلا تطبيق صالح أو تحاول <code>listen</code> على قيمة غير جاهزة. بعد التسجيل أنهِ العملية برمز غير صفري.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل الافتراضي عند فشل <code>create</code>؟</li>
+<li>كيف تطلب الرمي بدل الإنهاء؟</li>
+<li>لماذا لا نكمل listen بعد الفشل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>فشل البناء ينهي العملية برمز 1 افتراضيًا. عطّل <code>abortOnError</code> فقط لتلتقط الخطأ وما زلت توقف التشغيل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة إقلاع مجمّعة ثم تمارين، ثم وحدات Nest بالتفصيل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

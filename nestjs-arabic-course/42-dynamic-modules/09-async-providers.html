@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Asynchronous Providers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-async-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Asynchronous Providers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل مزود بمصنع <code>useFactory</code> يرجع <code>Promise</code>، حتى ينتظر Nest اكتمال الاتصال قبل حقن الناتج في الخدمات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>forRootAsync</code> يبني خيارات وحدة. أحيانًا الوحدة ثابتة والمزود نفسه هو الذي يتصل: عميل يُفتح بـ <code>await client.connect()</code> ثم يُحقن كقيمة. إن رجعت المصنع كائنًا قبل انتهاء <code>connect</code>، فأول مستخدم يرى عميلًا غير جاهز. المصنع غير المتزامن يجعل الوعد جزءًا من الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>في <code>providers</code> ضع كائنًا: <code>provide</code> هو الرمز، و <code>useFactory</code> دالة <code>async</code>، و <code>inject</code> اختياري. الإطار يحل الحقن، يستدعي الدالة، وينتظرها، ثم يخزن القيمة الناتجة تحت الرمز. من يحقن الرمز يأخذ القيمة لا الوعد.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ConfigService } from &#39;@nestjs/config&#39;;
+
+@Module({
+  providers: [
+    {
+      provide: &#39;ASYNC_CONNECTION&#39;,
+      useFactory: async (config: ConfigService) =&gt; {
+        const url = config.getOrThrow&lt;string&gt;(&#39;DATABASE_URL&#39;);
+        return { url, ready: true };
+      },
+      inject: [ConfigService],
+    },
+  ],
+  exports: [&#39;ASYNC_CONNECTION&#39;],
+})
+export class ConnectionModule {}
+</code></pre>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(
+    @Inject(&#39;ASYNC_CONNECTION&#39;)
+    private readonly connection: { url: string; ready: boolean },
+  ) {}
+}
+</code></pre>
+<p>هذا مزود مخصص من نوع المصنع، ودرس <code>useFactory</code> في فصل Custom Providers يفصّل الأنواع الأربعة. هنا التركيز على الانتظار: رجوع <code>Promise</code> يؤخر من يعتمد على الرمز حتى التسوية.</p>
+<p>إن رمى المصنع أو رُفض الوعد، يفشل الإقلاع كما يفشل <code>onModuleInit</code> الذي يرمي. ضع الاتصال الإلزامي هنا أو في الخطاف، لا في أول طلب حيث يظهر الفشل متأخرًا.</p>
+<p>الفرق عن <code>registerAsync</code>: هناك المصنع يعيد خيارات وحدة ثم تُبنى مزودات الوحدة. هنا المصنع يعيد قيمة المزود نفسها.</p>
+<p>يمكن الجمع: <code>forRootAsync</code> يمرر العنوان، ومصنع غير متزامن داخل الوحدة يفتح العميل. لا تكرر <code>await connect</code> في الاثنين.</p>
+<p>أغلق المورد في <code>onModuleDestroy</code> على خدمة تملكه. قيمة <code>useValue</code> المنتَجة لا تملك خطافًا إن كانت كائنًا عاديًا. لذلك غالبًا المصنع يعيد صنفًا فيه <code>onModuleDestroy</code>، أو خدمة مجاورة تغلق ما خُزّن.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">inject -&gt; await useFactory -&gt; القيمة في الحاوية -&gt; بناء من يحقن الرمز
+رفض الوعد -&gt; الإقلاع يتوقف
+</code></pre>
+<p>المستهلك لا يكتب <code>await</code> على الحقن. الانتظار تم قبل البناء.</p>
+<h2>أبسط مثال</h2>
+<p>المقطعان أعلاه. <code>BooksService</code> ترى <code>ready: true</code> لأن البناء لم يبدأ لها قبل تسوية المصنع. صدّر الرمز <code>&#39;ASYNC_CONNECTION&#39;</code> إن كانت الخدمة في وحدة أخرى، كما في أي مزود مخصص.</p>
+<h2>شرح المثال</h2>
+<p><code>inject: [ConfigService]</code> يتطلب أن تكون الخدمة مرئية: استيراد <code>ConfigModule</code> في هذه الوحدة أو جعلها عامة. ترتيب المعاملات يطابق المصفوفة. الكائن الراجع هو ما يُحقن، لا <code>ConfigService</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية ترى مصنعًا يرجع وعدًا.</li>
+<li>تبني اعتماديات <code>inject</code> أولًا.</li>
+<li>تنتظر <code>Promise</code>.</li>
+<li>تسجل القيمة كـ Singleton تحت الرمز ما لم تغيّر <code>scope</code>.</li>
+<li>تبني <code>BooksService</code> وتمرر القيمة إلى <code>@Inject</code>.</li>
+<li>الإغلاق لا يعرف القيمة إلا إن ربطتها بخدمة لها خطاف.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عميل Redis يُفتح قبل الخدمات:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+
+class RedisClient {
+  async connect(url: string): Promise&lt;void&gt; {
+    void url;
+  }
+}
+
+@Module({
+  providers: [
+    {
+      provide: RedisClient,
+      useFactory: async () =&gt; {
+        const client = new RedisClient();
+        await client.connect(process.env.REDIS_URL ?? &#39;redis://localhost:6379&#39;);
+        return client;
+      },
+    },
+  ],
+  exports: [RedisClient],
+})
+export class RedisModule {}
+</code></pre>
+<p>في Docker يكون العنوان اسم الخدمة <code>redis</code> لا <code>localhost</code>، وذلك فصل لاحق. هنا المصنع ينتظر <code>connect</code> قبل أن يحقن أي مستهلك العميل. أغلق في خدمة تغلف العميل وتنفّذ <code>onModuleDestroy</code>، أو انقل <code>connect</code> إلى <code>onModuleInit</code> على <code>@Injectable()</code> عادي إن كان ذلك أوضح من مصنع. اختر خطافًا عندما تريد زوج الفتح والإغلاق على الصنف نفسه، ومصنعًا غير متزامن عندما القيمة ليست صنف Nest بل كائن مكتبة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>await</code> داخل المصنع فيُحقن وعدًا مستقرًا خطأً إن رجعت الوعد من غير أن تكون الدالة مسار الانتظار الذي يتوقعه الإطار. اجعل الدالة <code>async</code> أو أرجع <code>Promise</code> التي تنتظر الاتصال فعلًا.</li>
+<li>حقن الرمز من غير <code>exports</code> في وحدة أخرى.</li>
+<li>فتح الاتصال في المصنع وإغلاقه في كل طلب.</li>
+<li>خلط هذا النمط مع تعليم المزود <code>REQUEST</code> فيتكرر الاتصال لكل طلب.</li>
+<li>قراءة <code>localhost</code> من داخل صورة Compose.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قيمة تُنتَج بعملية غير متزامنة مرة عند الإقلاع ثم تُشارك.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>صنف <code>@Injectable()</code> يكفي مع <code>onModuleInit</code>. خيارات وحدة كاملة مكانها <code>forRootAsync</code> لا مصنع معزول يخفي بقية المزودات.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>ماذا يُنتظر</th>
+<th>ماذا يُحقن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useFactory</code> غير متزامن</td>
+<td>ناتج المصنع</td>
+<td>القيمة تحت <code>provide</code></td>
+</tr>
+<tr>
+<td><code>forRootAsync</code></td>
+<td>كائن خيارات الوحدة</td>
+<td>مزودات الوحدة بعد ذلك</td>
+</tr>
+<tr>
+<td><code>onModuleInit</code></td>
+<td>داخل الصنف بعد بنائه</td>
+<td>الصنف نفسه بُني قبل الانتظار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل تكتب <code>await</code> عند حقن <code>&#39;ASYNC_CONNECTION&#39;</code> في الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الإطار انتظر المصنع قبل بناء الخدمة. المعامل هو القيمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما فرق ناتج المصنع هنا عن ناتج مصنع <code>registerAsync</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>هنا الناتج هو قيمة المزود. في <code>registerAsync</code> الناتج خيارات تُستخدم لتسجيل مزودات الوحدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا كائن المكتبة الراجع من المصنع لا يغلق نفسه عند <code>SIGTERM</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خطافات العمر على أصناف Nest المسجّلة كمزودات تنفّذ الواجهة. الكائن العادي بلا <code>onModuleDestroy</code> يبقى مفتوحًا. غلفه بخدمة تغلقه، وفعّل <code>enableShutdownHooks</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يوضع <code>inject</code>؟</li>
+<li>ماذا يحدث لو رُفض الوعد؟</li>
+<li>متى تفضّل <code>onModuleInit</code> على المصنع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المصنع غير المتزامن يؤخر الإقلاع حتى تستقر قيمة المزود. حقن الرمز يعطي القيمة. أغلق المورد في خدمة لها خطاف إن لم يكن الكائن نفسه مزود خطافات.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع <code>forRoot</code> و <code>register</code> وإعادة التصدير.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة مسارات على متجر كتب. الافتراض Express، وتخزين القرص عبر <code>diskStorage</code>، والاستيراد المحلي ينتهي بـ <code>.js</code> كما في قالب ESM.</p>
+<h2>مثال 1 — غلاف على القرص وبسقف</h2>
+<p><code>covers.storage.ts</code> يولّد الاسم. المعالج لا يرى <code>originalname</code> إلا للتشخيص.</p>
+<pre><code class="language-ts">import { randomUUID } from &#39;node:crypto&#39;;
+import { extname } from &#39;node:path&#39;;
+import { diskStorage } from &#39;multer&#39;;
+import type { MulterOptions } from &#39;@nestjs/platform-express&#39;;
+
+export const coverUpload: MulterOptions = {
+  storage: diskStorage({
+    destination: &#39;./var/covers&#39;,
+    filename: (_req, file, cb) =&gt; {
+      cb(null, `${randomUUID()}${extname(file.originalname).toLowerCase()}`);
+    },
+  }),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+};
+</code></pre>
+<pre><code class="language-ts">import { FileTypeValidator, MaxFileSizeValidator, ParseFilePipe } from &#39;@nestjs/common&#39;;
+
+export const coverPipe = new ParseFilePipe({
+  validators: [
+    new MaxFileSizeValidator({ maxSize: 2 * 1024 * 1024 }),
+    new FileTypeValidator({ fileType: /^image\/(png|jpeg)$/ }),
+  ],
+});
+</code></pre>
+<p>المتحكم يمرر المفتاح إلى الخدمة. الخدمة تحدّث عمود <code>coverKey</code> ولا تخزن <code>Express.Multer.File</code>.</p>
+<pre><code class="language-ts">@Post(&#39;:id/cover&#39;)
+@UseInterceptors(FileInterceptor(&#39;cover&#39;, coverUpload))
+replace(@Param(&#39;id&#39;) id: string, @UploadedFile(coverPipe) file: Express.Multer.File) {
+  return this.books.setCoverKey(id, file.filename);
+}
+</code></pre>
+<p>جرب: <code>curl -F &quot;cover=@./a.png;type=image/png&quot; localhost:3000/books/1/cover</code>. ثم أعد الطلب بملف أكبر من 2 ميغابايت وتوقع الرفض قبل تحديث الصف.</p>
+<h2>مثال 2 — غلاف إجباري وعينة PDF</h2>
+<p>حقلان، أنبوبان. العينة اختيارية عبر <code>fileIsRequired: false</code>.</p>
+<pre><code class="language-ts">const samplePipe = new ParseFilePipeBuilder()
+  .addMaxSizeValidator({ maxSize: 8 * 1024 * 1024 })
+  .addFileTypeValidator({ fileType: &#39;application/pdf&#39; })
+  .build({ fileIsRequired: false });
+
+@Post()
+@UseInterceptors(FileFieldsInterceptor([
+  { name: &#39;cover&#39;, maxCount: 1 },
+  { name: &#39;sample&#39;, maxCount: 1 },
+], coverUpload))
+create(
+  @Body() body: CreateBookDto,
+  @UploadedFiles() files: { cover?: Express.Multer.File[]; sample?: Express.Multer.File[] },
+) {
+  const cover = files.cover?.[0];
+  if (!cover) throw new BadRequestException(&#39;cover is required&#39;);
+  return this.books.create(body, {
+    coverKey: cover.filename,
+    sampleKey: files.sample?.[0]?.filename,
+  });
+}
+</code></pre>
+<p><code>ParseFilePipe</code> على مصفوفة الحقول في التوثيق يمشي على كل ملف. إن ربطت أنبوب الغلاف على الكائن كله سيُرفض PDF. افصل المدققات حسب الحقل داخل الخدمة إن صعب تركيب أنبوبين على خريطة واحدة، وابقِ حد Multer على الطلب كله.</p>
+<h2>مثال 3 — تنزيل الغلاف بتيار</h2>
+<pre><code class="language-ts">@Get(&#39;:id/cover&#39;)
+download(@Param(&#39;id&#39;) id: string): StreamableFile {
+  const stored = this.covers.resolve(id);
+  return new StreamableFile(createReadStream(stored.absolutePath), {
+    type: stored.mime,
+    length: stored.bytes,
+    disposition: `inline; filename=&quot;${stored.downloadName}&quot;`,
+  });
+}
+</code></pre>
+<p><code>resolve</code> ترمي <code>NotFoundException</code> إن لم يكن للكتاب <code>coverKey</code>. لا تبنِ المسار من <code>id</code> الخام.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>طلب JSON إلى مسار الغلاف يفشل لأن Multer ينتظر multipart.</li>
+<li>هذه الأمثلة لا تقرأ <code>file.buffer</code>. المحرك قرص.</li>
+<li>الرد لا يحتوي المسار المطلق.</li>
+<li><code>var/covers</code> خارج جذر الملفات العامة في الفصل التالي.</li>
+<li>بعد فشل <code>FileTypeValidator</code> ابحث عن ملف يتيم في <code>var/covers</code> بلا صف مقابل.</li>
+</ul>
+<h2>أوامر التجربة</h2>
+<pre><code class="language-bash">curl -F &quot;cover=@./cover.png;type=image/png&quot; http://localhost:3000/books/1/cover
+curl -D - http://localhost:3000/books/1/cover -o /tmp/cover.out
+</code></pre>
+<p>الأول يعيد <code>{ &quot;coverKey&quot;: &quot;&lt;uuid&gt;.png&quot; }</code> إن عبر الحجم والنوع. الثاني يرسل <code>Content-Type</code> الصورة و <code>Content-Length</code> إن خزّنت <code>bytes</code> عند الرفع. غيّر الملف إلى <code>.txt</code> مع ترويسة <code>image/png</code> وتوقع رفض <code>FileTypeValidator</code> لأن الرقم السحري لا يطابق الصورة.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>oxlint و Prettier</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-lint-and-format.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>oxlint و Prettier</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة أداتي القالب: واحدة تفحص أخطاء شائعة، والأخرى توحّد الشكل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق من غير قاعدة تنسيق يقضي المراجعة على المسافات. فريق من غير lint يمرر أخطاء يمكن للأداة أن تراها قبل التشغيل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Prettier ينسق. oxlint يفحص. القالب يجهّز الاثنين بدل ESLint الذي تذكره الدروس القديمة.</p>
+<h2>التعريف التقني</h2>
+<p>First steps: المشاريع المولَّدة تثبت oxlint و Prettier. السكربتات <code>npm run lint</code> و <code>npm run format</code>. التوثيق يشير إلى مقارنة Prettier بين المنسّق والفاحص إن التبس الأمر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">format  -&gt; شكل موحد
+lint    -&gt; تحذيرات وأخطاء في الكود
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npm run format
+npm run lint
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>format</code> يعيد كتابة الملفات حسب إعداد Prettier. <code>lint</code> يطبع ما يخالف قواعد oxlint ولا يفترض أن يغير المعنى. شغّلهما قبل أن تعتبر التمرين منتهيًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المنسق لا يفهم قواعد Nest. هو يفهم شكل اللغة. الفاحص يفهم أنماطًا خطرة أو ميتة. لا واحد منهما يتحقق من تسجيل المزوّد في الوحدة. ذلك اختبار وتشغيل.</p>
+<h2>مثال عملي</h2>
+<p>إن غيّر <code>format</code> ملفًا كاملًا في أول تشغيل، فالقالب يفرض أسلوبه. اقبل الفرق مرة واحدة وكمّل. لا تخلط ESLint من مقال مع oxlint في المشروع نفسه من غير قرار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تثبيت ESLint لأن الدورة القديمة فعلت ذلك، مع بقاء oxlint، فيصبح فحصان متضاربان.</li>
+<li>اعتبار التنسيق إصلاحًا لمنطق خطأ.</li>
+<li>إطفاء القواعد كلها عند أول تحذير.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على مشروع القالب طوال الدورة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تؤخر درسًا لأن سطرًا اختلف في المسافة داخل مثال توثيقي. نسّق ثم تابع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Prettier</th>
+<th>oxlint</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يغيّر الشكل</td>
+<td>نعم</td>
+<td>ليس هدفه</td>
+</tr>
+<tr>
+<td>يجد أنماطًا خاطئة</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>في القالب 12</td>
+<td>نعم</td>
+<td>نعم بدل ESLint</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي أمر ينسق الملفات؟</p>
+<details><summary>الحل</summary>
+
+<p><code>npm run format</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي Prettier بديلًا عن اختبار المتحكم؟</p>
+<details><summary>الحل</summary>
+
+<p>التنسيق لا يشغّل الدالة ولا يتحقق من النص المعاد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>درس خارجي يطلب <code>.eslintrc</code>. ماذا تفعل في مشروع ولّده CLI 12؟</p>
+<details><summary>الحل</summary>
+
+<p>لا تضف ESLint بالتوازي. استخدم <code>npm run lint</code> الخاص بـ oxlint إلا إذا قرر الفريق ترحيلًا صريحًا وموحّدًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما أداة lint في القالب؟</li>
+<li>ماذا لا يفحص المنسق؟</li>
+<li>ما أمر الفحص؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>نسّق بـ Prettier وافحص بـ oxlint. هما إعداد القالب الحالي لا ESLint الافتراضي.</p>
+<h2>ماذا بعد؟</h2>
+<p>SWC يسرّع الترجمة وقت التطوير عندما يصبح الانتظار ملحوظًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

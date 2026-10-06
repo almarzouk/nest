@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Token Rotation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-token-rotation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Token Rotation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تجديد رمز وصول رف القصير برمز تحديث يُستهلك مرة واحدة، بحيث كل تجديد يصدر خلفًا ويلغي استخدام السلف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>جوال رف يحفظ refresh token لأسبوعين. إن بقي نفس الرمز يعمل في كل تجديد، فنسخه من نسخة احتياطية للجهاز يكفي لصنع access token جديد كل ربع ساعة من غير أثر. انقطاع الرد بعد التجديد يدفع التطبيق لإعادة الرمز القديم فيُرفض أو يُصدر جلسة ثانية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>TokenService.issue</code> يعطي access token قصير العمر و refresh token معتمًا يُخزَّن كتجزئة. <code>refresh</code> يستهلك الرمز ويعيد خلفًا مع access token جديد. سلسلة الخلفاء عائلة واحدة. إعادة رمز مُستهلك تعني أن نسختين تملكانه، فتُبطَل العائلة كلها.</p>
+<h2>التعريف التقني</h2>
+<p>في <code>@nestjs/authentication</code>، <code>accessToken</code> في إعداد الوحدة: <code>key</code> لا يقل عن 32 بايتًا، و <code>issuer</code> و <code>audience</code> و <code>ttl</code> مثل <code>15m</code>. من غير <code>key</code> لا يقلع التطبيق. <code>JwtBearerProvider</code> يتحقق من التوقيع و <code>exp</code> و <code>iss</code> و <code>aud</code> ثم يستدعي <code>validate</code> لتحميل المستخدم الحالي من <code>sub</code>. <code>POST</code> التجديد يستدعي <code>tokenService.refresh(refreshToken)</code>. الرموز المعتمة تُخزَّن مجزأة. كل رمز يعمل مرة. إعادة المستخدم أو المنتهي أو المجهول ترمي <code>RefreshTokenError</code> وهو <code>AuthenticationError</code> وتجيب الوحدة بـ 401 بلا <code>try/catch</code> إضافي في المتحكم. <code>claims</code> التي تمررونها إلى <code>issue</code> تُحفظ مع العائلة وتدخل كل access token لاحق، لذلك لا تضعوا فيها دورًا يتغير. Passport ليس مطلوبًا لهذا التدوير؛ إن كان المشروع على Passport فتدويره يُبنى هناك لا بمزج الخدمتين.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">issue → access A0 + refresh R0
+refresh(R0) → access A1 + refresh R1    و R0 ميت
+refresh(R0) مرة أخرى → إلغاء العائلة كلها
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, HttpCode, Post } from &#39;@nestjs/common&#39;;
+import { Public, TokenService } from &#39;@nestjs/authentication&#39;;
+
+@Public()
+@Controller(&#39;auth/token&#39;)
+export class TokensController {
+  constructor(private readonly tokens: TokenService) {}
+
+  @Post(&#39;refresh&#39;)
+  @HttpCode(200)
+  refresh(@Body(&#39;refreshToken&#39;) refreshToken: string) {
+    return this.tokens.refresh(refreshToken);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>200 لا 201. لا يُنشأ مستخدم، يُستبدل إثبات.</li>
+<li>الجسم فيه الرمز الجديد. التطبيق يحذف <code>R0</code> ويحفظ <code>R1</code> قبل أي نداء آخر.</li>
+<li>لا تسجّلوا <code>refreshToken</code> في السجل.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>refresh</code> يبحث عن تجزئة الرمز.</li>
+<li>إن كان حيًا يعلّمه مستهلَكًا ويكتب الخلف في نفس العائلة.</li>
+<li>يوقّع access token جديدًا بنفس مطالبات الدخول (<code>amr</code> وغيرها مما خُزّن مع العائلة) لا بأدوار حية من الجدول.</li>
+<li><code>validate</code> على كل طلب API يحمّل المستخدم من <code>sub</code> حتى لا يعيش الدور القديم داخل JWT طويلًا. عمر الوصول قصير أصلًا (<code>ttl</code>).</li>
+<li>إن وصل <code>R0</code> بعد الاستهلاك، الخدمة تعتبر العائلة مسروقة وتبطلها. التطبيق الشرعي الذي تأخر في حفظ <code>R1</code> سيحتاج دخولًا جديدًا. هذا ثمن اكتشاف النسخ.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>إصدار أول بعد كلمة المرور، من الصفحة:</p>
+<pre><code class="language-ts">return this.tokens.issue(user.id, {
+  method: &#39;password&#39;,
+  claims: { amr: [&#39;pwd&#39;] },
+});
+</code></pre>
+<p><code>amr</code> يصف كيف تم الدخول ويُنسخ إلى الرموز المجددة. لا تضعوا <code>roles</code> داخل <code>claims</code> لأن تغيير دور الموظف لن يظهر حتى تنتهي العائلة. <code>JwtBearerProvider.validate</code> يقرأ الدور من القاعدة كل طلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إعادة استخدام نفس refresh token حتى ينتهي أسبوعه.</li>
+<li>حفظ الأدوار داخل access token طويل بلا تحميل في <code>validate</code>.</li>
+<li>تجديد على مسار بلا <code>HttpCode</code> مفهوم ثم اعتبار 201 إنشاء جلسة ثانية في الواجهة.</li>
+<li>تدوير رمز Google نفسه بدل إصدار عائلة رموز رف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لجوال أو عميل عام بلا كعكة جلسة، كلما طُلب access token جديد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لجلسة متصفح تديرها كعكة الخادم في الحزمة. هناك تجديد جلسة لا عائلة refresh. ولا لتدوير كلمة المرور؛ ذلك تغيير سر لا استبدال رمز.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>رمز تحديث ثابت</th>
+<th>تدوير</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كل تجديد</td>
+<td>نفس السر</td>
+<td>خلف جديد وسلف ميت</td>
+</tr>
+<tr>
+<td>ظهور السلف بعد موته</td>
+<td>ما زال يعمل</td>
+<td>تلغى العائلة</td>
+</tr>
+<tr>
+<td>الأدوار</td>
+<td>إن دُفنت في الرمز تتجمد</td>
+<td>تُقرأ من القاعدة في <code>validate</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>بعد <code>refresh</code> ناجح، هل يصلح <code>R0</code> لتجديد ثانٍ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. يُستهلك مرة. استخدامه مرة أخرى يلغي العائلة حسب وصف <code>TokenService</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>انقطع الرد بعد التجديد فأعاد التطبيق <code>R0</code> بينما كان <code>R1</code> قد حُفظ على الخادم. ماذا يحدث للحساب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تُبطل العائلة وعلى الطرفين تسجيل دخول من جديد. لذلك يحفظ التطبيق <code>R1</code> فورًا، ويعامل هذا الفشل كحدث أمن لا كإعادة محاولة عادية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>ttl: &#39;15m&#39;</code> على access token جزء من سياسة التدوير لا تفصيل توقيع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الرمز المسروق يعمل حتى <code>exp</code>. التجديد المتكرر بلا تدوير يطيل نافذة refresh، والتدوير يقصّر حياة كل refresh، و <code>ttl</code> يقصّر حياة access. الاثنان معًا يحدان النافذة. الدور لا يُخزَّن في الرمز حتى لا يبقى ربع ساعة زائد عمر العائلة على دور قديم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>refresh</code> غير access token؟</li>
+<li>أين تُخزَّن رموز التحديث؟</li>
+<li>ماذا تفعل إعادة الرمز المستهلك؟</li>
+<li>لماذا تبقى الأدوار خارج <code>claims</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>تدوير رف: كل refresh token يُستخدم مرة ويصدر خلفًا. إعادة السلف تبطل العائلة. access token قصير و <code>validate</code> يحمّل المستخدم الحي. هذا <code>TokenService</code> في الحزمة الرسمية، لا إلغاء لوصفة Passport.</p>
+<h2>ماذا بعد؟</h2>
+<p>التدوير يكتشف النسخ. الدرس التالي إبطال صريح: تسجيل خروج جهاز، أو إنهاء كل جلسات الحساب.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

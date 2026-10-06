@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Code First</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-code-first.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Code First</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل أصناف TypeScript مصدر المخطط: Nest تكتب SDL من الزينة إلى ملف أو إلى الذاكرة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ملف <code>.graphql</code> وصنف TypeScript يصفان الكتاب مرتين. يعدّل الفريق العنوان في واحد وينسى الآخر، فيفشل التشغيل أو يكذب التوثيق. Code-first يبقي الزينة على الصنف، ويولّد SDL للعين وللأدوات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تضبط <code>autoSchemaFile</code>. كل <code>@ObjectType</code> و <code>@InputType</code> و <code>@Resolver</code> مسجّل في شجرة الوحدات يدخل التوليد. المسار الذي تكمله هذه الدورة هو هذا. Schema-first في الدرس التالي حتى تعرف الباب الآخر، لا لتكتبه بالتوازي على الميزة نفسها.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة البداية:</p>
+<pre><code class="language-ts">import { join } from &#39;node:path&#39;;
+import { ApolloDriver, ApolloDriverConfig } from &#39;@nestjs/apollo&#39;;
+import { GraphQLModule } from &#39;@nestjs/graphql&#39;;
+
+GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  autoSchemaFile: join(process.cwd(), &#39;src/schema.gql&#39;),
+  sortSchema: true,
+});
+</code></pre>
+<p><code>autoSchemaFile: true</code> يولّد المخطط في الذاكرة بلا ملف. مفيد للاختبار. الملف المفيد في التطوير لأن فرق Git يُظهر تغيير العقد.</p>
+<p><code>sortSchema: true</code> يرتب الأنواع معجميًا. من غيره يكون الترتيب ترتيب التعريف في الوحدات، فيتغير الفرق عند تحريك ملف.</p>
+<p>الزينة التي ستكتبها لاحقًا (<code>@ObjectType</code> و <code>@Field</code> و <code>@Resolver</code>) هي مدخلات هذا التوليد. هذا الدرس لا يشرح كل زينة. هو يشرح متى يُعاد بناء <code>schema.gql</code>.</p>
+<p>لا تجمع <code>autoSchemaFile</code> مع <code>typePaths</code> على التطبيق نفسه. مصدر واحد للحقيقة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">صنف Book + زينة
+  وحدات مستوردة من الجذر
+    GraphQLModule يمسحها عند الإقلاع
+      schema.gql أو مخطط في الذاكرة
+        Apollo ينفذ العمليات ضدها
+</code></pre>
+<p>صنف غير مسجّل في وحدة واصلة للجذر لا يظهر في الملف.</p>
+<h2>أبسط مثال</h2>
+<p>جذر التطبيق بعد تثبيت الحزم:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { join } from &#39;node:path&#39;;
+import { ApolloDriver, ApolloDriverConfig } from &#39;@nestjs/apollo&#39;;
+import { GraphQLModule } from &#39;@nestjs/graphql&#39;;
+import { BooksModule } from &#39;./books/books.module.js&#39;;
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(), &#39;src/schema.gql&#39;),
+      sortSchema: true,
+    }),
+    BooksModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>شغّل الخادم. إن كان <code>BooksModule</code> يصدّر محللًا ونوعًا، يتكون <code>src/schema.gql</code>. افتحه واقرأ <code>type Query</code> قبل فتح GraphiQL.</p>
+<h2>شرح المثال</h2>
+<p><code>join(process.cwd(), ...)</code> يكتب الملف من مجلد التشغيل، فيجده Git. لا تضع الملف تحت <code>dist</code> فقط ثم تتساءل لماذا الفرق فارغ. <code>BooksModule</code> في <code>imports</code> حتى تدخل أصنافه المسح. توليد الملف أثر جانبي للإقلاع: أعد التشغيل بعد تغيير الزينة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تجمع Nest البيانات الوصفية للأنواع والمحللات المسجّلة وتبني مخطط GraphQL. ثم تكتبه إن كان <code>autoSchemaFile</code> مسارًا. الطلب التالي يُتحقق منه ضد هذا المخطط لا ضد نسخة حفظتها يدويًا. إن حذفت حقلًا من الصنف وما زال العميل القديم يطلبه، فشل التحقق بعد إعادة التشغيل. لذلك الملف المولَّد يستحق مراجعة في طلب الدمج كأي عقد عام.</p>
+<h2>مثال عملي</h2>
+<p>في الاختبارات لا تحتاج ملفًا:</p>
+<pre><code class="language-ts">GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  autoSchemaFile: true,
+  sortSchema: true,
+});
+</code></pre>
+<p>نفس الأصناف، بلا كتابة على القرص أثناء <code>vitest</code> أو <code>jest</code>. في التطبيق الإقلاعي أبقِ المسار ملفًا حتى يقرأ الإنسان العقد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تعديل <code>schema.gql</code> باليد ثم فقدان التعديل في الإقلاع التالي.</li>
+<li>نسيان استيراد وحدة الميزة، فيُولَّد مخطط بلا <code>book</code>.</li>
+<li>تشغيل code-first و schema-first معًا على الجذر نفسه.</li>
+<li>البحث عن الحقل في GraphiQL قبل إعادة التشغيل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمسار هذه الدورة: فريق يكتب TypeScript ويريد SDL ناتجًا لا مصدرًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يُنشر المخطط كعقد تملكه فرق غير TypeScript وتسلّمه لك كملفات SDL. عندها schema-first مصدرهم، لا ملفًا تولّده ثم تعدّله.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Code first</th>
+<th>تحرير <code>schema.gql</code> يدويًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المصدر</td>
+<td>الأصناف</td>
+<td>الملف، ويُستبدل عند التوليد</td>
+</tr>
+<tr>
+<td>فرق Git</td>
+<td>يتغير عندما تتغير الزينة</td>
+<td>يتعارك مع التوليد</td>
+</tr>
+<tr>
+<td>في هذه الدورة</td>
+<td>المسار المعتمد</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيار يكتب المخطط إلى <code>src/schema.gql</code>؟</p>
+<details>
+<summary>الحل</summary>
+`autoSchemaFile: join(process.cwd(), 'src/schema.gql')`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يغيّر <code>sortSchema: true</code> في مراجعة الشيفرة؟</p>
+<details>
+<summary>الحل</summary>
+يثبّت ترتيب الأنواع في الملف، فلا يظهر فرق لمجرد إعادة ترتيب الاستيراد.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>autoSchemaFile: true</code> أنسب لاختبار الوحدة من مسار ملف؟</p>
+<details>
+<summary>الحل</summary>
+المخطط يُبنى في الذاكرة. الاختبار لا يكتب `schema.gql` ولا يصطدم بتشغيل آخر على القرص.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مصدر الحقيقة في code-first؟</li>
+<li>لماذا يجب أن تُستورد وحدة الكتب؟</li>
+<li>أي خيار تتجنبه على التطبيق نفسه لاحقًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>autoSchemaFile</code> يولّد SDL من زينة الأصناف المسجّلة. الملف للمراجعة، والذاكرة للاختبار، والتعديل اليدوي على الناتج يضيع.</p>
+<h2>ماذا بعد؟</h2>
+<p>Schema-first: عندما تكون ملفات SDL هي المصدر، وNest تولّد أنواع TypeScript منها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Quick start (Code first): <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

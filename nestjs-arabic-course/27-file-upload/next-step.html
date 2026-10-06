@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>الرفع أعطاك مفتاحًا على القرص ومسارًا يتحقق من الكتاب قبل الإرسال. الفصل التالي يخدم ملفات لا تمر على مجال: بناء واجهة، أو CSS، أو صورة شعار موضوعة في المستودع.</p>
+<h2>ماذا صار واضحًا</h2>
+<ul>
+<li>جسم الملف <code>multipart/form-data</code>، ويحلله Multer على Express.</li>
+<li>من غير <code>storage</code> تبقى البايتات في <code>file.buffer</code>. الغلاف الكبير يستخدم <code>diskStorage</code> و <code>limits.fileSize</code>.</li>
+<li><code>FileInterceptor</code> لحقل واحد. الحقول والمصفوفات لها زينة أخرى.</li>
+<li><code>FileTypeValidator</code> يقرأ الرقم السحري. الامتداد ادّعاء.</li>
+<li>التنزيل الذي يعرف صلاحية الكتاب يرجع <code>StreamableFile</code>.</li>
+</ul>
+<h2>ماذا سيبدو سحرًا إن خلطته الآن</h2>
+<p>وضع مجلد <code>var/covers</code> داخل <code>rootPath</code> يجعل كل ملف عنوانًا عامًا. تخمين <code>uuid</code> أصعب من تخمين <code>1.png</code>، لكنه يتجاوز المتحكم الذي يفحص الصف. الأصول العامة وحدها تذهب إلى <code>ServeStaticModule</code>.</p>
+<pre><code class="language-ts">ServeStaticModule.forRoot({
+  rootPath: join(__dirname, &#39;..&#39;, &#39;public&#39;),
+  serveRoot: &#39;/assets&#39;,
+});
+</code></pre>
+<p><code>serveRoot</code> يبعد الملفات عن جذر الـ API. الواجهة ذات الصفحة الواحدة التي تلتقط كل مسار غير معروف تعيد <code>index.html</code> برمز <code>200</code>، فيختفي <code>404</code> الحقيقي. ذلك موضوع <code>03-spa-hosting.md</code> لا إعدادًا تنسخه قبل قراءة القيد.</p>
+<h2>قبل أن تغادر</h2>
+<ol>
+<li>ارفض ملفًا أكبر من الحد وتأكد أن <code>coverKey</code> لم يتغير.</li>
+<li>ارفض نصًا بتريسة <code>image/png</code>.</li>
+<li>نزّل الغلاف وتأكد أن الجسم تيار لا JSON فيه <code>path</code>.</li>
+</ol>
+<p>ثم افتح <a href="../28-static-files/README.html"><code>28-static-files</code></a>. أول درس يفصل الملف الثابت عن مسار الـ API. لا تنشر مجلد الرفع قبل أن تقرأ ذلك الفصل.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

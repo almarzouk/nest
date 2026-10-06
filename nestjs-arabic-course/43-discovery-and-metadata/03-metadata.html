@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Metadata</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-metadata.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Metadata</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تصميم ما يُلصق على الدالة أو الصنف: مفتاح ثابت، قيمة صغيرة، وهدف واضح، حتى يقرأها <code>Reflector</code> من غير اتفاق شفهي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المفتاح النصي العشوائي يتصادم بين مكتبة وحارس. القيمة الضخمة التي تحمل خدمة أو طلبًا تُنسخ على الصنف خطأً. وضع المزخرف على الصنف بينما القارئ يسأل الدالة فقط يترك المسارات بلا سياسة. هذا الدرس اتفاق اللصق قبل أداة الاكتشاف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Metadata هنا قيمة وقت تشغيل مربوطة بهدف. الهدف إما الصنف (كل المسارات) أو الدالة (مسار واحد). المفتاح ثابت مصدَّر من ملف المزخرف. القيمة علم أو مصفوفة نصوص أو رقم. القارئ يوثق إن كان غياب المفتاح يعني المنع أو السماح. مكتبتك تصدّر المزخرف والثابت معًا.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const ROLES_KEY = &#39;roles&#39;;
+
+export const Roles = (...roles: string[]) =&gt; SetMetadata(ROLES_KEY, roles);
+</code></pre>
+<p><code>@Roles(&#39;admin&#39;, &#39;editor&#39;)</code> على الدالة يخزن <code>[&#39;admin&#39;, &#39;editor&#39;]</code> على تلك الدالة. المزخرف نفسه على الصنف يخزنها على الصنف. لا تخزن كائن الطلب. لا تخزن صنف خدمة قابلًا للحقن داخل القيمة وتتوقع أن يُحقن تلقائيًا. القيمة بيانات خاملة.</p>
+<p><code>Reflector.createDecorator&lt;string[]&gt;()</code> يولد مزخرفًا يحمل مفتاحه، مناسب عندما لا تريد سلسلة عامة. <code>DiscoveryService.createDecorator</code> يولد مزخرفًا يمكن التصفية به عبر <code>metadataKey</code> لاحقًا. اختر واحدًا للسياسة الواحدة حتى لا يُلصق المفتاح مرتين.</p>
+<p>تصادم السلاسل: حزمة خارجية قد تستعمل <code>&#39;roles&#39;</code> أيضًا. إن نشرت مكتبة، فضّل <code>Symbol</code> أو مزخرف <code>createDecorator</code> على سلسلة قصيرة. داخل التطبيق الواحد الثابت المصدَّر يكفي إن كان الاسم فريدًا في ملفاتك.</p>
+<p>الوراثة: صنف ابن لا ينسخ metadata الأب تلقائيًا بطريقة تعتمد عليها في كل المزخرفات. ضع المزخرف على الصنف الذي يخدم المسار فعلًا، واقرأ الصنف الذي يعيده <code>getClass()</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ملف المزخرف: المفتاح + الدالة
+المتحكم: @Roles على الصنف أو الدالة
+الحارس: يقرأ المفتاح ويقرر الافتراض عند الغياب
+</code></pre>
+<p>اللصق وصف. الحارس سياسة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Post } from &#39;@nestjs/common&#39;;
+import { Roles } from &#39;./roles.decorator.js&#39;;
+
+@Controller(&#39;invoices&#39;)
+@Roles(&#39;staff&#39;)
+export class InvoicesController {
+  @Get()
+  list(): string[] {
+    return [];
+  }
+
+  @Post()
+  @Roles(&#39;payroll&#39;)
+  create(): { ok: true } {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p><code>GET</code> يرى أدوار الصنف فقط إن كان القارئ يغلب الدالة ثم يعود للصنف عند الغياب. <code>POST</code> يملك مفتاحًا على الدالة. إن استخدمت <code>getAllAndOverride</code> فـ <code>payroll</code> يستبدل <code>staff</code> على <code>POST</code>. إن استخدمت <code>getAllAndMerge</code> تُجمع القائمتان. اختر واحدة واكتبها في الحارس.</p>
+<h2>شرح المثال</h2>
+<p>المثال بلا حارس ناقص عمدًا: اللصق وحده لا يمنع الطلب. القيمة تجلس حتى يسألها <code>Reflector</code>. هذا أكثر خطأ شائع بعد اختلاف المفتاح. سجّل الحارس كـ <code>APP_GUARD</code> أو <code>@UseGuards</code> وإلا فالمفتاح زينة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تقييم <code>invoices.controller.ts</code> يشغّل مزخرف الصنف ثم مزخرف الدالة.</li>
+<li>مخزنان منفصلان: واحد على الدالة <code>create</code> وواحد على <code>InvoicesController</code>.</li>
+<li><code>list</code> بلا مخزن دالة لهذا المفتاح.</li>
+<li>عند الطلب يسأل الحارس الهدفين حسب قاعدته.</li>
+<li>تغيير المصفوفة بعد اللصق خطر إن خزنت المرجع نفسه في مكان آخر. مرر القيم إلى <code>SetMetadata</code> ولا تعدّل المصفوفة لاحقًا.</li>
+<li>الاختبار الذي يستدعي الدالة مباشرة يتخطى الحارس. اختبر الحارس بهدف مزيف أو عبر HTTP.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>علم لإخفاء الحقل في التسلسل، ومفتاحه مختلف عن الأدوار:</p>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const REDACT_KEY = &#39;redact&#39;;
+export const Redact = () =&gt; SetMetadata(REDACT_KEY, true);
+</code></pre>
+<p>المعترض يقرأ <code>REDACT_KEY</code> من الدالة. لا تعِد استعمال <code>ROLES_KEY</code>. سياستان مفتاحان. القيمة <code>true</code> أصغر من كائن يصف المستخدم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>لصق بلا قارئ مسجّل.</li>
+<li>سلسلة مفتاح مكررة بين مكتبتين.</li>
+<li>قيمة فيها <code>request</code> أو كلمة سر.</li>
+<li>افتراض أن ابن الصنف ورث المفتاح.</li>
+<li>قراءتان مختلفتان: حارس يغلب ودالة أخرى تدمج، لنفس المفتاح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>وصف ثابت على المسار: دور، علم عام، اسم عملية للقياس، مهلة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حالة تتغير كل طلب، أو سر، أو بديل عن عمود في القاعدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>يسري على</th>
+<th>يغلب عند override إذا وُضع أولًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الدالة</td>
+<td>ذلك المسار</td>
+<td>نعم إن سبق الصنف في القائمة</td>
+</tr>
+<tr>
+<td>الصنف</td>
+<td>دوال بلا مفتاحها، أو تُدمج</td>
+<td>بعد الدالة في قائمة التغليب</td>
+</tr>
+<tr>
+<td>الغياب</td>
+<td>لا قيمة</td>
+<td>سياسة القارئ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يخزن <code>@Roles(&#39;admin&#39;)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المصفوفة <code>[&#39;admin&#39;]</code> تحت <code>ROLES_KEY</code> على الهدف الذي فوقه المزخرف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي المزخرف على المتحكم من غير Guard؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اللصق لا يغيّر مسار الطلب وحده. حارس أو معترض يجب أن يقرأ المفتاح ويرفض أو يبدّل السلوك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مكتبة خارجية استعملت <code>&#39;roles&#39;</code>. ماذا تغيّر في مزخرفك داخل الشركة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مفتاحًا فريدًا عبر <code>Symbol</code> أو <code>Reflector.createDecorator</code>، وتحدّث القارئ إلى المفتاح الجديد حتى لا يقرأ قيمة المكتبة الأخرى.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما حجم القيمة المناسب؟</li>
+<li>من يملك الاتفاق عند غياب المفتاح؟</li>
+<li>لماذا سياستان لا تشتركان في سلسلة واحدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Metadata وصف صغير على دالة أو صنف، بمفتاح واحد بين الكاتب والقارئ. الحارس يحوّل الوصف إلى قرار، ويوثق التغليب أو الدمج.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>DiscoveryService</code>: مسح المزودات والمتحكمات التي تحمل مزخرفًا معينًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom decorators: <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

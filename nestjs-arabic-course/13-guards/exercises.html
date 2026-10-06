@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>شباك التذاكر. أجب ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>ماذا يفعل الإطار حين ترجع <code>canActivate</code> القيمة <code>false</code>؟</li>
+<li>أي مستوى ربط يغلق <code>GET /health</code> حتى لو لم تزين متحكم الصحة؟</li>
+<li>من يعمل أولًا: حارس على الصنف أم حارس على الدالة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>يرمي <code>ForbiddenException</code> والرد <code>403</code>.</li>
+<li>الربط العام: <code>APP_GUARD</code> أو <code>useGlobalGuards</code>.</li>
+<li>حارس الصنف، بعد الحراس العامين وقبل حارس الدالة.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم ربط <code>POST /tickets</code> و <code>POST /tickets/refund</code> و <code>GET /health</code>:</p>
+<ul>
+<li>كل مسارات التذاكر تحتاج <code>x-desk-name</code> وإلا <code>401</code>.</li>
+<li>الاسترداد يحتاج الاسم <code>lead</code> وإلا <code>403</code>.</li>
+<li>الصحة تبقى بلا بوابة.</li>
+</ul>
+<p>اذكر الزينة ومستوى كل حارس، لا جسم JWT.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>IdentifyDeskGuard</code> على <code>TicketsController</code> يرمي <code>UnauthorizedException</code> عند غياب الترويسة ويلصق <code>user</code>. <code>RefundGuard</code> على دالة <code>refund</code> فقط يرجع <code>false</code> لغير <code>lead</code>. لا <code>APP_GUARD</code>. <code>HealthController</code> بلا <code>@UseGuards</code>. الترتيب على الاسترداد: الهوية ثم <code>RefundGuard</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>بعد النقل إلى <code>APP_GUARD</code> ظهر ما يلي. فسّر كل سطر:</p>
+<ol>
+<li><code>GET /health</code> صار <code>401</code>.</li>
+<li><code>POST /auth/login</code> صار <code>401</code> قبل قراءة الجسم.</li>
+<li><code>exclude({ path: &#39;health&#39;, method: RequestMethod.GET })</code> لم يفتح الصحة.</li>
+<li>حارس الدور العام يرى <code>user</code> فارغًا رغم أن حارس الهوية عام أيضًا.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 و 2. الربط العام يشمل كل الدوال. الدخول والصحة يحتاجان علامة لاحقة مثل <code>@Public</code> يقرأها الحارس ويرجع <code>true</code>، أو إبقاء الحارس على متحكم التذاكر.
+3. <code>exclude</code> يطرح من سلسلة Middleware. الحارس يعمل بعد تلك السلسلة.
+4. ترتيب تسجيل <code>APP_GUARD</code> يقدّم الدور على الهوية. سجّل حارس الهوية أولًا حتى يلصق <code>user</code> قبل قراءة الدور.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

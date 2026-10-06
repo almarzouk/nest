@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي رمز لقارئ معروف فشل في <code>create</code>؟</li>
+<li>أي رمز لضيف بلا كعكة على <code>POST /posts</code> المغلق بالمصادقة؟</li>
+<li>هل <code>true</code> النصي يكفي للسماح في الحزمة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>403</code>.</li>
+<li><code>401</code> من حارس المصادقة قبل السياسة.</li>
+<li>لا. السماح هو القيمة المنطقية <code>true</code> فقط.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا <code>update</code> ليست على <code>@Can</code>؟</li>
+<li>أين تُحفظ أدوار المستخدم الحالية؟</li>
+<li>ماذا تفعل CASL في مشروع الدورة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>لأنها تحتاج صف المقال، والحارس لا يمرّر السجل إلى القدرة.</li>
+<li>في صف المستخدم، وتُحمَّل في <code>validate</code>، لا كنسخة وحيدة داخل رمز طويل.</li>
+<li>لا شيء في المسار الافتراضي. هي خيار خارجي عند كثرة الشروط أو مشروع قائم.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p><code>GET /posts/3</code> لمسودة يملكها المستخدم <code>4</code>. الضيف والمستخدم <code>8</code> والمحرر ليس شرطًا في <code>read</code> أعلاه.</p>
+<ol>
+<li>ماذا ترجع <code>read</code> للضيف وللمستخدم <code>8</code>؟</li>
+<li>لماذا قد تفضّل الخدمة <code>404</code> على <code>403</code> هنا؟</li>
+<li>أين يوضع النداء حتى لا يتكرر في حارس؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>false</code> لكليهما لأن المقال غير منشور وهما ليسا المالك.</li>
+<li>حتى لا يؤكَّد وجود المسودة لمن لا يراها.</li>
+<li>في <code>PostsService</code> بعد <code>findUnique</code>، عبر <code>can</code> أو <code>authorize</code>، بينما الحارس يبقى للمصادقة ولـ <code>create</code> فقط.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

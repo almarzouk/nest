@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي مسار يفتح Swagger UI بعد <code>setup(&quot;api&quot;, ...)</code>؟</li>
+<li>أي مزخرف يملأ خصائص النموذج قبل إضافة CLI؟</li>
+<li>أي دالة تسجّل Bearer في الباني؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>/api</code>.</li>
+<li><code>@ApiProperty</code>.</li>
+<li><code>addBearerAuth()</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا يُغلَّف <code>createDocument</code> في دالة؟</li>
+<li>من أين يُستورد <code>PartialType</code> مع الإضافة؟</li>
+<li>ماذا يلزم Fastify زيادة على <code>@nestjs/swagger</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>لتأخير البناء حتى الطلب، ولتجنّب فقدان بادئة الإصدار عند البناء المبكر.</li>
+<li>من <code>@nestjs/swagger</code>.</li>
+<li><code>@fastify/static</code>.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p><code>GET /posts</code> عام ويعيد غلاف صفحة. <code>POST /posts</code> يحتاج جلسة أو Bearer ويعيد مقالًا بلا تجزئة. <code>POST /users</code> يرفض <code>role</code>.</p>
+<ol>
+<li>أي عمليات تحمل قفلًا؟</li>
+<li>كيف يُوثَّق الغلاف حتى يحصل المولد على اسم نوع؟</li>
+<li>ماذا تفعل إضافة CLI بكيان فيه <code>passwordHash</code> إن مرّرته كـ <code>type</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>الإنشاء وما شابهه. القراءة العامة والتسجيل بلا قفل.</li>
+<li><code>allOf</code> مع <code>getSchemaPath</code> و <code>title</code> مثل <code>PaginatedResponseOfPostResponseDto</code>، مع <code>@ApiExtraModels</code>.</li>
+<li>قد تنشر الحقل لأن الملف <code>.entity.ts</code> يُحلَّل. استخدم <code>PostResponseDto</code> أو <code>@ApiHideProperty</code>.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>CRUD يبقى دالة</h2>
+<pre><code class="language-ts">@Post()
+create(@Body() dto: CreateBookDto) {
+  return this.books.create(dto);
+}
+</code></pre>
+<p>لا <code>CreateBookCommand</code> ما دام <code>GET</code> يعيد نفس الشكل.</p>
+<h2>أمر وإلغاء</h2>
+<pre><code class="language-ts">@CommandHandler(CancelOrderCommand)
+export class CancelOrderHandler implements ICommandHandler&lt;CancelOrderCommand&gt; {
+  async execute(command: CancelOrderCommand): Promise&lt;void&gt; {
+    const order = await this.orders.findById(command.orderId);
+    if (order === null) throw new Error(&#39;الطلب غير موجود&#39;);
+    order.cancel();
+    await this.orders.save(order);
+  }
+}
+</code></pre>
+<p>المتحكم: <code>commandBus.execute(new CancelOrderCommand(id))</code>. المعالج في <code>providers</code> و <code>CqrsModule.forRoot()</code> في الجذر.</p>
+<h2>حدث بعد الحفظ</h2>
+<pre><code class="language-ts">await this.orders.save(order);
+this.eventBus.publish(new OrderCancelled(order.snapshot().id));
+</code></pre>
+<p><code>@EventsHandler(OrderCancelled)</code> يحدّث <code>order_view</code>. <code>GetOrderQuery</code> يقرأ العرض. فشل المعالج لا يعتمد عليه جسم HTTP.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>لا معالجات في وحدة الكتب إن كانت CRUD.</li>
+<li>الاستعلام لا يستدعي <code>save</code>.</li>
+<li><code>userId</code> حقل في الأمر لا <code>Scope.REQUEST</code> على المعالج.</li>
+<li>حدث بلا مشترك يُحذف.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

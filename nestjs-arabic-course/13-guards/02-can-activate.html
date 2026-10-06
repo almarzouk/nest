@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CanActivate</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-can-activate.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>CanActivate</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ <code>canActivate</code> وفهم قيم الرجوع: <code>true</code> و <code>false</code> والاستثناء والوعد والمراقب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بوابة ترجع <code>true</code> دائمًا لا تحمي شباك التذاكر. الفريق يحتاج عقد الإجابة: متى يكمل الطلب، ومتى يصبح <code>403</code>، ومتى تختار أنت رمزًا آخر.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>canActivate</code> ترجع منطقيًا أو <code>Promise</code> أو <code>Observable</code> من تلك القيمة. <code>true</code> يكمل. <code>false</code> يجعل الإطار يرمي <code>ForbiddenException</code>. لرمز غير <code>403</code> ارمِ الاستثناء بنفسك، مثل <code>UnauthorizedException</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">canActivate(context: ExecutionContext): boolean | Promise&lt;boolean&gt; | Observable&lt;boolean&gt;;
+</code></pre>
+<p><code>ExecutionContext</code> درس التالي. هنا نستخدمه بما يكفي لقراءة الطلب.</p>
+<p>عند <code>false</code> الرد الذي تذكره صفحة الحراس:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 403,
+  &quot;message&quot;: &quot;Forbidden resource&quot;,
+  &quot;error&quot;: &quot;Forbidden&quot;
+}
+</code></pre>
+<p>أي استثناء ترميه الحارس تمضي به طبقة الاستثناءات: الفلتر العام وفلاتر السياق الحالي. المسار قد حُدد، بخلاف استثناء Middleware.</p>
+<p>لا تلتقط <code>ForbiddenException</code> داخل الحارس وتعيد <code>false</code> من غير قصد مزدوج. إمّا ترجع <code>false</code> وتقبل رسالة الإطار، وإمّا ترمي الاستثناء الذي تريد ظهوره.</p>
+<p>الدالة قد تكون <code>async</code>. الوعد المرفوض يذهب إلى طبقة الاستثناءات. الوعد الذي يحل إلى <code>false</code> يعادل الإرجاع المتزامن لـ <code>false</code>.</p>
+<p>تمرير الصنف في <code>@UseGuards(BoxPassGuard)</code> يتيح الحقن. <code>new BoxPassGuard()</code> لا يحقن.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">true                  → Interceptor ثم Pipe ثم الدالة
+false                 → 403 ForbiddenException
+throw Unauthorized    → 401 بالشكل الذي رميته
+Promise / Observable  → الإطار ينتظر ثم يطبّق القاعدة نفسها
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BoxPassGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest&lt;{ headers: Record&lt;string, string&gt; }&gt;();
+    const pass = request.headers[&#39;x-box-pass&#39;];
+    if (!pass) {
+      throw new UnauthorizedException();
+    }
+    return pass === &#39;desk&#39;;
+  }
+}
+</code></pre>
+<p>غياب الترويسة <code>401</code>. وجودها بقيمة غير <code>desk</code> يرجع <code>false</code> فيصبح <code>403</code>. القيمة <code>desk</code> ترجع <code>true</code>. هذا تمرين آلية على ترويسة واضحة، لا مصادقة إنتاج. الرمز الحقيقي يُستبدل في فصل المصادقة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الرمي عند الغياب يفرّق «لم يقدّم نفسه» عن «قدّم قيمة لا تفتح هذا الشباك».</li>
+<li><code>return pass === &#39;desk&#39;</code> قد يكون <code>false</code> من غير <code>throw</code>. الإطار يكتب <code>403</code>.</li>
+<li>لا تفحص <code>seat</code> هنا.</li>
+<li>الترويسة مثال تعليمي ثابت حتى يبقى الدرس عن قيمة الرجوع.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest ينتظر الناتج إن كان وعدًا أو <code>Observable</code>. بعد الحصول على منطقي: <code>true</code> يستدعي الحارس التالي أو يكمل الدورة. <code>false</code> يرمي <code>ForbiddenException</code> داخل طبقة الاستثناءات. الأنابيب لا تعمل في الحالتين المرفوضتين.</p>
+<p><code>try/catch</code> في المتحكم لا يرى هذا الرمي لأنه حدث قبل الدالة. فلتر على المسار يراه، ثم فلتر المتحكم، ثم العام، وأول من يمسك يوقف الباقي.</p>
+<p>حارس ثانٍ على المسار نفسه لا يُستدعى بعد <code>false</code> أو بعد الرمي. لا توجد سلسلة «إن رفض الأول جرّب الثاني» إلا إذا رتّبت الشرط داخل حارس واحد.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /tickets</code> عليه <code>BoxPassGuard</code>. طلب بلا ترويسة من أداة مراقبة يرجع <code>401</code> ولا يفحص جسم المقعد. طلب بترويسة <code>guest</code> يرجع <code>403</code>. طلب <code>desk</code> يصل إلى <code>ValidationPipe</code>. هكذا تختبر ثلاث نتائج من غير قاعدة بيانات: اكتمال، ممنوع، غير معرّف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرجاع <code>undefined</code>. القيمة ليست <code>true</code>، والسلوك ليس عقدًا واضحًا. أرجع منطقيًا صريحًا.</li>
+<li>رمي <code>Error</code> عادي فيصبح <code>500</code>. استخدم <code>HttpException</code> أو ارجع <code>false</code>.</li>
+<li>إرجاع <code>false</code> حين تقصد <code>401</code>. <code>false</code> يعني <code>403</code> فقط.</li>
+<li>ابتلاع الاستثناء داخل <code>canActivate</code> وإرجاع <code>true</code> عند الفشل. البوابة تنفتح عند العطل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل حارس: جواب صريح أو استثناء HTTP مقصود. <code>false</code> حين تناسب رسالة المنع الافتراضية. الرمي حين يكون الرمز <code>401</code> أو جسم خطأ عندكم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا ترجع كائن مستخدم من <code>canActivate</code>. الدالة قرار لا تحويل. إلصاق <code>request.user</code> ممكن قبل <code>return true</code>، وفصل المصادقة سيضع ذلك في مكانه. لا ترجع بيانات الجسم المحوّلة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الناتج</th>
+<th>ماذا يرى العميل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>true</code></td>
+<td>يكمل إلى بقية الدورة</td>
+</tr>
+<tr>
+<td><code>false</code></td>
+<td><code>403</code> و <code>Forbidden resource</code></td>
+</tr>
+<tr>
+<td><code>throw new UnauthorizedException()</code></td>
+<td><code>401</code></td>
+</tr>
+<tr>
+<td>وعد مرفوض بـ <code>HttpException</code></td>
+<td>حالة ذلك الاستثناء</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرمي الإطار حين ترجع <code>canActivate</code> القيمة <code>false</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>ForbiddenException</code>، والرد <code>403</code> برسالة <code>Forbidden resource</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>تريد <code>401</code> عند غياب الترويسة لا <code>403</code>. ماذا تفعل بدل <code>return false</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>throw new UnauthorizedException()</code> قبل أي <code>return false</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>canActivate</code> أصبحت <code>async</code> وتقرأ الترويسة من خدمة. الوعد يُرفض بـ <code>UnauthorizedException</code>. هل يعمل <code>try/catch</code> داخل <code>reserve</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الرفض يحدث قبل استدعاء الدالة. طبقة الاستثناءات ترى الخطأ، ومنها فلتر المسار إن وُجد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الأنواع التي يجوز أن ترجعها <code>canActivate</code>؟</li>
+<li>ما رمز <code>false</code>؟</li>
+<li>كيف تحصل على <code>401</code>؟</li>
+<li>هل يُستدعى الأنبوب بعد الرفض؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>canActivate</code> قرار: <code>true</code> يكمل، و <code>false</code> يمنع بـ <code>403</code>، والاستثناء الذي ترميه يحدد رمزًا آخر. الانتظار على الوعد لا يغيّر هذه القواعد. الرسالة الافتراضية للمنعون ليست مكانًا تخترع فيه <code>500</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>ExecutionContext</code>: كيف تصل إلى الطلب والدالة والصنف من الوسيط نفسه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/fundamentals/execution-context">Execution context</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

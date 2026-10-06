@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ServeStaticModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-serve-static-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ServeStaticModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل <code>@nestjs/serve-static</code> حتى يُخدم مجلد <code>public</code> تحت بادئة <code>/assets</code> من غير التقاط مسارات الـ API.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>app.use(express.static(...))</code> في <code>main.ts</code> يعمل، لكنه يختفي عن شجرة الوحدات ويصعب استثناء <code>/api</code>. الوحدة الديناميكية تعلن الجذر والبادئة والاستثناءات حيث تُراجع مع بقية <code>imports</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ServeStaticModule.forRoot</code> يأخذ كائنًا أو أكثر. <code>rootPath</code> مجلد القرص. <code>serveRoot</code> بادئة العنوان. <code>exclude</code> مسارات لا تُلتقط (على Express). <code>serveStaticOptions</code> تُمرر إلى <code>express.static</code> أو ما يقابله على Fastify.</p>
+<h2>التعريف التقني</h2>
+<p>من واجهة الحزمة:</p>
+<table>
+<thead>
+<tr>
+<th>الخاصية</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>rootPath</code></td>
+<td>مجلد الملفات. الافتراض <code>&quot;client&quot;</code></td>
+</tr>
+<tr>
+<td><code>serveRoot</code></td>
+<td>بادئة العنوان. الافتراض <code>&quot;&quot;</code> أي جذر الموقع</td>
+</tr>
+<tr>
+<td><code>renderPath</code></td>
+<td>المسار الذي تُرسم عليه الواجهة. الافتراض على Express <code>{*any}</code></td>
+</tr>
+<tr>
+<td><code>exclude</code></td>
+<td>مسارات مستبعدة. غير مدعوم على Fastify</td>
+</tr>
+<tr>
+<td><code>useGlobalPrefix</code></td>
+<td>إن <code>true</code> تُسبق الملفات بالبادئة العامة من <code>setGlobalPrefix</code></td>
+</tr>
+<tr>
+<td><code>serveStaticOptions</code></td>
+<td>خيارات الطبقة السفلى: <code>index</code> و <code>fallthrough</code> و <code>maxAge</code> و <code>dotfiles</code></td>
+</tr>
+</tbody></table>
+<p><code>exclude</code> في مثال Nest الرسمي يشبه <code>/api/{*test}</code> لأن <code>path-to-regexp</code> الحديث يكتب البدل بهذا الشكل. نمط قديم مثل <code>/api*</code> لا يطابق ما تتوقعه. على Fastify استخدم <code>renderPath</code> كتعبير منتظم بدل <code>exclude</code>.</p>
+<p><code>dotfiles</code> الافتراضي <code>ignore</code> حتى لا يُرسل <code>.env</code> إن سقط داخل المجلد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /assets/logo.svg
+  serveRoot /assets يطابق
+  الملف public/logo.svg يُرسل
+GET /books/42
+  exclude أو بادئة مختلفة
+  المتحكم يكمل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ServeStaticModule } from &#39;@nestjs/serve-static&#39;;
+import { join } from &#39;node:path&#39;;
+
+@Module({
+  imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, &#39;..&#39;, &#39;public&#39;),
+      serveRoot: &#39;/assets&#39;,
+      serveStaticOptions: {
+        index: false,
+        fallthrough: false,
+        maxAge: &#39;1h&#39;,
+      },
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>في قالب ESM، <code>__dirname</code> قد تحتاج بناءه من <code>import.meta.url</code> إن لم يوفره إعداد TypeScript. المسار النهائي يجب أن يشير إلى <code>public</code> نفسه في التطوير وبعد <code>nest build</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>serveRoot: &#39;/assets&#39;</code> يمنع الوحدة من الجلوس على <code>/</code>. شعار المتجر: <code>GET /assets/logo.svg</code>. <code>index: false</code> حتى لا يُرسل <code>index.html</code> لطلب مجلد. <code>fallthrough: false</code> يجعل غياب الملف تحت <code>/assets</code> ينتهي هنا بخطأ ثابت بدل ما ينزلق إلى متحكم فيُفسَّر كمعرّف كتاب. <code>maxAge</code> يضع <code>Cache-Control</code> للأصول التي تتغير مع الإصدار.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>forRoot</code> يسجل الخيارات كمزوّد. عند الإقلاع يركب المحمّل وسيطًا على المحول HTTP. الطلب يُقارن بـ <code>serveRoot</code> ثم بمسار نسبي تحت <code>rootPath</code>. <code>..</code> في العنوان لا يُفترض أن يخرج من الجذر لأن طبقة <code>express.static</code> تحصر الجذر. مع ذلك لا تبنِ <code>rootPath</code> من إدخال مستخدم. <code>exclude</code> يُترجم إلى اختبار مسار. إن طابق الطلب نمط الاستثناء، الوسيط لا يخدم ملفًا ويترك السلسلة تكمل نحو المتحكمات.</p>
+<h2>مثال عملي</h2>
+<p>متجر يضع API تحت <code>/api</code> وأصولًا تحت <code>/assets</code>، مع استثناء صريح حتى لو تغيّرت البادئة لاحقًا:</p>
+<pre><code class="language-ts">ServeStaticModule.forRoot({
+  rootPath: join(process.cwd(), &#39;public&#39;),
+  serveRoot: &#39;/assets&#39;,
+  exclude: [&#39;/api/{*path}&#39;],
+  serveStaticOptions: { dotfiles: &#39;ignore&#39;, index: false },
+});
+</code></pre>
+<p><code>process.cwd()</code> واضح في التشغيل المحلي. في Docker ثبّت مجلد العمل في الصورة حتى لا يشير <code>cwd</code> إلى مسار فارغ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>rootPath</code> على <code>var/covers</code>.</li>
+<li><code>exclude: [&#39;/api*&#39;]</code> ثم استغراب أن <code>/api/books</code> ما زال يُلتقط.</li>
+<li>توقع عمل <code>exclude</code> على Fastify.</li>
+<li><code>fallthrough: true</code> على جذر الموقع، فيعود <code>index.html</code> لمسار API غير موجود.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لأصول تُنشر مع الخادم وتُطلب بالاسم: صور الواجهة، ملفات <code>public</code>، بناء ثابت تحت بادئة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتنزيل مشروط بصلاحية. ذلك <code>StreamableFile</code>. ولتكبير الواجهة عبر CDN، الخادم قد لا يخدم الأصول أصلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخيار</th>
+<th>أثره إن نُسي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>serveRoot</code></td>
+<td>الملفات تجلس على <code>/</code> وتزاحم API</td>
+</tr>
+<tr>
+<td><code>exclude</code></td>
+<td>مسار API غير المطابق قد يبتلعه البدل</td>
+</tr>
+<tr>
+<td><code>fallthrough: false</code></td>
+<td>الغياب ينزلق إلى طبقة أخرى</td>
+</tr>
+<tr>
+<td><code>dotfiles: &#39;ignore&#39;</code></td>
+<td>ملف نقطة قد يُرسل إن غيّرت الخيار إلى <code>allow</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خاصية تجعل الشعار تحت <code>/assets</code> لا تحت <code>/logo.svg</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>serveRoot: &#39;/assets&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>/api/{*path}</code> أوضح من <code>/api*</code> في <code>exclude</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>path-to-regexp</code> المستخدم مع Nest يفهم البدل بصيغة <code>{*name}</code>. النمط القديم لا يطابق الشجرة التي تتوقعها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>GET /assets/missing.png</code> مع <code>fallthrough: false</code>. من يكتب الرد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طبقة الملفات الثابتة تنهي الطلب. الطلب لا يصل <code>BooksController</code> ليُفسَّر كمعرف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين تُستورد <code>ServeStaticModule</code>؟</li>
+<li>ما فرق <code>rootPath</code> عن <code>serveRoot</code>؟</li>
+<li>أين تضع خيارات <code>maxAge</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forRoot</code> يعلن مجلدًا وبادئة واستثناءات. الأصول تحت <code>/assets</code>. مسارات المجال تبقى للمتحكم، ومجلد الرفع خارج <code>rootPath</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>عندما يكون <code>rootPath</code> بناء واجهة ويجلس على <code>/</code>، ماذا يحدث لمسار API غير موجود.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><code>@nestjs/serve-static</code>: <a href="https://github.com/nestjs/serve-static">https://github.com/nestjs/serve-static</a></li>
+<li>مثال Nest: <a href="https://github.com/nestjs/nest/blob/master/sample/24-serve-static/src/app.module.ts">https://github.com/nestjs/nest/blob/master/sample/24-serve-static/src/app.module.ts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Injection Tokens</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-injection-tokens.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Injection Tokens</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف رمز الحقن عندما لا يكون صنفًا: نص، <code>Symbol</code>، أو <code>enum</code>، وحقنه بـ <code>@Inject</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>constructor(private readonly flags: FeatureFlags)</code> يفشل إن كانت <code>FeatureFlags</code> واجهة، لأنها تُمسح ولا تترك <code>design:paramtypes</code>. جدول الأعلام قيمة تحت رمز لا يملك دالة بانية. الرمز المستقل يعطي الحاوية مفتاحًا يبقى وقت التشغيل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المفتاح الافتراضي هو الصنف نفسه. عندما لا يوجد صنف، تختار نصًا أو <code>Symbol</code> أو <code>enum</code> وتضعه في <code>provide</code>. المستهلك يكرر المفتاح داخل <code>@Inject(token)</code>. الواجهة تبقى وصف TypeScript بجانب المعامل، والرمز هو ما تبحث عنه Nest.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export const FEATURE_FLAGS = Symbol(&#39;FEATURE_FLAGS&#39;);
+
+{
+  provide: FEATURE_FLAGS,
+  useValue: { reservations: true, loans: true },
+}
+</code></pre>
+<pre><code class="language-ts">constructor(@Inject(FEATURE_FLAGS) private readonly flags: FeatureFlags) {}
+</code></pre>
+<p><code>FeatureFlags</code> واجهة. استيرادها <code>import type</code> صحيح لأنها ليست المفتاح. المفتاح <code>FEATURE_FLAGS</code> يُستورد استيراد قيمة حتى يبقى <code>Symbol</code> نفسه.</p>
+<p><code>Symbol(&#39;FEATURE_FLAGS&#39;)</code> الجديد في ملف آخر كائن مختلف. <code>===</code> بينهما كاذبة. صدّر الرمز من ملف واحد واستورده حيث التسجيل وحيث <code>@Inject</code>.</p>
+<p>النص <code>&#39;FEATURE_FLAGS&#39;</code> يعمل، ويتصادم إن سجلت ميزة أخرى النص نفسه في سياق يرونه معًا. <code>Symbol</code> يفصل الهويات حتى لو تطابق الوصف. التوثيق يسمح أيضًا بـ <code>enum</code> كمفتاح.</p>
+<p>الصنف المجرد يبقى وقت التشغيل، فيصلح مفتاحًا ووصفًا معًا:</p>
+<pre><code class="language-ts">export abstract class FeatureFlags {
+  abstract enabled(name: string): boolean;
+}
+</code></pre>
+<p>حينها <code>provide: FeatureFlags</code> والـ <code>constructor(private readonly flags: FeatureFlags)</code> من غير <code>@Inject</code>. استخدم النص أو <code>Symbol</code> عندما تريد المفتاح منفصلًا عن أي صنف. استخدم الصنف المجرد عندما تريد مفتاحًا ووصفًا في أثر واحد.</p>
+<p><code>@Optional()</code> يمكن أن يجاور <code>@Inject(token)</code> فيصبح الغياب <code>undefined</code>.</p>
+<p>تصدير المفتاح كما هو: <code>exports: [FEATURE_FLAGS]</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">واجهة FeatureFlags     وصف للمترجم فقط
+Symbol FEATURE_FLAGS   مفتاح السجل
+useValue { ... }       القيمة تحت المفتاح
+@Inject(FEATURE_FLAGS) يطلب المفتاح لا الواجهة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Inject, Injectable, Module } from &#39;@nestjs/common&#39;;
+
+export interface FeatureFlags {
+  reservations: boolean;
+  loans: boolean;
+}
+
+export const FEATURE_FLAGS = Symbol(&#39;FEATURE_FLAGS&#39;);
+
+const flagsProvider = {
+  provide: FEATURE_FLAGS,
+  useValue: { reservations: true, loans: false },
+};
+
+@Injectable()
+export class DeskService {
+  constructor(@Inject(FEATURE_FLAGS) private readonly flags: FeatureFlags) {}
+
+  canReserve() {
+    return this.flags.reservations;
+  }
+}
+
+@Module({
+  providers: [flagsProvider, DeskService],
+  exports: [FEATURE_FLAGS],
+})
+export class DeskModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Inject</code> من <code>@nestjs/common</code> يثبت المفتاح في Metadata بدل النوع الممسوح.</li>
+<li>الواجهة لا تظهر في <code>providers</code>.</li>
+<li><code>canReserve</code> تقرأ الحقل من كائن <code>useValue</code>.</li>
+<li>تصدير <code>Symbol</code> يتيح لـ Module أخرى حقن الأعلام من غير نسخ الكائن في <code>useValue</code> ثانٍ.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>@Inject(token)</code> يكتب الرمز على المعامل. عند الحل تتجاهل Nest نوع TypeScript لذلك الموضع وتستخدم الرمز الصريح. للنص تقارن الحاوية النص. للـ <code>Symbol</code> تقارن هوية الكائن. لذلك يجب أن يكون <code>FEATURE_FLAGS</code> في ملف التسجيل هو المتغير نفسه في ملف الخدمة.</p>
+<p>صنف مجرد مفتاحًا يعمل كأي دالة بانية موجودة بعد الترجمة، فيكفي <code>design:paramtypes</code> من غير <code>@Inject</code>.</p>
+<p>ضع المفاتيح في ملف <code>flags.token.ts</code> عندما يكثر المستوردون، كما تقترح الوثائق لتجميع الثوابت.</p>
+<h2>مثال عملي</h2>
+<p><code>EnvFeatureFlags</code> صنف فيه <code>enabled</code>، ويُبنى تحت الرمز نفسه:</p>
+<pre><code class="language-ts">@Module({
+  providers: [
+    { provide: FEATURE_FLAGS, useClass: EnvFeatureFlags },
+    DeskService,
+  ],
+})
+export class FlagsModule {}
+</code></pre>
+<p><code>DeskService</code> تبقى على <code>@Inject(FEATURE_FLAGS)</code>. اختبار يبدل الوصفة إلى <code>useValue</code> لكائن يوفّر الدوال نفسها، من غير تعديل الخدمة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حقن واجهة من غير <code>@Inject</code></td>
+<td>لا مفتاح وقت التشغيل</td>
+</tr>
+<tr>
+<td><code>Symbol(&#39;FEATURE_FLAGS&#39;)</code> جديد في كل ملف</td>
+<td>مفتاحان لا يتطابقان</td>
+</tr>
+<tr>
+<td>نص <code>&#39;CONFIG&#39;</code> في ميزتين داخل السياق نفسه</td>
+<td>إحدى القيم تستبدل الأخرى أو يلتبس السجل</td>
+</tr>
+<tr>
+<td><code>import type</code> للمتغير <code>FEATURE_FLAGS</code></td>
+<td>الـ <code>Symbol</code> يُمسح ويضيع <code>@Inject</code></td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تكون القيمة كائنًا أو مصنعًا بلا صنف تريد إظهاره في <code>constructor</code>. <code>Symbol</code> للمكتبات والتطبيقات الواسعة. النص لمفتاح محلي واضح في Module صغيرة. الصنف المجرد عندما تريد استنتاجًا بلا <code>@Inject</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لصنف خدمة عادي مثل <code>FeesService</code>. الرمز هو الصنف، والاختصار <code>providers: [FeesService]</code> يكفي. ولا تختر <code>Symbol</code> ثم تنسخ تعريفه؛ متغير واحد مصدَّر هو العقد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>كيف يُحقن</th>
+<th>ملاحظة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صنف ملموس</td>
+<td>نوع المعامل</td>
+<td>الافتراضي</td>
+</tr>
+<tr>
+<td>صنف مجرد</td>
+<td>نوع المعامل</td>
+<td>موجود وقت التشغيل</td>
+</tr>
+<tr>
+<td>نص</td>
+<td><code>@Inject(&#39;NAME&#39;)</code></td>
+<td>قد يتصادم الاسم</td>
+</tr>
+<tr>
+<td><code>Symbol</code> مصدَّر</td>
+<td><code>@Inject(TOKEN)</code></td>
+<td>هوية فريدة ما دام المتغير واحدًا</td>
+</tr>
+<tr>
+<td>واجهة</td>
+<td>لا تصلح مفتاحًا</td>
+<td>وصف فقط بجانب <code>@Inject</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا تكفي <code>interface FeatureFlags</code> في <code>constructor</code> من غير <code>@Inject</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الواجهة تُحذف عند الترجمة ولا تظهر في <code>design:paramtypes</code>، فلا مفتاح تبحث عنه الحاوية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ملف الخدمة أعاد <code>Symbol(&#39;FEATURE_FLAGS&#39;)</code> بدل استيراد الثابت. التسجيل يستورد الثابت من <code>flags.token.ts</code>. لماذا لا يجد الحل القيمة؟</p>
+<details><summary>الحل</summary>
+
+<p>كل نداء <code>Symbol</code> ينتج هوية جديدة. <code>@Inject</code> يبحث عن هوية مختلفة عن <code>provide</code>. استورد <code>FEATURE_FLAGS</code> من الملف الذي صدّره التسجيل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار صنفًا مجردًا مفتاحًا بدل <code>Symbol</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>عندما تريد أثرًا واحدًا يكون الوصف والمفتاح معًا، وتريد <code>constructor(flags: FeatureFlags)</code> من غير <code>@Inject</code>. اختر <code>Symbol</code> عندما يجب أن يبقى المفتاح مستقلًا عن شجرة الأصناف، خصوصًا في مكتبة قد تتصادم فيها أسماء النصوص.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما المفتاح الافتراضي لـ Provider صنف؟</li>
+<li>ماذا يستورد المستهلك استيراد قيمة: الواجهة أم <code>Symbol</code>؟</li>
+<li>كيف تصدّر مزود <code>useValue</code> مربوًا بـ <code>Symbol</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>رمز الحقن مفتاح السجل. الصنف هو المفتاح الافتراضي، والنص والـ <code>Symbol</code> والـ <code>enum</code> مفاتيح عندما لا يوجد صنف. <code>@Inject</code> يسمي المفتاح، والواجهة تبقى وصفًا، ومتغير <code>Symbol</code> الواحد يُستورد في الطرفين.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع التسجيل والحقن على ميزة مكتب الإعارات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Non-class-based tokens: <a href="https://docs.nestjs.com/fundamentals/custom-providers#non-class-based-provider-tokens">https://docs.nestjs.com/fundamentals/custom-providers#non-class-based-provider-tokens</a></li>
+<li>NestJS — Interfaces and abstract classes: <a href="https://docs.nestjs.com/fundamentals/custom-providers#interfaces-and-abstract-classes">https://docs.nestjs.com/fundamentals/custom-providers#interfaces-and-abstract-classes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

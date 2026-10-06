@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>15 — صندوق وصفات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>15 — صندوق وصفات</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new recipe-box</code></p>
+<h2>ماذا تبني</h2>
+<p>وصفة فيها مكوّنات بكميات. طلبها لعدد حصص مختلف يعيد الكميات محسوبة ولا يغيّر الوصفة المخزنة.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>القراءة قد تحسب من غير أن تكتب. هذا عكس العداد الذي فصلناه عن GET.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>حساب في القراءة</li>
+<li>وحدة قياس مغلقة</li>
+<li>عدم تخزين الناتج المحسوب</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>حساب سعرات</li>
+<li>صور</li>
+<li>قائمة تسوق</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>فهرس الكتب.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/06-providers/README.html">06-providers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الوحدات: g و ml و piece.</li>
+<li>servings المخزنة أكبر من صفر.</li>
+<li>GET /recipes/:id?servings=8 يعيد كميات مضروبة في 8/الأصل ولا يحفظها.</li>
+<li>servings في الاستعلام أصغر من 1 أو أكبر من 100 يُرفض.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/recipes</code></td>
+<td>201</td>
+<td>وصفة بمكوّنات</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/recipes/:id?servings=4</code></td>
+<td>200</td>
+<td>عرض محسوب</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new recipe-box</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>خزّن الكمية كعدد صحيح في وحدة صغرى إن أمكن، أو عددًا مع توثيق التقريب. اختر الصحيح للمكوّن بالقطعة، وعددًا بمنزلة واحدة للغرام مع توثيق التقريب في الرد.</li>
+<li>افصل scale() عن create().</li>
+<li>وصفة بلا مكوّنات 400.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/recipes/scale.ts
+src/recipes/recipes.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">export function scaleQuantity(quantity: number, from: number, to: number) {
+  return Math.round((quantity * to * 10) / from) / 10;
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>حفظ الكميات الجديدة فوق الأصل عند كل قراءة.</li>
+<li>ثقة بـ servings سالب.</li>
+<li>وحدة قياس نصًا حرًا مثل &quot;كوب كبير&quot;.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>قراءتان بحجمين مختلفين لا تغيّران المخزون.</li>
+<li>وصفة الحصص الأصلية تبقى كما أُدخلت.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف مكوّنًا اختياريًا لا يُضرب، مثل «رشة ملح»، بحقل scalable: false.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 15» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../14-library-catalog/README.html">14. فهرس كتب ومؤلفين</a></li>
+<li>التالي: <a href="../16-poll-booth/README.html">16. غرفة تصويت</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

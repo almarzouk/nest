@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hexagonal Architecture</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-hexagonal-architecture.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Hexagonal Architecture</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية الحافة منافذًا ومحولات: منفذ دخول يقود التطبيق، ومنفذ خروج يتحدث إلى قاعدة أو بريد، مع إبقاء Nest موصّل المحولات لا قلب السياسة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>Clean والشكل السداسي يصفان القلق نفسه من جهتين. السداسي (Alistair Cockburn) يبرز أن التطبيق في الوسط يمكن قيادته من أكثر من محول دخول: HTTP اليوم، رسالة غدًا، واختبار دائمًا. إن بقي المدخل الوحيد متحكمًا يعرف الخدمة وتعرف الخدمة Prisma، فالمحول الثاني سينسخ القواعد. المنفذ يثبت عقد القيادة وعقد الخروج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الوسط تطبيق لا يستورد Express ولا Prisma. محول أولي (primary) يستدعي منفذ دخول: المتحكم ينادي <code>PlaceOrder.execute</code>. محول ثانوي (secondary) يطبّق منفذ خروج: <code>PrismaOrders</code> يطبّق <code>OrdersPort</code>. الاختبار محول أولي أيضًا ينادي <code>execute</code> مباشرة. Nest يربط المحول الثانوي بـ <code>useClass</code> على رمز المنفذ.</p>
+<h2>التعريف التقني</h2>
+<p>منفذ دخول غالبًا دالة تطبيق واحدة واضحة، لا واجهة لكل المتحكم. منفذ خروج واجهة صغيرة: <code>save</code> و <code>find</code> بما تحتاجه الحالة لا كل عمليات الجدول.</p>
+<pre><code class="language-ts">export interface OrdersPort {
+  nextId(): string;
+  save(order: { id: string; totalMinor: number }): Promise&lt;void&gt;;
+}
+
+export const ORDERS = Symbol(&#39;ORDERS&#39;);
+</code></pre>
+<p>محول أولي:</p>
+<pre><code class="language-ts">@Controller(&#39;orders&#39;)
+export class OrdersController {
+  constructor(private readonly placeOrder: PlaceOrder) {}
+
+  @Post()
+  create(@Body() dto: CreateOrderDto) {
+    return this.placeOrder.execute(dto);
+  }
+}
+</code></pre>
+<p>محول ثانوي في ملف يعرف Prisma ويُربَط <code>{ provide: ORDERS, useClass: PrismaOrdersAdapter }</code>.</p>
+<p>لا طبقة سداسية مولَّدة من Nest. إن تطابق هذا مع Clean عندك فأنت لا تحتاج الاسمين في مجلدين. اختر تسمية الفريق: منافذ ومحولات أو دوائر. المعنى: الوسط أعمى عن الحافة.</p>
+<p>فرق عملي عن «الخدمة تحقن Prisma»: استبدال المحول الثانوي في الاختبار لا يحتاج خادم HTTP، واستبدال المحول الأولي لا يحتاج إعادة كتابة <code>execute</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">[ HTTP Controller ] ---&gt; PlaceOrder.execute ---&gt; OrdersPort
+[ Test ]             /                      \--- PrismaOrdersAdapter
+[ Queue handler ] ---
+</code></pre>
+<p>الثلاثة محولات أولية. Prisma محول ثانوي واحد حتى يظهر مخزن ثانٍ.</p>
+<h2>أبسط مثال</h2>
+<p><code>PlaceOrder</code> يحقن <code>ORDERS</code>، يرفض مجموعًا سالبًا، ثم <code>save</code>. اختبار:</p>
+<pre><code class="language-ts">const orders: OrdersPort = {
+  nextId: () =&gt; &#39;o1&#39;,
+  save: async () =&gt; undefined,
+};
+const place = new PlaceOrder(orders);
+await place.execute({ totalMinor: 100 });
+</code></pre>
+<p><code>new</code> هنا مقبول لأن الحالة لا تبحث في الحاوية عن شيء آخر. داخل التطبيق الكامل الربط في الوحدة.</p>
+<h2>شرح المثال</h2>
+<p>الاختبار محول أولي بلا Nest. هذا ربح الشكل السداسي الذي يبرر الواجهة. إن كان الاختبار الوحيد هو <code>supertest</code> على المسار، فالمنفذ لم يُشترَ بعد. أضف المنفذ عندما تريد هذا الاختبار السريع أو محول دخول ثانٍ.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>طلب HTTP يدخل المحول الأولي.</li>
+<li><code>execute</code> يشغّل السياسة.</li>
+<li>النداء على <code>OrdersPort</code> يضرب المحول الثانوي الذي سجلته الحاوية.</li>
+<li>لا يعرف الوسط اسم الجدول.</li>
+<li>معالج طابور يستدعي <code>execute</code> نفسه فيصبح محولًا أوليًا ثانيًا.</li>
+<li>محول ثانوي بديل في الاختبار يخزن في مصفوفة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>بريد بعد إتمام الطلب منفذ خروج ثانٍ <code>MailPort</code> ومحول SMTP. <code>PlaceOrder</code> ينادي <code>mail.send</code> بعد <code>save</code> إن كانت السياسة «أرسل فور الحفظ» داخل الحالة. إن كان الإرسال أثرًا جانبيًا يمكن تأخيره، فحدث بعد الحفظ يبقي الحالة أقصر، وذلك حد لاحق. لا تحقن عميل SMTP في <code>PlaceOrder</code> بالاسم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>منفذ خروج يعيد أنواع Prisma.</li>
+<li>محول أولي فيه خصم السعر.</li>
+<li>منفذ بكل دوال الجدول «احتياطًا».</li>
+<li>مجلدان <code>hexagonal/in</code> و <code>hexagonal/out</code> بلا سياسة داخلية.</li>
+<li>محول ثانوي يستدعي محولًا أوليًا فيصنع دورة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>أكثر من طريقة لقيادة الحالة نفسها، أو اختبار سياسة بلا HTTP ولا قاعدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>مسار واحد واختبار HTTP يكفي. أبقِ خدمة الوحدة النمطية حتى يظهر المحول الثاني.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاسم في السداسي</th>
+<th>في Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>محول أولي</td>
+<td>Controller، معالج رسالة، اختبار</td>
+</tr>
+<tr>
+<td>منفذ دخول</td>
+<td><code>execute</code> على خدمة تطبيق</td>
+</tr>
+<tr>
+<td>منفذ خروج</td>
+<td>واجهة + <code>Symbol</code></td>
+</tr>
+<tr>
+<td>محول ثانوي</td>
+<td>صنف Prisma أو SMTP في <code>useClass</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما المحول الأولي في <code>POST /orders</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>OrdersController</code>. الوسط هو <code>PlaceOrder</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الاختبار الذي ينادي <code>execute</code> محول أولي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يقود التطبيق من الخارج عبر منفذ الدخول، مثل HTTP، بلا أن تعرفه السياسة بالاسم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تضيف <code>MailPort</code> بدل استيراد عميل البريد في الحالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تريد تشغيل <code>execute</code> في اختبار بلا شبكة، أو استبدال SMTP لاحقًا. إن كان الإرسال سطرًا واحدًا مؤقتًا داخل محول الخروج مع الحفظ، يمكن تأجيل المنفذ الثاني حتى يتكرر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين منفذ الدخول ومنفذ الخروج؟</li>
+<li>أين يُربط <code>useClass</code>؟</li>
+<li>متى الاسم السداسي لا يبرر ملفاتًا جديدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الشكل السداسي وسط أعمى ومحولات على الحافة. Nest يوصل محول الخروج بالرمز. أضف المنافذ عندما يوجد محول ثانٍ أو اختبار يريد الوسط وحده.</p>
+<h2>ماذا بعد؟</h2>
+<p>أساسيات DDD: لغة مشتركة، كيان، وحدود سياق تساوي تقريبًا حدود الوحدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>Alistair Cockburn، Ports and Adapters (مصدر التسمية، والتطبيق هنا عبر DI في Nest)</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

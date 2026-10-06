@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Liveness و Readiness</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-liveness-and-readiness.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Liveness و Readiness</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل سؤال «هل العملية حية» عن سؤال «هل هي جاهزة لاستقبال العمل»، وربط كل سؤال بمسار HTTP يفهمه المنسّق.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فحص واحد يضرب Postgres. حين تغيب القاعدة لثوانٍ تفشل كل النسخ، فيعيد Kubernetes تشغيلها معًا فيزداد العطل. فحص آخر دائمًا <code>200</code> فيُبقي نسخة أغلقت القاعدة أو ما زالت تهاجر ضمن التوزيع. السؤالان مختلفان: القتل مقابل سحب المرور.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Liveness مسار رخيص يثبت أن حلقة الأحداث ترد. لا قاعدة ولا Redis. فشله يعني أن العملية عالقة فيُعاد تشغيلها. Readiness تسأل التبعيات التي لا يمكن الخدمة بدونها. فشلها يعيد <code>503</code> فيُخرج المنسّق النسخة من Service أو من <code>upstream</code> ولا يقتلها. عندما تعود القاعدة تعود النسخة وحدها.</p>
+<h2>التعريف التقني</h2>
+<p>في Kubernetes، <code>livenessProbe</code> الفاشل يعيد تشغيل الحاوية. <code>readinessProbe</code> الفاشل يحذف النسخة من نقاط النهاية. المهلة والفترة في تعريف المنصة، والمسار في التطبيق:</p>
+<pre><code class="language-text">GET /health/live   200 إن ردت العملية
+GET /health/ready  200 أو 503 حسب المؤشرات
+</code></pre>
+<p>الحياة لا تستدعي <code>HealthCheckService</code> على قاعدة. الجاهزية هي التي تستدعيه، كما في درس Terminus. أثناء <code>SIGTERM</code> تفشل الجاهزية أولًا (<code>shutting_down</code>) وتبقى الحياة ناجحة حتى لا يُقتل الإغلاق اللطيف في منتصفه.</p>
+<p>لا تضع <code>AuthGuard</code> على المسارين. المنسّق ليس مستخدمًا. لا تخزّن الاستجابة في Nginx.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">live  = العملية ترد          فشل = أعد التشغيل
+ready = التبعية لازمة        فشل = أوقف المرور فقط
+إغلاق = ready يصبح 503       live يبقى 200 حتى الخروج
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;health&#39;)
+export class LiveController {
+  @Get(&#39;live&#39;)
+  live(): { status: string } {
+    return { status: &#39;ok&#39; };
+  }
+}
+</code></pre>
+<p>هذا الملف لا يحقن Prisma. الجاهزية متحكم آخر أو دالة أخرى في الفصل التالي.</p>
+<h2>شرح المثال</h2>
+<p><code>GET /health/live</code> يعيد فورًا. إن سُدّت الحلقة بحساب متزامن فلن يصل الرد في مهلة المسبار، وهذا قتل مبرر. انتظار الشبكة لا يسد الحلقة، لذا عطل القاعدة لا يُرى هنا، وهو المقصود.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المسبار يطلب الحياة كل بضع ثوانٍ.</li>
+<li>Node يرد <code>200</code> إن كان الخيط حرًا.</li>
+<li>مسبار الجاهزية يطلب <code>/health/ready</code>.</li>
+<li>فشل مؤشر لازم يعيد <code>503</code> فتُسحب النسخة.</li>
+<li>عند <code>SIGTERM</code> الجاهزية تفشل والطلبات الجارية تكمل.</li>
+<li><code>SIGKILL</code> بعد المهلة لا ينتظر أي مسار.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>متجر بثلاث نسخ. <code>livenessProbe</code> على <code>/health/live</code> بمهلة ثانية. <code>readinessProbe</code> على <code>/health/ready</code> التي تنفّذ <code>SELECT 1</code>. انقطاع Postgres لعشر ثوانٍ يضع النسخ خارج الخدمة ثم يعيدها. لا إعادة تشغيل. نشر نسخة جديدة يفشل جاهزيتها حتى تنتهي الهجرة، والقديمة تبقى.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مسار واحد للكل يضرب القاعدة.</li>
+<li>ذاكرة الكومة على الحياة، فذروة GC تعيد التشغيل.</li>
+<li>حارس JWT على <code>/health/live</code> فيرى المنسّق <code>401</code>.</li>
+<li>كاش الوكيل يعيد <code>200</code> بعد أن صارت النسخة غير جاهزة.</li>
+<li>اعتبار <code>degraded</code> للكاش سببًا لقتل العملية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>خلف Kubernetes أو Nginx <code>upstream</code> أو أي منسق يسحب النسخ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عملية واحدة على جهازك بلا مسبار. مسار <code>/health</code> الذي يعيد <code>{ ok: true }</code> يكفي للتطوير. لا تنسخ مسبار الحياة إلى اختبار الوحدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>الحياة</th>
+<th>الجاهزية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السؤال</td>
+<td>هل الحلقة ترد؟</td>
+<td>هل نخدم؟</td>
+</tr>
+<tr>
+<td>القاعدة</td>
+<td>لا</td>
+<td>نعم إن كانت لازمة</td>
+</tr>
+<tr>
+<td>الفشل</td>
+<td>إعادة تشغيل</td>
+<td>سحب المرور</td>
+</tr>
+<tr>
+<td>أثناء الإغلاق</td>
+<td>تبقى ناجحة</td>
+<td><code>503</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مسار يُسمح له بانتظار Postgres؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>/health/ready</code>. الحياة لا تنتظر القاعدة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا إبقاء الحياة ناجحة أثناء <code>SIGTERM</code> مهم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يعدّ المنسّق الإغلاق اللطيف عطلًا ويقتل العملية قبل <code>$disconnect</code>. الجاهزية هي التي تُخرج النسخة من التوزيع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ذروة <code>heapUsed</code> على <code>/health/live</code> أعادت تشغيل النسخ السليمة. أين تنقل الفحص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إلى مسار تشخيص أو جاهزية بحذر، لا إلى الحياة. ذروة الذاكرة ليست دليلًا أن الحلقة ماتت، والقتل الجماعي أسوأ من تنبيه مراقبة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل فشل الحياة في Kubernetes؟</li>
+<li>ماذا يفعل فشل الجاهزية؟</li>
+<li>لماذا المسار عام بلا حارس؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحياة تثبت أن العملية ترد. الجاهزية تثبت أن التبعيات اللازمة متاحة. لا تخلطهما في مسار يضرب القاعدة، وأبقِ الحياة ناجحة أثناء الإغلاق اللطيف.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>@nestjs/terminus</code>: كيف تُجمَّع مؤشرات الجاهزية في رد واحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Terminus: <a href="https://docs.nestjs.com/recipes/terminus">https://docs.nestjs.com/recipes/terminus</a></li>
+<li>Kubernetes — Liveness, Readiness: <a href="https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/">https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

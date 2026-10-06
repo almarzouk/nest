@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Graceful Shutdown</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-graceful-shutdown.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Graceful Shutdown</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إيقاف العملية بعد إنهاء الطلبات الجارية وإغلاق العملاء، عندما يرسل المنسّق أو Docker <code>SIGTERM</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إعادة نشر تقتل Node فورًا فتُقطع استجابة نصف مكتوبة وتترك جلسة Postgres. الإيقاف اللطيف يستمع للإشارة، يتوقف عن قبول الجديد، ينهي الحالي، ثم يغلق الموارد. في Nest هذا <code>enableShutdownHooks()</code> مع خطافات <code>onModuleDestroy</code> و <code>beforeApplicationShutdown</code> و <code>onApplicationShutdown</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>في <code>bootstrap</code> فعّل المستمعين. عند الإشارة يبدأ الإطار السلسلة التي حفظتها في فصل دورة الحياة: تدمير الوحدات من الجذر نحو الأوراق، ثم الخطاف الذي يرى الإشارة قبل إغلاق المقابس، ثم إغلاق الاتصالات، ثم آخر خطاف. <code>app.close()</code> لا ينهي العملية إن بقي مؤقت. أزل المقابض.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+}
+await bootstrap();
+</code></pre>
+<p><code>$disconnect</code> و <code>redis.quit()</code> في <code>onModuleDestroy</code>. علم الإفراغ في <code>beforeApplicationShutdown</code> إن أردت رفض عمل جديد في طبقة تطبيق قبل قطع HTTP. Terminus يستطيع إبلاغ <code>shutting_down</code> مع <code>503</code> خلال مهلة حتى يسحب المنسّق المرور. ذلك فصل الصحة. هنا فعّل الخطاف حتى يعمل ذلك لاحقًا.</p>
+<p>مهلة المنسّق يجب أن تزيد على زمن أطول طلب مشروع زائد الإغلاق. إن كانت المهلة 5 ثوانٍ ورفع ملف يستغرق دقيقة، فالقتل القاسي ما زال يقع. لا تطوّل المهلة داخل الخطاف بلا اتفاق مع المنصة.</p>
+<p>على Windows <code>SIGTERM</code> لا يصل كما وثّق فصل دورة الحياة. إنتاج Linux والحاويات هو المسار الذي تعتمد عليه هنا.</p>
+<p><code>CMD</code> في Docker بصيغة exec حتى تصل الإشارة إلى Node.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">SIGTERM
+  -&gt; onModuleDestroy
+  -&gt; beforeApplicationShutdown
+  -&gt; إغلاق المقابس
+  -&gt; onApplicationShutdown
+  -&gt; خروج إن لم يبقَ مقبض
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>PrismaService</code> يغلق في <code>onModuleDestroy</code>. أوقف الحاوية بـ <code>docker compose stop api</code> وراقب السجل. يجب أن ترى الإغلاق قبل اختفاء العملية. إن اختفت بعد مهلة قتل بلا سجل، فالمستمعون غير مفعّلين أو الإشارة لم تصل.</p>
+<h2>شرح المثال</h2>
+<p>الإغلاق في الورقة بعد أن تتوقف الوحدات الأعلى عن استعمال العميل، لأن ترتيب الإيقاف من الجذر إلى الأوراق. لذلك خدمة الطلبات التي في وحدة أعلى تُدمَّر قبل قطع Prisma إن كانت القاعدة ورقة. لا تغلق Prisma في الجذر قبل أن تنتهي الخدمات.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Docker يرسل <code>SIGTERM</code> إلى العملية الأولى.</li>
+<li>Nest يبدأ <code>close</code> الداخلي.</li>
+<li>الطلبات المقبولة تكمل حتى تغلق المقابس بعد <code>beforeApplicationShutdown</code>.</li>
+<li>خطافاتك تغلق العملاء.</li>
+<li>إن انتهت المهلة فـ <code>SIGKILL</code> ولا خطاف.</li>
+<li><code>close</code> من اختبار يشغّل نفس السلسلة بلا إشارة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>خلف Nginx أو Kubernetes: عند الإيقاف أبلغ عدم الجاهزية أولًا حتى يتوقف المرور الجديد، ثم أمهل الطلبات الجارية، ثم أغلق القاعدة. العلم في <code>beforeApplicationShutdown</code> وفحص الجاهزية يقرأ العلم. لا تنتظر القاعدة بينما ما زلت تقبل طلبات جديدة على النسخة المغادرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>enableShutdownHooks</code>.</li>
+<li><code>process.exit</code> في أول سطر من الخطاف.</li>
+<li>إغلاق مجمع القاعدة في وحدة تُدمَّر قبل من يستخدمه بسبب رسم معكوس.</li>
+<li>مهلة منصة أقصر من أطول طلب.</li>
+<li>غلاف shell في <code>CMD</code> يبتلع الإشارة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل عملية طويلة: حاوية، systemd، منصة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>سكربت ينتهي وحده ولا يستلم إشارة. الاختبار الذي ينادي <code>app.close()</code> لا يحتاج المستمعين لرؤية الخطاف، ويحتاجهما مسار الإشارة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>الخطافات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.close()</code></td>
+<td>تعمل</td>
+</tr>
+<tr>
+<td><code>SIGTERM</code> مع التفعيل</td>
+<td>تعمل</td>
+</tr>
+<tr>
+<td><code>SIGKILL</code></td>
+<td>لا تعمل</td>
+</tr>
+<tr>
+<td><code>start:dev</code> أُوقف بلا تفعيل</td>
+<td>لا إغلاق لطيف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تُستدعى <code>enableShutdownHooks</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>bootstrap</code> بعد <code>create</code> وقبل أو مع الاستماع، مرة للتطبيق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>SIGKILL</code> لا يغلق Prisma بأدب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه لا يسلم العملية فرصة تشغيل الخطافات. الإغلاق اللطيف يحدث في مهلة <code>SIGTERM</code> قبل القتل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما ترتيب إبلاغ عدم الجاهزية نسبتًا إلى قطع القاعدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أبلغ عدم الجاهزية في <code>beforeApplicationShutdown</code> حتى يتوقف المرور، وأبقِ قطع القاعدة في <code>onModuleDestroy</code> للورقة بعد توقف الوحدات عن الاستخدام، ضمن مهلة المنصة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي إشارة يبدأ بها Docker الإيقاف؟</li>
+<li>ماذا يبقى العملية حية بعد <code>close</code>؟</li>
+<li>ماذا يضيف Terminus لاحقًا على نفس الخطاف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>فعّل خطافات الإيقاف، أغلق العملاء في <code>onModuleDestroy</code>، واترك مهلة المنصة أطول من العمل الجاري. <code>SIGKILL</code> ليس إغلاقًا لطيفًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>Compression: تقليل حجم الرد بعد أن صار الخادم يبقى حيًا تحت المرور.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

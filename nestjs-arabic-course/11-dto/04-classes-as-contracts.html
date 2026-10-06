@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Classes كعقد بيانات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-classes-as-contracts.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Classes كعقد بيانات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل الصنف هو مرجع الحقول: ما يُقبل، وما يُحوَّل، وما يُوثَّق لاحقًا من الكود نفسه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>القواعد في ويكي، والشكل في واجهة، والفحص في <code>if</code> داخل الخدمة. ثلاث نسخ تختلف بعد أسبوع. الصنف الواحد يجمع الاسم والنوع والزينة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عقد الدخل صنف. كل حقل مسموح مُعلَن عليه. الزينة قاعدة الحقل. ملف الصنف هو ما يراجعه الفريق حين يسأل «ماذا نقبل في <code>POST /members</code>».</p>
+<h2>التعريف التقني</h2>
+<p>توثيق التحقق يصف هذا النهج: القواعد زينة على صنف DTO، والصنف نوع المعامل. هذا يتكامل مع أدوات الأنواع المشتقة ومع إضافة Swagger CLI لاحقًا، لأن البيانات على الصنف لا في مخطط منفصل.</p>
+<p>الصنف عقد وقت تشغيل لأنه دالة بناء تستطيع الزينة أن تُسجَّل عليها. الحقل بلا زينة موجود في TypeScript وقد يمر أو يُحذف حسب خيارات الأنبوب التي لم نفتحها بعد. حتى ذلك الفصل، كل حقل تنوي فحصه يحمل زينة واحدة على الأقل، حتى لو كانت <code>@IsString()</code> أو <code>@IsOptional()</code>.</p>
+<p><code>PartialType</code> و <code>PickType</code> و <code>OmitType</code> و <code>IntersectionType</code> من <code>@nestjs/mapped-types</code> تشتق أصنافًا جديدة من هذا العقد من غير نسخ الزينة يدويًا. صفحة التحقق تشرحها. هنا يكفي أن عقد التحديث يمكن أن يُشتق من عقد الإنشاء:</p>
+<pre><code class="language-ts">export class UpdateMemberDto extends PartialType(CreateMemberDto) {}
+</code></pre>
+<p>الحقول تصبح اختيارية وتبقى قواعدها. لا تعِد إعلان <code>email</code> في صنف التحديث إن كان الفرق الوحيد أنه اختياري.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreateMemberDto
+  email    @IsEmail
+  fullName @IsString @MinLength(3)
+        │
+        └── PartialType → UpdateMemberDto
+</code></pre>
+<p>مرجع واحد، شكلان على الحد.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsEmail, IsString, MinLength } from &#39;class-validator&#39;;
+
+export class CreateMemberDto {
+  @IsString()
+  @MinLength(3)
+  fullName: string;
+
+  @IsEmail()
+  email: string;
+}
+</code></pre>
+<pre><code class="language-ts">import { PartialType } from &#39;@nestjs/mapped-types&#39;;
+import { CreateMemberDto } from &#39;./create-member.dto.js&#39;;
+
+export class UpdateMemberDto extends PartialType(CreateMemberDto) {}
+</code></pre>
+<p><code>POST</code> يأخذ <code>CreateMemberDto</code>. <code>PATCH</code> يأخذ <code>UpdateMemberDto</code>. اسم العضو في مكان واحد.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الصنف بلا منطق أعمال. لا استعلام. العقد شكل.</li>
+<li>زينتان على <code>fullName</code> تجتمعان: نوع، ثم طول.</li>
+<li><code>PartialType</code> يولّد صنفًا وقت التشغيل، لا واجهة، لذلك <code>ValidationPipe</code> يستطيع فحص التحديث.</li>
+<li>الاستيراد من <code>@nestjs/mapped-types</code>. إن دخل <code>@nestjs/swagger</code> لاحقًا، تلك الحزمة تصدّر نسخها من الأدوات نفسها. الصفحة تحذّر من خلط النسخ.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند تحميل <code>CreateMemberDto</code> تُسجَّل الزينة على الخصائص. <code>PartialType</code> يبني صنفًا وارثًا يعلّم الحقول اختيارية مع الإبقاء على القواعد. المعامل في المتحكم يشير إلى أحد الصنفين. الأنبوب يقرأ الصنف الذي في <code>metatype</code>.</p>
+<p>حقل أضفته في الإنشاء يظهر في التحديث المشتق. حقل حذفته من الإنشاء يختفي من التحديث. هذا هو معنى المرجع الواحد.</p>
+<p>المترجم ما زال يساعدك داخل الخدمات التي تستلم <code>CreateMemberDto</code>. الشبكة ما زالت تحتاج الأنبوب. الصنف يخدم الاثنين لأنه بقي بعد الترجمة.</p>
+<h2>مثال عملي</h2>
+<p>نادي القراءة يوثّق <code>POST /members</code> من هذا الملف: اسم بثلاثة حروف على الأقل، وبريد. <code>PATCH /members/:id</code> يقبل أي مجموعة فرعية. مطور يضيف <code>city</code> على صنف الإنشاء مع <code>@IsString()</code>. مسار التحديث يقبله في اليوم نفسه لأن <code>UpdateMemberDto</code> مشتق. لا نسخة ثانية تُنسى في الويكي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>صنف عقد فيه دوال تحفظ في قاعدة البيانات. العقد بيانات. الحفظ في الخدمة.</li>
+<li>نسختان من الحقول، واحدة للإنشاء وواحدة للتحديث، ثم اختلاف طول الاسم بينهما.</li>
+<li>حقل بلا زينة ثم الاعتقاد أنه جزء من الفحص. أضف زينة أو اقبل أنه خارج القواعد حتى يُفعَّل <code>whitelist</code>.</li>
+<li>اشتقاق من واجهة. <code>PartialType</code> يريد صنفًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل عملية على الحد لها شكل ثابت، مع اشتقاق أشكال التحديث والانتقاء من الصنف الأم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكائن مخطط Zod سيأتي تلميحه في آخر الفصل ويُفحص بأنبوب آخر. لا تزدوج مصدر الحقيقة: إما صنف بزينة أو مخطط، للعملية الواحدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>صنف العقد</th>
+<th>شرط داخل الخدمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين القاعدة</td>
+<td>فوق الحقل</td>
+<td>في فرع</td>
+</tr>
+<tr>
+<td>التحديث</td>
+<td><code>PartialType</code></td>
+<td>نسخ الشرط</td>
+</tr>
+<tr>
+<td>الأنبوب</td>
+<td>يقرؤها</td>
+<td>لا يراها</td>
+</tr>
+<tr>
+<td>التوثيق اللاحق</td>
+<td>من الصنف</td>
+<td>من النثر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تعيش قاعدة «البريد بريد» في هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على الحقل <code>email</code> في صنف العقد عبر <code>@IsEmail()</code>، لا في جسم الخدمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تحصل على عقد تحديث من غير إعادة كتابة <code>fullName</code> و <code>email</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>export class UpdateMemberDto extends PartialType(CreateMemberDto) {}</code> من <code>@nestjs/mapped-types</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أضفت <code>nickname</code> في <code>UpdateMemberDto</code> فقط، و<code>CreateMemberDto</code> بلا الحقل. ماذا كسرت في فكرة المرجع الواحد، وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صار للقب مصدر ثانٍ. إن كان اللقب في الإنشاء أيضًا فضعه على <code>CreateMemberDto</code> وسيصل إلى التحديث بالاشتقاق. إن كان للتحديث فقط، صنف صغير يُدمَج بـ <code>IntersectionType</code> أوضح من نسخ بقية الحقول.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا الصنف مرجع والعقد ليس ويكي؟</li>
+<li>ماذا يفعل <code>PartialType</code>؟</li>
+<li>من أي حزمة يُستورد في تطبيق بلا Swagger؟</li>
+<li>لماذا كل حقل مفحوص يحمل زينة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>صنف العقد يجمع الحقل وقاعدته. أشكال التحديث تُشتق منه حتى تبقى القاعدة في مكان واحد. الأنبوب والخريطة لاحقًا يقرآن هذا الصنف لا نصًا موازيًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفصل صنف الداخل عن صنف الخارج حتى لا يخرج سر مع الكيان.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/openapi/mapped-types">Mapped types</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

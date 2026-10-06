@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cron</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-cron.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Cron</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل دالة في دقيقة وساعة ويوم تحددها بنمط cron أو بثابت <code>CronExpression</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Interval(3_600_000)</code> يمر كل ساعة من لحظة الإقلاع، لا في الدقيقة صفر من كل ساعة. تقرير «مبيعات أمس» يجب أن يعمل بعد منتصف الليل لا كلما مرّت ساعة على نشر النسخة. النمط يربط الدالة بالتقويم.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Cron</code> يأخذ نمطًا من ستة حقول في حزمة Nest: ثانية، دقيقة، ساعة، يوم الشهر، شهر، يوم الأسبوع. <code>CronExpression</code> يسمي أنماطًا شائعة. الدالة تبقى قصيرة وتدرج عملًا أو تمسح ملفات، ولا تنتظر طابورًا داخلها.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة الجدولة، المثال النموذجي نمط بست خانات. ثابت جاهز:</p>
+<pre><code class="language-ts">import { Cron, CronExpression } from &#39;@nestjs/schedule&#39;;
+
+@Cron(CronExpression.EVERY_DAY_AT_1AM)
+async remindStaleDrafts() {
+  const ids = await this.drafts.olderThan(24 * 60 * 60 * 1000);
+  await this.mailProducer.enqueueReminders(ids);
+}
+</code></pre>
+<p>نمط صريح لمسح المؤقت في الدقيقة 15 من كل ساعة:</p>
+<pre><code class="language-ts">@Cron(&#39;0 15 * * * *&#39;)
+async dropOldTempFiles() {
+  await this.files.dropOlderThan(&#39;var/tmp&#39;, 86_400_000);
+}
+</code></pre>
+<p>القراءة من اليسار: ثانية <code>0</code>، دقيقة <code>15</code>، والباقي أي قيمة. النمط ذو الخمس خانات الذي تعرفه من لينكس لا يطابق دائمًا هذا المحرك لأنه يزيد خانة الثواني في الأمثلة الرسمية. انسخ من توثيق <code>@nestjs/schedule</code> لا من تذكرة سيرفر عشوائية.</p>
+<p>المنطقة الزمنية خيار في كائن ثانٍ إن كانت الساعة «الواحدة فجرًا بتوقيت المتجر» لا بتوقيت الخادم:</p>
+<pre><code class="language-ts">@Cron(CronExpression.EVERY_DAY_AT_1AM, { timeZone: &#39;Asia/Amman&#39; })
+</code></pre>
+<p>بدونها تعتمد ساعة العملية. في الحاوية غالبًا UTC. اكتب المنطقة عندما يعني اسم العمل يوم المتجر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">التقويم يطابق النمط
+  remindStaleDrafts
+    معرفات فقط
+      enqueueReminders
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Cron(&#39;0 15 * * * *&#39;)
+async dropOldTempFiles() {
+  await this.files.dropOlderThan(&#39;var/tmp&#39;, 86_400_000);
+}
+</code></pre>
+<p>في الاختبار لا تحاكِ الساعة. اختبر <code>dropOlderThan</code>. لتجربة النمط في التطوير غيّر مؤقتًا إلى <code>CronExpression.EVERY_MINUTE</code> ثم أعد النمط قبل الدمج. لا تترك كل دقيقة في الإنتاج.</p>
+<h2>شرح المثال</h2>
+<p>الثانية <code>0</code> تمنع التشغيل في كل ثانية من الدقيقة 15. النجمة تعني «كل». الدالة لا تعرف من نشر التطبيق. إن فاتت الدقيقة بسبب إيقاف العملية، لن تُستدرك حتى الدقيقة 15 التالية إلا بكود تعويض. للمسح هذا مقبول. لتقرير يومي قد تحتاج تسجيل «آخر يوم نُفِّذ» في القاعدة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المكتبة تحسب موعد المطابقة التالي من ساعة النظام أو من <code>timeZone</code>. عند المطابقة تستدعي الدالة. وعد مرفوض يُسجَّل كخطأ تلك النبضة ولا يُجدول إعادة مستقلة. إن تطابقت النسخة الثانية من التطبيق في اللحظة نفسها، تعمل الدالتان. <code>enqueueReminders</code> يجب أن يستعمل <code>jobId</code> مثل <code>remind:${bookId}:${day}</code> حتى لا يُرسل بريدان من نسختين. النمط وحده لا يقفل.</p>
+<h2>مثال عملي</h2>
+<p>تقرير المبيعات يوميًا 01:00 بتوقيت عمّان، والمهمة في الطابور:</p>
+<pre><code class="language-ts">@Cron(&#39;0 0 1 * * *&#39;, { timeZone: &#39;Asia/Amman&#39; })
+async queueDailySales() {
+  const day = this.clock.dayIn(&#39;Asia/Amman&#39;);
+  await this.reports.add(&#39;daily-sales&#39;, { day }, { jobId: `sales:${day}` });
+}
+</code></pre>
+<p><code>day</code> سلسلة تاريخ لا كائن تقرير. العامل يبني CSV. إن أُعيد تشغيل <code>@Cron</code> فـ <code>jobId</code> يمنع تكرار التقرير نفسه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نمط من خمس خانات على محرك ست خانات.</li>
+<li><code>EVERY_MINUTE</code> يبقى في الإنتاج بعد التجربة.</li>
+<li>نسيان <code>timeZone</code> ثم استغراب أن «الفجر» هو 01:00 UTC.</li>
+<li>إرسال البريد داخل <code>@Cron</code> بلا <code>jobId</code> مع نسختين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لموعد على التقويم: تقرير، تذكير، مسح في دقيقة معروفة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقياس كل N ميلي ثانية من لحظة الإقلاع. ذلك <code>@Interval</code>. ولا لقص كتاب بعينه.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النمط</th>
+<th>متى يعمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>0 15 * * * *</code></td>
+<td>الثانية 0 من الدقيقة 15 كل ساعة</td>
+</tr>
+<tr>
+<td><code>EVERY_HOUR</code></td>
+<td>من الثوابت، راجع معناه في الحزمة لا من الذاكرة</td>
+</tr>
+<tr>
+<td><code>0 0 1 * * *</code> مع <code>Asia/Amman</code></td>
+<td>01:00 بتوقيت المتجر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>كم خانة في أمثلة <code>@Cron</code> الرسمية التي نلتزم بها هنا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ست: ثانية ودقيقة وساعة ويوم وشهر ويوم أسبوع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>@Interval</code> لا يغني عن تقرير الساعة الواحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الفترة تُحسب من الإقلاع أو من النبضة السابقة، لا من ساعة التقويم والمنطقة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما دور <code>jobId: sales:${day}</code> مع نسختين تشغّلان <code>@Cron</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النسختان قد توقظان الدالة، لكن الطابور يقبل مهمة واحدة لذلك اليوم. العامل يبني التقرير مرة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تُضبط منطقة المتجر؟</li>
+<li>لماذا لا يُختبر النمط بانتظار الفجر؟</li>
+<li>ماذا يبقى داخل <code>@Cron</code> لتذكير المسودات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Cron</code> يربط دالة بتقويم من ست خانات أو بثابت واضح، مع <code>timeZone</code> ليوم المتجر. الأثر الخارجي يمر بطابور ذي <code>jobId</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>@Interval</code> عندما يهمك التباعد الثابت لا الدقيقة على الساعة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Task scheduling: <a href="https://docs.nestjs.com/techniques/task-scheduling">https://docs.nestjs.com/techniques/task-scheduling</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

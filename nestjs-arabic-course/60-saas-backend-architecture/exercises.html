@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — من يملك ماذا</h2>
+<p>ضع كل عنصر في مكانه: رقم البطاقة، دور المحرر، سطر «من نشر»، حالة <code>past_due</code>، عنوان البريد.</p>
+<details>
+<summary>الحل</summary>
+
+<p>البطاقة عند مزود الدفع. الدور في عضوية المنظمة. سطر النشر في التدقيق. <code>past_due</code> في جدول الاشتراك وتقرأها سياسة الكتالوج. عنوان البريد ناتج مهمة إشعار لا جزء من معاملة النشر كشرط نجاح.</p>
+</details>
+
+<h2>تمرين متوسط — خفض الدور</h2>
+<p>خُفّض المحرر إلى <code>clerk</code> بينما access token فيه الدور القديم لعشر دقائق. كيف لا ينشر خلالها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حارس النشر يقرأ العضوية من القاعدة لا من <code>claims</code>. الخريطة لا تعطي <code>clerk</code> مفتاح <code>books.publish</code> فيرجع 403 فورًا.</p>
+</details>
+
+<h2>تمرين متقدم — نجاح المتصفح</h2>
+<p>صمم رد <code>GET /billing/success</code> بحيث لا يكتب <code>active</code>، وماذا تعرض الواجهة.</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسار يعيد الحالة المحلية كما هي (<code>incomplete</code> أو <code>trial</code>) مع 200. الواجهة تقول إن التأكيد يأتي من إشعار المزود وتعيد قراءة الاشتراك. الكتابة إلى <code>active</code> تحدث في معالج الويب هوك بعد التوقيع، خارج هذا المسار.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

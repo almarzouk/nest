@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Generics</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-generics.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Generics</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الرمز <code>&lt;T&gt;</code> في أنواع Nest مثل <code>Promise&lt;Book&gt;</code> ومزوّدات لاحقة، وكتابة دالة لا تكرر نفسها لكل نوع.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>دالة <code>firstBook</code> و <code>firstUser</code> جسماهما واحد: أعد العنصر الأول أو <code>null</code>. نسخ الدالة لكل نوع يفرقهما يوم يصلح أحد النسخ فقط.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Generic معامل نوع. تكتبه بين <code>&lt; &gt;</code> وتستخدمه مكان نوع ثابت. المستدعي يحدد النوع، أو يستنتجه المترجم.</p>
+<h2>التعريف التقني</h2>
+<p>Generics تعدد أشكال على الأنواع مع بقاء العلاقات: إذا دخل <code>T[]</code> خرج <code>T | null</code>. القيد <code>T extends { id: string }</code> يحد ما يمكن أن يكون <code>T</code>. وقت التشغيل لا يوجد <code>T</code>. التوثيق يقول أيضًا إن Metadata لا تُصدر للـ generics بشكل يفيد <code>ValidationPipe</code>. لا تجعل DTO عامًا وتتوقع فحص حقوله.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">function first&lt;T&gt;(items: T[]): T | null
+                 |
+                 +-- T = Book  =&gt;  Book | null
+                 +-- T = User  =&gt;  User | null
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">function first&lt;T&gt;(items: T[]): T | null {
+  return items[0] ?? null;
+}
+
+const title = first([&#39;A&#39;, &#39;B&#39;]);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>&lt;T&gt;</code> يعلن المعامل.</li>
+<li><code>items: T[]</code> مصفوفة من ذلك النوع.</li>
+<li>الإرجاع <code>T | null</code>.</li>
+<li>في النداء، <code>T</code> يُستنتج <code>string</code> من المصفوفة. <code>title</code> نوعه <code>string | null</code>.</li>
+<li><code>??</code> يحوّل <code>undefined</code> إلى <code>null</code> إن كانت المصفوفة فارغة، فيبقى الإرجاع صادقًا.</li>
+</ul>
+<p>تحديد صريح: <code>first&lt;string&gt;([&#39;A&#39;])</code>. نادرًا تحتاجه إذا كان الاستنتاج واضحًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الناتج دالة JavaScript واحدة بلا أثر لـ <code>T</code>. الفحص كله قبل التشغيل. لذلك <code>Promise&lt;Book&gt;</code> يعلمك أنت والمترجم، ووقت التشغيل هو Promise عادية قد تُرفض أو تُحل بأي قيمة إن كذبت على المترجم.</p>
+<p>في Nest ستقرأ <code>Promise&lt;Book&gt;</code> على دوال المتحكم غير المتزامنة. الإطار ينتظر الـ Promise ثم يرسل القيمة. النوع لا ينتظر عنك؛ <code>async</code> يفعل.</p>
+<h2>مثال عملي</h2>
+<p>نتيجة بحث تستخدمها خدمة:</p>
+<pre><code class="language-ts">interface Page&lt;T&gt; {
+  items: T[];
+  total: number;
+}
+
+function emptyPage&lt;T&gt;(): Page&lt;T&gt; {
+  return { items: [], total: 0 };
+}
+</code></pre>
+<p><code>Page&lt;Book&gt;</code> و <code>Page&lt;Review&gt;</code> عقدان مختلفان للمترجم من قالب واحد. الترقيم لاحقًا سيعمم هذه الفكرة على الاستعلامات. القيد:</p>
+<pre><code class="language-ts">function idOf&lt;T extends { id: string }&gt;(entity: T): string {
+  return entity.id;
+}
+</code></pre>
+<p><code>T extends ...</code> يشترط حقل <code>id</code>. كائن بلا <code>id</code> يُرفض.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>function parse&lt;T&gt;(text: string): T { return JSON.parse(text); }</code> تكذب: <code>T</code> لا يفحص JSON. الناتج يجب أن يكون <code>unknown</code> ثم فحصًا.</li>
+<li>DTO عام مثل <code>class Query&lt;T&gt;</code> مع توقع أن <code>ValidationPipe</code> يعرف حقول <code>T</code>. لا يعرف.</li>
+<li>قيود معقدة في أول خدمة. ابدأ بنوع ثابت، وأدخل <code>&lt;T&gt;</code> عندما تتكرر الدالة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تبقى علاقة بين مدخل وناتج عبر أكثر من نوع، كما في <code>Page&lt;T&gt;</code> و <code>Promise&lt;T&gt;</code> و <code>Repository&lt;T&gt;</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لدالة تتعامل مع كتاب فقط. <code>Book</code> أوضح من <code>T extends Book</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>نوع ثابت</th>
+<th>Generic</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>التكرار</td>
+<td>دالة لكل نوع</td>
+<td>دالة واحدة</td>
+</tr>
+<tr>
+<td>وقت التشغيل</td>
+<td>لا أثر زائد</td>
+<td>لا أثر لـ T</td>
+</tr>
+<tr>
+<td>ValidationPipe</td>
+<td>على صنف ملموس</td>
+<td>لا يستنتج T</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما نوع <code>first([1, 2])</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>number | null</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اكتب <code>last&lt;T&gt;</code> تعيد آخر عنصر أو <code>null</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">function last&lt;T&gt;(items: T[]): T | null {
+  return items[items.length - 1] ?? null;
+}
+</code></pre>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا توقيع <code>parse&lt;T&gt;(text: string): T</code> خطر على حدود HTTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المستدعي يكتب <code>parse&lt;Book&gt;(body)</code> والمترجم يصدق، بينما <code>JSON.parse</code> يعيد قيمة غير مضمونة. تختفي العلاقة عند التشغيل. أرجع <code>unknown</code> وافحص، أو استخدم Pipe يعيش وقت التشغيل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يثبت <code>&lt;T&gt;</code> بين المدخل والناتج؟</li>
+<li>هل <code>T</code> موجود في JavaScript الناتج؟</li>
+<li>لماذا DTO العام لا يكفي لـ <code>ValidationPipe</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Generic يربط الأنواع في دالة واحدة من غير نسخه. هو فحص كتابة. حدود الشبكة تحتاج فحصًا حيًا، لا معامل نوع.</p>
+<h2>ماذا بعد؟</h2>
+<p>كل استدعاء قاعدة بيانات في Nest تقريبًا <code>Promise</code>. الدرس التالي يثبت <code>async/await</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Generics: <a href="https://www.typescriptlang.org/docs/handbook/2/generics.html">https://www.typescriptlang.org/docs/handbook/2/generics.html</a></li>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>09 — دفتر مصروفات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>09 — دفتر مصروفات</h1>
+<p><strong>المستوى:</strong> مبتدئ<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new expense-ledger</code></p>
+<h2>ماذا تبني</h2>
+<p>تسجّل مصروفًا بالمبلغ والعملة واليوم. الملخص يجمع لكل عملة. المبلغ وحدة صغرى صحيحة لا عددًا عشريًا.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>0.1 + 0.2 ليست طريقة محاسبة. تتعلم أن شكل الرقم جزء من العقد.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>أعداد صحيحة</li>
+<li>تجميع</li>
+<li>رفض عملة غير معروفة</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>تحويل عملات</li>
+<li>حساب بنكي</li>
+<li>مستخدمون</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>مختصر الروابط.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/11-dto/README.html">11-dto</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>amount عدد صحيح موجب. 1050 تعني 10.50 في عملة بمنزلتين.</li>
+<li>العملات المسموحة: SAR و USD و EUR.</li>
+<li>لا تجمع عملتين في رقم واحد. الملخص مصفوفة.</li>
+<li>اليوم YYYY-MM-DD والملخص يفلتر ?month=2026-10.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/expenses</code></td>
+<td>201</td>
+<td>يسجّل</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/expenses?month=2026-10</code></td>
+<td>200</td>
+<td>حركات الشهر</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/expenses/summary?month=2026-10</code></td>
+<td>200</td>
+<td>مجموع لكل عملة</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new expense-ledger</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ارفض الكسر. إن وصل amount كعدد غير صحيح فـ 400.</li>
+<li>ابنِ الملخص بـ Map.</li>
+<li>رتب مسار summary قبل أي :id.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/expenses/money.ts
+src/expenses/expenses.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">export function assertMinorUnit(amount: number) {
+  if (!Number.isInteger(amount) || amount &lt;= 0) {
+    throw new Error(&quot;amount must be a positive integer of minor units&quot;);
+  }
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>تخزين 10.5 كـ number عام.</li>
+<li>جمع الريال بالدولار.</li>
+<li>شهر بصيغة 10-2026 تتغير مع كل عميل.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>ملخص شهر بلا حركات 200 ومصفوفة فارغة.</li>
+<li>مبلغ سالب 400.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف فئة category من قائمة مغلقة: food و transport و other.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 9» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../08-link-shortener/README.html">8. مختصر روابط</a></li>
+<li>التالي: <a href="../10-habit-tracker/README.html">10. متتبع عادات</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

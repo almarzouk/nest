@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Built-in HTTP Exceptions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-built-in-http-exceptions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Built-in HTTP Exceptions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار الفئة الجاهزة التي تطابق رمز الحالة بدل بناء <code>HttpException</code> عام في كل مرة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يكتب <code>new HttpException(&#39;...&#39;, 404)</code> و <code>new HttpException(&#39;...&#39;, 403)</code> فتتفاوت الرسائل ويصعب التقاط نوع واحد في فلتر. الفئات تثبت الرمز في الاسم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>خمس فئات من <code>@nestjs/common</code> تغطي رفض الشكل، وغياب الهوية، ونقص الإذن، وغياب المورد، والتعارض:</p>
+<table>
+<thead>
+<tr>
+<th>الصنف</th>
+<th>الرمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>BadRequestException</code></td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>UnauthorizedException</code></td>
+<td><code>401</code></td>
+</tr>
+<tr>
+<td><code>ForbiddenException</code></td>
+<td><code>403</code></td>
+</tr>
+<tr>
+<td><code>NotFoundException</code></td>
+<td><code>404</code></td>
+</tr>
+<tr>
+<td><code>ConflictException</code></td>
+<td><code>409</code></td>
+</tr>
+</tbody></table>
+<p>كلها تمتد من <code>HttpException</code>. ترميها وتترك الفلتر المدمج يكتب JSON.</p>
+<h2>التعريف التقني</h2>
+<p>كل فئة تقبل الرسالة كنص أو كائنًا لجسم مخصص، مثل الأب. من غير وسيط تستخدم رسالة افتراضية مرتبطة بالرمز.</p>
+<p><code>BadRequestException</code> هو ما ترميه <code>ValidationPipe</code> و <code>ParseIntPipe</code> عند الفشل. لا تعد رميه في الخدمة لخطأ زينة. الأنبوب فعل ذلك. ارمه من الخدمة حين يكون الطلب مفهومًا شكلاً لكن قاعدة خفيفة لا تحتاج مخزنًا ما زالت رفض شكل، بحذر حتى لا تخلط الأعمال بالشكل.</p>
+<p><code>UnauthorizedException</code> للهوية الناقصة، كما في الحارس التعليمي. <code>ForbiddenException</code> هو ما يرميه الإطار حين ترجع <code>canActivate</code> القيمة <code>false</code>، ويمكنك رميه بنفسك برسالة أوضح.</p>
+<p><code>NotFoundException</code> لغياب تذكرة. <code>ConflictException</code> لمقعد مبيع أو لتذكرة أُلغيت مرتين.</p>
+<p>فئات أخرى موجودة في الحزمة، مثل <code>RequestTimeoutException</code> الذي مر في المهلة. هذا الدرس يثبت الخمسة التي يسميها عنوان المسار.</p>
+<p>التقاط النوع في فلتر لاحقًا يكون <code>@Catch(NotFoundException)</code> لا التقاط الأب إن أردت شكلًا لمورد غائب فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">شكل تالف          400 BadRequest
+لا هوية           401 Unauthorized
+هوية بلا إذن      403 Forbidden
+لا تذكرة          404 NotFound
+مقعد مبيع         409 Conflict
+عطل غير معروف     500 من غير هذه الفئات
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class TicketsService {
+  private readonly sold = new Set&lt;string&gt;([&#39;s1:4&#39;]);
+
+  reserve(showId: string, seat: number): { showId: string; seat: number } {
+    const key = `${showId}:${seat}`;
+    if (this.sold.has(key)) {
+      throw new ConflictException(`Seat ${seat} is already sold`);
+    }
+    this.sold.add(key);
+    return { showId, seat };
+  }
+
+  find(showId: string, seat: number): { showId: string; seat: number } {
+    const key = `${showId}:${seat}`;
+    if (!this.sold.has(key)) {
+      throw new NotFoundException(`Ticket ${key} was not found`);
+    }
+    return { showId, seat };
+  }
+}
+</code></pre>
+<p>المثال ذاكرة في العملية حتى ترى الرمز. المخزن الحقيقي لاحقًا. الرمي نفسه يبقى.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>التعارض بعد أن الشكل صح: المقعد عدد، والعرض نص. <code>409</code> أعمال.</li>
+<li>الغياب <code>404</code> لا <code>500</code>.</li>
+<li>لا <code>try/catch</code> في المتحكم. Nest يكتب الجسم.</li>
+<li><code>BadRequestException</code> غير مستخدم هنا لأن الأنبوب يملك فحص الشكل قبل <code>reserve</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل فئة تضبط <code>status</code> في بناء الأب. الفلتر المدمج يقرأ <code>getStatus()</code> و <code>getResponse()</code>. الرسالة النصية تصبح <code>message</code>. العميل يفرّق الرموز من غير قراءة الجملة.</p>
+<p>حارس يرجع <code>false</code> ينتج <code>ForbiddenException</code> من الإطار، فتظهر الرسالة الافتراضية <code>Forbidden resource</code> لا جملتك. إن أردت جملة الشباك فارمِ <code>new ForbiddenException(&#39;Desk cannot refund&#39;)</code> بدل <code>false</code>.</p>
+<p><code>ValidationPipe</code> لا يرمي <code>ConflictException</code>. لا توحّد الرمزين في الاختبار: <code>400</code> شكل، <code>409</code> حالة مقعد.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /tickets</code> بمقعد مبيع يرجع <code>409</code>. <code>GET /tickets/s1/4</code> قبل البيع يرجع <code>404</code>. طلب <code>seat=0</code> يرجع <code>400</code> من الزينة إن كان <code>@Min(1)</code> قبل الخدمة، والدالة <code>reserve</code> لا تُستدعى. اختبارات ثلاثة، ثلاثة أصناف، ولا <code>Error</code> عام.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>NotFoundException</code> لمقعد مبيع. العميل يعيد المحاولة كأنه مسار خاطئ.</li>
+<li><code>ConflictException</code> لبريد غير صالح.</li>
+<li><code>ForbiddenException</code> عند غياب الترويسة. ذلك <code>401</code>.</li>
+<li>التقاط الخمسة في <code>catch</code> وإرجاع <code>200</code> مع حقل <code>error</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما طابق المعنى أحد الرموز الخمسة. ارمِ الفئة واترك الطبقة تكتب الرد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعطل برمجة أو فشل شبكة غير متوقع قد يبقى <code>500</code> حتى لا تسمّي العطل «تعارضًا». ولجسم بمفاتيح غير الرسالة الافتراضية إن كان <code>HttpException</code> بالكائن أوضح، أو فئة خاصة في الدرس التالي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة في الشباك</th>
+<th>الصنف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>seat</code> نص</td>
+<td><code>BadRequestException</code> عبر الأنبوب</td>
+</tr>
+<tr>
+<td>لا <code>x-desk-name</code></td>
+<td><code>UnauthorizedException</code></td>
+</tr>
+<tr>
+<td>شباك لا يسترد</td>
+<td><code>ForbiddenException</code></td>
+</tr>
+<tr>
+<td>لا صف تذكرة</td>
+<td><code>NotFoundException</code></td>
+</tr>
+<tr>
+<td>المقعد مبيع</td>
+<td><code>ConflictException</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي صنف يرميه الإطار حين ترجع البوابة <code>false</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>ForbiddenException</code> برمز <code>403</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>مقعد مبيع وطلب بمعرف غير موجود. أي رمزين، ولماذا لا يتبادلان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المبيع <code>409</code> لأنه موجود وحالته تمنع الحجز. غير الموجود <code>404</code>. التبادل يجعل العميل يعيد إنشاء مسار خاطئ أو يظن التعارض غيابًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الخدمة ترمي <code>BadRequestException</code> لنقص المخزون. ما الاعتراض على الرمز، وما الفئة الأقرب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الشكل سليم والمخزون حالة أعمال. <code>ConflictException</code> أو فئة أعمال لاحقة أقرب من <code>400</code> الذي يوحي بأن JSON تالف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رموز الخمسة؟</li>
+<li>من يرمي <code>400</code> غالبًا قبل الخدمة؟</li>
+<li>متى تختار <code>401</code> لا <code>403</code>؟</li>
+<li>لماذا لا تُستخدم <code>NotFoundException</code> للمقعد المبيع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الفئة الجاهزة تثبت الرمز في الاسم. الخمسة تغطي الشكل والهوية والإذن والغياب والتعارض في الشباك. <code>Error</code> العاري يبقى للعطل غير المصنّف لا لهذه الحالات.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي صنف يمتد من <code>HttpException</code> حين تحتاج اسمًا لجسم خطأ خاص بالتذاكر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+<li><a href="https://docs.nestjs.com/exception-filters#built-in-http-exceptions">Built-in HTTP exceptions</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

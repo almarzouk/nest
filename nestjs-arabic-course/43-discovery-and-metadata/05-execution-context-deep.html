@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ExecutionContext بعمق</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-execution-context-deep.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ExecutionContext بعمق</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استخدام <code>ExecutionContext</code> لمعرفة نوع القناة والهدف، ثم التبديل إلى HTTP أو RPC أو WebSocket من غير افتراض أن كل طلب كائن Express.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس منسوخ من مثال HTTP يستدعي <code>switchToHttp().getRequest()</code> داخل معالج رسائل فيصبح <code>request</code> فارغًا أو بلا <code>headers</code>. السياق يغلّف وسائط الاستدعاء ويعرف إن كان المصدر HTTP أو RPC أو WS. التوثيق يبني على ذلك حياد المنصة: المكتبة المشتركة تسأل <code>getType()</code> قبل أن تلمس شكل المنصة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ExecutionContext</code> يمتد مضيف الوسائط. <code>getType()</code> يعيد <code>&#39;http&#39;</code> أو <code>&#39;rpc&#39;</code> أو <code>&#39;ws&#39;</code>. <code>switchToHttp()</code> يعطي <code>getRequest</code> و <code>getResponse</code> و <code>getNext</code>. <code>switchToRpc()</code> يعطي <code>getData</code> و <code>getContext</code>. <code>switchToWs()</code> يعطي العميل والبيانات. <code>getHandler()</code> و <code>getClass()</code> هدف metadata الذي قرأه <code>Reflector</code>. لا تخزن السياق على Singleton بعد انتهاء الدالة.</p>
+<h2>التعريف التقني</h2>
+<p>في حارس:</p>
+<pre><code class="language-ts">import { CanActivate, ExecutionContext, Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class ChannelGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    if (context.getType() === &#39;http&#39;) {
+      const request = context.switchToHttp().getRequest&lt;{ user?: { id: string } }&gt;();
+      return Boolean(request.user);
+    }
+    if (context.getType() === &#39;rpc&#39;) {
+      const data = context.switchToRpc().getData&lt;{ userId?: string }&gt;();
+      return Boolean(data.userId);
+    }
+    return false;
+  }
+}
+</code></pre>
+<p><code>getArgByIndex(0)</code> وسيط خام إن احتجت موقعًا بعينه. في HTTP الترتيب الشائع request ثم response ثم next، لكن التبديل إلى المضيف أوضح من الفهرس.</p>
+<p>معالج الرسائل:</p>
+<pre><code class="language-ts">import { Controller } from &#39;@nestjs/common&#39;;
+import { Ctx, MessagePattern, Payload, type RmqContext } from &#39;@nestjs/microservices&#39;;
+
+@Controller()
+export class BillingController {
+  @MessagePattern(&#39;invoice.open&#39;)
+  open(@Payload() data: { id: string }, @Ctx() ctx: RmqContext): { id: string } {
+    void ctx;
+    return data;
+  }
+}
+</code></pre>
+<p>الحارس على هذا المسار يرى النوع <code>rpc</code>. <code>@Payload()</code> داخل المعالج أوضح من إعادة التبديل إن كنت أصلًا في Controller الرسائل. الحارس المشترك هو من يحتاج <code>getType</code>.</p>
+<p>WebSocket: <code>switchToWs().getClient()</code> و <code>getData()</code>. البوابة تبقى Singleton كما في فصل النطاقات، والسياق يصف الرسالة لا عمر البوابة.</p>
+<p><code>getHandler</code> و <code>getClass</code> تعمل في القنوات الثلاث، لذلك <code>@Public()</code> و <code>@Roles()</code> تُقرآن بالطريقة نفسها ثم يختلف استخراج الفاعل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ExecutionContext
+  getType: http | rpc | ws
+  getHandler / getClass -&gt; Reflector
+  switchTo* -&gt; شكل هذه القناة فقط
+</code></pre>
+<p>لا تمرر كائن Express إلى خدمة النطاق. استخرج <code>userId</code> نصًا.</p>
+<h2>أبسط مثال</h2>
+<p><code>ChannelGuard</code> أعلاه. سجّله حيث يصل HTTP و microservice معًا (تطبيق هجين). مسار بلا <code>user</code> في HTTP يُرفض. رسالة RPC بلا <code>userId</code> تُرفض. نوع غير معروف يُرفض صراحة بدل قراءة <code>headers</code> من <code>undefined</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>switchToHttp</code> على سياق RPC لا يعطيك طلب متصفح. الشرط على <code>getType</code> يحمي الاستخراج. أعد <code>false</code> أو ارمِ استثناء يناسب القناة: <code>HttpException</code> للمتصفح و <code>RpcException</code> للرسائل، وذلك يُفصل في فصل الخدمات الصغيرة. الحارس الذي يرمي HTTP فقط يكسر العميل RPC.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإطار يبني السياق من وسائط الاستدعاء ومن معرّف القناة.</li>
+<li>الحارس يستلمه قبل المعالج في مسار HTTP، وبشكل مماثل في القنوات التي تدعم الحراس.</li>
+<li><code>getHandler</code> يشير إلى الدالة التي تحمل metadata.</li>
+<li><code>switchToHttp().getRequest()</code> مرجع طلب هذه الدعوة. لا تحتفظ به على حقل خدمة <code>DEFAULT</code> بعد <code>return</code>.</li>
+<li>في RPC <code>getData()</code> حمولة الرسالة لا كائن <code>Request</code>.</li>
+<li>في WS العميل اتصال طويل. لا تعلّم البوابة <code>REQUEST</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>استخراج معرف واحد للدومين:</p>
+<pre><code class="language-ts">function actorId(context: ExecutionContext): string | undefined {
+  switch (context.getType()) {
+    case &#39;http&#39;:
+      return context.switchToHttp().getRequest&lt;{ user?: { id: string } }&gt;().user?.id;
+    case &#39;rpc&#39;:
+      return context.switchToRpc().getData&lt;{ userId?: string }&gt;().userId;
+    default:
+      return undefined;
+  }
+}
+</code></pre>
+<p>الخدمة تستقبل <code>string</code>. الاختبار يستدعي الخدمة بلا سياق. هذا حد حياد المنصة على مقياس الدالة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>افتراض HTTP في حارس عام على تطبيق هجين.</li>
+<li>تخزين <code>request</code> على Singleton.</li>
+<li><code>switchToHttp</code> لقراءة أدوار. الأدوار من <code>Reflector</code> على <code>getHandler</code>.</li>
+<li>معاملة عميل WS كنطاق طلب.</li>
+<li>رمي <code>BadRequestException</code> من مسار RPC وتوقع أن الوسيط يفهم جسم HTTP.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حارس أو معترض مشترك بين القنوات، أو عندما تحتاج الدالة والصنف مع شكل الاستدعاء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل خدمة دومين. مرر قيمًا plain. داخل متحكم HTTP فقط، <code>@Req()</code> يكفي إن كانت الدالة أصلًا على المنصة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>getType()</code></th>
+<th>المضيف</th>
+<th>ما تستخرجه عادة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>http</code></td>
+<td><code>switchToHttp</code></td>
+<td><code>user</code> من الطلب</td>
+</tr>
+<tr>
+<td><code>rpc</code></td>
+<td><code>switchToRpc</code></td>
+<td>حقول الحمولة</td>
+</tr>
+<tr>
+<td><code>ws</code></td>
+<td><code>switchToWs</code></td>
+<td>العميل وبيانات الرسالة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالتين تغذيان <code>Reflector</code> من السياق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>getHandler()</code> و <code>getClass()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفشل حارس يقرأ <code>request.headers</code> على <code>@MessagePattern</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن النوع <code>rpc</code> والحمولة في <code>getData()</code>، لا في طلب HTTP.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تبقى <code>OrdersService</code> جاهلة بـ Express و RPC معًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحارس أو المتحكم يستخرج <code>userId: string</code> عبر <code>getType()</code> ويمرره وسيطًا. الخدمة لا تستقبل <code>ExecutionContext</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>getType()</code>؟</li>
+<li>لماذا لا يُخزن الطلب على خدمة افتراضية؟</li>
+<li>أي استثناء يناسب كل قناة بشكل عام؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ExecutionContext</code> يسمي القناة والهدف. بدّل إلى مضيف تلك القناة فقط، واقرأ metadata من الدالة والصنف، ومرر إلى الدومين قيمًا لا كائنات منصة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع <code>@Public()</code> مع مسح أعلام وقناة RPC.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Execution context: <a href="https://docs.nestjs.com/fundamentals/execution-context">https://docs.nestjs.com/fundamentals/execution-context</a></li>
+<li>NestJS — Custom decorators: <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+<li>NestJS — Discovery service: <a href="https://docs.nestjs.com/fundamentals/discovery-service">https://docs.nestjs.com/fundamentals/discovery-service</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

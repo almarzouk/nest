@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Transactional Outbox</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-transactional-outbox.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Transactional Outbox</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة رسالة <code>project.published</code> في نفس معاملة نشر رف عبر <code>@nestjs/outbox</code>، بحيث لا تُرسل بلا صف ولا يُلتزم صف بلا رسالة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>UPDATE</code> نجح ثم سقطت العملية قبل <code>queue.add</code>. أو أُرسلت الرسالة ثم تراجعت المعاملة. إدراج يدوي في جدولكم يعمل، والحزمة تعطيه مخزنًا وترحيلًا ومعالجًا حتى لا تبنوا الناشر من الصفر.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>outbox.add</code> داخل <code>prisma.$transaction(async (tx) =&gt; ...)</code> مع تحديث المشروع. المخزن يرفض عميل Prisma الجذر لأن عباراته تُلتزم وحدها. مصفوفة <code>prisma.$transaction([...])</code> لا تمرر <code>tx</code> فلا تصلح. عامل الحزمة يسلّم لاحقًا و <code>@OnOutboxMessage</code> يعالج. التكرار ما زال ممكنًا إن سُلّمت الرسالة قبل تعليمها.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/outbox</code>. الصفحة تشرح المخزن على Postgres (<code>PostgresOutboxStore</code> من <code>@nestjs/outbox/postgres</code>) وتنص أن Prisma من بين العملاء: <code>fromPrisma(prisma)</code> والمنفذ الذي يُمرَّر إلى <code>add</code> هو عميل المعاملة التفاعلية. الجداول في schema اسمه <code>nest_outbox</code> ينشئه المخزن لا <code>schema.prisma</code>. في الإنتاج <code>npx nest-outbox migrate</code>. تمرير القاعدة نفسها يرمي <code>OutboxTransactionRequiredError</code>. <code>@OnOutboxMessage</code> للمستمع. هذا يكمّل لمحة الفصل 63 ولا يلغي مفتاح التكرار عند المستهلك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">$transaction(async tx =&gt; {
+  update project
+  outbox.add(..., tx)
+})
+relay لاحقًا → OnOutboxMessage
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await this.prisma.$transaction(async (tx) =&gt; {
+  await tx.project.update({
+    where: { id: projectId, organizationId },
+    data: { status: &#39;published&#39; },
+  });
+  await this.outbox.add(
+    { type: &#39;project.published&#39;, payload: { projectId, organizationId } },
+    tx,
+  );
+});
+</code></pre>
+<p><code>Outbox</code> يُحقن من <code>@nestjs/outbox</code>. التوقيع الدقيق للرسالة في الصفحة؛ المهم تمرير <code>tx</code> لا <code>this.prisma</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>التحديث مقيّد بالمنظمة.</li>
+<li>الرسالة حدث تكامل لا كيان Prisma.</li>
+<li>لا <code>add</code> بعد انتهاء المعاملة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المعاملة التفاعلية تفتح <code>tx</code>.</li>
+<li>المشروع والرسالة يُكتبان على نفس الاتصال.</li>
+<li>الالتزام معًا أو التراجع معًا.</li>
+<li>المرحّل يقرأ <code>nest_outbox</code> ويدفع إلى الناقل أو إلى <code>@OnOutboxMessage</code>.</li>
+<li>إن أُرسلت الرسالة وفشل التعليم تُعاد، والمستهلك يطبّق قيد المعرّف.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { OnOutboxMessage } from &#39;@nestjs/outbox&#39;;
+
+@Injectable()
+export class ProjectPublishedHandler {
+  @OnOutboxMessage(&#39;project.published&#39;)
+  handle(payload: { projectId: string; organizationId: string }) {
+    return payload.projectId;
+  }
+}
+</code></pre>
+<p>المعالج يحمّل المشروع بـ <code>organizationId</code> من الحمولة. لا يثق بسياق طلب انتهى. لا يعيد <code>draft</code> عند فشل بريد لاحق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>outbox.add(message)</code> بلا <code>tx</code>.</li>
+<li>مصفوفة استعلامات Prisma بدل callback.</li>
+<li>توقع أن <code>schema.prisma</code> يعرّف جداول <code>nest_outbox</code>.</li>
+<li>اعتبار التسليم إثبات أن الشريك أنهى عمله.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجب أن تُخلق رسالة التكامل إذا وفقط إذا نُشر المشروع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتدقيق داخل نفس الجداول أصلًا بلا ناقل. ولا كبديل عن <code>@Idempotent</code> على زر الإنشاء.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>بعد قتل العملية عقب الكتابة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>emit</code> ذاكرة</td>
+<td>الرسالة تضيع</td>
+</tr>
+<tr>
+<td>طابور بعد المعاملة</td>
+<td>قد تضيع في النافذة</td>
+</tr>
+<tr>
+<td><code>outbox.add</code> مع <code>tx</code></td>
+<td>الصف يبقى ويُرحَّل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا تُرفض <code>this.prisma</code> بدل <code>tx</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن عبارات العميل الجذر تُلتزم وحدها. الصفحة ترمي <code>OutboxTransactionRequiredError</code>. الرسالة قد تُرسل والنشر يتراجع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تصلح <code>prisma.$transaction([update, insert])</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>شكل المصفوفة لا يعطي عميل معاملة تفاعليًا لتمريره إلى <code>outbox.add</code>. استخدموا <code>async (tx) =&gt;</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المرحّل أرسل مرتين. ماذا يحمي الشريك؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>معرّف الرسالة الثابت وقيده عنده. الصندوق يمنع الضياع ولا يلغي التكرار بعد إرسال ناجح لم يُعلَّم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة وأي عميل يُمرَّر إلى <code>add</code>؟</li>
+<li>أين تعيش جداول المخزن؟</li>
+<li>ماذا يرفض المخزن؟</li>
+<li>هل التسليم يعني أن الشريك أنهى؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/outbox</code> يكتب الرسالة في معاملة Prisma التفاعلية عبر <code>fromPrisma</code>. المرحّل يسلّم لاحقًا. بلا <code>tx</code> لا ضمان. التكرار عند المستهلك يبقى لازمًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعض الأعمال تنتظر أيامًا وإشارة من ناقل، لا رسالة واحدة. الدرس التالي التدفقات المتينة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Transactional outbox: <a href="https://docs.nestjs.com/reliability/outbox">https://docs.nestjs.com/reliability/outbox</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

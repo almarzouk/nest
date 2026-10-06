@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Timeout</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-timeout.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Timeout</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إيقاف انتظار الرد حين لا يصدر المعالج قيمة خلال مدة، وإرجاع <code>RequestTimeoutException</code> بدل ترك العميل معلقًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تقرير مبيعات الشباك ينتظر استعلامًا ثقيلًا. العميل يعلّق حتى مهلة المتصفح. السجل لا يميّز التعليق عن النجاح البطيء. عامل <code>timeout</code> على التيار يفشل الوصف بعد المدة حتى يرد الإطار.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>next.handle().pipe(timeout(5000), catchError(...))</code>. إن انتهت المدة قبل الإصدار، RxJS يخطئ بـ <code>TimeoutError</code>. المعترض يحوّله إلى <code>RequestTimeoutException</code> برمز <code>408</code>. أي خطأ آخر يُعاد رميه كما هو حتى لا يصبح فشل المقعد <code>408</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة المعترضات، العاملان <code>timeout</code> و <code>catchError</code>، والاستثناء <code>RequestTimeoutException</code>، والنوع <code>TimeoutError</code> من <code>rxjs</code>.</p>
+<pre><code class="language-ts">return next.handle().pipe(
+  timeout(5000),
+  catchError((err: unknown) =&gt; {
+    if (err instanceof TimeoutError) {
+      return throwError(() =&gt; new RequestTimeoutException());
+    }
+    return throwError(() =&gt; err);
+  }),
+);
+</code></pre>
+<p>الصفحة تحذّر: إلغاء الاشتراك في التيار لا يوقف عملًا بدأ داخل الدالة، مثل استعلام قاعدة ما زال واعدًا. <code>408</code> للعميل لا يلغي الأثر الجانبي وحده. إن احتجت إلغاء الاستعلام، مرّر إشارة إلغاء داخل الخدمة. ذلك خارج هذا المعترض.</p>
+<p>المدة في المثال الرسمي 5000 ملي ثانية. للتذاكر الحية قد تكون أقصر، ولتقرير ليلي أطول. المدة ثابت المعترض أو قيمة تُحقن، لا رقم سحري داخل الخدمة.</p>
+<p><code>timeout</code> عامل خروج على التيار: الساعة تبدأ حين يُشترَك، أي حين تبدأ البقية بالعمل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">handle يبدأ الاستعلام
+  إصدار قبل 5ث → القيمة تمر ولا تدخل فرع TimeoutError
+  لا إصدار → TimeoutError → 408
+  BadRequest → يُعاد رميه 400
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type CallHandler,
+  type ExecutionContext,
+  Injectable,
+  type NestInterceptor,
+  RequestTimeoutException,
+} from &#39;@nestjs/common&#39;;
+import { type Observable, throwError, TimeoutError } from &#39;rxjs&#39;;
+import { catchError, timeout } from &#39;rxjs/operators&#39;;
+
+@Injectable()
+export class ReportTimeoutInterceptor implements NestInterceptor {
+  intercept(_context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    return next.handle().pipe(
+      timeout(5000),
+      catchError((err: unknown) =&gt; {
+        if (err instanceof TimeoutError) {
+          return throwError(() =&gt; new RequestTimeoutException());
+        }
+        return throwError(() =&gt; err);
+      }),
+    );
+  }
+}
+</code></pre>
+<p>اربطه على <code>GET /reports/sales</code> لا على كل <code>POST /tickets</code>. الحجز السريع لا يحتاج مهلة التقرير.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>timeout(5000)</code> من <code>rxjs/operators</code>، و <code>TimeoutError</code> من <code>rxjs</code>.</li>
+<li><code>throwError(() =&gt; err)</code> يحافظ على <code>BadRequestException</code> و <code>ForbiddenException</code>.</li>
+<li>تحويل كل خطأ إلى <code>RequestTimeoutException</code> يخفي <code>400</code>. الشرط <code>instanceof</code> هو الدرس.</li>
+<li>لا <code>map</code>. الجسم الناجح يبقى كما رجع التقرير.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الاشتراك يبدأ الساعة. إن صدرت القيمة، <code>timeout</code> يمررها ويلغي الساعة. إن سبق الخطأ المدة، <code>catchError</code> يرى ذلك الخطأ لا <code>TimeoutError</code>. إن سكت التيار حتى المدة، يُنشأ <code>TimeoutError</code> ثم يبدله المعترض بـ <code>RequestTimeoutException</code>. الفلتر الافتراضي يكتب <code>408</code>.</p>
+<p>الدالة قد تكون ما زالت عند <code>await</code> الاستعلام. الرد للعميل انتهى من جهة هذا الطلب، والاستعلام قد يكمل ويكتب صفًا. لذلك المهلة على معترض تقرير للقراءة أسلم من مهلة على <code>POST</code> الذي يحفظ، إلا إذا ألغت الخدمة العمل.</p>
+<p>حارس فشل قبل المعترض لا يبدأ الساعة. أنبوب فشل بسرعة يُعاد رميه ولا ينتظر خمس ثوانٍ.</p>
+<h2>مثال عملي</h2>
+<p><code>SalesReportController</code> عليه المعترض. تقرير يرجع خلال ثانية يصل كما هو. تقرير ينام ست ثوانٍ في الاختبار المزيف يرجع <code>408</code>. طلب التقرير بمعامل صفحة تالف يرجع <code>400</code> فورًا لأن الخطأ ليس <code>TimeoutError</code>. اختبار الوحدة يمرر <code>CallHandler</code> لا يصدر أبدًا ويتقدم الساعة الوهمية، أو ينتظر مدة قصيرة في اختبار أبطأ على مهلة 20 ملي ثانية في نسخة اختبار من المعترض.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>catchError(() =&gt; throwError(() =&gt; new RequestTimeoutException()))</code> بلا تمييز، فيصبح كل <code>400</code> مهلة.</li>
+<li>الاعتقاد أن <code>408</code> يرجّع معاملة قاعدة أُرسلت.</li>
+<li>مهلة خمس ثوانٍ على الصحة فتفشل الفحوص البطيئة أصلًا بلا داعٍ.</li>
+<li><code>timeout</code> قبل أن تفهم أن الساعة على التيار لا على Middleware.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على عمليات قراءة قد تطول، بمدة معروفة، مع إعادة رمي أي خطأ ليس <code>TimeoutError</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على كتابة مالية من غير إلغاء في الخدمة. وعلى أخطاء الشكل. ولا كبديل عن فهرس الاستعلام إن كان التقرير بطيئًا دائمًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ الداخل</th>
+<th>ماذا يخرج من المعترض</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قيمة في الوقت</td>
+<td>القيمة نفسها</td>
+</tr>
+<tr>
+<td><code>TimeoutError</code></td>
+<td><code>RequestTimeoutException</code> أي <code>408</code></td>
+</tr>
+<tr>
+<td><code>BadRequestException</code></td>
+<td>نفسه</td>
+</tr>
+<tr>
+<td>رفض حارس</td>
+<td>المعترض لم يبدأ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استثناء HTTP يقابل انتهاء المهلة في هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>RequestTimeoutException</code> ورمزه <code>408</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُعاد <code>throwError(() =&gt; err)</code> في الفرع الآخر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا تتحول أخطاء الشكل والإذن والأعمال إلى <code>408</code>. المهلة حالة واحدة فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>العميل رأى <code>408</code> وظهر صف تقرير جديد في الجدول. ما الذي لم يفعله المعترض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لم يوقف العمل داخل الدالة. إلغاء الاشتراك لا يلغي <code>await</code> على قاعدة البيانات. الإلغاء يُمرَّر إلى الخدمة إن كان الأثر يجب أن يتوقف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي عامل يحد المدة؟</li>
+<li>كيف تميّز المهلة عن <code>400</code>؟</li>
+<li>هل يُلغى استعلام القاعدة تلقائيًا؟</li>
+<li>لماذا لا يُربَط المعترض على كل المسارات في المثال؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>timeout</code> يفشل التيار الصامت، و <code>catchError</code> يحوّل <code>TimeoutError</code> فقط إلى <code>408</code> ويعيد بقية الأخطاء. الرد للعميل لا يعني أن العمل داخل الدالة توقف.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي معاينة تخزين: إرجاع تيار جاهز بـ <code>of</code> من غير استدعاء <code>handle</code> حين تكون القيمة محفوظة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

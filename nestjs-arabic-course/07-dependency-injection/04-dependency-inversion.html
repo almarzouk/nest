@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dependency Inversion</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-dependency-inversion.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Dependency Inversion</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل Dependency Inversion عن DI: الأول اتجاه الاعتماد في التصميم، والثاني آلية تمرير الكائن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>DraftService</code> يمكن أن تستلم <code>RegionalTax</code> بالحقن وما زالت تعرف سعر المنطقة واسم الصنف التفصيلي. تغيير المورد إلى ضريبة ثابتة يعدّل نوع المُنشئ في الخدمة العالية. المبدأ يقول إن السياسة العليا تعتمد على تجريد، والتفصيل يُربَط في Module.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Dependency Inversion Principle: الوحدات العالية لا تعتمد على الوحدات الدنيا. الاثنتان تعتمدان على تجريد. التجريد لا يعتمد على التفصيل، والتفصيل يعتمد على التجريد.</p>
+<p>في Nest التجريد صنف مجرد أو رمز <code>Symbol</code>، والتفصيل <code>RegionalTax</code> أو <code>FlatTax</code>، والربط <code>provide: TaxPolicy, useClass: RegionalTax</code>. DI تقدر أن تحقن <code>RegionalTax</code> مباشرة من غير هذا الفصل. الحقن حينها موجود، والانقلاب في اتجاه الاعتماد غير موجود.</p>
+<h2>التعريف التقني</h2>
+<p>صنف مجرد يبقى وقت التشغيل فيصلح رمزًا ووصفًا:</p>
+<pre><code class="language-ts">export abstract class TaxPolicy {
+  abstract rate(): number;
+}
+</code></pre>
+<p><code>DraftService</code> تذكر <code>TaxPolicy</code> فقط. <code>RegionalTax</code> تنفّذ <code>rate</code>. Module المشتريات تختار التنفيذ. الخدمة العالية لا تستورد ملف المنطقة.</p>
+<p>واجهة TypeScript تصف الشكل وتُمسح، فلا تصلح رمز حاوية وحدها. إن أردت الواجهة وصفًا، أضف <code>Symbol</code> كما في درس Injection Tokens. الصنف المجرد هنا يكفي للطرفين.</p>
+<p>المبدأ لا يطلب واجهة لكل صنف. <code>VendorGateway</code> إن كان لها تنفيذ واحد مستقر، اعتماد <code>DraftService</code> عليها مباشرة DI واضحة من غير تجريد إضافي. التجريد عندما يتبدل التفصيل أو عندما يجب ألا تعرف الطبقة العالية اسم المنطقة أو اسم البريد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">DraftService --&gt; TaxPolicy &lt;-- RegionalTax
+                     ^
+                     |
+                  FlatTax
+
+Module تربط TaxPolicy بأحد السهمين
+</code></pre>
+<p>السهمان نحو التجريد. <code>DraftService</code> لا يشير إلى <code>RegionalTax</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+
+@Injectable()
+export class DraftService {
+  constructor(private readonly tax: TaxPolicy) {}
+
+  total(net: number) {
+    return net * (1 + this.tax.rate());
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+
+@Injectable()
+export class FlatTax extends TaxPolicy {
+  rate() {
+    return 0.15;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+import { FlatTax } from &#39;./flat-tax.js&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+
+@Module({
+  providers: [DraftService, { provide: TaxPolicy, useClass: FlatTax }],
+})
+export class AcquisitionModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>DraftService</code> لا تستورد <code>FlatTax</code>.</li>
+<li><code>{ provide: TaxPolicy, useClass: FlatTax }</code> هو مكان الانقلاب: التفصيل يُستبدل من غير تحرير <code>total</code>.</li>
+<li><code>FlatTax</code> تعتمد على التجريد عبر <code>extends</code>.</li>
+<li>حذف الربط يفشل الحل لأن <code>TaxPolicy</code> مجرد لا يُبنى وحده. هذا متوقع: التجريد ليس تنفيذًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحاوية ترى طلب <code>TaxPolicy</code> في مُنشئ <code>DraftService</code>. السجل يطابق الرمز ويجد <code>useClass: FlatTax</code>، فيبني <code>FlatTax</code> ويخزنها تحت الرمز <code>TaxPolicy</code>. <code>DraftService</code> تستلم كائنًا دالته <code>rate</code> هي دالة الضريبة الثابتة.</p>
+<p>استبدال الاختبار <code>{ provide: TaxPolicy, useValue: { rate: () =&gt; 0 } }</code> يبقي <code>DraftService</code> كما هي. هذا ثمر الانقلاب: الطبقة العالية ثابتة والربط يتغير.</p>
+<p>حقن <code>FlatTax</code> بالاسم في المُنشئ DI بلا انقلاب. الخدمة العالية صارت تعرف التفصيل، وModule التي تستبدل التنفيذ يجب أن تغيّر التوقيع أو تعيد تسجيل الصنف نفسه.</p>
+<h2>مثال عملي</h2>
+<p>تقرير المكتب يجمع المسودات عبر السياسة، وModule الإنتاج تختار المنطقة:</p>
+<pre><code class="language-ts">import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+import { RegionalTax } from &#39;./regional-tax.js&#39;;
+import { SystemClock } from &#39;./system-clock.js&#39;;
+
+@Module({
+  providers: [
+    SystemClock,
+    DraftService,
+    { provide: TaxPolicy, useClass: RegionalTax },
+  ],
+})
+export class AcquisitionModule {}
+</code></pre>
+<p><code>RegionalTax</code> قد تطلب <code>SystemClock</code> في مُنشئها. تلك اعتمادية التفصيل، تبقى في طبقة المنطقة. <code>DraftService</code> لا تذكر الساعة. إن صعدت الساعة إلى توقيع المسودة، فالتجريد سرّب تفصيلًا.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تسمية حقن <code>RegionalTax</code> باسم Dependency Inversion</td>
+<td>الآلية DI، والاتجاه ما زال نحو التفصيل</td>
+</tr>
+<tr>
+<td>واجهة فقط كرمز <code>provide</code></td>
+<td>الواجهة غير موجودة وقت التشغيل</td>
+</tr>
+<tr>
+<td>تجريد لكل مستودع بلا تنفيذ ثانٍ متوقع</td>
+<td>أصناف مجردة لا تغيّر التصميم وتزيد الملفات</td>
+</tr>
+<tr>
+<td>استيراد <code>RegionalTax</code> داخل <code>DraftService</code> لنداء ثابت</td>
+<td>السهم العالي عاد إلى التفصيل رغم تسجيل <code>useClass</code></td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتبدل السياسة أو البوابة: ضريبة منطقة مقابل ثابتة، بريد مقابل سجل في الاختبار، موردان تحت عقد <code>rate</code> أو <code>send</code> واحد. الطبقة التي تحسب الإجمالي تبقى على التجريد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يكون الصنف التفصيلي هو العقد المستقر للتطبيق كله ولن يُستبدل. سجّله باختصار <code>providers: [VendorGateway]</code> وحقنه باسمه. DI كافية. أضف التجريد عند أول تبديل حقيقي لا قبل ذلك تحسبًا لكل شيء.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>DI</th>
+<th>Dependency Inversion</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السؤال</td>
+<td>من يمرر الكائن؟</td>
+<td>على ماذا يعتمد الصنف العالي؟</td>
+</tr>
+<tr>
+<td>بلا الآخر</td>
+<td>حقن صنف ملموس</td>
+<td>تصميم يعتمد على تجريد وقد يُبنى يدويًا</td>
+</tr>
+<tr>
+<td>في Nest</td>
+<td><code>constructor</code> والحاوية</td>
+<td><code>provide</code> التجريد و <code>useClass</code> التفصيل</td>
+</tr>
+<tr>
+<td>الواجهة الممسوحة</td>
+<td>لا تصلح رمزًا</td>
+<td>لا تكفي تجريدًا للحاوية وحدها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يستورد <code>DraftService</code> في المثال: <code>FlatTax</code> أم <code>TaxPolicy</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>TaxPolicy</code>. <code>FlatTax</code> تظهر في Module فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>هل حقن <code>VendorGateway</code> الملموسة في المُنشئ DI؟ وهل هو Dependency Inversion؟</p>
+<details><summary>الحل</summary>
+
+<p>DI نعم، لأن الحاوية تمرر البوابة. Dependency Inversion لا، ما دامت الخدمة العالية تسمي الصنف التفصيلي ولا يوجد تجريد تتبدل تحته التنفيذات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا صعود <code>SystemClock</code> إلى مُنشئ <code>DraftService</code> يضعف التجريد حتى لو بقيت <code>TaxPolicy</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الساعة تفصيل لكيفية حساب المنطقة. الطبقة العالية صارت تعرفها، فتغيير الساعة يمس المسودة. الساعة تبقى في مُنشئ <code>RegionalTax</code>، والمسودة تطلب <code>rate</code> فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>إلى أين يشير السهم من <code>DraftService</code> في الرسم؟</li>
+<li>لماذا لا تكفي واجهة TypeScript رمزًا للتجريد في الحاوية؟</li>
+<li>متى يكون الحقن المباشر لصنف ملموس كافيًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Dependency Inversion اتجاه: العالي والدنيا يلتقيان على تجريد، والربط في Module. DI تمرر الكائن وقد تمرر تفصيلًا مباشرة. الصنف المجرد يصلح رمز Nest لأن له وجودًا وقت التشغيل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أين تُحفظ هذه الربوط: Container.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Interfaces and abstract classes: <a href="https://docs.nestjs.com/fundamentals/custom-providers#interfaces-and-abstract-classes">https://docs.nestjs.com/fundamentals/custom-providers#interfaces-and-abstract-classes</a></li>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

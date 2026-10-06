@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>دليل NestJS من البداية حتى النهاية</title>
+<style>
+  :root {
+    --bg: #f3efe6;
+    --paper: #fffdf8;
+    --ink: #1c2430;
+    --muted: #5c6570;
+    --line: #e4dccf;
+    --teal: #0e6b66;
+    --teal-soft: #e5f3f1;
+    --rust: #8d4328;
+    --rust-soft: #f8ece6;
+    --gold: #8a6a22;
+    --gold-soft: #f8f1dc;
+    --blue: #234e70;
+    --blue-soft: #e7f0f6;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: "Geeza Pro", "SF Arabic", "Segoe UI", Tahoma, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.7;
+  }
+  a { color: var(--teal); }
+  header, main { width: min(1100px, calc(100% - 32px)); margin: 0 auto; }
+  header { padding: 36px 0 8px; }
+  h1 { font-size: 28px; line-height: 1.35; margin: 0 0 8px; }
+  h2 { font-size: 22px; margin: 0 0 8px; }
+  h3 { font-size: 16px; margin: 0 0 6px; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  nav {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: rgba(243, 239, 230, 0.94);
+    border-bottom: 1px solid var(--line);
+    padding: 8px 0;
+  }
+  nav ul {
+    width: min(1100px, calc(100% - 32px));
+    margin: 0 auto;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  nav a {
+    text-decoration: none;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    color: var(--ink);
+    padding: 4px 10px;
+    font-size: 14px;
+  }
+  section { padding: 28px 0; }
+  .grid { display: grid; gap: 12px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+  .card, .panel {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+  }
+  .card h3 { color: var(--teal); }
+  svg { width: 100%; height: auto; display: block; }
+  .svg-wrap {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    padding: 12px;
+  }
+  button.step, button.phase, button.level {
+    font: inherit;
+    cursor: pointer;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 8px 10px;
+    text-align: right;
+  }
+  button.step.active, button.phase.active, button.level.active {
+    background: var(--teal);
+    color: #fff;
+    border-color: var(--teal);
+  }
+  .steps { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .explain { min-height: 96px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 1px solid var(--line);
+    background: var(--bg);
+    padding: 2px 8px;
+    font-size: 13px;
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--paper); }
+  th, td { border-bottom: 1px solid var(--line); text-align: right; padding: 8px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+  .rail { display: grid; gap: 8px; }
+  .proj {
+    display: grid;
+    grid-template-columns: 52px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    padding: 8px 10px;
+  }
+  .num { font-variant-numeric: tabular-nums; color: var(--teal); font-weight: 700; }
+  footer { padding: 12px 0 40px; color: var(--muted); font-size: 14px; }
+</style>
+</head>
+<body>
+<header>
+  <p class="muted">NestJS 12 · 5 أكتوبر 2026 · الشرح بالعربية والأسماء التقنية بالإنجليزية</p>
+  <h1>من أول طلب HTTP حتى صورة الإنتاج</h1>
+  <p>هذه الصفحة تجمع الرسوم. للتنقل إلى كل درس ومشروع ومقابلة بالترتيب، افتح <a href="index.html">الفهرس الكامل</a>.</p>
+</header>
+<nav>
+  <ul>
+    <li><a href="#map">الخريطة</a></li>
+    <li><a href="#box">صندوق Nest</a></li>
+    <li><a href="#life">دورة الطلب</a></li>
+    <li><a href="#di">الحقن</a></li>
+    <li><a href="#course">الفصول</a></li>
+    <li><a href="#practice">الأفضل</a></li>
+    <li><a href="#projects">المشاريع</a></li>
+    <li><a href="#interview">المقابلة</a></li>
+  </ul>
+</nav>
+<main>
+<section id="map">
+  <h2>ماذا يوجد في المجلد</h2>
+  <p class="muted">أربعة مخرجات. ابدأ بالدورة، ثم ابنِ المشاريع بالترتيب، وارجع إلى المقارنة والمقابلة عندما تقترب من العمل.</p>
+  <div class="grid g2">
+    <article class="card">
+      <h3>1. الدورة</h3>
+      <p>69 فصلًا من <code>00</code> إلى <code>68</code>، و722 درسًا. كل مفهوم في مجلده.</p>
+      <p><a href="nestjs-arabic-course/README.html">افتح الدورة</a></p>
+    </article>
+    <article class="card">
+      <h3>2. خمسون مشروعًا</h3>
+      <p>أدلة بناء من <code>nest new</code>. تبدأ بصدى الطلب وتنتهي بصورة Docker.</p>
+      <p><a href="50-backend-projects/README.html">افتح المشاريع</a></p>
+    </article>
+    <article class="card">
+      <h3>3. أفضل الممارسات</h3>
+      <p>جدول: ما يُنسخ من المقالات القديمة، وما يُفضَّل في Nest 12.</p>
+      <p><a href="nestjs-arabic-course/best-practice.html">افتح المقارنة</a></p>
+    </article>
+    <article class="card">
+      <h3>4. مقابلة emvion</h3>
+      <p>تدريب تفاعلي على venabo: NestJS أو Symfony أو React.</p>
+      <p><a href="interview-emvion/index.html">افتح التدريب</a></p>
+    </article>
+  </div>
+  <div class="svg-wrap" style="margin-top:12px">
+    <svg viewBox="0 0 920 150" role="img" aria-label="ترتيب الدراسة">
+      <title>ترتيب الدراسة</title>
+      <rect x="20" y="40" width="160" height="70" fill="#e5f3f1" stroke="#0e6b66"/>
+      <rect x="210" y="40" width="160" height="70" fill="#e7f0f6" stroke="#234e70"/>
+      <rect x="400" y="40" width="160" height="70" fill="#f8f1dc" stroke="#8a6a22"/>
+      <rect x="590" y="40" width="140" height="70" fill="#f8ece6" stroke="#8d4328"/>
+      <rect x="760" y="40" width="140" height="70" fill="#fffdf8" stroke="#1c2430"/>
+      <path d="M180 75 H210 M370 75 H400 M560 75 H590 M730 75 H760" stroke="#1c2430" fill="none"/>
+      <text x="100" y="70" text-anchor="middle" font-size="14" fill="#1c2430">افهم HTTP</text>
+      <text x="100" y="90" text-anchor="middle" font-size="12" fill="#5c6570">00 ثم 01</text>
+      <text x="290" y="70" text-anchor="middle" font-size="14" fill="#1c2430">ابنِ الصندوق</text>
+      <text x="290" y="90" text-anchor="middle" font-size="12" fill="#5c6570">02 حتى 16</text>
+      <text x="480" y="70" text-anchor="middle" font-size="14" fill="#1c2430">طبّق المنتج</text>
+      <text x="480" y="90" text-anchor="middle" font-size="12" fill="#5c6570">17 حتى 38</text>
+      <text x="660" y="70" text-anchor="middle" font-size="14" fill="#1c2430">عمّق وشغّل</text>
+      <text x="660" y="90" text-anchor="middle" font-size="12" fill="#5c6570">39 حتى 65</text>
+      <text x="830" y="70" text-anchor="middle" font-size="14" fill="#1c2430">كمّل</text>
+      <text x="830" y="90" text-anchor="middle" font-size="12" fill="#5c6570">66 حتى 68</text>
+    </svg>
+  </div>
+</section>
+
+<section id="box">
+  <h2>صندوق Nest</h2>
+  <p>الإقلاع يبدأ من دالة <code>bootstrap</code>. <code>NestFactory.create</code> يستقبل الوحدة الجذر. لذلك الدورة تعلّم Modules قبل Controllers، بينما نظرة التوثيق العامة تعرض Controllers أولًا. الموضوعات نفسها، وترتيب العرض مختلف.</p>
+  <div class="svg-wrap">
+    <svg viewBox="0 0 920 320" role="img" aria-label="من bootstrap إلى الوحدات">
+      <rect x="330" y="16" width="260" height="52" fill="#1c2430"/>
+      <text x="460" y="48" text-anchor="middle" fill="#fffdf8" font-size="16">bootstrap → NestFactory.create(AppModule)</text>
+      <path d="M460 68 V98" stroke="#1c2430"/>
+      <rect x="300" y="98" width="320" height="64" fill="#e5f3f1" stroke="#0e6b66"/>
+      <text x="460" y="124" text-anchor="middle" font-size="16" fill="#1c2430">AppModule</text>
+      <text x="460" y="146" text-anchor="middle" font-size="13" fill="#5c6570">imports للميزات، لا قاعدة عمل هنا</text>
+      <path d="M400 162 V190 M520 162 V190" stroke="#1c2430"/>
+      <rect x="230" y="190" width="250" height="110" fill="#fffdf8" stroke="#234e70"/>
+      <text x="355" y="214" text-anchor="middle" font-size="15" fill="#234e70">BooksModule</text>
+      <text x="355" y="238" text-anchor="middle" font-size="13">controllers: كتب</text>
+      <text x="355" y="258" text-anchor="middle" font-size="13">providers: خدمة + جدول سعر خاص</text>
+      <text x="355" y="278" text-anchor="middle" font-size="13">exports: الخدمة فقط</text>
+      <rect x="520" y="190" width="250" height="110" fill="#fffdf8" stroke="#8d4328"/>
+      <text x="645" y="214" text-anchor="middle" font-size="15" fill="#8d4328">OrdersModule</text>
+      <text x="645" y="238" text-anchor="middle" font-size="13">imports: BooksModule</text>
+      <text x="645" y="258" text-anchor="middle" font-size="13">تحقن الخدمة المصدَّرة</text>
+      <text x="645" y="278" text-anchor="middle" font-size="13">لا ترى جدول السعر</text>
+    </svg>
+  </div>
+  <p>الجدار هو <code>exports</code>. استيراد الملف في TypeScript يحمّل الصنف، والحاوية وحدها تقرر إن كان الحقن مسموحًا. <code>@Global()</code> يلغي تكرار <code>imports</code> ولا يلغي الحاجة إلى <code>exports</code>.</p>
+</section>
+
+<section id="life">
+  <h2>دورة الطلب</h2>
+  <p>اضغط المحطة. الطريق الناجح ينزل حتى الخدمة ثم يصعد عبر المعترضات. الفلاتر تظهر عندما يبقى استثناء غير ممسوك.</p>
+  <div class="steps" id="life-steps"></div>
+  <div class="grid g2">
+    <div class="svg-wrap">
+      <svg id="life-svg" viewBox="0 0 420 520" role="img" aria-label="مسار الطلب"></svg>
+    </div>
+    <article class="panel explain" id="life-explain"></article>
+  </div>
+</section>
+
+<section id="di">
+  <h2>لماذا الحاوية بدل new</h2>
+  <div class="svg-wrap">
+    <svg viewBox="0 0 920 230" role="img" aria-label="مقارنة new والحقن">
+      <rect x="24" y="24" width="420" height="180" fill="#f8ece6" stroke="#8d4328"/>
+      <text x="234" y="52" text-anchor="middle" font-size="16" fill="#8d4328">new داخل المتحكم</text>
+      <text x="234" y="84" text-anchor="middle" font-size="14">Controller → new Service → new Repo</text>
+      <text x="234" y="112" text-anchor="middle" font-size="14">الشبكة مخفية</text>
+      <text x="234" y="140" text-anchor="middle" font-size="14">الاختبار لا يستبدل النسخة</text>
+      <text x="234" y="168" text-anchor="middle" font-size="14">كل نداء قد يصنع اتصالًا</text>
+      <rect x="476" y="24" width="420" height="180" fill="#e5f3f1" stroke="#0e6b66"/>
+      <text x="686" y="52" text-anchor="middle" font-size="16" fill="#0e6b66">تسجيل ثم حقن</text>
+      <text x="686" y="84" text-anchor="middle" font-size="14">providers مرة واحدة</text>
+      <text x="686" y="112" text-anchor="middle" font-size="14">constructor(private readonly svc)</text>
+      <text x="686" y="140" text-anchor="middle" font-size="14">النطاق الافتراضي singleton</text>
+      <text x="686" y="168" text-anchor="middle" font-size="14">الاختبار يبدّل المزود</text>
+    </svg>
+  </div>
+  <p><code>import type</code> على خدمة تُحقن يمسح نوع المعامل من الميتاداتا فيسقط الحقن. <code>Scope.REQUEST</code> لتمرير المستخدم يُعدي من يحقن الخدمة. الحارس يقرأ المستخدم ويمرره وسيطًا، والخدمة تبقى singleton.</p>
+</section>
+
+<section id="course">
+  <h2>الفصول 00 حتى 68</h2>
+  <p>اضغط مرحلة لترى فصولها. المسار الوظيفي يغلق عند المشروع في 65، والفصول 66–68 تكمّله من التوثيق الحالي.</p>
+  <div class="steps" id="phases"></div>
+  <article class="panel" id="phase-body"></article>
+</section>
+
+<section id="practice">
+  <h2>من العادة إلى الأفضل</h2>
+  <p>أمثلة من <a href="nestjs-arabic-course/best-practice.html">best-practice.html</a>. Passport و <code>ValidationPipe</code> ليسا ملغيين. الأفضل تثبيت مسار واحد للعقد نفسه.</p>
+  <table>
+    <thead><tr><th>العادة</th><th>الأفضل في هذا المسار</th><th>الرسم</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><code>res.json</code> في كل مسار</td>
+        <td><code>return</code> القيمة</td>
+        <td>Nest تكتب الحالة والجسم ويمر الرد على المعترض</td>
+      </tr>
+      <tr>
+        <td><code>interface</code> لجسم الطلب</td>
+        <td>صنف DTO أو مخطط Zod</td>
+        <td>الواجهة تُمحى قبل التشغيل</td>
+      </tr>
+      <tr>
+        <td><code>POST</code> دائماً 200</td>
+        <td>إنشاء المورد <code>201</code></td>
+        <td>باقي النجاح 200، والتغيير عبر <code>@HttpCode</code></td>
+      </tr>
+      <tr>
+        <td>قائمة فارغة 404</td>
+        <td>200 ومصفوفة فارغة</td>
+        <td>404 لعنوان غير موجود</td>
+      </tr>
+      <tr>
+        <td><code>synchronize: true</code></td>
+        <td>ترحيل يُراجع</td>
+        <td>الإنتاج يتقدم بالترحيل لا بمسح المخطط</td>
+      </tr>
+      <tr>
+        <td><code>@nestjs/bull</code> جديدًا</td>
+        <td><code>@nestjs/bullmq</code></td>
+        <td>Bull في الصيانة و BullMQ هو التطوير النشط</td>
+      </tr>
+      <tr>
+        <td>نجاح الدفع من صفحة المتصفح</td>
+        <td>ويب هوك على <code>rawBody</code></td>
+        <td>التوقيع على البايتات الأصلية</td>
+      </tr>
+      <tr>
+        <td><code>start:dev</code> في الصورة</td>
+        <td><code>node dist/main.js</code></td>
+        <td>وعنوان القاعدة اسم الخدمة لا <code>localhost</code></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="svg-wrap" style="margin-top:12px">
+    <svg viewBox="0 0 920 180" role="img" aria-label="طريق الرد القياسي">
+      <rect x="40" y="50" width="150" height="56" fill="#e7f0f6" stroke="#234e70"/>
+      <text x="115" y="84" text-anchor="middle" font-size="14">Controller return</text>
+      <path d="M190 78 H250" stroke="#1c2430"/>
+      <rect x="250" y="50" width="170" height="56" fill="#f8f1dc" stroke="#8a6a22"/>
+      <text x="335" y="84" text-anchor="middle" font-size="14">Interceptor بعد</text>
+      <path d="M420 78 H480" stroke="#1c2430"/>
+      <rect x="480" y="50" width="170" height="56" fill="#e5f3f1" stroke="#0e6b66"/>
+      <text x="565" y="84" text-anchor="middle" font-size="14">JSON + 201/200</text>
+      <path d="M650 78 H710" stroke="#1c2430"/>
+      <rect x="710" y="50" width="160" height="56" fill="#1c2430"/>
+      <text x="790" y="84" text-anchor="middle" fill="#fffdf8" font-size="14">العميل</text>
+      <text x="460" y="150" text-anchor="middle" font-size="13" fill="#5c6570">@Res() من غير passthrough يخرج عن هذا السهم ويكتب الرد بنفسه</text>
+    </svg>
+  </div>
+</section>
+
+<section id="projects">
+  <h2>خمسون مشروعًا تصعد درجة درجة</h2>
+  <p>كل مشروع فكرة مختلفة، وتبدأه بأمر <code>nest new</code> خارج مجلد الشرح. اختر المستوى.</p>
+  <div class="steps" id="levels"></div>
+  <div class="rail" id="proj-list"></div>
+</section>
+
+<section id="interview">
+  <h2>مقابلة emvion</h2>
+  <p>الوظيفة في Rheine، والحضور ثلاثة أيام في المكتب وحتى يومين عن بعد. المنتج venabo لتسجيل الوقت والأداء. الإعلان يفتح ثلاثة محاور، والصدق أن تختار المحور الذي تعمّقت فيه.</p>
+  <div class="svg-wrap">
+    <svg viewBox="0 0 920 280" role="img" aria-label="ثلاثة محاور نحو venabo">
+      <rect x="40" y="30" width="200" height="150" fill="#e5f3f1" stroke="#0e6b66"/>
+      <text x="140" y="58" text-anchor="middle" font-size="16">NestJS</text>
+      <text x="140" y="84" text-anchor="middle" font-size="13">TypeScript · Node</text>
+      <text x="140" y="106" text-anchor="middle" font-size="13">REST · GraphQL</text>
+      <text x="140" y="128" text-anchor="middle" font-size="13">PostgreSQL</text>
+      <text x="140" y="150" text-anchor="middle" font-size="13">تثبيت MVP</text>
+      <rect x="360" y="30" width="200" height="150" fill="#e7f0f6" stroke="#234e70"/>
+      <text x="460" y="58" text-anchor="middle" font-size="16">Symfony</text>
+      <text x="460" y="84" text-anchor="middle" font-size="13">PHP 8 · خدمات</text>
+      <text x="460" y="106" text-anchor="middle" font-size="13">Doctrine ترحيل</text>
+      <text x="460" y="128" text-anchor="middle" font-size="13">Voter للصلاحية</text>
+      <text x="460" y="150" text-anchor="middle" font-size="13">Messenger للمؤجل</text>
+      <rect x="680" y="30" width="200" height="150" fill="#f8f1dc" stroke="#8a6a22"/>
+      <text x="780" y="58" text-anchor="middle" font-size="16">React</text>
+      <text x="780" y="84" text-anchor="middle" font-size="13">Figma إلى مكوّن</text>
+      <text x="780" y="106" text-anchor="middle" font-size="13">Apollo Client</text>
+      <text x="780" y="128" text-anchor="middle" font-size="13">HTML دلالي</text>
+      <text x="780" y="150" text-anchor="middle" font-size="13">Testing Library</text>
+      <path d="M140 180 L460 230 M460 180 L460 230 M780 180 L460 230" stroke="#1c2430" fill="none"/>
+      <rect x="330" y="230" width="260" height="36" fill="#1c2430"/>
+      <text x="460" y="254" text-anchor="middle" fill="#fffdf8" font-size="15">venabo · وقت وأداء</text>
+    </svg>
+  </div>
+  <div class="grid g3" style="margin-top:12px">
+    <article class="card"><h3>الوقت</h3><p>فترة ببداية ونهاية، وحالة، ومنع تداخل لنفس الموظف داخل القاعدة.</p></article>
+    <article class="card"><h3>الاعتماد</h3><p>معاملة واحدة. من قدّم السجل لا يعتمده. 401 قبل الهوية و 403 بعدها.</p></article>
+    <article class="card"><h3>الواجهة</h3><p>نفس عقد الخادم. الشاشة الجديدة بجانب القديمة حتى تكتمل، والمكوّن يتكرر لا الصفحة كلها.</p></article>
+  </div>
+  <p style="margin-top:12px"><a href="interview-emvion/index.html">38 سؤالًا مع جملة ألمانية وإخفاء الجواب</a></p>
+</section>
+<footer>
+  المادة مبنية على توثيق NestJS الرسمي كما في 5 أكتوبر 2026. عند اختلاف هذه الصفحة عن الدرس، الدرس والصفحة الرسمية هما المرجع.
+</footer>
+</main>
+<script>
+const life = [
+  { id: "in", y: 16, title: "طلب وارد", text: "العميل يرسل طريقة ومسارًا وترويسات وجسمًا. Nest لم تختر المعالج بعد." },
+  { id: "mw", y: 68, title: "Middleware", text: "أولًا app.use العام، ثم وسطاء الوحدات. وحدات @Global قبل الجذر ثم البقية حسب بعدها عن الجذر. استثناء هذه المرحلة تراه الفلاتر العامة فقط." },
+  { id: "guard", y: 120, title: "Guards", text: "عام ثم المتحكم ثم المسار. هنا الهوية والإذن على حافة المسار. 401 لمن لا نعرفه و 403 لمن نعرفه وممنوع." },
+  { id: "pre", y: 172, title: "Interceptors قبل", text: "نفس ترتيب الربط: عام ثم متحكم ثم مسار. next.handle() ترجع Observable. ما قبل الاستدعاء يجري قبل الدالة." },
+  { id: "pipe", y: 224, title: "Pipes", text: "عام ثم متحكم ثم مسار ثم أنابيب المعاملات من الأخير إلى الأول. هنا ValidationPipe أو StandardSchemaValidationPipe." },
+  { id: "ctrl", y: 276, title: "Controller", text: "يستخرج المدخلات الظاهرة ويعيد قيمة أو يرمي استثناء. القاعدة ليست هنا." },
+  { id: "svc", y: 328, title: "Service", text: "القرار: تداخل الوقت، السعر، الخصم، التفرد. غالبًا عبر مستودع أو Prisma داخل معاملة." },
+  { id: "post", y: 380, title: "Interceptors بعد", text: "الطريق ينعكس لأن Observable أول داخل آخر خارج: المسار ثم المتحكم ثم العام. مكان تشكيل الرد أو قياس الزمن." },
+  { id: "out", y: 432, title: "الرد أو الفلتر", text: "النجاح يخرج JSON. POST المنشئ 201 وغيره 200. إن بقي استثناء، الفلاتر من المسار إلى المتحكم إلى العام، وأول ممسك يوقف الباقي. try/catch في الدالة يمنع الفلتر من الرؤية." }
+];
+
+const svg = document.getElementById("life-svg");
+const explain = document.getElementById("life-explain");
+const stepRow = document.getElementById("life-steps");
+let current = "mw";
+
+function drawLife(active) {
+  const nodes = life.map((item, index) => {
+    const on = item.id === active;
+    const next = life[index + 1];
+    const line = next ? `<path d="M210 ${item.y + 40} V${next.y}" stroke="#1c2430" fill="none"/>` : "";
+    return `${line}<rect x="70" y="${item.y}" width="280" height="40" fill="${on ? "#0e6b66" : "#fffdf8"}" stroke="${on ? "#0e6b66" : "#1c2430"}"/><text x="210" y="${item.y + 26}" text-anchor="middle" font-size="15" fill="${on ? "#fffdf8" : "#1c2430"}">${item.title}</text>`;
+  }).join("");
+  svg.innerHTML = nodes;
+  const found = life.find((item) => item.id === active);
+  explain.innerHTML = `<h3>${found.title}</h3><p>${found.text}</p>`;
+}
+
+life.forEach((item) => {
+  const button = document.createElement("button");
+  button.className = "step" + (item.id === current ? " active" : "");
+  button.textContent = item.title;
+  button.onclick = () => {
+    current = item.id;
+    document.querySelectorAll("#life-steps button").forEach((el) => el.classList.remove("active"));
+    button.classList.add("active");
+    drawLife(current);
+  };
+  stepRow.appendChild(button);
+});
+drawLife(current);
+
+const phases = [
+  { id: "a", label: "00–01 أرضية", text: "لغة HTTP و REST و Node و Express، ثم TypeScript الذي يقرأه Nest: أصناف، خصائص معاملات، ديكوريتر قديم، و reflect-metadata.", chapters: ["00 المقدمة","01 TypeScript"] },
+  { id: "b", label: "02–07 الصندوق", text: "Node المناسب، nest new على ESM، bootstrap، الوحدة الجذر، المتحكم، المزوّد، ثم لماذا الحقن أفضل من new.", chapters: ["02 التثبيت","03 التشغيل","04 Modules","05 Controllers","06 Providers","07 Dependency Injection"] },
+  { id: "c", label: "08–16 المحطات", text: "دورة الطلب مرة واحدة، ثم كل محطة: وسيط، أنبوب، DTO، تحقق بالصنف وبـ Standard Schema، حارس، معترض مع حد أدنى من RxJS، فلتر، زينة.", chapters: ["08 Lifecycle","09 Middleware","10 Pipes","11 DTO","12 Validation","13 Guards","14 Interceptors","15 Filters","16 Decorators"] },
+  { id: "d", label: "17–28 المنتج", text: "إعداد، PostgreSQL مع Prisma كمسار عملي و TypeORM و Drizzle بديلان، مشروع REST، هوية، تفويض، كعكات، أمن، OpenAPI، تسلسل، قوائم، رفع، ملفات ساكنة.", chapters: ["17 Config","18 Database","19 REST","20 Auth","21 Authz","22 Cookies","23 Security","24 OpenAPI","25 Serialization","26 Pagination","27 Upload","28 Static"] },
+  { id: "e", label: "29–38 القنوات", text: "GraphQL، WebSocket، RxJS أعمق، عميل HTTP، كاش، BullMQ، جدولة، أحداث داخل العملية، لوج، واختبار Vitest أو Jest حسب القالب.", chapters: ["29 GraphQL","30 WebSockets","31 RxJS","32 HTTP client","33 Cache","34 Queues","35 Schedule","36 Events","37 Logging","38 Testing"] },
+  { id: "f", label: "39–52 العمق والتشغيل", text: "خطاطيف الإيقاف، نطاقات الحقن، الدورات، وحدات ديناميكية، اكتشاف، مزودات مخصصة، معمارية، SOLID، مستودع، CQRS، رسائل، Docker، إنتاج، صحة.", chapters: ["39 Lifecycle hooks","40 Scopes","41 Cycles","42 Dynamic modules","43 Discovery","44 Custom providers","45 Architecture","46 SOLID","47 Repository","48 CQRS","49 Microservices","50 Docker","51 Production","52 Health"] },
+  { id: "g", label: "53–65 التصميم والمنصة", text: "أداء، أخطاء، إصدارات، تصميم REST، GraphQL المتقدم، OAuth، مستأجرون، SaaS، ويب هوك، Stripe، أحداث، مراقبة، ثم مشروع إنتاجي متدرج.", chapters: ["53 Performance","54 Errors","55 Versioning","56 API design","57 GraphQL+","58 OAuth","59 Tenancy","60 SaaS","61 Webhooks","62 Stripe","63 EDA","64 Observe","65 Final project"] },
+  { id: "h", label: "66–68 تكملة", text: "موثوقية وصندوق صادر، أدوات CLI و REPL و SWC، ثم منصة اختيارية: بريد، ملفات، SSE، serverless، تطبيق هجين.", chapters: ["66 Reliability","67 Tooling","68 Optional"] }
+];
+
+const phaseRow = document.getElementById("phases");
+const phaseBody = document.getElementById("phase-body");
+function showPhase(id) {
+  const phase = phases.find((item) => item.id === id);
+  phaseBody.innerHTML = `<h3>${phase.label}</h3><p>${phase.text}</p><div class="chips">${phase.chapters.map((name) => `<span class="chip">${name}</span>`).join("")}</div>`;
+  document.querySelectorAll("#phases button").forEach((el) => el.classList.toggle("active", el.dataset.id === id));
+}
+phases.forEach((phase) => {
+  const button = document.createElement("button");
+  button.className = "phase";
+  button.dataset.id = phase.id;
+  button.textContent = phase.label;
+  button.onclick = () => showPhase(phase.id);
+  phaseRow.appendChild(button);
+});
+showPhase("a");
+
+const levels = [
+  { id: "مبتدئ", label: "01–10 مبتدئ" },
+  { id: "متوسط", label: "11–30 متوسط" },
+  { id: "متقدم", label: "31–43 متقدم" },
+  { id: "إنتاج", label: "44–50 إنتاج" },
+  { id: "الكل", label: "الكل" }
+];
+const projects = [
+  ["01","صدى الطلب","مبتدئ","أول مسار"],
+  ["02","ملاحظات في الذاكرة","مبتدئ","CRUD"],
+  ["03","لوحة مهام","مبتدئ","حالات"],
+  ["04","برطمان اقتباسات","مبتدئ","قراءة عشوائية"],
+  ["05","عداد الزيارات","مبتدئ","GET لا يكتب"],
+  ["06","دفتر عناوين","مبتدئ","409"],
+  ["07","بطاقات دراسة","مبتدئ","موعد"],
+  ["08","مختصر روابط","مبتدئ","302"],
+  ["09","دفتر مصروفات","مبتدئ","أعداد صحيحة"],
+  ["10","متتبع عادات","مبتدئ","قيد يومي"],
+  ["11","مقالات بتحقق","متوسط","DTO"],
+  ["12","تعليقات المقال","متوسط","مورد فرعي"],
+  ["13","وسوم المقالات","متوسط","متعدد لمتعدد"],
+  ["14","فهرس كتب","متوسط","وحدتان"],
+  ["15","صندوق وصفات","متوسط","حساب في القراءة"],
+  ["16","غرفة تصويت","متوسط","صوت واحد"],
+  ["17","حجز غرف","متوسط","تداخل وقت"],
+  ["18","مكتب تذاكر","متوسط","انتقالات"],
+  ["19","كتالوج مرقم","متوسط","صفحة وفرز"],
+  ["20","سلة","متوسط","السعر من الخادم"],
+  ["21","حسابات","متوسط","تجزئة"],
+  ["22","الملف الحالي","متوسط","/me"],
+  ["23","أدوار التحرير","متوسط","403"],
+  ["24","غلاف المقال","متوسط","رفع"],
+  ["25","مفاتيح شركاء","متوسط","سر يُعرض مرة"],
+  ["26","درع الدخول","متوسط","429"],
+  ["27","كتالوج مؤقت","متوسط","إبطال الكاش"],
+  ["28","طابور بريد","متوسط","BullMQ"],
+  ["29","حدث نشر","متوسط","EventEmitter"],
+  ["30","سجل تدقيق","متوسط","من غيّر ماذا"],
+  ["31","ملاحظات لمتجر","متقدم","ترويسة مستأجر"],
+  ["32","إصدارا الملاحظات","متقدم","v1 و v2"],
+  ["33","توثيق الكتالوج","متقدم","OpenAPI"],
+  ["34","مهام مختبرة","متقدم","Vitest"],
+  ["35","صحة وإيقاف","متقدم","live / ready"],
+  ["36","طلب ومخزون","متقدم","معاملة"],
+  ["37","دفع بلا تكرار","متقدم","Idempotency-Key"],
+  ["38","ويب هوك صادر","متقدم","HMAC"],
+  ["39","ويب هوك وارد","متقدم","rawBody"],
+  ["40","طلب مباشر","متقدم","WebSocket"],
+  ["41","بحث كتب","متقدم","فهرس"],
+  ["42","تقرير مبيعات","متقدم","قراءة مجمّعة"],
+  ["43","عزل المستأجر","متقدم","كل استعلام"],
+  ["44","منظمات","إنتاج","آخر مالك"],
+  ["45","اشتراك","إنتاج","الحدث يفعّل"],
+  ["46","صندوق صادر","إنتاج","معاملة ثم نشر"],
+  ["47","توزيع توصيل","إنتاج","رسالة بين وحدتين"],
+  ["48","أثر الطلب","إنتاج","request id"],
+  ["49","GraphQL","إنتاج","DataLoader"],
+  ["50","منصة المكتبة","إنتاج","Docker Compose"]
+];
+
+const levelRow = document.getElementById("levels");
+const projList = document.getElementById("proj-list");
+function showLevel(id) {
+  document.querySelectorAll("#levels button").forEach((el) => el.classList.toggle("active", el.dataset.id === id));
+  const rows = projects.filter((item) => id === "الكل" || item[2] === id);
+  projList.innerHTML = rows.map((item) => `<article class="proj"><span class="num">${item[0]}</span><span>${item[1]}</span><span class="chip">${item[3]}</span></article>`).join("");
+}
+levels.forEach((level) => {
+  const button = document.createElement("button");
+  button.className = "level";
+  button.dataset.id = level.id;
+  button.textContent = level.label;
+  button.onclick = () => showLevel(level.id);
+  levelRow.appendChild(button);
+});
+showLevel("مبتدئ");
+</script>
+</body>
+</html>

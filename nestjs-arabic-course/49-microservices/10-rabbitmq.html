@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RabbitMQ</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-rabbitmq.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>RabbitMQ</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع العمل في طابور RabbitMQ عبر <code>Transport.RMQ</code> حتى ينتظر المستهلك، مع طابور دائم واسم يُعرَّف في الخيارات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>Redis Pub/Sub يضيع الرسالة إن غاب المستمع. فاتورة يجب أن تُصدر بعد عودة العملية تحتاج وسيطًا يخزن. RabbitMQ طابور: الرسالة تبقى حتى يستهلكها عامل ويقرّها، أو تُعاد حسب إعداد الطابور. Nest يصل إليه بـ <code>Transport.RMQ</code> وحزمة <code>amqplib</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المستمع والعميل يشيران إلى <code>urls</code> مثل <code>amqp://guest:guest@rabbitmq:5672</code> واسم <code>queue</code>. داخل Compose المضيف <code>rabbitmq</code> لا <code>localhost</code>. <code>queueOptions.durable: true</code> يبقي الطابور بعد إعادة تشغيل الوسيط إن كانت الرسائل دائمة أيضًا. المعالجة في <code>@MessagePattern</code> أو <code>@EventPattern</code> على متحكم. الحدث هنا ما زال رسالة في طابور Nest، لا بث Redis.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { MicroserviceOptions, Transport } from &#39;@nestjs/microservices&#39;;
+
+const options: MicroserviceOptions = {
+  transport: Transport.RMQ,
+  options: {
+    urls: [process.env.RABBITMQ_URL ?? &#39;amqp://guest:guest@127.0.0.1:5672&#39;],
+    queue: &#39;invoices&#39;,
+    queueOptions: { durable: true },
+  },
+};
+</code></pre>
+<p>ثبّت <code>amqplib</code>. العميل في <code>ClientsModule.register</code> بنفس النقل واسم الطابور الذي يستمع إليه المعالج.</p>
+<p><code>prefetch</code> في خيارات المستهلك يحد كم رسالة غير مُقرَّة يأخذها العامل. ابدأ بعدد صغير حتى لا تتكدس في عملية واحدة.</p>
+<p>الطلب-الرد مدعوم عبر أنماط Nest فوق الطابور. للأعمال التي تُعاد، فضّل حدثًا مع إقرار بعد نجاح <code>issue</code>، وسجّل الفشل لإعادة المحاولة. لا تُقر قبل الحفظ.</p>
+<p>ضيف <code>guest</code> للتطوير فقط. في الإنتاج مستخدم وكلمة من البيئة، وشبكة خاصة.</p>
+<p>رسالة مكررة ممكنة عند إعادة التسليم بعد انقطاع قبل الإقرار. اجعل <code>issue</code> قابلة للتكرار بمعرف طلب: الإصدار الثاني يرى الفاتورة موجودة ويعيد المعرف نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ناشر -&gt; طابور invoices الدائم -&gt; مستهلك واحد من مجموعة العمال
+إقرار بعد الحفظ
+إعادة التسليم عند العطل قبل الإقرار
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@EventPattern(&#39;invoice.issue&#39;)
+async issue(@Payload() data: { orderId: string }): Promise&lt;void&gt; {
+  await this.invoices.issue(data.orderId);
+}
+</code></pre>
+<p>العميل <code>emit(&#39;invoice.issue&#39;, { orderId })</code>. أوقف عملية الفوترة ثم أعدها: الرسالة ما زالت في الطابور إن كانت دائمة ولم تُقر. هذا الفرق العملي عن TCP و Redis.</p>
+<h2>شرح المثال</h2>
+<p>النمط اسم التوجيه الذي يربط Nest بالطابور الذي ضبطته في <code>options.queue</code>. طابور لكل سياق عمل أوضح من طابور واحد لكل الأنماط إن اختلفت سرعة الإصدار عن سرعة البريد. ابدأ بطابور <code>invoices</code> واحد حتى تتضح الحدود.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>amqplib</code> يتصل بـ <code>urls</code>.</li>
+<li>يُعلن الطابور حسب <code>queueOptions</code>.</li>
+<li><code>emit</code> ينشر الرسالة.</li>
+<li>مستهلك Nest يسلمها للمعالج.</li>
+<li>النجاح يقر الرسالة فتُزال.</li>
+<li>قتل العملية قبل الإقرار يعيد الرسالة لعامل حي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>RABBITMQ_URL=amqp://app:secret@rabbitmq:5672</code> في Compose. الكتالوج ينشر إصدار الفاتورة ولا ينتظر إن كانت الواجهة لا تحتاج <code>invoiceId</code> فورًا. إن كانت تحتاجه فـ <code>send</code> مع مهلة، مع علم أن انقطاع المستهلك يؤخر الرد بينما الرسالة قد تُعاد. لا تبنِ الرد على أمل أن الإقرار يعني أن البريد وصل. البريد معالج لاحق أو طابور ثانٍ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>localhost</code> من حاوية.</li>
+<li>إقرار قبل <code>save</code>.</li>
+<li><code>durable</code> على الطابور ورسائل غير دائمة فتختفي بعد إعادة تشغيل الوسيط.</li>
+<li>معالجة غير قابلة للتكرار مع إعادة التسليم.</li>
+<li>حساب <code>guest</code> في الإنتاج.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عمل يُخزن ويُوزع على عمال، مع إعادة تسليم عند العطل، ووسيط تشغّله.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بث لكل النسخ الحاضرة. ذلك Redis. وسجل مرتب طويل الأمد للتحليل. ذلك Kafka. ونداء داخل العملية. دالة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>RabbitMQ هنا</th>
+<th>Redis Pub/Sub</th>
+<th>TCP</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>التخزين</td>
+<td>طابور</td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>الغائب</td>
+<td>يستلم لاحقًا</td>
+<td>يضيع</td>
+<td>يفشل فورًا</td>
+</tr>
+<tr>
+<td>التكرار</td>
+<td>ممكن عند إعادة التسليم</td>
+<td>بث مكرر</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حزمة Node يثبّتها نقل RMQ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>amqplib</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الإقرار بعد <code>issue</code> لا قبله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإقرار يحذف الرسالة. إن قُتلت العملية بعد الإقرار وقبل الحفظ ضاع العمل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا يجعل الإصدار الثاني لنفس <code>orderId</code> آمنًا بعد إعادة التسليم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جعل <code>issue</code> ترجع الفاتورة الموجودة لنفس الطلب بدل إنشاء ثانية. التكرار لا يغيّر الناتج.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>durable</code>؟</li>
+<li>أي مضيف في Compose؟</li>
+<li>متى الرسالة مكررة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>RabbitMQ مع <code>Transport.RMQ</code> طابور يبقى فيه العمل حتى يُقر بعد النجاح. اجعل المعالجة قابلة للتكرار، ولا تستعمل <code>localhost</code> بين الحاويات، ولا تقر قبل الحفظ.</p>
+<h2>ماذا بعد؟</h2>
+<p>Kafka: سجل مرتب ومجموعة مستهلكين عندما يبقى التاريخ مهمًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — RabbitMQ: <a href="https://docs.nestjs.com/microservices/rabbitmq">https://docs.nestjs.com/microservices/rabbitmq</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

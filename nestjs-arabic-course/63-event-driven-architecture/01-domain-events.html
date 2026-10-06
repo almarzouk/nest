@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Domain Events</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-domain-events.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Domain Events</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية ما حدث داخل نموذج مكتبة رف بعد ما نجح، مثل «نُشر الكتاب»، كحدث يسمعه كود داخل نفس الحد، لا كنداء مباشر لكل خدمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>publish()</code> يستدعي البريد والفهرس والتدقيق والكاش بالاسم. إضافة مستمع رابع تعدّل دالة النشر. الاختبار لا يستطيع إثبات أن النشر تم من غير تشغيل البريد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>حدث النطاق جملة ماضٍ داخل النموذج: <code>BookPublished</code> فيه معرّفات. يُطلق بعد ما تصبح الحالة صحيحة في الذاكرة أو في المعاملة، والمستمعون داخل نفس التطبيق يتفاعلون. الحدث ليس رسالة إلى شريك خارجي. تلك أحداث تكامل في الدرس التالي.</p>
+<h2>التعريف التقني</h2>
+<p>الصنف يحمل <code>organizationId</code> و <code>bookId</code> و <code>occurredAt</code> بلا كيان Prisma كامل. <code>@nestjs/event-emitter</code> يقدر أن ينقل هذا داخل العملية بـ <code>emit</code> و <code>@OnEvent</code>، وهو مناسب لمستمعين في نفس الـ deploy. الإطلاق بعد نجاح قاعدة «منشور» لا قبلها، وإلا سمع المستمع حدثًا لم يُلتزم. فشل المستمع لا يعيد الكتاب مسودة إن كان الأثر الجانبي خارج القاعدة؛ لذلك المستمع الذي يجب ألا يضيع يحتاج نمطًا أقوى لاحقًا. لا تسمّوا <code>EventEmitter</code> ناقلًا بين الخدمات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksService تغيّر الحالة
+ثم BookPublished { organizationId, bookId }
+مستمع داخل العملية: تدقيق، إشعار
+الشريك الخارجي ليس مشتركًا هنا
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class BookPublished {
+  constructor(
+    readonly organizationId: string,
+    readonly bookId: string,
+    readonly occurredAt = new Date(),
+  ) {}
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاسم ماضٍ. ليس <code>PublishBook</code> أمرًا.</li>
+<li>المعرّفات تكفي والمستمع يحمّل ما يحتاج داخل نفس المستأجر.</li>
+<li>لا حقل <code>stripeSecret</code> ولا جسم الطلب.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الخدمة تتحقق من الخطة والعضوية والمستأجر.</li>
+<li>تكتب <code>published</code> في المعاملة.</li>
+<li>بعد النجاح تبني <code>BookPublished</code>.</li>
+<li>المستمعون المحليون يعملون. إن كانوا داخل نفس المعاملة فهم جزء من الاتساق القوي لذلك الأثر.</li>
+<li>من هم خارج المعاملة قد يفشلون والكتاب يبقى منشورًا. هذا حد الحدث الداخلي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { EventEmitter2 } from &#39;@nestjs/event-emitter&#39;;
+import { BookPublished } from &#39;./book-published.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly events: EventEmitter2) {}
+
+  async publish(organizationId: string, bookId: string) {
+    await this.markPublished(organizationId, bookId);
+    this.events.emit(&#39;book.published&#39;, new BookPublished(organizationId, bookId));
+  }
+}
+</code></pre>
+<p><code>markPublished</code> حيث القيد <code>organizationId</code>. <code>emit</code> بعد الكتابة. مستمع <code>@OnEvent(&#39;book.published&#39;)</code> يدرج إشعارًا. لا تستورد الخدمة صف البريد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إطلاق الحدث قبل <code>UPDATE</code> ثم فشل الكتابة.</li>
+<li>حمولة فيها الكيان كاملًا فيمسك المستمع نسخة قديمة ضخمة.</li>
+<li>اعتبار <code>@OnEvent</code> تسليمًا إلى شريك HTTP.</li>
+<li>مستمع يغيّر حالة الكتاب بصمت فيصعب تتبع من نشر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يتبع أثرًا ناجحًا أكثر من مستمع داخل نفس الخدمة أو نفس العملية، وتريدون إضافة مستمع بلا تعديل سلسلة الاستيراد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لأمر لم يحدث بعد («انشر من فضلك»). ذلك استدعاء دالة. ولا لحدث يجب أن يصل خدمة أخرى حتى بعد سقوط العملية؛ ذلك تكامل وصندوق صادر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>أمر</th>
+<th>حدث نطاق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الزمن</td>
+<td>طلب</td>
+<td>وقع</td>
+</tr>
+<tr>
+<td>الاتجاه</td>
+<td>من يستدعي يعرف الهدف</td>
+<td>الناشر لا يستورد كل المستمعين</td>
+</tr>
+<tr>
+<td>الحدود</td>
+<td>داخل النموذج</td>
+<td>داخل النموذج أو العملية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>BookPublished</code> يُطلق عندما يرفض الحارس الموظف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الرفض يعني أن النشر لم يحدث. الحدث بعد الكتابة الناجحة فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المعرّف لا الكائن كاملًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يحمّل المستمع الحالة الحالية من القاعدة. الكائن المنسوخ قد يخالف صفًا تغيّر، ويكبر حجم الذاكرة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المستمع أرسل بريدًا ثم رمى. هل تعيد <code>publish</code> الكتاب إلى مسودة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا في هذا التصميم. الكتاب ملتزم. فشل البريد إشعار <code>failed</code> كما في معمارية SaaS. إن وجب أن يموت الاثنان معًا فهما في معاملة واحدة لا عبر <code>emit</code> بعد الالتزام.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى يُطلق حدث النطاق؟</li>
+<li>ماذا يحمل؟</li>
+<li>لماذا ليس أمر <code>PublishBook</code>؟</li>
+<li>هل <code>@OnEvent</code> يعبر إلى شريك؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>حدث النطاق حقيقة داخل النموذج بعد نجاح القاعدة: معرّفات واسم ماضٍ. المستمعون المحليون يتفاعلون. سقوط المستمع الجانبي لا يلغي النشر، والتسليم الخارجي ليس هذا الصنف.</p>
+<h2>ماذا بعد؟</h2>
+<p>شريك المخزون خارج العملية يحتاج حدثًا بعقد أوضح. الدرس التالي أحداث التكامل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Events: <a href="https://docs.nestjs.com/application/events">https://docs.nestjs.com/application/events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

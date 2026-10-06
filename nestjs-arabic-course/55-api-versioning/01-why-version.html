@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا الإصدارات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-version.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا الإصدارات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تقرير متى يشغّل متجر رف نسختين من نفس القدرة داخل عملية Nest واحدة، ومتى يكون التغيير إضافة يتحملها العملاء الحاليون بلا إصدار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تطبيق الجوال في المتاجر يقرأ <code>price</code> كعدد صحيح بالسنت. موقع الرف الجديد يريد <code>price</code> كائنًا <code>{ amount, currency }</code>. نشر الشكل الجديد يكسر الجوال في نفس اليوم. إبقاء الشكل القديم يمنع الموقع. الفرعان مطلوبان معًا إلى أن يُحدَّث الجوال.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الإصدار اسم لعقد لا اسم لتاريخ نشر. طالما العملاء يتحملون الإضافة، تبقى على العقد الحالي. عندما يتغير معنى حقل أو يختفي، تُخدم النسخة السابقة بجانب الجديدة. Nest يختار الفرع من الطلب بعد تفعيل <code>enableVersioning</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>app.enableVersioning({ type })</code> من تطبيق HTTP فقط، كما تذكر صفحة Versioning. الأنواع في التوثيق: URI (الافتراضي في الجدول)، Header، Media Type، و Custom. من غير إصدار على المتحكم أو المسار ومن غير <code>defaultVersion</code>، الطلب يأخذ 404 حتى لو كانت الدالة موجودة. هذا الدرس لا يختار النوع؛ يختار إن كان التغيير يستحق نسختين. الصفحة الرسمية: <a href="https://docs.nestjs.com/techniques/versioning">https://docs.nestjs.com/techniques/versioning</a> (نفس الفصل على <a href="https://docs.nestjs.com/http/versioning">https://docs.nestjs.com/http/versioning</a>).</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تغيير يكسر قارئًا قديمًا  → نسخة جديدة بجانب القديمة
+حقل اختياري جديد          → نفس النسخة
+إصلاح نص رسالة            → نفس النسخة إن لم يتغير المعنى
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">جوال قديم   يفهم { &quot;price&quot;: 2500 }
+موقع جديد   يفهم { &quot;price&quot;: { &quot;amount&quot;: 2500, &quot;currency&quot;: &quot;SAR&quot; } }
+العملية الواحدة تخدم الشكلين إلى تاريخ إيقاف معلن
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الرقمان ليسا «إصدار الكود» في git. هما عقدان على السلك.</li>
+<li>إيقاف القديمة قرار تقويم: راقب من يناديها ثم احذف المتحكم.</li>
+<li>الإصدار لا يعزل قاعدة البيانات. الصف واحد، والتمثيل هو الذي يتعدد.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الفريق يكتب ما الذي سينكسر: نوع <code>price</code>، لا «تحديث الكتب».</li>
+<li>يبقي مسار العقد القديم ويستخرج التمثيل القديم من نفس الخدمة.</li>
+<li>يضيف مسار العقد الجديد.</li>
+<li>التفعيل العام في <code>main.ts</code> يجعل الطلب بلا نسخة 404 ما لم تضع <code>defaultVersion</code>.</li>
+<li>بعد إيقاف الجوال القديم، يُحذف الفرع القديم دفعة واحدة لا بحقول مهملة إلى الأبد.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>خدمة واحدة وتمثيلان. الاختيار سيكون في المتحكمات بعد تفعيل النوع:</p>
+<pre><code class="language-ts">export function toV1(book: { id: string; title: string; priceCents: number }) {
+  return { id: book.id, title: book.title, price: book.priceCents };
+}
+
+export function toV2(book: { id: string; title: string; priceCents: number }) {
+  return { id: book.id, title: book.title, price: { amount: book.priceCents, currency: &#39;SAR&#39; } };
+}
+</code></pre>
+<p><code>BooksService.find</code> تعيد النموذج الداخلي <code>priceCents</code>. المتحكم هو الذي يستدعي <code>toV1</code> أو <code>toV2</code>. هكذا لا تتفرع استعلامات Prisma لكل عميل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>رقم إصدار لكل نشر أسبوعي. العملاء لا يستطيعون اللحاق، والعملية تمتلئ بنسخ ميتة.</li>
+<li>إصدار لأن الحقل الجديد «قد يزعج أحدًا» رغم أنه إضافة اختيارية.</li>
+<li>نسخ الخدمة والجدول لكل إصدار فتصبحان كتالوجين.</li>
+<li>نسيان أن تفعيل الإصدار بلا <code>defaultVersion</code> يخفي المسارات الحالية خلف 404.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كسر نوع أو حذف حقل أو تغيير معنى رمز اعتاد عليه عميل لا تستطيع تحديثه في نفس لحظة النشر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>للإضافات المتوافقة، ولإصلاح عطل يعيد السلوك الموثق، ولتجارب داخلية يمكن عزلها بعلم ميزة على خادم واحد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التغيير</th>
+<th>إصدار جديد؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إضافة <code>subtitle</code> اختياري</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>price</code> من عدد إلى كائن</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>404 كانت ترجع 200 بالخطأ وأُصلحت لتطابق العقد</td>
+<td>لا، هذا إصلاح</td>
+</tr>
+<tr>
+<td>حذف <code>price</code></td>
+<td>نعم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أضفت <code>available: boolean</code> إلى كتاب. هل تفتح v2؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا، إن بقي كل حقل قديم بنوعه. العميل الذي يتجاهل المجهول يكمل. افتح نسخة فقط إن كان عميل صارم يرفض الحقول الزائدة وأنت ملتزم بدعمه، وهذا يُذكر في العقد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تفعيل <code>enableVersioning</code> مساء النشر قد يحوّل كل المسارات الحالية إلى 404؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الصفحة تقول: إن فُعّل الإصدار ولم يحدد المتحكم أو المسار نسخة ولم يوجد <code>defaultVersion</code>، فالطلب 404. قبل التفعيل، ضع النسخة على المتحكمات أو ضع <code>defaultVersion</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الجوال سيبقى ستة أشهر. ارسم ماذا يُحذف يوم الإيقاف.</p>
+<details>
+<summary>الحل</summary>
+
+<p>متحكم أو مسار v1 ودالة <code>toV1</code> واختباراته. النموذج الداخلي <code>priceCents</code> يبقى. راقب نداءات v1 حتى تصل إلى صفر ثم احذف. لا تترك التمثيل القديم «احتياطًا» بلا مقياس.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما شرط فتح نسخة جديدة؟</li>
+<li>أين يعيش الفرق: في صف القاعدة أم في التمثيل؟</li>
+<li>ماذا يحدث للمسار بلا نسخة بعد التفعيل إن لم تحدد افتراضيًا؟</li>
+<li>لماذا ليس كل نشر إصدارًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإصدار يخدّم عقدين أثناء انتقال العملاء. الإضافة المتوافقة تبقى على العقد الحالي. التفعيل بلا نسخة معلنة على المسار أو بلا <code>defaultVersion</code> يعيد 404.</p>
+<h2>ماذا بعد؟</h2>
+<p>القرار وُجد: سعر رف سيتغير نوعه. الدرس التالي يضع رقم النسخة في المسار نفسه، وهو نوع URI.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Versioning: <a href="https://docs.nestjs.com/techniques/versioning">https://docs.nestjs.com/techniques/versioning</a></li>
+<li>NestJS — Versioning (HTTP): <a href="https://docs.nestjs.com/http/versioning">https://docs.nestjs.com/http/versioning</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

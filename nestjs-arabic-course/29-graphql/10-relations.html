@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Relations</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-relations.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Relations</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إضافة حقل <code>author</code> على <code>Book</code> عبر <code>@ResolveField</code> عندما لا يكون الاسم محمّلًا على كائن الكتاب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وضع <code>authorName</code> نصًا ثابتًا على كل صف كتاب ينسخ الاسم. وضع كائن المؤلف كاملًا داخل <code>BooksService.findById</code> يجلب العلاقة حتى عندما تطلب البطاقة <code>title</code> فقط. الحقل العلائقي يُحسب إذا طلبته العملية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Book</code> يحمل <code>authorId</code> بلا <code>@Field</code>، أو يحمل معرفًا داخليًا. المخطط يعلن <code>author: Author!</code>. دالة <code>@ResolveField(&#39;author&#39;)</code> تستقبل الكتاب الأب وتستدعي <code>AuthorsService</code>. إن لم يطلب العميل <code>author</code>، الدالة لا تُستدعى.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@ObjectType()
+export class Author {
+  @Field(() =&gt; ID)
+  id: string;
+
+  @Field()
+  name: string;
+}
+
+@ObjectType()
+export class Book {
+  @Field(() =&gt; ID)
+  id: string;
+
+  @Field()
+  title: string;
+
+  @Field(() =&gt; Author)
+  author: Author;
+}
+</code></pre>
+<p>المحلل:</p>
+<pre><code class="language-ts">@ResolveField(() =&gt; Author)
+author(@Parent() book: Book &amp; { authorId: string }) {
+  return this.authors.findById(book.authorId);
+}
+</code></pre>
+<p><code>@Parent()</code> قيمة الحقل الأب كما أعادها محلل <code>book</code> أو <code>books</code>. <code>@ResolveField</code> على <code>BooksResolver</code> المزين بـ <code>@Resolver(() =&gt; Book)</code> تربط الدالة بنوع <code>Book</code>.</p>
+<p>استدعاء الخدمة مرة لكل كتاب في قائمة هو شكل N+1. الدرس 12 يلمّح إلى DataLoader. هنا الهدف أن ترى مكان الجلب، لا أن تحلّ التكلفة بعد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">books() -&gt; Book[]  فيها authorId
+  لكل كتاب، إن وُجد author في العملية:
+    ResolveField.author(parent)
+</code></pre>
+<p>بلا <code>author</code> في النص، الحلقة لا تعمل.</p>
+<h2>أبسط مثال</h2>
+<p>عملية تفاصيل:</p>
+<pre><code class="language-graphql">query {
+  book(id: &quot;42&quot;) {
+    title
+    author { name }
+  }
+}
+</code></pre>
+<p>استعلام البطاقة <code>{ book(id: &quot;42&quot;) { title } }</code> لا يستدعي <code>AuthorsService</code>.</p>
+<h2>شرح المثال</h2>
+<p>الخدمة التي تعيد الكتب تُرجع <code>{ id, title, authorId }</code> والكائن يكفي <code>@Field</code> الظاهر لأن <code>author</code> سيُستبدل بناتج <code>@ResolveField</code>. لا تملأ <code>author: null</code> وتمنع الحقل. اترك الدالة هي المصدر. <code>authorId</code> بلا <code>@Field</code> لا يظهر للعميل، ويبقى متاحًا للدالة لأن الكائن في الذاكرة أغنى من المخطط.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Apollo يمشي الشجرة. بعد حل <code>book</code> يحل الحقول المطلوبة. <code>title</code> قراءة خاصية. <code>author</code> استدعاء الدالة المسجّلة مع الأب. الناتج <code>Author</code> يُحل <code>name</code> منه. إن أعادت الدالة <code>null</code> والحقل <code>Author!</code> فشل التنفيذ. إن كان الكتاب يتيمًا، إمّا تمنع ذلك في البيانات وإما تعلن <code>Author</code> قابلًا للغياب. قائمة <code>books</code> تشغّل الدالة لكل عنصر طُلب له المؤلف. هذا سلوك صحيح وظيفيًا وخطير على القاعدة إن كانت الدالة استعلامًا لكل نداء.</p>
+<h2>مثال عملي</h2>
+<p>اتجاه عكسي على <code>AuthorsResolver</code>: <code>@ResolveField(() =&gt; [Book])</code> يستدعي <code>books.findByAuthorId(author.id)</code>. اتجاه واحد يكفي للمنتج الأول. <code>() =&gt; Author</code> تؤجل القراءة إن دار الاستيراد بين الصنفين. التكلفة تتبع نص العملية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>include: { author: true }</code> في كل <code>findById</code> رغم أن الحقل محلل مستقل، فتدفع التكلفة مرتين.</li>
+<li>كشف <code>authorId</code> في المخطط مع <code>author</code> بلا سبب للعميل.</li>
+<li><code>@ResolveField</code> على محلل غير مربوط بـ <code>@Resolver(() =&gt; Book)</code>.</li>
+<li>اعتبار العلاقة «محلولة» لأن البطاقة سريعة. القائمة هي الاختبار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يملك الحقل مصدرًا غير كائن الأب: مؤلف، عدد مراجعات، توفر يُحسب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحقل منسوخ أصلًا على الأب مثل <code>title</code>. <code>@Field</code> يكفي. ولإصلاح N+1، لا تضع <code>JOIN</code> عشوائيًا في كل محلل أب قبل أن تقيس. التلميح في درس DataLoader.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحقل</th>
+<th>من يملأه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>title</code></td>
+<td>كائن الكتاب العائد من <code>@Query</code></td>
+</tr>
+<tr>
+<td><code>author</code></td>
+<td><code>@ResolveField</code> عند الطلب</td>
+</tr>
+<tr>
+<td><code>authorId</code></td>
+<td>ذاكرة الخدمة، بلا <code>@Field</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة تستلم كائن الكتاب داخل محلل المؤلف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Parent()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُستدعى <code>author()</code> في استعلام البطاقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العملية لم تطلب الحقل. Apollo لا يشغّل محلل حقل غائب عن الشجرة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>قائمة 20 كتابًا مع <code>author { name }</code> وكل نداء يفتح استعلامًا. ماذا سمّيت المشكلة، وأين تُعالج بعمق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>N+1. هذا الفصل يلمّح إلى DataLoader لكل طلب. العمق في <code>57-graphql-advanced</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُعلن الحقل وأين تُكتب دالته؟</li>
+<li>لماذا <code>authorId</code> بلا <code>@Field</code>؟</li>
+<li>ماذا يحدث لقائمة إن كان المحلل استعلامًا لكل أب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>العلاقة <code>@ResolveField</code> تعمل فقط إن طُلب الحقل. الأب يحمل مفتاحًا داخليًا. تكلفة القائمة ليست منتهية بهذا الدرس.</p>
+<h2>ماذا بعد؟</h2>
+<p>من يرى الطلب داخل المحلل: context، والحارس على باب GraphQL.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Resolvers: <a href="https://docs.nestjs.com/graphql/resolvers">https://docs.nestjs.com/graphql/resolvers</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

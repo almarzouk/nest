@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>register</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-register.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>register</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمرير خيار مختلف في كل استيراد عبر <code>register</code>، بحيث تشارك الميزات المولّد نفسه وتختلف السابقة أو المهلة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>forRoot</code> يثبت خيارًا واحدًا للتطبيق. سابقة معرف المستخدم <code>usr</code> وسابقة الطلب <code>ord</code> خياران شرعيان في الإقلاع نفسه. نسخ الملفات يكسر التحديث. <code>register({ prefix })</code> يعيد <code>DynamicModule</code> لكل نداء، والتوثيق يبني مثال <code>IdGeneratorModule</code> على هذا الاسم اصطلاحًا عندما يختلف التكوين لكل مستهلك.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الدالة الثابتة تقبل كائن خيار وتضعه في مزود، غالبًا برمز، وتصدّر الخدمة التي تقرأ الرمز. <code>UsersModule</code> ينادي <code>register({ prefix: &#39;usr&#39; })</code> و <code>OrdersModule</code> ينادي <code>register({ prefix: &#39;ord&#39; })</code>. كل نداء وصف وحدة. احذر مشاركة حالة على Singleton عام إن كان الخيار يجب أن يبقى مع الميزة التي طلبته.</p>
+<h2>التعريف التقني</h2>
+<p>من دليل التوثيق: المستورد يكتب <code>IdGeneratorModule.register({ prefix: &#39;usr&#39; })</code>. الدالة ترجع <code>DynamicModule</code>. الخدمة تأخذ الخيار بالحقن لا بثابت داخل الملف.</p>
+<pre><code class="language-ts">import { DynamicModule, Module } from &#39;@nestjs/common&#39;;
+import { IdGenerator } from &#39;./id-generator.js&#39;;
+
+export interface IdGeneratorOptions {
+  prefix: string;
+}
+
+@Module({})
+export class IdGeneratorModule {
+  static register(options: IdGeneratorOptions): DynamicModule {
+    return {
+      module: IdGeneratorModule,
+      providers: [
+        { provide: &#39;ID_OPTIONS&#39;, useValue: options },
+        IdGenerator,
+      ],
+      exports: [IdGenerator],
+    };
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { randomUUID } from &#39;node:crypto&#39;;
+
+@Injectable()
+export class IdGenerator {
+  constructor(@Inject(&#39;ID_OPTIONS&#39;) private readonly options: { prefix: string }) {}
+
+  next(): string {
+    return `${this.options.prefix}_${randomUUID()}`;
+  }
+}
+</code></pre>
+<p>إن سجلت النداءان المزود بالرمز نفسه في نطاق يتصادم، فالأخير قد يغلب حسب طريقة التسجيل. لعزل حقيقي بين ميزتين اجعل الرمز فريدًا لكل نداء أو احقن الخدمة في الوحدة المستهلكة فقط من غير تصدير عام. المثال الرسمي يصدّر <code>IdGenerator</code> كي يحقنه <code>UsersService</code> في تلك الوحدة. أبقِ الوحدة غير عامة حتى لا يختلط خيار <code>usr</code> مع <code>ord</code> في حاوية واحدة بالرمز <code>&#39;ID_OPTIONS&#39;</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">UsersModule  -&gt; register({ prefix: &#39;usr&#39; }) -&gt; مولّد يراه مستخدمو هذه الوحدة
+OrdersModule -&gt; register({ prefix: &#39;ord&#39; }) -&gt; مولّد يراه الطلبات
+لا global
+لا forRoot ثانٍ يحمل السابقات كلها إن كانت السابقة شأن الميزة
+</code></pre>
+<p>اسم الدالة اصطلاح. السلوك هو كائن لكل استدعاء.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { IdGeneratorModule } from &#39;../id-generator/id-generator.module.js&#39;;
+import { UsersService } from &#39;./users.service.js&#39;;
+
+@Module({
+  imports: [IdGeneratorModule.register({ prefix: &#39;usr&#39; })],
+  providers: [UsersService],
+})
+export class UsersModule {}
+</code></pre>
+<p><code>UsersService</code> تحقن <code>IdGenerator</code> وتستدعي <code>next()</code>. الناتج يبدأ بـ <code>usr_</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>useValue: options</code> يلتقط الكائن الذي مرره هذا الاستيراد. لأن الوحدة ليست <code>global</code>، التصدير مرئي لمن استورد هذا الكائن الراجع. ميزة الطلبات تكرر النمط بـ <code>ord</code>. لا تعِد تصدير <code>IdGeneratorModule</code> من الجذر بعد <code>register</code> واحد ثم تتوقع أن الميزة الثانية تغيّر السابقة؛ إعادة التصدير تشارك ما بُني.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>كل ظهور لـ <code>register</code> في <code>imports</code> يُستدعى أثناء بناء تلك الوحدة.</li>
+<li>الإطار يسجل المزودات المرتبطة بذلك الكائن.</li>
+<li>الخدمة داخل تلك الحدود ترى <code>&#39;ID_OPTIONS&#39;</code> الخاص بالنداء إن بقي التسجيل محليًا.</li>
+<li>جعل الوحدة عامة مع رمز نصي ثابت يخلط الخيارات. لذلك <code>register</code> المتعدد يبقى غير عام، أو يستعمل رمزًا فريدًا لكل تكوين.</li>
+<li>الدمج مع <code>@Module</code> الثابت ما زال ساريًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مهلة كاش لكل ميزة: <code>CacheModule.register({ ttlSeconds: 5 })</code> في البحث، و <code>register({ ttlSeconds: 60 })</code> في صفحة الكتاب. الخدمتان تحقن <code>CacheClient</code> المصدَّر من استيرادهما. اختبار كل وحدة يمرر مهلتها في <code>imports</code> من غير التأثير على الأخرى.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>global: true</code> مع <code>register</code> متعدد ورمز ثابت.</li>
+<li>تسمية الدالة <code>forRoot</code> ثم استدعاؤها في كل ميزة، فيضل القارئ.</li>
+<li>نسيان <code>exports</code> فلا يرى <code>UsersService</code> المولّد.</li>
+<li>مشاركة كائن خيارات قابل للتغيير بين النداءات. مرر كائنًا لكل نداء.</li>
+<li>إعادة تصدير الصنف من الجذر واعتبارها تكوينًا لكل الميزة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>خيار يصف استهلاك هذه الوحدة: سابقة، مهلة، اسم طابور للميزة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>اتصال قاعدة واحد. ذلك <code>forRoot</code> في الجذر. خيار من <code>ConfigService</code> لكل ميزة ينتظر <code>registerAsync</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>forRoot</code></th>
+<th><code>register</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يستدعي</td>
+<td>الجذر عادة</td>
+<td>كل مستهلك</td>
+</tr>
+<tr>
+<td>الخيار</td>
+<td>واحد للتطبيق</td>
+<td>حسب الاستيراد</td>
+</tr>
+<tr>
+<td><code>global</code></td>
+<td>شائع</td>
+<td>يفسد تعدد الخيارات إن كان الرمز مشتركًا</td>
+</tr>
+<tr>
+<td>إعادة التصدير</td>
+<td>الصنف بعد النداء الوحيد</td>
+<td>لا تُعمم نداء ميزة على الباقي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي اسم دالة يوضحه التوثيق لسابقة مختلفة لكل كيان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>register</code>، كما في <code>IdGeneratorModule.register({ prefix: &#39;usr&#39; })</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا إبقاء <code>IdGeneratorModule</code> غير عامة في مثال السابقات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يختلط خيار <code>usr</code> مع <code>ord</code> على رمز واحد مرئي للتطبيق كله.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ميزة أعادت تصدير <code>IdGeneratorModule</code> بعد <code>register({ prefix: &#39;usr&#39; })</code>. ماذا ترى ميزة تستورد الأولى وتريد <code>ord</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترى ما بُني عند النداء الأول، أي سابقة <code>usr</code>، إن كانت تستهلك المصدَّر كما هو. للحصول على <code>ord</code> تستدعي <code>register</code> في حدودها، ولا تعتمد على إعادة تصدير نداء غيرها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يرجع <code>register</code>؟</li>
+<li>أين يُخزن <code>prefix</code> حتى تقرأه الخدمة؟</li>
+<li>متى يضر <code>global</code> مع هذه الدالة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>register</code> تكوين عند كل استيراد. اجعل الخيار محليًا لتلك الوحدة، واترك <code>forRoot</code> للإعداد الواحد في الجذر.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>registerAsync</code>: المصنع نفسه عندما يأتي الخيار من مزود آخر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

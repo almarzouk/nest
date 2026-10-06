@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>تبديل التنفيذ بالرمز نفسه</h2>
+<pre><code class="language-ts">const configServiceProvider = {
+  provide: ConfigService,
+  useClass:
+    process.env.NODE_ENV === &#39;development&#39;
+      ? DevelopmentConfigService
+      : ProductionConfigService,
+};
+</code></pre>
+<p>المتحكم يحقن <code>ConfigService</code> في البيئتين.</p>
+<h2>مزيف اختبار</h2>
+<pre><code class="language-ts">await Test.createTestingModule({
+  controllers: [BooksController],
+  providers: [
+    {
+      provide: BooksService,
+      useValue: { findAll: () =&gt; [{ id: &#39;b1&#39;, title: &#39;مقدمة&#39; }] },
+    },
+  ],
+}).compile();
+</code></pre>
+<p>لا قاعدة. الدالة المطلوبة فقط مكتوبة على المزيف.</p>
+<h2>مصنع واتصال</h2>
+<pre><code class="language-ts">{
+  provide: &#39;CONNECTION&#39;,
+  useFactory: (options: OptionsProvider) =&gt; new DatabaseConnection(options.get()),
+  inject: [OptionsProvider],
+}
+</code></pre>
+<h2>لقب للنسخة نفسها</h2>
+<pre><code class="language-ts">{ provide: &#39;LOGGER&#39;, useExisting: LoggerService }
+</code></pre>
+<p>مع <code>providers: [LoggerService, alias]</code>. في Singleton المرجع واحد.</p>
+<h2>رمز Symbol لعقد</h2>
+<pre><code class="language-ts">export const BOOKS = Symbol(&#39;BOOKS&#39;);
+</code></pre>
+<pre><code class="language-ts">{ provide: BOOKS, useClass: PrismaBooksAdapter }
+</code></pre>
+<pre><code class="language-ts">constructor(@Inject(BOOKS) private readonly books: BooksPort) {}
+</code></pre>
+<p>الواجهة <code>BooksPort</code> للنوع. الاختبار يغطي <code>BOOKS</code> بـ <code>useValue</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>التصدير يذكر الرمز الذي يُحقن خارجًا، بما فيه <code>Symbol</code> والسلسلة.</li>
+<li><code>useClass</code> المكرر ليس لقبًا. اللقب <code>useExisting</code>.</li>
+<li>مصنع <code>async</code> يُغطى في الاختبار حتى لا يفتح شبكة.</li>
+<li>لا <code>provide</code> على واجهة ممحية.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

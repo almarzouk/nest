@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Status Codes</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-status-codes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Status Codes</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت رموز حالة كتالوج رف بحيث يفهمها العميل من الرقم: إنشاء 201، قائمة فارغة 200، غياب فرد 404، وتعارض حالة 409.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>GET /books</code> من غير نتائج يعيد 404 فتعرض الواجهة «المسار غير موجود». <code>POST /books</code> يعيد 200 فلا تميّز الواجهة الإنشاء من القراءة. <code>DELETE</code> يعيد جسم الكتاب المحذوف مع 200 في مكان و 204 في مكان آخر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الرمز قرار مختصر قبل قراءة JSON. النجاح الذي يعيد تمثيلًا يستخدم 200. الإنشاء يستخدم 201. الغياب لفرد محدد 404. المجموعة التي لا تحتوي عناصر ما زالت المجموعة، فترد 200 ومصفوفة فارغة.</p>
+<h2>التعريف التقني</h2>
+<p>في Nest، إعادة كائن من الـ Handler تكتب 200 ضمن Standard response handling. <code>@HttpCode(201)</code> أو <code>@HttpCode(HttpStatus.NO_CONTENT)</code> يغيّر النجاح. الاستثناءات تحمل الرمز: <code>NotFoundException</code> 404، <code>ConflictException</code> 409، <code>BadRequestException</code> 400. استراتيجية الأخطاء في الفصل السابق تترجم أصناف المجال إلى هذه الرموز؛ هذا الدرس يثبت أي رمز يريده عقد رف. 201 للإنشاء حتى لو بنى المعرّف العميل في حالات نادرة؛ في رف الخادم يملك <code>id</code> ويرده في الجسم مع 201. 204 للحذف عندما لا يوجد جسم. لا تستخدم 404 لقائمة فارغة ولا 200 لإنشاء.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET  /books        200  []
+GET  /books/missing 404
+POST /books        201  الجسم الجديد
+PATCH موجود        200
+DELETE بلا جسم     204
+تعارض نشر          409
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Post, Body, HttpCode, Param, NotFoundException } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;books&#39;)
+export class BooksStatusController {
+  private readonly rows = [{ id: &#39;b1&#39;, title: &#39;موسم الهجرة&#39; }];
+
+  @Get()
+  list() {
+    return this.rows.filter((book) =&gt; book.title.includes(&#39;لا شيء&#39;));
+  }
+
+  @Post()
+  @HttpCode(201)
+  create(@Body() body: { title: string }) {
+    const book = { id: &#39;b2&#39;, title: body.title };
+    this.rows.push(book);
+    return book;
+  }
+
+  @Get(&#39;:id&#39;)
+  find(@Param(&#39;id&#39;) id: string) {
+    const book = this.rows.find((row) =&gt; row.id === id);
+    if (!book) throw new NotFoundException(&#39;Book not found&#39;);
+    return book;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>list</code> تعيد <code>[]</code> والوضع الافتراضي 200. التصفية التي لا تطابق ليست غياب مسار.</li>
+<li><code>@HttpCode(201)</code> لازم لأن الافتراضي 200 حتى على <code>POST</code>.</li>
+<li><code>find</code> يرمي 404 للفرد فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المعالج يعيد قيمة أو يرمي <code>HttpException</code>.</li>
+<li>إن أعاد قيمة، Nest يسلسلها ويضع 200 ما لم يوجد <code>@HttpCode</code> أو <code>res.status</code> صريح.</li>
+<li>201 تخبر العميل أن الفرد وُجد بسبب هذا الطلب، والجسم هو التمثيل.</li>
+<li>204 لا جسم له. لا ترجع كائنًا مع <code>@HttpCode(204)</code> ثم تتوقع أن يقرأه العميل.</li>
+<li>409 يأتي من تعارض حالة كما في استراتيجية الأخطاء، لا من قائمة فارغة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Delete, HttpCode, Param } from &#39;@nestjs/common&#39;;
+
+@Delete(&#39;:id&#39;)
+@HttpCode(204)
+remove(@Param(&#39;id&#39;) id: string) {
+  const index = this.rows.findIndex((row) =&gt; row.id === id);
+  if (index &lt; 0) throw new NotFoundException(&#39;Book not found&#39;);
+  this.rows.splice(index, 1);
+}
+</code></pre>
+<p>الحذف الناجح بلا جسم. الحذف لمعرّف غير موجود 404 لأن الفرد كان مطلوبًا. هذا يختلف عن <code>GET /books?author=لا-أحد</code> الذي يعيد 200 و <code>[]</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>404 للقائمة الفارغة.</li>
+<li>200 على <code>POST</code> الذي أنشأ صفًا.</li>
+<li>500 لسعر مرفوض بينما العميل يستطيع التصحيح (400) أو للحالة الممنوعة (409).</li>
+<li>201 مع جسم فارغ فلا يعرف العميل <code>id</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل Handler جديد، قبل كتابة رسالة الخطأ. الرمز أولًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخترع رمزًا غير مستخدم في العقد «ليدل على نوع الكتاب». المعنى التجاري في الجسم. الرمز من مجموعة صغيرة ثابتة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>الرمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قائمة، وفيها صفر كتب</td>
+<td>200 و <code>[]</code></td>
+</tr>
+<tr>
+<td><code>GET</code> بمعرّف غائب</td>
+<td>404</td>
+</tr>
+<tr>
+<td><code>POST</code> أنشأ كتابًا</td>
+<td>201 والجسم</td>
+</tr>
+<tr>
+<td>حذف بلا جسم</td>
+<td>204</td>
+</tr>
+<tr>
+<td>ISBN مكرر</td>
+<td>409</td>
+</tr>
+<tr>
+<td>شكل JSON مرفوض</td>
+<td>400</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>GET /books?q=عنوان-غير-موجود</code> أعاد 404. ما الرمز الصحيح وما الجسم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>200 و <code>[]</code>. 404 تُحفظ لـ <code>GET /books/:id</code> عندما لا يوجد ذلك الفرد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>POST /books</code> يعيد الكتاب مع <code>id</code> لكن الوضع 200. ماذا يضيف المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@HttpCode(201)</code> أو <code>HttpStatus.CREATED</code>. الجسم وحده لا يعلن الإنشاء. الافتراضي في Nest للرد العادي 200.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>DELETE /books/b1</code> والكتاب موجود في طلب شراء مفتوح. أي رمز، ولماذا ليس 404؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol start="409">
+<li>الكتاب موجود لكن الحالة تمنع الحذف. 404 تقول إنه غير موجود فيكذب على العميل الذي يرى الكتاب في القائمة.</li>
+</ol>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رمز القائمة الفارغة؟</li>
+<li>لماذا <code>POST</code> الناجح في رف ليس 200؟</li>
+<li>متى 204 ومتى 200 بعد التعديل؟</li>
+<li>أي رمز لتعارض ISBN؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>200 للقراءة بما فيها المصفوفة الفارغة، 201 لإنشاء يعيد التمثيل، 204 لحذف بلا جسم، 404 لفرد غائب، 409 لتعارض حالة. <code>@HttpCode</code> يغيّر افتراض Nest.</p>
+<h2>ماذا بعد؟</h2>
+<p>الإنشاء قد يصل مرتين بسبب إعادة محاولة على شبكة الجوال. الدرس التالي يجعل التكرار آمنًا بمفتاح Idempotency.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>MDN — 201 Created: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/201">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/201</a></li>
+<li>MDN — 404 Not Found: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/404">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/404</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

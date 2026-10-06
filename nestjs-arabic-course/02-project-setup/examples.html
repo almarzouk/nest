@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>إنشاء مشروع التجربة</h2>
+<p>من مجلد خارج مواد الشرح:</p>
+<pre><code class="language-bash">node -v
+npm i -g @nestjs/cli
+nest new bookstore
+cd bookstore
+npm run start:dev
+</code></pre>
+<p>اختر ESM، واترك <code>strict</code>، وتجاوز Observe الآن إن أردت ملف إقلاع مطابق للفصول القادمة. افتح <code>http://localhost:3000/</code> وتوقع <code>Hello World!</code>.</p>
+<h2>تتبع النص</h2>
+<ol>
+<li><code>AppController.getHello</code> ينادي الخدمة.</li>
+<li><code>AppService.getHello</code> ترجع النص.</li>
+<li>غيّر النص، احفظ، أعد الطلب مع <code>start:dev</code>.</li>
+</ol>
+<h2>بناء</h2>
+<pre><code class="language-bash">npm run build
+npm run start:prod
+</code></pre>
+<p>أوقف <code>start:dev</code> أولًا حتى يتحرر المنفذ.</p>
+<h2>ماذا بعد؟</h2>
+<p>تمارين الفصل ثم الإقلاع بالتفصيل.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

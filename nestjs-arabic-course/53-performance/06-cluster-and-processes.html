@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cluster ونموذج العمليات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-cluster-and-processes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Cluster ونموذج العمليات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استخدام أكثر من عملية Node على نفس الجهاز أو خلف موازن حمل، مع معرفة ما الذي يتسارع وما الذي يبقى بطيئًا في متجر رف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>القياس أثبت أن الحلقة تقضي وقتًا في JavaScript (تسلسل، تحقق، ضغط داخل العملية) وأن نواة واحدة من ثمانٍ مشغولة والبقية فارغة. عملية واحدة لا تشغّل JavaScript على أكثر من نواة. الطلبات تنتظر دورها على تلك النواة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>شغّل عدة عمليات من التطبيق نفسه. كل عملية لها حلقتها وذاكرتها. نظام التشغيل أو <code>cluster</code> أو موازن الحمل يوزع الاتصالات. الطلب الواحد لا يصبح أسرع. عدد الطلبات المتزامنة هو الذي يكبر.</p>
+<h2>التعريف التقني</h2>
+<p>وحدة <code>node:cluster</code> تشغّل عملية أساسية تتفرع إلى workers بـ <code>fork</code>. كل worker يشغّل <code>bootstrap</code> ويستمع على نفس المنفذ؛ النظام يوزع المقابس. <code>availableParallelism()</code> من <code>node:os</code> يعطي عدد العمال المناسب للجهاز. البديل الذي تصفه صفحة Deployment هو التوسع الأفقي: عدة نسخ خلف Nginx أو موازن سحابي، غالبًا كحاويات. الذاكرة لا تُشارك: كاش الذاكرة، الجلسات في الذاكرة، وعداد داخل متغير تختفي حدودها عند حدود العملية. صفحة Deployment تتحدث عن health checks حتى يسحب الموازن النسخة المريضة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">موازن أو عملية أساسية
+   ├─ worker A  حلقة + ذاكرة
+   ├─ worker B  حلقة + ذاكرة
+   └─ worker C  حلقة + ذاكرة
+Postgres مشترك خارجهم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import cluster from &#39;node:cluster&#39;;
+import { availableParallelism } from &#39;node:os&#39;;
+import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+
+if (cluster.isPrimary) {
+  const workers = availableParallelism();
+  for (let i = 0; i &lt; workers; i++) cluster.fork();
+} else {
+  await bootstrap();
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الأساسية لا تستمع للـ HTTP. هي تنشئ العمال وتعيد إنشاء من يسقط إن أضفت <code>cluster.on(&#39;exit&#39;, ...)</code>.</li>
+<li>كل عامل يحمل نسخة كاملة من المزوّدات singleton. الإقلاع يتكرر بعدد العمال.</li>
+<li>المنفذ واحد من جهة العميل. التوزيع على مستوى المقبس لا على مستوى مسار Nest.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العملية الأساسية تنشئ عمالًا.</li>
+<li>كل عامل يهيئ Nest ويتصل بمجمع Postgres الخاص به ضمن حد <code>pool</code> ذلك العميل.</li>
+<li>اتصال جديد يذهب إلى عامل. الطلب يعيش ويموت هناك.</li>
+<li>إن خزّنت قائمة الكتب في ذاكرة العامل، العامل المجاور لا يراها.</li>
+<li>مجموع اتصالات القاعدة = عدد العمال × حجم المجمع. هذا سقف يجب أن يبقى تحت <code>max_connections</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>على رف، التقرير الليلي ليس طلب HTTP. شغّله عملية بأمر منفصل حتى لا يزاحم العمال:</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+import { PriceReportService } from &#39;./reports/price-report.service.js&#39;;
+
+const app = await NestFactory.createApplicationContext(AppModule);
+try {
+  const report = app.get(PriceReportService);
+  await report.histogram();
+} finally {
+  await app.close();
+}
+</code></pre>
+<p><code>createApplicationContext</code> عملية بلا منفذ HTTP. عمال الويب يبقون للطلبات. شارك Redis إن كان الكاش قرارًا صحيحًا تحت التعدد، كما في درس التخزين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع أن cluster يخفض زمن استعلام 800ms. الاستعلام ملك القاعدة.</li>
+<li>جلسة في الذاكرة ثم فشل التجديد لأن الطلب التالي وقع على عامل آخر.</li>
+<li><code>pool</code> بحجم 20 مع 8 عمال فيصبح 160 اتصالًا.</li>
+<li>عداد «طلبات اليوم» في متغير على الخدمة singleton واعتباره إجمالي الجهاز.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما CPU العملية هو السقف، والقاعدة والشبكة تحتمل مزيدًا من التزامن، وقست ذلك. محليًا للتجربة، أو في الإنتاج كعمال على آلة واحدة. عبر الآلات، النسخ الأفقية في صفحة Deployment أوضح من محاولة مد <code>cluster</code> بينها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كأول رد على SQL بطيء أو فهرس غائب. ولتطبيق حالته كلها في الذاكرة ولم تنتقل بعد إلى مخزن مشترك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النموذج</th>
+<th>نوى</th>
+<th>ذاكرة مشتركة</th>
+<th>جلسة في الذاكرة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عملية واحدة</td>
+<td>واحدة لـ JS</td>
+<td>نعم داخلها</td>
+<td>تعمل</td>
+</tr>
+<tr>
+<td><code>node:cluster</code></td>
+<td>عدة عمليات على الجهاز</td>
+<td>لا</td>
+<td>تنكسر</td>
+</tr>
+<tr>
+<td>نسخ خلف موازن</td>
+<td>عدة أجهزة</td>
+<td>لا</td>
+<td>تنكسر أيضًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>طلب واحد يأخذ 400ms داخل Postgres. كم يصبح مع 4 عمال إذا كان العميل واحدًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قريبًا من 400ms. العمال يزيدون عدد الطلبات المتزامنة، لا سرعة استعلام واحد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد يفشل تسجيل الدخول المتتالي بعد تفعيل cluster والجلسات محفوظة في <code>Map</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إنشاء الجلسة كتب في ذاكرة عامل، والطلب التالي وصل إلى عامل آخر لا يملك المفتاح. انقل الجلسة إلى مخزن مشترك أو فعّل إلصاق الجلسة في الموازن وأنت تعرف ثمنه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>8 عمال و <code>connection_limit</code> في Prisma يساوي 10. ماذا تحسب قبل النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى 80 اتصالًا من تطبيق رف وحده، زائد أدوات الترحيل والمهام. قارن ذلك بـ <code>max_connections</code> في Postgres واترك هامشًا. خفّض الحد لكل عملية أو عدد العمال حتى يبقى المجموع آمنًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يوزع <code>cluster</code>: الطلب داخل Nest أم المقبس على العمليات؟</li>
+<li>أي حالة يجب أن تخرج من ذاكرة العملية قبل التعدد؟</li>
+<li>لماذا تقرير CPU-heavy لا يُشغَّل داخل عامل الويب؟</li>
+<li>كيف يدخل حجم المجمع في حساب الاتصالات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>تعدد العمليات يستعمل النوى الفائضة. كل عملية Nest كاملة ومستقلة في الذاكرة. هو لا يصلح استعلامًا بطيئًا، ويُلزمك بمخزن مشترك لكل حالة كانت تعيش في singleton.</p>
+<h2>ماذا بعد؟</h2>
+<p>إن بقي CPU الـ HTTP نفسه هو السقف بعد القياس، صفحة Performance تقترح Fastify. الدرس التالي يضع الشرط: قياس، لا شعار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Node.js — Cluster: <a href="https://nodejs.org/api/cluster.html">https://nodejs.org/api/cluster.html</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+<li>NestJS — Standalone applications: <a href="https://docs.nestjs.com/standalone-applications">https://docs.nestjs.com/standalone-applications</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Observable</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-observable.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Observable</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنشاء تيار قيمة واحدة والاشتراك فيه مرة، ورؤية أن العمل يبدأ عند الاشتراك لا عند بناء الكائن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الدالة التي تعيد <code>new Observable(...)</code> لا تنفّذ المصنع حتى ينادي أحد <code>subscribe</code>. في HTTP هذا يعني أن الطلب لا يخرج من العملية عند استدعاء <code>http.get</code> فقط. من يبني التيار ثم يمرره إلى Nest يترك الإطار يشترك. من يشترك ثم يمرر التيار نفسه قد يرسل الطلب مرتين.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Observable</code> وصفة. <code>subscribe</code> يشغّلها. الملاحظ يستلم <code>next</code> ثم <code>complete</code> أو <code>error</code>. تيار HTTP المعتاد قيمة واحدة ثم اكتمال. الإلغاء عبر كائن الاشتراك يهم عندما يغادر العميل قبل أن يصل الرد.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Observable } from &#39;rxjs&#39;;
+
+const titles = new Observable&lt;string&gt;((subscriber) =&gt; {
+  subscriber.next(&#39;NestJS in Practice&#39;);
+  subscriber.complete();
+});
+</code></pre>
+<p>حتى هذا السطر لم تُطبع شيء ولم تُستدعَ الدالة الداخلية من أجل مستهلك. الاستهلاك:</p>
+<pre><code class="language-ts">const subscription = titles.subscribe({
+  next: (title) =&gt; console.log(title),
+  error: (error) =&gt; console.error(error),
+  complete: () =&gt; console.log(&#39;done&#39;),
+});
+</code></pre>
+<p><code>subscription.unsubscribe()</code> يوقف الملاحظ. إن كان المصنع أعاد دالة تنظيف، تُستدعى عند الإلغاء.</p>
+<p>تيار بلا <code>complete</code> يبقى مفتوحًا. لا تفعل ذلك في معترض HTTP. الرد قيمة ثم اكتمال.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">بناء Observable     وصفة صامتة
+subscribe           يبدأ العمل
+next                قيمة
+complete أو error   نهاية
+unsubscribe         إلغاء إن تأخرت النهاية
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>دالة متجر تعيد عنوانًا كتيار، للتجربة لا للاستبدال عن الخدمة:</p>
+<pre><code class="language-ts">import { Observable, of } from &#39;rxjs&#39;;
+
+export function titleOf(bookId: string): Observable&lt;string&gt; {
+  return of(`book-${bookId}`);
+}
+</code></pre>
+<p><code>of</code> يصدر القيم ثم يكتمل. <code>titleOf(&#39;42&#39;)</code> لا يطبع. الطباعة في <code>subscribe</code> أو عندما تعيد الدالة التيار إلى Nest فتشترك هي.</p>
+<h2>شرح المثال</h2>
+<p><code>of</code> مناسب لاختبار سلسلة <code>pipe</code> بلا شبكة. لا تستخدمه لإخفاء استدعاء Prisma. الخدمة تبقى <code>async</code>. هذا المثال يوضح كسل التيار: بناء <code>titleOf</code> رخيص، والمشترك هو من يسحب القيمة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل <code>subscribe</code> على تيار بارد يشغّل المصنع من جديد. <code>http.get</code> في الفصل التالي بارد: اشتراكان يعنيان طلبين. تيار ساخن يشارك تنفيذًا قائمًا، وليس ما تحتاجه لطلب HTTP واحد. لذلك لا تخزّن نتيجة <code>http.get</code> في حقل وتشاركها بين طلبات مستخدمين. ابنِ التيار داخل الدالة واترك مشتركًا واحدًا.</p>
+<p><code>firstValueFrom(source)</code> يشترك وينتظر أول <code>next</code> ثم يلغي. إن أكمل التيار بلا قيمة يرفض الوعد. هذا الجسر إلى <code>await</code> عندما لا تريد تمرير التيار إلى Nest.</p>
+<h2>مثال عملي</h2>
+<p>في اختبار معترض، ادفع قيمة واحدة:</p>
+<pre><code class="language-ts">import { of } from &#39;rxjs&#39;;
+import { lastValueFrom } from &#39;rxjs&#39;;
+
+const handled = await lastValueFrom(interceptor.intercept(ctx, { handle: () =&gt; of({ title: &#39;NestJS&#39; }) }));
+</code></pre>
+<p><code>lastValueFrom</code> ينتظر الاكتمال. لتيار <code>of</code> القيمة الأخيرة هي الوحيدة. لا تشترك في الاختبار يدويًا ثم تنادي <code>lastValueFrom</code> على التيار نفسه إن كان باردًا ويطلق أثرًا جانبيًا مرتين. هنا <code>of</code> بلا أثر، لكن العادة تبقى: مشترك واحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتقاد أن <code>new Observable</code> نفّذ العمل.</li>
+<li>اشتراكان على طلب HTTP بارد.</li>
+<li>تيار لا يكتمل في مسار HTTP.</li>
+<li>تخزين تيار الطلب على مزوّد singleton.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تبني سلسلة ستشترك فيها Nest مرة، أو عندما تختبرها بـ <code>lastValueFrom</code> / <code>firstValueFrom</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كغلاف حول كل دالة خدمة. <code>return title</code> يكفي داخل <code>BooksService</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العملية</th>
+<th>الوعد</th>
+<th>Observable البارد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>متى يبدأ</td>
+<td>عند استدعاء الدالة <code>async</code></td>
+<td>عند <code>subscribe</code></td>
+</tr>
+<tr>
+<td>كم قيمة</td>
+<td>واحدة</td>
+<td>صفر أو أكثر، وهنا غالبًا واحدة</td>
+</tr>
+<tr>
+<td>الإلغاء</td>
+<td><code>AbortSignal</code></td>
+<td><code>unsubscribe</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>of(&#39;NestJS&#39;)</code> وحده يطبع العنوان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الطباعة عند الاشتراك أو عند من يشترك نيابة عنك.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يحدث لطلب HTTP بارد إن اشتركت مرتين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يخرج الطلب مرتين. كل اشتراك يشغّل المصنع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار <code>firstValueFrom</code> بدل إرجاع التيار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تريد <code>await</code> داخل خدمة ولا يوجد معترض ينتظر التيار. في المعترض أعد التيار حتى تكتمل السلسلة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين بناء التيار والاشتراك؟</li>
+<li>لماذا الاكتمال مهم لمسار HTTP؟</li>
+<li>أي دالة تحول أول قيمة إلى وعد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Observable</code> وصفة باردة حتى الاشتراك. مسار HTTP يريد قيمة ثم <code>complete</code>، ومشتركًا واحدًا لكل طلب خارجي.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>pipe</code>: كيف تركّب خطوات على الوصفة قبل أن يشترك الإطار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>RxJS — Observable: <a href="https://rxjs.dev/guide/observable">https://rxjs.dev/guide/observable</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

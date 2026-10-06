@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مرحلة Exception Filters</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-exception-filters-stage.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مرحلة Exception Filters</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت أن المرشحات تعمل لاستثناء غير ممسوك، من المسار إلى Controller ثم العام، وأن أول من يمسك يوقف الباقي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مرشح عام لشكل الأخطاء ومرشح على <code>PATCH</code> لخطأ الإعارة يتصارعان إن عملا معًا على الاستثناء نفسه. Nest لا تمرر الاستثناء من مرشح إلى آخر. الأخص، وهو المسار، يُسأل أولًا. توقع «العام يغلّف الجميع دائمًا» يعيد ترتيب Guards على أداة لا تسلك ذلك الاتجاه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>البند 9 ليس على طريق النجاح. عند استثناء غير ممسوك تُتخطى بقية الدورة ويُفحص: مرشح المسار، ثم مرشح Controller، ثم المرشح العام. الذي يرد على الاستثناء يوقف السلسلة. مشاركة السلوك بين مرشحين تتم بالوراثة لا بتمرير الخطأ.</p>
+<p>استثناء Middleware حالة أضيق: المرشح العام فقط.</p>
+<h2>التعريف التقني</h2>
+<p>من التوثيق: المرشحات المكوّن الوحيد الذي لا يبدأ من العام. Nest تفحص أدنى مستوى: المسار، ثم Controller، ثم العام. الاستثناء لا يُمرَّر بين المرشحات. إن أمسكه مرشح المسار فمرشح Controller والعام لا يريان الاستثناء نفسه. للأثر المشترك استخدم وراثة بين الأصناف.</p>
+<p>المرشح يعمل لاستثناء غير ممسوك أثناء معالجة الطلب. <code>try/catch</code> لديك لا يطلقه. بمجرد الاستثناء غير الممسوك تُتخطى البقية وينتقل الطلب إلى المرشح.</p>
+<p>استثناء Middleware تعالجه طبقة الاستثناءات أيضًا، وينطبق العام فقط لأن المسار لم يُختر.</p>
+<p><code>catchError</code> في Interceptor إن رجَع قيمة فقد مسك الخطأ قبل هذه المرحلة. إن رماه مجددًا فالخطأ ما زال غير ممسوك.</p>
+<p>تنفيذ <code>@Catch</code> فصل Exception Filters. هنا ترتيب الفحص.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">رمي غير ممسوك بعد اختيار المسار
+  -&gt; مرشح الدالة
+  -&gt; إن لم يمسك: مرشح الصنف
+  -&gt; إن لم يمسك: المرشح العام
+  -&gt; استجابة الخطأ
+
+رمي من Middleware
+  -&gt; المرشح العام فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">PATCH /loans/:id
+  @Catch على الدالة      LoanPatchFilter
+  @Catch على LoansController  LoanControllerFilter
+  APP_FILTER               HttpExceptionFilter
+</code></pre>
+<p><code>LoansService.update</code> ترمي. <code>LoanPatchFilter</code> إن ردّ استجابة، يتوقف الفحص. <code>HttpExceptionFilter</code> لا يرى هذا الاستثناء. إن لم يوجد مرشح على الدالة ولا على الصنف، يصل العام.</p>
+<p>نجاح <code>update</code> لا ينشئ أيًا من الثلاثة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاتجاه عكس Guards: الأقرب إلى الدالة أولًا.</li>
+<li>«أول من يمسك» يعني أول مرشح في هذا الاتجاه يقرر أنه يعالج هذا النوع.</li>
+<li>مرشح لا يطابق نوع الاستثناء يُتخطى إلى المستوى التالي. التخطي غير تمرير الاستثناء بعد ما تم الإمساك.</li>
+<li>شكل JSON للخطأ مسؤولية المرشح الذي أمسك، لا مسؤولية <code>@HttpCode</code> التي تخص نجاحًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الرمي تبحث Nest في مرشحات المسار المسجّلة بترتيب ربطها، ثم مرشحات الصنف، ثم العامة بترتيب تسجيل <code>APP_FILTER</code> أو <code>useGlobalFilters</code>. أول تطابق يكتب الاستجابة. لا يُستأنف المستوى التالي على الاستثناء نفسه.</p>
+<p>استثناء قبل تحديد Controller، أي من Middleware، ليس له مرشح دالة أو صنف ليُفحص. تبقى المرشحات العامة.</p>
+<p><code>forwardRef</code> والدورة خارج الموضوع. لا علاقة لها بهذه المرحلة.</p>
+<p>وراثة <code>LoanPatchFilter</code> من أساس مشترك مع العام تكرر السلوك من غير أن يعمل الصنفان على الخطأ نفسه.</p>
+<h2>مثال عملي</h2>
+<p>ثلاث رميات:</p>
+<ol>
+<li><code>Guard</code> على <code>PATCH</code> يعيد <code>false</code>. المسار معروف. الفحص من مرشح <code>PATCH</code> صعودًا. Pipe لم تعمل.</li>
+<li><code>ParseIntPipe</code> ترمي و <code>catchError</code> لا يبتلع. الفحص نفسه. <code>update</code> لم تُنادَ.</li>
+<li><code>app.use</code> يرمي قبل اختيار الإعارة. <code>LoanPatchFilter</code> لا يشارك. <code>HttpExceptionFilter</code> العام يشارك إن كان مسجّلًا.</li>
+</ol>
+<p>في 1 و 2 إن كتب <code>LoanPatchFilter</code> الجسم، فالعام ساكن لذلك الاستثناء.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>توقع تشغيل المرشح بعد كل <code>return</code></td>
+<td>لا استثناء فلا مرحلة</td>
+</tr>
+<tr>
+<td>تمرير الخطأ من مرشح المسار إلى العام «للتغليف»</td>
+<td>الإمساك يوقف السلسلة؛ الغلاف وراثة</td>
+</tr>
+<tr>
+<td>مرشح على Controller لاستثناء <code>app.use</code></td>
+<td>المرحلة لم تختر Controller</td>
+</tr>
+<tr>
+<td><code>try/catch</code> في الخدمة يعيد كائن خطأ</td>
+<td>طريق النجاح و Interceptors الخروج، لا البند 9</td>
+</tr>
+<tr>
+<td>بدء الفحص من <code>APP_FILTER</code> كأنه Guard</td>
+<td>الاتجاه من المسار صعودًا</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p> لتحويل استثناء غير ممسوك إلى استجابة HTTP بعد أن اختار الإطار هذه المرحلة. الأخص على الدالة، والأعم في <code>APP_FILTER</code> لما يبقى بعد الأخص.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقيمة نجاح تريد تشكيلها. ذلك Interceptor خروج أو إرجاع عادي. للمنع قبل القاعدة. ذلك Guard، والفشل هناك قد ينتهي هنا كاستثناء لا كمناداة مرشح ناجح. لخطأ Middleware بشكل خاص بمسار. العام فقط هو المتاح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصدر</th>
+<th>من يُفحص</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الدالة أو Service أو Pipe أو Guard بعد اختيار المسار</td>
+<td>مسار، ثم Controller، ثم عام</td>
+</tr>
+<tr>
+<td><code>catchError</code> أرجع قيمة</td>
+<td>لا مرشح</td>
+</tr>
+<tr>
+<td><code>try/catch</code> داخل المعالج</td>
+<td>لا مرشح</td>
+</tr>
+<tr>
+<td>Middleware</td>
+<td>المرشح العام فقط</td>
+</tr>
+<tr>
+<td>طلب ناجح</td>
+<td>لا أحد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مرشح يُسأل أولًا على <code>PATCH</code> يرمي من الخدمة؟</p>
+<details><summary>الحل</summary>
+
+<p>مرشح مربوط بالدالة نفسها، ثم مرشح Controller، ثم العام.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>مرشح المسار ردّ على الاستثناء. هل يغيّر المرشح العام جسم الاستجابة؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. الاستثناء لا يُمرَّر بعد الإمساك. تغيير الشكل يتم داخل المرشح الذي أمسك أو بوراثة أساس مشترك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا البند 3 في المثال لا يصل إلى <code>LoanPatchFilter</code> رغم أن URL يبدو <code>/loans/9</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الرمي من <code>app.use</code> قبل اختيار المعالج. وجود النص في العنوان لا يربط مرشح الدالة. الطبقة المتاحة هي Exception Filter العام.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تعمل المرحلة أصلًا؟</li>
+<li>ما اتجاه الفحص؟</li>
+<li>ماذا يرى استثناء Middleware؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Exception Filters لاستثناء غير ممسوك، من المسار إلى Controller ثم العام، وأول إمساك يوقف الباقي. المشاركة بالوراثة. Middleware لا يرى إلا المرشح العام.</p>
+<h2>ماذا بعد؟</h2>
+<p>ماذا تعني المستويات الثلاثة عند التسجيل: Global و Controller و Route.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle (Filters): <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

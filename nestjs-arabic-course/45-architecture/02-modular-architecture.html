@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Modular Architecture</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-modular-architecture.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Modular Architecture</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل كل ميزة Nest وحدة لها سطح تصدير صغير، بحيث الطبقات داخل الميزة والحدود بين الميزات قراران معًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>طبقات نظيفة داخل مجلد واحد ما زالت تسمح لـ <code>BillingService</code> أن تستورد <code>OrdersService</code> من مسار ملف عميق. التطبيق يصبح كرة من الاستيراد. <code>@Module</code> مع <code>exports</code> يجعل العبور قرارًا ظاهرًا في <code>imports</code>. هذا أسلوب Nest الطبيعي، ويسمى هنا معماريًا نمطيًا: الميزة وحدة، لا طبقة أفقية لكل المتحكمات في المستودع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>BooksModule</code> يملك المتحكم والخدمة ويصدّر الخدمة إن احتاجتها وحدة أخرى. ما لا يُصدَّر خاص. الوحدات الأخرى تستورد الوحدة لا الملف الداخلي. شارك البنية (Prisma، الإعداد) بورقة صغيرة. لا تجعل كل الميزة <code>global</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { BooksController } from &#39;./books.controller.js&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+@Module({
+  controllers: [BooksController],
+  providers: [BooksService],
+  exports: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<p><code>OrdersModule</code> يضع <code>BooksModule</code> في <code>imports</code> إن كان إنشاء الطلب يقرأ كتابًا. لا يستورد <code>../books/books.service.ts</code> من ملف خارج الوحدة متجاوزًا التصدير. إن سمح TypeScript بالمسار، فالحد ضعيف. اتفق أن العبور عبر <code>imports</code> و <code>exports</code> فقط.</p>
+<p>داخل الوحدة تبقى الطبقات: المتحكم لا يرى Prisma إن كانت الخدمة هي السطح. بين الوحدات السطح هو المصدَّر.</p>
+<p>وحدة مشتركة <code>PrismaModule</code> ورقة يستوردها من يحتاج العميل، أو <code>global</code> مرة من <code>forRoot</code> إن كان ذلك إعداد تطبيق لا ميزة.</p>
+<p>الدورة بين وحدتين علامة أن الحد خطأ، كما في فصلها: ورقة ثالثة أو منسق أعلى.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+  PrismaModule
+  BooksModule exports BooksService
+  OrdersModule imports BooksModule
+داخل Books: Controller -&gt; Service -&gt; Prisma
+</code></pre>
+<p>المجلد <code>books/</code> يطابق الوحدة. لا مجلد <code>controllers/</code> لكل التطبيق.</p>
+<h2>أبسط مثال</h2>
+<p>المقطع أعلاه. أزل <code>exports</code> وجرب حقن <code>BooksService</code> في الطلبات: الحاوية ترفض. هذا الاختبار المعماري أرخص من مراجعة أسلوب. أعد التصدير فقط للدوال التي تخص ميزة أخرى، لا لكل مزود خاص بالخصم الداخلي.</p>
+<h2>شرح المثال</h2>
+<p>التصدير واجهة الميزة. تصغير الواجهة يبقي تغيير جدول الكتب داخل <code>books/</code>. إن صارت <code>BooksService</code> كيسًا من الدوال، قسّم الوحدة لا أن تصدّر الكيس. المتحكم لا يُصدَّر. المسارات تدخل من HTTP لا من حقن متحكم في متحكم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإقلاع يبني رسم <code>imports</code>.</li>
+<li>المزود غير المصدَّر غير مرئي خارج مضيفه.</li>
+<li>المصدَّر يصبح قابلًا للحقن في المستورد.</li>
+<li>وحدة <code>global</code> تتجاوز الرسم. استعملها للورقة حقًا المشتركة.</li>
+<li>Dynamic <code>forRoot</code> مرة في الجذر ثم إعادة تصدير الصنف يبقي الإعداد خارج الميزات.</li>
+<li>دورة <code>imports</code> تكسر الشجرة التي يريدها هذا الأسلوب.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>متجر: <code>CatalogModule</code> يصدّر <code>CatalogService.findSellable(id)</code>. <code>CheckoutModule</code> يستورد الكتالوج ولا يعرف جدول <code>books</code>. <code>BillingModule</code> لا يستورد إتمام الشراء. إن احتاج الاثنان سعرًا، فالكتالوج يملك السعر. لا تنسخ <code>findPrice</code> في الفوترة. منسق <code>CheckoutService</code> داخل وحدته يستدعي الكتالوج والفوترة في اتجاه واحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مجلد <code>services/</code> عام بلا وحدات ميزات.</li>
+<li><code>exports</code> لكل المزودات.</li>
+<li><code>@Global</code> على وحدة الطلبات.</li>
+<li>استيراد ملف من داخل ميزة أخرى رغم وجود الوحدة.</li>
+<li>وحدة عملاقة <code>ShopModule</code> فيها كل المتحكمات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>من أول ميزة بعد القالب: مجلد ووحدة وسطح تصدير.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تقسم كائن القيمة الصغير إلى وحدة. ولا وحدة لكل دالة. الحد يتبع سبب التغيير: الكتالوج يتغير مع الكتاب، والفوترة مع الضريبة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القرار</th>
+<th>السؤال</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>طبقات داخل الوحدة</td>
+<td>من ينادي Prisma؟</td>
+</tr>
+<tr>
+<td>حدود الوحدة</td>
+<td>من يحق له استيراد الميزة؟</td>
+</tr>
+<tr>
+<td><code>global</code></td>
+<td>هل هذا إعداد تطبيق لا ميزة؟</td>
+</tr>
+<tr>
+<td>ورقة مشتركة</td>
+<td>هل الدالة بلا سياسة ميزة؟</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تضع في <code>exports</code> عادة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخدمة التي تحتاجها ميزة أخرى، لا المتحكم ولا المزودات الخاصة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا فشل الحقن بعد حذف <code>exports</code> مفيد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يثبت أن العبور قرار في الوحدة لا استيراد ملف صامت.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الكتالوج والفوترة يستوردان بعضهما. أين تضع <code>placeOrder</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في وحدة منسق تستورد الاثنين ولا يستوردانها. أو ورقة سعر إن كان المشترك دالة بلا تنسيق. لا <code>forwardRef</code> كأول علاج.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما سطح الميزة؟</li>
+<li>ماذا لا يُجعل <code>global</code>؟</li>
+<li>كيف تتعايش الطبقات مع الوحدات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المعمارية النمطية في Nest هي وحدة لكل ميزة وتصدير ضيق وطبقات داخلها. الرسم شجرة <code>imports</code>، والورقة المشتركة إعداد لا كرة ميزات.</p>
+<h2>ماذا بعد؟</h2>
+<p>Clean Architecture: عندما يصبح اتجاه الاعتماد نحو الداخل قاعدة مكتوبة لا ترتيب مجلدات فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

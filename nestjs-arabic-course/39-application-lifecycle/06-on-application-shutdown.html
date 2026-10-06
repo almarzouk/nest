@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OnApplicationShutdown</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-on-application-shutdown.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OnApplicationShutdown</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ آخر عمل بعد أن أغلق الإطار الاتصالات القائمة، وقبل أن تعتبر <code>app.close()</code> منتهية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مورد يُغلق بينما المقابس ما زالت تكتب يترك طلبًا في نصف رد. ومورد تنتظره بعد قطع الباب، مثل حذف ملف قفل أو إغلاق عميل لم يعد يخدم طلبًا، يحتاج آخر خطاف. <code>onApplicationShutdown</code> هو ذلك المكان: بعد إغلاق الاتصالات، وآخر خطوة في <code>app.close()</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الإشارة تصل وسيطًا كما في الخطاف السابق. الفرق الزمني: الاتصالات أُغلقت. لا طلب HTTP ما زال على مقبس التطبيق. ما تبقى هو عملية Node وقد تبقى حية إن تركت مؤقتًا أو مقبضًا.</p>
+<h2>التعريف التقني</h2>
+<p>الواجهة <code>OnApplicationShutdown</code> تعرّف <code>onApplicationShutdown(signal?: string): void | Promise&lt;void&gt;</code>. التوثيق: تُستدعى بعد إغلاق الاتصالات، آخر خطوة من <code>app.close()</code>.</p>
+<p>مثال التوثيق:</p>
+<pre><code class="language-ts">import { Injectable, OnApplicationShutdown } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class UsersService implements OnApplicationShutdown {
+  onApplicationShutdown(signal: string): void {
+    console.log(signal);
+  }
+}
+</code></pre>
+<p>القيمة المطبوعة مثل <code>SIGINT</code>. الاتجاه بين الوحدات يبقى اتجاه الإيقاف. أصناف <code>Scope.REQUEST</code> لا تُستدعى. إن لم تنادِ <code>app.close()</code> ولم تفعّل المستمعين، لن ترى الدالة إشارة النظام.</p>
+<p><code>app.close()</code> لا يستدعي <code>process.exit</code>. المؤقتات والمهام الخلفية تبقي العملية. هذا الخطاف آخر فرصة لإسقاط تلك المقابض إن لم تُسقط في <code>onModuleDestroy</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الاتصالات أُغلقت
+  -&gt; onApplicationShutdown(signal)
+  -&gt; app.close() يُعتبر مكتملًا
+  -&gt; العملية تخرج فقط إن لم يبقَ مقبض مفتوح
+</code></pre>
+<p>لا تبدأ قبول عمل جديد هنا. الباب أُغلق.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnApplicationShutdown } from &#39;@nestjs/common&#39;;
+import { createWriteStream, type WriteStream } from &#39;node:fs&#39;;
+
+@Injectable()
+export class AuditFile implements OnApplicationShutdown {
+  private stream: WriteStream | undefined;
+
+  open(): void {
+    this.stream = createWriteStream(&#39;/tmp/audit.log&#39;, { flags: &#39;a&#39; });
+  }
+
+  async onApplicationShutdown(signal?: string): Promise&lt;void&gt; {
+    const stream = this.stream;
+    if (!stream) {
+      return;
+    }
+    await new Promise&lt;void&gt;((resolve) =&gt; stream.end(resolve));
+    void signal;
+  }
+}
+</code></pre>
+<p>إغلاق الملف بعد صمت المقابس يمنع كتابة سطر جزئي من طلب كان ما زال يُرسل.</p>
+<h2>شرح المثال</h2>
+<p><code>end</code> يعيد وعدًا ينتظره الإطار لأن الدالة <code>async</code>. <code>signal</code> متاح للسجل إن أردت تمييز Ctrl+C عن إيقاف المنسّق. الملف مثال مورد عملية، لا مورد طلب. افتحه في خطاف إقلاع، وأغلقه هنا إن كان يجب أن يعيش حتى آخر لحظة بعد قطع HTTP.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تكتمل <code>beforeApplicationShutdown</code>.</li>
+<li>الإطار يغلق سيرفر المنصة والاتصالات القائمة.</li>
+<li>يستدعي <code>onApplicationShutdown</code> ويمرر الإشارة إن وُجدت.</li>
+<li>ينتظر الوعود. بعدها تكتمل <code>app.close()</code>.</li>
+<li>عملية Node تبقى إن بقي <code>setInterval</code> أو اتصال لم يُغلق. راقب ذلك في الاختبار: <code>close</code> يرجع والعملية لا تخرج.</li>
+<li>على Windows قد ترى <code>SIGINT</code> ولا ترى <code>SIGTERM</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>سجل ختامي يُكتب مرة واحدة بعد الهدوء:</p>
+<pre><code class="language-ts">import { Injectable, Logger, OnApplicationShutdown } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class ShutdownNote implements OnApplicationShutdown {
+  private readonly logger = new Logger(ShutdownNote.name);
+
+  onApplicationShutdown(signal?: string): void {
+    this.logger.log(`connections closed (${signal ?? &#39;app.close&#39;})`);
+  }
+}
+</code></pre>
+<p>السطر يعني أن مرحلة المقابس انتهت. لا تضع <code>$disconnect</code> الوحيد هنا إن كانت وحدات أخرى ما زالت تحتاجه أثناء <code>onModuleDestroy</code>؛ تلك الدوال تُستدعى قبل هذا الخطاف، فقطع القاعدة هنا متأخر عنها. إن كانت الورقة الأخيرة في الرسم هي الوحيدة التي تملك العميل، فالإغلاق في <code>onModuleDestroy</code> لتلك الورقة يسبق هذا الخطاف أصلًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار الخطاف قاتلًا للعملية. <code>close</code> لا يستدعي <code>process.exit</code>.</li>
+<li>فتح اتصال جديد هنا بعد أن توقفت عن قبول العمل.</li>
+<li>توقع تشغيله على نسخة Request-scoped.</li>
+<li>قياس جاهزية Kubernetes بهذا الخطاف. الجاهزية تُسأل عبر HTTP قبل الإيقاف، وTerminus يبلغ <code>shutting_down</code> أبكر.</li>
+<li>نسيان <code>enableShutdownHooks</code> ثم استغراب صمت الدالة عند <code>SIGTERM</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>آخر تحرير بعد زوال الاتصالات: إغلاق ملف، سجل ختامي، إسقاط مقبض يبقي العملية حية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قطع مورد تحتاجه وحدات أثناء <code>onModuleDestroy</code>. قرار «ما زلت أقبل الطلبات» يحدث قبل إغلاق الاتصالات، في <code>beforeApplicationShutdown</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>بعد هذا الخطاف</th>
+<th>ما الذي تغيّر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عن <code>beforeApplicationShutdown</code></td>
+<td>الاتصالات أُغلقت</td>
+</tr>
+<tr>
+<td>عن خروج العملية</td>
+<td><code>app.close()</code> اكتمل، وNode قد يبقى</td>
+</tr>
+<tr>
+<td>عن طلب حي</td>
+<td>لا مقبس تطبيق يقبل ردًا جديدًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما وسيط <code>onApplicationShutdown</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإشارة نصًا، مثل <code>SIGINT</code>، وقد تغيب مع <code>app.close()</code> الصريح.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تبقى العملية بعد أن رجع <code>await app.close()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>close</code> يشغّل السلسلة ويغلق سيرفر الإطار ولا يستدعي إنهاء العملية. مؤقت أو مقبض مفتوح يبقي Node حيًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين تغلق <code>Prisma</code> إن كانت وحدات أخرى تستدعيه داخل <code>onModuleDestroy</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>onModuleDestroy</code> لوحدة القاعدة لأنها ورقة وتُستدعى آخرًا في الإيقاف، بعد أن أنهت الوحدات الأعلى عملها. إغلاقه أول مرة في <code>onApplicationShutdown</code> يأتي بعد تلك الدوال، وقد تكون حاولت الاستخدام أثناء destroy.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي أُغلق قبل هذا الخطاف؟</li>
+<li>هل الخطاف ينهي العملية؟</li>
+<li>أي أصناف لا تراه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>onApplicationShutdown</code> آخر خطوة في <code>app.close()</code> بعد إغلاق الاتصالات. حرر فيه ما يجب أن يبقى حتى تلك اللحظة، وأسقط المقابض التي تمنع خروج Node.</p>
+<h2>ماذا بعد؟</h2>
+<p>تفعيل Shutdown Hooks حتى تصل إشارات النظام إلى هذه السلسلة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

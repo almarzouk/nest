@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Socket.IO</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-socket-io.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Socket.IO</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت أن بوابة Nest الافتراضية تتحدث Socket.IO: أسماء الغرف، وعميل المتصفح، وما الذي ليس WebSocket الخام.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عميل <code>new WebSocket(&#39;ws://...&#39;)</code> يرسل إطارات خام. البوابة التي كتبتها تستعمل <code>client.join</code> و <code>emit(&#39;join&#39;, payload)</code>. هذه واجهة Socket.IO فوق النقل، وفيها مصافحة خاصة ومسار <code>/socket.io</code>. العميل الخام لا يكمل المصافحة، فتظن أن البوابة معطلة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nest، ما لم تبدّل المحول، تستخدم منصة Socket.IO. الخادم حزمة <code>socket.io</code> والعميل <code>socket.io-client</code>. الغرفة والبث وacknowledgment التي استعملتها في الدروس السابقة من هذه المكتبة. منصة <code>ws</code> بديل أنحف بلا غرف جاهزة، وتحتاج محولًا صريحًا. هذه الدورة تبقى على الافتراض.</p>
+<h2>التعريف التقني</h2>
+<p>تثبيت شائع بجانب Nest:</p>
+<pre><code class="language-bash">npm i @nestjs/platform-socket.io socket.io
+npm i -D socket.io-client
+</code></pre>
+<p><code>@nestjs/platform-socket.io</code> يأتي غالبًا مع حزم المنصة. إن غاب <code>Server</code> من الاستيراد فالحزمة غير مثبتة.</p>
+<p>عميل الواجهة:</p>
+<pre><code class="language-ts">import { io } from &#39;socket.io-client&#39;;
+
+export const comments = io(&#39;http://localhost:3000/comments&#39;, {
+  autoConnect: false,
+});
+</code></pre>
+<p>المسار <code>/comments</code> هو <code>namespace</code> في الزينة، لا مسار REST. <code>autoConnect: false</code> حتى لا تُفتح المصافحة قبل أن تملك الواجهة ما يلزم، ثم <code>comments.connect()</code>.</p>
+<p>إرسال واستقبال:</p>
+<pre><code class="language-ts">comments.emit(&#39;join&#39;, { bookId: &#39;42&#39; }, (ack: { joined: string }) =&gt; {
+  console.log(ack.joined);
+});
+comments.on(&#39;comment&#39;, (payload: { id: string; text: string }) =&gt; {
+  console.log(payload.text);
+});
+</code></pre>
+<p>الدالة الأخيرة في <code>emit</code> تستلم إقرار <code>return</code> من البوابة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">socket.io-client
+  namespace /comments
+    emit join -&gt; SubscribeMessage
+    on comment &lt;- server.to(room).emit
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الانضمام عندما تُفتح صفحة الكتاب، والقطع عند مغادرتها:</p>
+<pre><code class="language-ts">export function watchBook(bookId: string) {
+  comments.connect();
+  comments.emit(&#39;join&#39;, { bookId });
+  return () =&gt; {
+    comments.emit(&#39;leave&#39;, { bookId });
+    comments.disconnect();
+  };
+}
+</code></pre>
+<p><code>leave</code> يحتاج <code>@SubscribeMessage(&#39;leave&#39;)</code> ينادي <code>client.leave(bookId)</code>. من غير المغادرة تبقى الغرفة تحتفظ بمقبس صفحة أُغلقت إن لم ينقطع الاتصال.</p>
+<h2>شرح المثال</h2>
+<p>الاتصال واحد لفضاء التعليقات، والانضمام يتغير مع معرف الكتاب. عند الانتقال من كتاب 42 إلى كتاب 7، غادر الغرفة الأولى ثم انضم إلى الثانية على المقبس نفسه. قطع الاتصال لكل تنقل يعمل أيضًا لكنه أغلى. <code>console.log</code> هنا مكانه مخزن الواجهة لا الخادم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عميل Socket.IO يبدأ طلبًا إلى مسار المكتبة، ويترقّى إلى نقل طويل العمر (WebSocket غالبًا، مع بدائل داخل المكتبة إن فشل النقل). الرسالة <code>emit</code> إطار باسم. الخادم يوزع الاسم على <code>@SubscribeMessage</code>. <code>to(room)</code> ذاكرة الغرف داخل عملية Node التي تحتضن الخادم. عميل <code>ws</code> الخام لا يرسل تنسيق Socket.IO، فيرفض الخادم الجلسة قبل <code>join</code>.</p>
+<p>تغيير المحول إلى <code>ws</code> يلغي <code>client.join</code> ما لم تبنِ الغرف. لا تخلط مثال <code>ws</code> من مقال مع بوابة لم تغيّر <code>WsAdapter</code>.</p>
+<h2>مثال عملي</h2>
+<p>تحقق سريع من الطرفية باستخدام عميل Socket.IO لا <code>wscat</code> وحده:</p>
+<ol>
+<li>شغّل Nest على 3000.</li>
+<li>من الواجهة أو سكربت <code>io(&#39;http://localhost:3000/comments&#39;)</code>.</li>
+<li>أرسل <code>join</code> لكتاب معروف.</li>
+<li><code>POST</code> تعليقًا وتوقع حدث <code>comment</code> في العميل المنضم فقط.</li>
+</ol>
+<p>إن نجح <code>wscat</code> وفشل هذا، فأنت تختبر قناة أخرى غير البوابة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>عميل <code>WebSocket</code> خام ضد بوابة Socket.IO.</li>
+<li>الاتصال بـ <code>http://localhost:3000</code> ونسيان فضاء <code>/comments</code>.</li>
+<li>البقاء في الغرفة بعد تغيير صفحة الكتاب.</li>
+<li>افتراض أن Socket.IO يشارك الغرف بين عمليتَي Node.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>ما دامت البوابة على المحول الافتراضي. العميل الرسمي <code>socket.io-client</code> بنفس إصدار الجيل المتوافق مع الخادم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تحتاج إطارات خام قليلة بلا غرف وتبدّل المحول إلى <code>ws</code> عن قصد. عندها تُعاد كتابة <code>join</code> و <code>emit</code>. لا تخلط العميلين على البوابة نفسها.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العميل</th>
+<th>هل يكلم البوابة الافتراضية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>socket.io-client</code> إلى الفضاء الصحيح</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>new WebSocket</code></td>
+<td>لا، التنسيق مختلف</td>
+</tr>
+<tr>
+<td>متصفح GraphiQL</td>
+<td>لا، ذلك اشتراك GraphQL</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حزمة في الواجهة تتصل بالبوابة الافتراضية؟</p>
+<details>
+<summary>الحل</summary>
+`socket.io-client`، إلى فضاء الاسم مثل `/comments`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين يصل رد <code>return { joined }</code> في العميل؟</p>
+<details>
+<summary>الحل</summary>
+في دالة الإقرار، الوسيط الأخير لـ `emit('join', body, ack)`.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا مغادرة الغرفة عند تغيير الكتاب جزء من العقد؟</p>
+<details>
+<summary>الحل</summary>
+لأن المقبس إن بقي في غرفة 42 يصلحه تعليق ذلك الكتاب وهو يعرض الكتاب 7.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مسار المصافحة مقارنة بمسار REST؟</li>
+<li>ماذا يوفر Socket.IO فوق المقبس الخام في هذه الدروس؟</li>
+<li>أي أداة لا تثبت أن البوابة تعمل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الافتراض Socket.IO. العميل من العائلة نفسها، والفضاء يطابق الزينة، والغرفة تُغادر عند تغيير الصفحة.</p>
+<h2>ماذا بعد؟</h2>
+<p>خطافات الإقلاع والاتصال والقطع، حيث تُنظَّف الغرفة حتى لو نسي العميل <code>leave</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+<li>Socket.IO — Rooms: <a href="https://socket.io/docs/v4/rooms/">https://socket.io/docs/v4/rooms/</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

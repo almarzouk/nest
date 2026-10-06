@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تفعيل Shutdown Hooks</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-enable-shutdown-hooks.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تفعيل Shutdown Hooks</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل <code>SIGTERM</code> و <code>SIGINT</code> يشغّلان سلسلة الإنهاء، ومعرفة لماذا المستمعون مطفأون افتراضيًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استدعاء <code>app.close()</code> في اختبار يشغّل الإيقاف. إيقاف الحاوية يرسل إشارة إلى العملية، وتلك الإشارة لا تصل إلى <code>onModuleDestroy</code> و <code>beforeApplicationShutdown</code> و <code>onApplicationShutdown</code> إلا إذا ناديت <code>enableShutdownHooks()</code> عند الإقلاع. من غيرها تُقتل العملية والعملاء ما زالوا مفتوحين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المستمعون يستهلكون مواردًا، لذلك Nest يتركهم مطفأين. سطر واحد بعد <code>NestFactory.create</code> يبدأ الاستماع لإشارات الإيقاف. في الإنتاج تريده. في عملية واحدة تشغّل عشرات تطبيقات الاختبار قد يحذّر Node من كثرة المستمعين، ولهذا ليس الافتراض.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p>بعدها، إشارة مدعومة تستدعي الخطافات الثلاثة بالترتيب، وتمرر الإشارة إلى الأخيرين. إن أرجعت دالة وعدًا، لا يكمل الإطار حتى يُحسم.</p>
+<p>توثيق المنصة: على Windows يعمل <code>SIGINT</code>، وكذلك <code>SIGBREAK</code> وبدرجة <code>SIGHUP</code>. <code>SIGTERM</code> لا يصل لأن القتل من مدير المهام غير مشروط. التفاصيل في توثيق إشارات libuv وNode.</p>
+<p>تلميح التوثيق: تشغيل عدة تطبيقات Nest في عملية Node واحدة قد يطبع تحذير <code>MaxListenersExceeded</code>. أبقِ المستمعين حيث توجد نسخة إنتاج واحدة، وراعِ الاختبارات المتوازية.</p>
+<p><code>enableShutdownHooks()</code> لا يغني عن كتابة الخطافات. هو يفتح الطريق للإشارة فقط. <code>app.close()</code> يعمل من دونه.</p>
+<p>Terminus ينصح بتفعيل المستمعين كي يبلغ <code>shutting_down</code> ويحترم <code>gracefulShutdownTimeoutMs</code>. ذلك فصل الصحة. هنا يكفي أن الإشارة أصبحت قادرة على بدء السلسلة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">من غير التفعيل: SIGTERM -&gt; العملية تموت والخطافات صامتة
+مع التفعيل:    SIGTERM -&gt; destroy -&gt; before -&gt; إغلاق المقابس -&gt; shutdown
+دائمًا:        app.close() -&gt; السلسلة نفسها
+</code></pre>
+<p>التفعيل مستمعون. الخطافات هي العمل.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.enableShutdownHooks();
+await app.listen(3000);
+</code></pre>
+<p>ثم في خدمة Singleton سجّلت <code>onModuleDestroy</code>. Ctrl+C في الطرفية يرسل <code>SIGINT</code>، فترى خطاف الإيقاف على أنظمة تدعم هذه الإشارة، ومنها macOS وLinux.</p>
+<h2>شرح المثال</h2>
+<p>النداء قبل <code>listen</code> حتى تكون المستمعات جاهزة منذ فتح الباب. تأخيره إلى ما بعد أول طلب يترك نافذة تُقتل فيها العملية بلا تنظيف. لا تستدعِ الدالة داخل Provider لكل طلب. مرة في <code>bootstrap</code> تكفي للتطبيق كله.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>enableShutdownHooks</code> يسجّل مستمعي إشارات على العملية.</li>
+<li>عند الإشارة المدعومة يبدأ Nest مسار <code>close</code> الداخلي.</li>
+<li>تُستدعى خطافات الإنهاء بالترتيب الموثق، مع انتظار الوعود.</li>
+<li>تُغلق اتصالات السيرفر بين <code>beforeApplicationShutdown</code> و <code>onApplicationShutdown</code>.</li>
+<li>العملية تخرج عندما لا تبقى مقابض. المؤقت الذي لم يُمسح يمنع الخروج حتى بعد السلسلة.</li>
+<li>على Windows، <code>SIGTERM</code> لا يدخل هذا المسار.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختبار يغلق صراحة، وعملية إنتاج تفعّل المستمعين:</p>
+<pre><code class="language-ts">import { Test } from &#39;@nestjs/testing&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const testingModule = await Test.createTestingModule({
+  imports: [AppModule],
+}).compile();
+const app = testingModule.createNestApplication();
+await app.init();
+await app.close();
+</code></pre>
+<p>اختبار <code>close</code> لا يحتاج <code>enableShutdownHooks</code> لرؤية <code>onModuleDestroy</code>. صورة Docker التي تستلم <code>SIGTERM</code> من المنسّق تحتاجه في <code>main.ts</code>. اخلط المسارين حسب البيئة، ولا تحذف السطر من الإنتاج لأن الاختبار استغنى عنه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان السطر ثم لوم <code>onModuleDestroy</code>.</li>
+<li>تفعيله في كل عامل ضمن عملية اختبار واحدة حتى يفيض عداد المستمعين.</li>
+<li>افتراض <code>SIGTERM</code> على Windows.</li>
+<li>الاعتقاد أن التفعيل يغلق Prisma. التفعيل يبدأ السلسلة فقط.</li>
+<li>استدعاء <code>process.exit</code> داخل الخطاف قبل <code>await</code> فيقطع الانتظار الذي وفره الإطار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في <code>bootstrap</code> لأي عملية طويلة ستُوقف بإشارة: حاوية، منصة PaaS، <code>node dist/main.js</code> خلف systemd.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تكرره لكل وحدة. ولا تعتمد عليه وحده في اختبار يستدعي <code>app.close()</code>. سكربت قصير ينتهي من نفسه قد لا يحتاج مستمعي إشارات إن لم يرسل إليه أحد <code>SIGTERM</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>هل يشغّل خطافات الإنهاء؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.close()</code> / <code>app.init</code> ثم <code>close</code></td>
+<td>نعم، من غير تفعيل</td>
+</tr>
+<tr>
+<td><code>SIGTERM</code> بعد <code>enableShutdownHooks()</code></td>
+<td>نعم على الأنظمة التي توصّل الإشارة</td>
+</tr>
+<tr>
+<td><code>SIGTERM</code> من غير التفعيل</td>
+<td>الخطافات لا تُستدعى</td>
+</tr>
+<tr>
+<td>قتل قاسٍ لا يسلّم إشارة</td>
+<td>لا خطاف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تُستدعى <code>enableShutdownHooks</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مرة في <code>bootstrap</code> بعد <code>NestFactory.create</code> وقبل <code>listen</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المستمعون مطفأون افتراضيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنهم يستهلكون مواردًا. عدة تطبيقات Nest في عملية واحدة قد تطلق تحذير كثرة المستمعين في Node.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حاوية Linux تستلم <code>SIGTERM</code> وPrisma يبقى متصلًا. ما الشرطان الناقصان المحتملان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إما لم تُستدعَ <code>enableShutdownHooks()</code>، أو لا يوجد <code>onModuleDestroy</code> ينفذ <code>$disconnect</code>. التفعيل من غير خطاف لا يغلق العميل، والخطاف من غير تفعيل لا يراه <code>SIGTERM</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغيّر التفعيل في إشارات النظام؟</li>
+<li>هل الاختبار الذي ينادي <code>close</code> يحتاجه؟</li>
+<li>ما حد Windows مع <code>SIGTERM</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>enableShutdownHooks()</code> يفتح أذن العملية لإشارات الإيقاف. اكتبه في إقلاع الإنتاج، واكتب الخطافات التي تحرّر الموارد، وتذكر أن <code>app.close()</code> مسار مستقل يعمل من دونه.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع الخطافات على Prisma ومؤقت وعميل رسائل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

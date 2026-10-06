@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Promises و async/await</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="13-promises-and-async-await.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Promises و async/await</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة دوال Nest التي تنتظر قاعدة بيانات أو شبكة من غير حجب خيط JavaScript، وقراءة <code>Promise</code> في التوقيعات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قراءة كتاب من قاعدة بيانات لا تنتهي في اللحظة نفسها. إذا نام الخيط حتى ترجع النتيجة، توقفت بقية الطلبات، كما في درس Node. نحتاج تمثيلًا لنتيجة ستصل لاحقًا، وطريقة لقراءة الكود كأنه متتابع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Promise</code> قيمة ستنجح أو تفشل لاحقًا. <code>async</code> تجعل الدالة ترجع Promise. <code>await</code> يوقف تلك الدالة فقط حتى تستقر الـ Promise، ويحرر الخيط أثناء الانتظار.</p>
+<h2>التعريف التقني</h2>
+<p>Promise لها حالات: معلّقة، ثم موفّاة بقيمة، أو مرفوضة بسبب. <code>await</code> على المرفوضة يرمي داخل الدالة غير المتزامنة، فيصير الرفض قابلًا لـ <code>try/catch</code>. Nest تنتظر Promise التي يرجعها المتحكم قبل إرسال الرد. استثناء غير ممسوك من هذه السلسلة يدخل Exception Filters.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">find() تصل إلى await db
+      |
+      +-- الدالة تتوقف هي فقط
+      +-- الخيط يخدم طلبًا آخر
+      |
+النتيجة تصل
+      |
+      v
+find() تكمل بعد await
+      |
+      v
+Nest ترسل الرد
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">function loadTitle(): Promise&lt;string&gt; {
+  return Promise.resolve(&#39;Refactoring&#39;);
+}
+
+async function label(): Promise&lt;string&gt; {
+  const title = await loadTitle();
+  return `Book: ${title}`;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>loadTitle</code> ترجع Promise موفّاة فورًا. في الواقع سترجعها مكتبة قاعدة البيانات بعد الشبكة.</li>
+<li><code>async</code> على <code>label</code> يجعل الإرجاع <code>Promise&lt;string&gt;</code> حتى لو كتبت <code>return</code> لنص عادي.</li>
+<li><code>await</code> يستخرج <code>string</code> من <code>Promise&lt;string&gt;</code> داخل الدالة. خارجها ما زلت تحتاج <code>await label()</code> أو <code>.then</code>.</li>
+<li>رمي خطأ قبل الإرجاع، أو رفض الـ Promise، يجعل <code>label()</code> ترجع Promise مرفوضة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>async/await</code> تحويل إلى سلاسل Promise. الانتظار يسجّل تكملة الدالة لتعمل عندما تُحل الـ Promise، عبر حلقة أحداث Node. لا خيط جديد لكل <code>await</code>.</p>
+<p>نسيان <code>await</code>:</p>
+<pre><code class="language-ts">async function bad(): Promise&lt;string&gt; {
+  const pending = loadTitle();
+  return `Book: ${pending}`;
+}
+</code></pre>
+<p><code>pending</code> هنا Promise لا نص، والنص يصبح شبيها بـ <code>Book: [object Promise]</code>. المترجم في <code>strict</code> مع فحص مناسب يحذّر غالبًا إن أُعد المشروع لذلك. عوّد نفسك على انتظار ما ترجع Promise إذا احتجت القيمة.</p>
+<p><code>void promise</code> تعني عمدًا أنك لا تنتظر. استخدمه نادرًا، وتأكد أن الرفض ممسوك، وإلا صار رفضًا غير معالج.</p>
+<p>Nest: دالة متحكم <code>async</code> ترجع <code>Promise&lt;Book&gt;</code>. الإطار يفلّحها. لا تستدعِ <code>res.json</code> بنفسك إلا في الأسلوب الخاص بالمنصة.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">async function requireBook(id: string): Promise&lt;{ id: string; title: string }&gt; {
+  const book = await findBook(id);
+  if (!book) {
+    throw new Error(`Book ${id} not found`);
+  }
+  return book;
+}
+
+async function findBook(id: string): Promise&lt;{ id: string; title: string } | null&gt; {
+  if (id === &#39;2&#39;) return { id: &#39;2&#39;, title: &#39;Refactoring&#39; };
+  return null;
+}
+</code></pre>
+<p><code>throw</code> داخل <code>async</code> يرفض الـ Promise. مستدعٍ بلا <code>try/catch</code> يمرر الرفض للأعلى. في Nest سترمي استثناء HTTP لا <code>Error</code> عامًا عندما تريد رمز <code>404</code>. الأداة جاهزة في فصل الاستثناءات. اللغة هنا: الرفض يسافر مع الـ Promise.</p>
+<p><code>try/catch</code> حول <code>await</code> يمسك الرفض في هذه الطبقة:</p>
+<pre><code class="language-ts">try {
+  await requireBook(&#39;missing&#39;);
+} catch (error) {
+  // سجّل أو أعد رميًا أوضح
+}
+</code></pre>
+<p>إن أمسكت الخطأ وابتلعته، الفلتر لن يراه. هذا متسق مع ما قاله توثيق دورة الطلب: الاستثناء الممسوك لا يصل إلى Exception Filter.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>await</code> داخل حلقة على عمليات مستقلة يمكن أن تعمل معًا. <code>Promise.all</code> يشغّل مجموعة ثم تنتظرها مرة واحدة. لا تستخدمه على عمليات يجب أن تتسلسل بسبب أثر على البيانات نفسها من غير فهم الترتيب.</li>
+<li>اعتبار <code>async</code> يسرّع حسابًا ثقيلًا. الانتظار يحرر الخيط عند I/O فقط.</li>
+<li>إرجاع Promise من constructor. البناء يبقى متزامنًا. التهيئة غير المتزامنة خطاف <code>OnModuleInit</code> لاحقًا.</li>
+</ul>
+<h2>متى نستخدم async؟</h2>
+<p>على كل دالة خدمة أو متحكم تنتظر I/O: قاعدة بيانات، ملف، HTTP خارجي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على دالة حساب نقية ترجع عددًا فورًا. <code>async</code> زائد يجعل النوع Promise بلا سبب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>.then</code></th>
+<th><code>async/await</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المعنى</td>
+<td>نفسه: Promise</td>
+<td>نفسه بأسلوب متتابع</td>
+</tr>
+<tr>
+<td>الخطأ</td>
+<td><code>.catch</code></td>
+<td><code>try/catch</code> حول <code>await</code></td>
+</tr>
+<tr>
+<td>في أمثلة Nest</td>
+<td>أقل</td>
+<td>الشكل الغالب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما نوع إرجاع دالة <code>async</code> تكتب <code>return 1</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Promise&lt;number&gt;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يحدث لخيط JavaScript أثناء <code>await</code> على استعلام قاعدة بيانات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الدالة الحالية تتوقف عند السطر، والخيط يعود لحلقة الأحداث ويستطيع معالجة عمل آخر حتى تصل النتيجة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متحكم فيه <code>try/catch</code> حول استدعاء الخدمة، والـ catch فارغ ويعيد <code>null</code>. لماذا لن يحوّل Exception Filter هذا الفشل إلى <code>404</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الاستثناء مُمسك داخل الدالة. الفلتر يرى غير الممسوك. إرجاع <code>null</code> قرار هذه الدالة، وقد يصبح رد <code>200</code> بجسم فارغ إن لم تغيّر الرمز. أعد الرمي، أو ارمِ استثناء HTTP واضحًا واترك الفلتر أو الطبقة الافتراضية تشكله.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحرر <code>await</code>، وماذا لا يسرّع؟</li>
+<li>كيف يصبح <code>throw</code> داخل <code>async</code> رفض Promise؟</li>
+<li>لماذا لا نفتح اتصال قاعدة بيانات داخل constructor؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Promise</code> نتيجة لاحقة، و <code>await</code> يقرأها داخل دالة واحدة من غير حبس خيط Node أثناء الإدخال والإخراج. Nest تنتظر Promise المتحكم. ما تمسكه بـ <code>catch</code> لا يصل إلى فلتر الاستثناءات.</p>
+<h2>ماذا بعد؟</h2>
+<p>الإطار يلصق وصفًا على الأصناف بدوال خاصة. هذه Decorators.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Async functions (عبر JavaScript): <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function">https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Statements/async_function</a></li>
+<li>MDN — Promise: <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise">https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Promise</a></li>
+<li>NestJS — Exception filters (الاستثناء الممسوك لا يصل): <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>Node.js — Event loop: <a href="https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick">https://nodejs.org/en/learn/asynchronous-work/event-loop-timers-and-nexttick</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

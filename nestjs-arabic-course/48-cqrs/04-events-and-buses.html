@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Event و EventBus و CommandBus و QueryBus</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-events-and-buses.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Event و EventBus و CommandBus و QueryBus</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز الحافلات الثلاث: أمر يُنفذ ويُنتظر، استعلام يُقرأ ويُنتظر، وحدث يُنشر بعد التغيير فيعالج <code>@EventsHandler</code> من غير أن يعيد ناتجًا للمسار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>CancelOrderHandler</code> الذي يستدعي البريد والمخزون واللوحة مباشرة يعود كيس آثار. الحدث <code>OrderCancelled</code> يخبر المشتركين بعد نجاح الحفظ. <code>CommandBus</code> و <code>QueryBus</code> يبقيان مدخل المسار لأنهما يعيدان ناتجًا. <code>EventBus</code> ناقل داخل العملية في هذه الحزمة، لا ضمان شبكة ولا مخزن أحداث إلا إذا بنيته.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد تغيير الجذر استدعِ <code>apply</code> على <code>AggregateRoot</code> ثم اربط النموذج بـ <code>EventPublisher.mergeObjectContext</code> ثم <code>commit()</code> فينشر الأحداث المعلقة. أو <code>eventBus.publish(event)</code> مباشرة. <code>@EventsHandler(OrderCancelled)</code> على مزود فيه <code>handle</code>. المعالج حدث لا يفشل طلب HTTP بالضرورة: الاستثناء غير الملتقط يذهب إلى <code>UnhandledExceptionBus</code> ما لم تضع <code>rethrowUnhandled: true</code> في <code>forRoot</code>.</p>
+<h2>التعريف التقني</h2>
+<p>حافلات تُحقن من <code>@nestjs/cqrs</code>:</p>
+<table>
+<thead>
+<tr>
+<th>الحافلة</th>
+<th>النداء</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CommandBus</code></td>
+<td><code>execute(command)</code></td>
+<td>وعد ناتج المعالج</td>
+</tr>
+<tr>
+<td><code>QueryBus</code></td>
+<td><code>execute(query)</code></td>
+<td>وعد نموذج القراءة</td>
+</tr>
+<tr>
+<td><code>EventBus</code></td>
+<td><code>publish(event)</code></td>
+<td>معالجة لاحقة داخل العملية</td>
+</tr>
+</tbody></table>
+<pre><code class="language-ts">export class OrderCancelled {
+  constructor(public readonly orderId: string) {}
+}
+</code></pre>
+<pre><code class="language-ts">@EventsHandler(OrderCancelled)
+export class OrderCancelledHandler implements IEventHandler&lt;OrderCancelled&gt; {
+  handle(event: OrderCancelled): void {
+    void event.orderId;
+  }
+}
+</code></pre>
+<p>من الوصفة، الجذر يمتد <code>AggregateRoot</code> ويستدعي <code>apply(new HeroKilledDragonEvent(...))</code> داخل السلوك. المعالج يدمج السياق:</p>
+<pre><code class="language-ts">const order = this.publisher.mergeObjectContext(await this.orders.findById(id));
+order.cancel();
+await this.orders.save(order);
+order.commit();
+</code></pre>
+<p><code>apply</code> يجمّع حتى <code>commit</code>. من غير <code>mergeObjectContext</code> لا يعرف الجذر الحافلة. <code>@nestjs/cqrs</code> 12.1 يمرر سياق موزع عبر <code>publish</code> و <code>publishAll</code> عند الدمج. إن كان الكيان لا يستطيع الامتداد، <code>WithAggregateRoot</code> أو <code>IAggregateRoot</code> كما في الوصفة. للبقاء بلا إطار داخل الكيان، انشر الحدث من المعالج بعد <code>save</code> بـ <code>eventBus.publish</code> وأبقِ <code>Order</code> حرًا من <code>AggregateRoot</code>. ذلك أنسب لمشروع صغير يريد حدثًا واحدًا.</p>
+<p><code>@Saga()</code> دالة ترجع <code>Observable</code> من أحداث إلى أوامر عبر <code>ofType</code>. ساجا متينة ومسار عمل في إصدارات حديثة من الحزمة عندما تمتد العملية زمنًا. لا تبدأ بها قبل معالج حدث واحد واضح.</p>
+<p>الحافلات <code>Observable</code>. الاشتراك في <code>EventBus</code> يصلح لسجل تشخيصي. ليس بديل مستودع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CommandBus.execute -&gt; Handler -&gt; save -&gt; commit/publish
+                                      -&gt; EventBus
+                                      -&gt; EventsHandler (بريد، قراءة)
+QueryBus.execute  -&gt; Handler قراءة فقط
+</code></pre>
+<p>الحدث بعد الحفظ الناجح. نشره قبل <code>save</code> يخبر الناس بتغيير لم يُكتب.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">constructor(private readonly eventBus: EventBus) {}
+
+await this.orders.save(order);
+this.eventBus.publish(new OrderCancelled(order.snapshot().id));
+</code></pre>
+<p><code>OrderCancelledHandler</code> يحدّث جدول قراءة أو يضع رسالة في الطابور. المتحكم حصل على ناتج الأمر قبل أن ينهي كل المعالجات إن كانت المعالجة غير متزامنة. لا تعتمد على البريد في جسم الاستجابة.</p>
+<h2>شرح المثال</h2>
+<p>النشر اليدوي من المعالج يبقي الكيان بلا قاعدية الحزمة. <code>commit</code> أنسب عندما تتعدد <code>apply</code> داخل دوال الجذر وتريد إرسالها دفعة بعد النجاح. اختر أسلوبًا واحدًا في الوحدة حتى لا يُنشر الحدث مرتين.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>CommandBus</code> يجد معالج الأمر وينتظره.</li>
+<li>بعد <code>save</code> يُنشر الحدث على <code>EventBus</code>.</li>
+<li>معالجات <code>@EventsHandler</code> المسجّلة تُستدعى.</li>
+<li>فشلها يُسجل ويصل <code>UnhandledExceptionBus</code> إلا مع <code>rethrowUnhandled</code>.</li>
+<li><code>QueryBus</code> لا يرى الحدث إلا إذا حدّث المعالج نموذجًا يقرأه الاستعلام لاحقًا.</li>
+<li>لا عبور شبكة. خدمة ثانية في عملية أخرى ليست مشتركة في هذه الحافلة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>إلغاء الطلب ينشر <code>OrderCancelled</code>. معالج يكتب صف <code>order_view</code> للاستعلام <code>GetOrderQuery</code>. معالج آخر يضع إشعارًا. <code>GetOrderQuery</code> لا يحقن مستودع الكتابة. إن فشل تحديث العرض، راقب <code>UnhandledExceptionBus</code> وأعد المحاولة من جدول، لأن إعادة رمي الخطأ لا تعيد الأمر تلقائيًا. ساجا تحول الحدث إلى <code>RestockCommand</code> فقط عندما تكون سلسلة الأوامر قاعدة عمل لا أثرًا جانبيًا واحدًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نشر قبل <code>save</code>.</li>
+<li>توقع جسم HTTP بعد اكتمال البريد.</li>
+<li><code>QueryBus</code> لتعديل حالة.</li>
+<li>معالج حدث يحقن <code>CommandBus</code> في حلقة مع الأمر الذي نشر الحدث.</li>
+<li>اعتبار <code>EventBus</code> طابور Rabbit. ذلك فصل الخدمات الصغيرة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>آثار متعددة بعد كتابة ناجحة، أو تحديث نموذج قراءة داخل العملية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>أثر واحد سطر بريد داخل المعالج أوضح من حدث ومعالج. ناتج مطلوب في نفس الاستجابة يُحسب قبل <code>return</code> لا عبر حدث.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحافلة</th>
+<th>ينتظر المستدعي العمل؟</th>
+<th>يغيّر حالة؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>CommandBus</code></td>
+<td>نعم</td>
+<td>عبر معالج الأمر</td>
+</tr>
+<tr>
+<td><code>QueryBus</code></td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>EventBus</code></td>
+<td>لا تبنِ الرد عليه</td>
+<td>عبر معالجات الحدث</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حافلة تنشر <code>OrderCancelled</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>EventBus.publish</code>، أو <code>commit</code> بعد <code>apply</code> على جذر مرتبط بـ <code>EventPublisher</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>UnhandledExceptionBus</code> يهم معالج الحدث أكثر من معالج الأمر في المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>معالج الأمر يرفع الاستثناء إلى <code>execute</code> الذي ينتظره المتحكم. معالج الحدث يعمل بشكل لا يُرجع للنتيجة، والاستثناء غير الملتقط يُنشر على حافلة الاستثناءات إلا إذا فعّلت <code>rethrowUnhandled</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار <code>eventBus.publish</code> من المعالج بدل <code>AggregateRoot</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تريد الإبقاء على <code>Order</code> بلا قاعدة الحزمة ونشر حدث واحد بعد <code>save</code>. <code>apply</code> و <code>commit</code> عندما تتعدد الأحداث داخل دوال الجذر ويجب إرسالها بعد النجاح دفعة واحدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>CommandBus.execute</code>؟</li>
+<li>متى يُنشر الحدث نسبة إلى <code>save</code>؟</li>
+<li>هل <code>EventBus</code> يعبر عملية أخرى؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>CommandBus</code> و <code>QueryBus</code> مدخلان منتظران للكتابة والقراءة. <code>EventBus</code> يخبر داخل العملية بعد الحفظ. عالج الفشل في معالج الحدث صراحة لأنه لا يرجع على مسار HTTP.</p>
+<h2>ماذا بعد؟</h2>
+<p>متى يفيد CQRS: اختلاف النموذج والآثار، لا حب الحافلات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CQRS: <a href="https://docs.nestjs.com/recipes/cqrs">https://docs.nestjs.com/recipes/cqrs</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

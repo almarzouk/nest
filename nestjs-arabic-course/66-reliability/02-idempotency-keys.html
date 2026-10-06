@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Idempotency Keys</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-idempotency-keys.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Idempotency Keys</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تطبيق <code>@Idempotent()</code> من <code>@nestjs/idempotency</code> على مسار ينشئ أثرًا في رف، بحيث تعيد المحاولة نفس النتيجة داخل نطاق المستخدم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الجوال أعاد <code>POST /projects</code> بعد انقطاع الرد فصار كتابان. أو مفتاح مشترك بين مكتبتين فأعاد مستخدم نتيجة مستخدم آخر. أو المفتاح على <code>GET</code> بلا داعٍ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>العميل يرسل <code>Idempotency-Key</code> ثابتًا للمحاولة. الحزمة تشغّل المعالج مرة وتخزن الرد. الإعادة تعيد المخزن. النطاق <code>scope</code> يفصل مستخدمًا عن آخر. الويب هوك الذي يعتمد على معرّف المزود قد يضع <code>scope: false</code> عن قصد لأن المفتاح عالمي للحدث لا لكل مستخدم.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/idempotency</code>. <code>IdempotencyModule.forRoot({ scope: (req) =&gt; req.user?.id })</code> في الجذر. المعترض لا يغيّر المسارات بلا <code>@Idempotent()</code>. <code>@Idempotent({ required: true })</code> يرفض الطلب بلا ترويسة. المفتاح يتبع مسودة IETF التي تذكرها الصفحة. الحراس يعملون قبل المعترض فـ <code>req.user</code> جاهز للنطاق. مفتاح بلا نطاق على مسار فيه مستخدم يسجّل تحذيرًا. جسم مختلف لنفس المفتاح لا يُنفَّذ كأثر ثانٍ؛ سلوك التعارض في الصفحة. لا تضعوا المفتاح من عنوان الكتاب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Idempotency-Key + userId → رد مخزن
+إعادة نفس الزوج → نفس 201 ونفس id
+مستخدم آخر بنفس النص → خانة أخرى
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Post } from &#39;@nestjs/common&#39;;
+import { Idempotent } from &#39;@nestjs/idempotency&#39;;
+
+@Controller(&#39;projects&#39;)
+export class ProjectsController {
+  @Post()
+  @Idempotent({ required: true })
+  create(@Body() body: { title: string }) {
+    return this.projects.create(currentTenantId(), body.title);
+  }
+}
+</code></pre>
+<p>أبقوا <code>@HttpCode(201)</code> حتى الرد الأول والإعادة يتفقان مع العقد إن خزنت الحزمة الوضع.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>required</code> يجعل الغياب 400 لا إنشاءً صامتًا.</li>
+<li><code>currentTenantId()</code> داخل التنفيذ الأول فقط. الإعادة لا تنشئ صفًا.</li>
+<li>النطاق يجب أن يشمل المستخدم. إن اشتركت مكتبتان في مستخدم واحد فأضيفوا المنظمة إلى منطق النطاق حتى لا تُعاد مسودة مكتبة على ترويسة أخرى.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحارس يصدق المستخدم ويملأ المستأجر.</li>
+<li>المعترض يقرأ الترويسة و <code>scope</code>.</li>
+<li>الغياب في المخزن يشغّل المتحكم ويحفظ الوضع والجسم.</li>
+<li>الإصابة تعيد المحفوظ ولا تستدعي <code>create</code>.</li>
+<li>السباق على نفس المفتاح يحتاج مخزنًا بقيد، وPostgres أو Redis في الصفحة لا <code>Map</code> يضيع عند إعادة التشغيل.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">IdempotencyModule.forRoot({
+  scope: (req: { user?: { id: string } }) =&gt; req.user?.id,
+});
+</code></pre>
+<p>لمسار الويب هوك الذي بلا <code>user</code> والمفتاح <code>event.id</code> من المزود، الصفحة تسمح بـ <code>scope: false</code> عندما تكون الخانة المشتركة مقصودة. لا تستخدموا ذلك على <code>POST /projects</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نطاق غائب فيتصادم مفتاح «1» بين القراء.</li>
+<li>مخزن ذاكرة ثم عمليتا API.</li>
+<li><code>@Idempotent</code> على النجاح فقط ونسيان أن 201 يجب أن تُعاد كما هي.</li>
+<li>استبدال هذا عن قيد <code>isbn</code> داخل المنظمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على إنشاء مشروع وبدء Checkout وأي <code>POST</code> يعيد العميل إرساله.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على <code>GET /projects</code>. وعلى حدث Stripe إن كان القيد على <code>event.id</code> يكفي؛ لا تزدوجوا المفتاحين بشكل يتعارض.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>المفتاح</th>
+<th>النطاق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /projects</code></td>
+<td>ترويسة العميل</td>
+<td>مستخدم، والمنظمة إن لزم</td>
+</tr>
+<tr>
+<td>Checkout</td>
+<td>مفتاح Stripe أو هذه الترويسة</td>
+<td>المكتبة</td>
+</tr>
+<tr>
+<td>ويب هوك</td>
+<td><code>event.id</code></td>
+<td><code>scope: false</code> إن كان الحدث عالميًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>إعادتان بنفس المفتاح والمستخدم. كم مشروعًا يُنشأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>واحد. الثانية ترد الرد المخزن.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>scope</code> بدالة المستخدم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يرى قارئ نتيجة قارئ آخر استعمل نفس النص. الحارس يسبق المعترض فالهوية موجودة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>نفس المفتاح مع ترويسة منظمة أخرى لنفس المستخدم. ما الخطر وكيف تضيقونه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النطاق على <code>user.id</code> وحده قد يعيد جسم مكتبة الأولى بينما الترويسة الثانية. أدخلوا <code>organizationId</code> الموثوق في النطاق أو ارفضوا اختلاف المستأجر عن الطلب المخزن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي ترويسة؟</li>
+<li>ماذا يفعل <code>required: true</code>؟</li>
+<li>لماذا النطاق؟</li>
+<li>أي مسار يضع <code>scope: false</code> عن قصد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Idempotent</code> يخزن نتيجة المحاولة ضمن نطاق المستخدم. الإعادة لا تنشئ أثرًا ثانيًا. الويب هوك العالمي حالة <code>scope: false</code> منفصلة عن إنشاء المشروع.</p>
+<h2>ماذا بعد؟</h2>
+<p>المفتاح لا يحل «التزم الصف ثم ضاعت الرسالة». الدرس التالي صندوق الصادر كما تنفذه الحزمة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Idempotency keys: <a href="https://docs.nestjs.com/reliability/idempotency">https://docs.nestjs.com/reliability/idempotency</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي مشغّل مع قالب ESM من <code>nest new</code>؟</li>
+<li>ماذا يغلق رحلة Supertest؟</li>
+<li>أي قاعدة يرفضها حارس التكامل؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Vitest. CommonJS يبقى على Jest.</li>
+<li><code>app.close()</code> ويفضَّل في <code>afterAll</code>.</li>
+<li>أي عنوان ليس قاعدة اختبار واضحة مثل <code>bookstore_test</code>، وأولها الإنتاج.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>اكتب خطة ثلاث حالات لنشر كتاب: وحدة، تكامل، رحلة. ماذا يكون حقيقيًا في كل واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>وحدة: وهم Prisma ومُصدِر، تتوقع <code>update</code> ثم <code>emitAsync</code>، وحالة لا إعلان عند الرمي.</li>
+<li>تكامل: <code>bookstore_test</code> وصف يُمسح، الخدمة تكتب <code>PUBLISHED</code>، الحدث وهم.</li>
+<li>رحلة: Supertest على <code>POST /books/:id/publish</code> مع أنبوب وحارس كما في <code>main.ts</code>. القص لا يُنفَّذ. الطابور وهم. <code>init</code> بلا <code>listen</code> إن كفى الخادم الداخلي.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>قالب ESM فشل حقن <code>BooksService</code> داخل <code>TestingModule</code>، والاختبار استعمل <code>jest.fn</code>، و <code>DATABASE_URL</code> يشير إلى التطوير، والرحلة تستبدل الحارس ثم تتوقع <code>403</code>. صحح الاتجاه.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>الأوهام <code>vi.fn</code> من <code>vitest</code> لا تثبيت Jest بجانب القالب.</li>
+<li>فشل الحقن غالبًا إعداد تحويل أسقط <code>emitDecoratorMetadata</code>. أرجع إعداد قالب Nest.</li>
+<li>التكامل يتوقف إن لم يكن الاسم <code>bookstore_test</code>. لا تمسح قاعدة التطوير.</li>
+<li>رحلة <code>403</code> تبقي الحارس الحقيقي وتستبدل Prisma. استبدال الحارس بمن يسمح دائمًا لا يثبت المنع.</li>
+<li><code>overrideProvider</code> قبل <code>compile</code>، و <code>close</code> بعد الرحلة.</li>
+</ul>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

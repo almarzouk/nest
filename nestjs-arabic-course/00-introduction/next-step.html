@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ماذا بعد المقدمة؟</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ماذا بعد المقدمة؟</h1>
+<p>أصبحت تملك خريطة. لا تملك بعد لغة التفاصيل التي كُتبت بها الخريطة.</p>
+<p>أكثر سطر سيتكرر في Nest هو:</p>
+<pre><code class="language-ts">constructor(private readonly usersService: UsersService) {}
+</code></pre>
+<p>فيه عدة قرارات لغة دفعة واحدة:</p>
+<ul>
+<li>هذا constructor، فيُستدعى عند إنشاء الكائن.</li>
+<li><code>private</code> يجعل الخاصية غير متاحة من خارج الصنف.</li>
+<li><code>readonly</code> يمنع إعادة التعيين من داخل الصنف.</li>
+<li>كتابة المعامل بهذا الشكل تصنع الخاصية وتسند إليها قيمة المعامل، من غير سطر <code>this.usersService = ...</code> إضافي.</li>
+<li><code>UsersService</code> نوع. الإطار، لاحقًا، يستخدم معلومات النوع المحفوظة كـ Metadata ليعرف ماذا يحقن.</li>
+</ul>
+<p>TypeScript يمحو الأنواع العادية عند إنتاج JavaScript. Nest تحتاج بعض المعلومات بعد الترجمة، لذلك تظهر Decorators و <code>reflect-metadata</code> و <code>emitDecoratorMetadata</code>. هذه جمل ستُفك في الفصل التالي على أمثلة صغيرة، قبل <code>nest new</code>، حتى لا يكون أول مشروع لك مكان تعلم اللغة والإطار معًا.</p>
+<p>الفصل التالي: <a href="../01-typescript-for-nestjs/README.html">TypeScript الضروري لـ NestJS</a>.</p>
+<p>لن يكون دورة لغة. سيكون القطع التي تجعل ملفات <code>src/</code> التي يولّدها CLI مقروءة: الأنواع، والأصناف، والوعود، والوسوم، والانعكاس.</p>
+<p>بعده مباشرة تثبيت المشروع، ثم قراءة <code>bootstrap</code> وأنت تعرف ماذا تعني الكلمات.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FileInterceptor</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-file-interceptor.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>FileInterceptor</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط حقل ملف واحد بمسار: <code>FileInterceptor</code> يركّب Multer، و <code>@UploadedFile</code> يسلّم الكائن إلى المعالج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرفة Multer لا تضع الوسيط على <code>POST /books/:id/cover</code> وحدها. من غير معترض، جسم multipart يظل خارج معاملات Nest. المعالج إما لا يرى الملف، وإما يقرأ <code>req</code> الخام ويتجاوز الأنابيب.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>FileInterceptor(&#39;cover&#39;)</code> اسم الحقل أول وسيط، وخيارات Multer وسيطًا ثانيًا اختياريًا. الزينة <code>@UseInterceptors</code> تعلّقه على الدالة أو على المتحكم. <code>@UploadedFile()</code> من <code>@nestjs/common</code> يستخرج الملف بعد أن ينجح التحليل.</p>
+<h2>التعريف التقني</h2>
+<p><code>FileInterceptor</code> مصدَّر من <code>@nestjs/platform-express</code>. التوقيع العملي: <code>FileInterceptor(fieldName, options?)</code>. <code>options</code> من نوع <code>MulterOptions</code>، وهو كائن منشئ Multer نفسه: <code>storage</code> و <code>limits</code> و <code>fileFilter</code>.</p>
+<p>الكائن على Express من نوع <code>Express.Multer.File</code> بعد تثبيت <code>@types/multer</code>. حقول تكثر رؤيتها:</p>
+<table>
+<thead>
+<tr>
+<th>الحقل</th>
+<th>معناه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>fieldname</code></td>
+<td>اسم الحقل، مثل <code>cover</code></td>
+</tr>
+<tr>
+<td><code>originalname</code></td>
+<td>الاسم كما أرسله العميل</td>
+</tr>
+<tr>
+<td><code>mimetype</code></td>
+<td>النوع المعلن</td>
+</tr>
+<tr>
+<td><code>size</code></td>
+<td>الحجم بالبايت</td>
+</tr>
+<tr>
+<td><code>buffer</code></td>
+<td>موجود مع التخزين في الذاكرة</td>
+</tr>
+<tr>
+<td><code>path</code> / <code>filename</code></td>
+<td>موجودان مع تخزين القرص</td>
+</tr>
+</tbody></table>
+<p>المعترض يعمل بعد اختيار الراوت وقبل جسم الدالة. فشل Multer لا يستدعي الدالة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /books/42/cover
+  FileInterceptor(&#39;cover&#39;, coverLimits)
+    يقرأ جزء name=&quot;cover&quot;
+    يطبّق storage و limits
+  @UploadedFile()  -&gt;  Express.Multer.File | undefined
+  CoverService يحفظ المسار بجانب الكتاب 42
+</code></pre>
+<p>الحقول النصية في النموذج نفسه تبقى عمل <code>@Body()</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Param, Post, UploadedFile, UseInterceptors } from &#39;@nestjs/common&#39;;
+import { FileInterceptor } from &#39;@nestjs/platform-express&#39;;
+import { coverLimits } from &#39;./cover-limits.js&#39;;
+import { CoversService } from &#39;./covers.service.js&#39;;
+
+@Controller(&#39;books&#39;)
+export class CoversController {
+  constructor(private readonly covers: CoversService) {}
+
+  @Post(&#39;:id/cover&#39;)
+  @UseInterceptors(FileInterceptor(&#39;cover&#39;, coverLimits))
+  replace(
+    @Param(&#39;id&#39;) bookId: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.covers.replace(bookId, file);
+  }
+}
+</code></pre>
+<p><code>coverLimits</code> هو كائن الدرس السابق: <code>diskStorage</code> و <code>fileSize</code>.</p>
+<h2>شرح المثال</h2>
+<p>الوسيطة الأولى <code>&#39;cover&#39;</code> يجب أن تطابق <code>name</code> في النموذج. الوسيطة الثانية تغلّب افتراض <code>MulterModule</code> لهذا المسار فقط. المعالج لا يستورد <code>multer</code>. هو يستلم ناتج التحليل. <code>@Param(&#39;id&#39;)</code> مستقل عن الملف: معرف الكتاب في المسار، والبايتات في الجزء.</p>
+<p>إن غاب الجزء، تكون قيمة المعامل <code>undefined</code> ما لم يرفض <code>fileFilter</code> أو أنبوب لاحق الطلب. لا تنادِ <code>file.path</code> من غير هذا الفحص.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest، عند الإقلاع، ترى <code>@UseInterceptors</code> وتبني وسيط Multer لحقل واحد. طلب بغير <code>multipart/form-data</code> لا يمر من هذا المحلل كما تتوقع صفحة الرفع. طلب بالحقل الصحيح يُملأ ملفه حسب <code>storage</code>. ثم يُستدعى المعالج ومعامل الزينة يشير إلى ذلك الكائن. إرجاع الكائن كاملًا في JSON يسرّب <code>path</code> الداخلي و <code>buffer</code>. أعد من الخدمة مفتاحًا عامًا، مثل اسم مولَّد، لا كائن Multer.</p>
+<h2>مثال عملي</h2>
+<p>الخدمة ترفض الغياب وتخزن المفتاح فقط:</p>
+<pre><code class="language-ts">import { BadRequestException, Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class CoversService {
+  replace(bookId: string, file?: Express.Multer.File) {
+    if (!file?.filename) {
+      throw new BadRequestException(&#39;حقل cover مفقود&#39;);
+    }
+    return { bookId, coverKey: file.filename };
+  }
+}
+</code></pre>
+<p><code>filename</code> موجود لأن <code>diskStorage</code> سمّى الملف. التخزين في الذاكرة يعطيك <code>buffer</code> بلا <code>filename</code>. هذا المسار يشترط القرص.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استيراد <code>FileInterceptor</code> من <code>@nestjs/common</code>. هو في <code>@nestjs/platform-express</code>.</li>
+<li><code>@UploadedFile()</code> من غير <code>@UseInterceptors</code>، فيصل <code>undefined</code>.</li>
+<li>إرجاع <code>file</code> كما هو في جسم الرد.</li>
+<li>خلط اسم الحقل: النموذج يرسل <code>file</code> والمعترض ينتظر <code>cover</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمسار يستقبل ملفًا واحدًا بحقل معروف: غلاف، إيصال، شعار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعدة ملفات أو عدة حقول. تلك <code>FilesInterceptor</code> و <code>FileFieldsInterceptor</code> و <code>AnyFilesInterceptor</code>. ولطلب multipart بلا ملفات، <code>NoFilesInterceptor</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>دورها على هذا المسار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>MulterModule.register</code></td>
+<td>افتراض لكل المعترضات في الوحدة</td>
+</tr>
+<tr>
+<td><code>FileInterceptor(name, options)</code></td>
+<td>تحليل حقل واحد، وخياراته تغلّب الافتراض</td>
+</tr>
+<tr>
+<td><code>@UploadedFile()</code></td>
+<td>قراءة الناتج داخل المعالج</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة تستورد <code>FileInterceptor</code> على Express؟</p>
+<details>
+<summary>الحل</summary>
+من `@nestjs/platform-express`. أما `@UploadedFile` فمن `@nestjs/common`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>النموذج يرسل الحقل <code>avatar</code> والمعترض <code>FileInterceptor(&#39;cover&#39;)</code>. ماذا يصل <code>@UploadedFile()</code>؟</p>
+<details>
+<summary>الحل</summary>
+لا يصل ملف الغلاف. المعترض يبحث عن جزء باسم `cover` فقط.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا إرجاع <code>file.path</code> في JSON أسوأ من إرجاع <code>file.filename</code>؟</p>
+<details>
+<summary>الحل</summary>
+`path` يكشف مجلد الخادم. `filename` مفتاح ولّدته أنت، وتبني أنت عنوان التحميل لاحقًا إن كان الملف عامًا.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وسيطا <code>FileInterceptor</code>؟</li>
+<li>أي زينة تستخرج الملف بعد التحليل؟</li>
+<li>متى يكون <code>buffer</code> موجودًا ومتى يكون <code>path</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>FileInterceptor</code> يعلّق Multer على حقل واحد. <code>@UploadedFile</code> يسلّم <code>Express.Multer.File</code>. الرد مفتاح تخزين، لا كائن الوسيط.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحقل الواحد لا يكفي لكل النماذج: مصفوفة ملفات، وحقول متعددة، وأي ملف يصل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — File upload: <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

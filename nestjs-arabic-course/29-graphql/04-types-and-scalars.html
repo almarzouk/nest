@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Object Types و Input Types و Scalars و Enums</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-types-and-scalars.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Object Types و Input Types و Scalars و Enums</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز أربعة أشكال في المخطط: كائن يُعاد، إدخال يُستقبل، ورقة scalar، وقيمة مغلقة enum.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استخدام <code>Book</code> نفسه جسمًا للرد وحجة للإنشاء يسمح للعميل بإرسال <code>id</code> و <code>createdAt</code> في الكتابة. المخطط عندها يوثّق حقولًا لا يقبلها المجال. والقائمة المفتوحة من النصوص لحالة الكتاب تسمح بـ <code>&quot;shipped&quot;</code> في حقل يتوقع <code>DRAFT</code> أو <code>PUBLISHED</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>type</code> كائن خرج. <code>input</code> كائن دخل، ولا يُستخدم مكان النوع في الرد. الـ scalar ورقة لا حقول لها. الـ enum مجموعة أسماء يتحقق منها المحرك قبل دالتك.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-graphql">enum BookStatus {
+  DRAFT
+  PUBLISHED
+}
+
+type Book {
+  id: ID!
+  title: String!
+  status: BookStatus!
+}
+
+input CreateBookInput {
+  title: String!
+  status: BookStatus = DRAFT
+}
+
+type Mutation {
+  createBook(input: CreateBookInput!): Book!
+}
+</code></pre>
+<p>الـ scalars المدمجة: <code>Int</code> و <code>Float</code> و <code>String</code> و <code>Boolean</code> و <code>ID</code>. <code>ID</code> تُسلسَل كنص لكنها تعني معرفًا. لا يوجد <code>Date</code> في المواصفة الأساسية. التاريخ إما <code>String</code> بعقد ISO، وإما scalar مخصص تكتبه لاحقًا. في هذا الفصل أبقِ التواريخ نصًا حتى لا يتشتت التسجيل.</p>
+<p><code>input</code> لا يحتوي حقولًا من نوع كائن خرج. يمكن أن يحتوي scalars و enums ومدخلات أخرى. القيمة الافتراضية <code>= DRAFT</code> تُستخدم إن غاب الحقل في المتغيرات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل -- CreateBookInput --&gt; Mutation.createBook
+                              |
+                              Book  --&gt; عميل
+</code></pre>
+<p>السهم الداخل مدخل. السهم الخارج كائن. لا تعكسهما.</p>
+<h2>أبسط مثال</h2>
+<p>عملية الإنشاء:</p>
+<pre><code class="language-graphql">mutation Create($input: CreateBookInput!) {
+  createBook(input: $input) {
+    id
+    status
+  }
+}
+</code></pre>
+<pre><code class="language-json">{ &quot;input&quot;: { &quot;title&quot;: &quot;NestJS in Practice&quot; } }
+</code></pre>
+<p><code>status</code> غاب فاستخدم المخطط <code>DRAFT</code>. الرد يطلب <code>id</code> الذي ولّدته الخدمة، وهو غير موجود في المدخل.</p>
+<h2>شرح المثال</h2>
+<p>العميل لا يرسل <code>id</code>. الخدمة تولّده. <code>PUBLISHED</code> قيمة يجوز إرسالها لأنها في الـ enum. <code>&quot;draft&quot;</code> بأحرف صغيرة تفشل التحقق لأن أسماء enum في SDL حساسة للحالة كما كُتبت. أبقِ الأسماء كما في المجال حتى لا تترجم في كل محلل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أثناء التحقق، المحرك يطابق كائن المتغيرات بشكل <code>CreateBookInput</code>. حقل زائد مثل <code>id</code> يفشل الطلب في النمط المعتاد للمحركات (رفض الحقول المجهولة على الإدخال). ثم تُستدعى دالة <code>createBook</code> بالكائن المتحقق. الإرجاع يجب أن يشبه <code>Book</code>: إن نقص <code>status</code> فشل التنفيذ لا التحقق. لذلك DTO الدخول في Nest لاحقًا يطابق <code>input</code>، وصنف الخرج يطابق <code>type</code>.</p>
+<h2>مثال عملي</h2>
+<p>تحديث جزئي مدخل آخر، لا إعادة استخدام الإنشاء:</p>
+<pre><code class="language-graphql">input UpdateBookInput {
+  title: String
+  status: BookStatus
+}
+</code></pre>
+<p>الحقول بلا <code>!</code> لأن الغياب يعني «لا تغيّر». <code>CreateBookInput</code> ما زال يفرض <code>title</code>. دمج الاثنين في مدخل واحد يجعل العنوان اختياريًا عند الإنشاء أو إجباريًا عند التعديل.</p>
+<p>قائمة الرف <code>books(status: BookStatus): [Book!]!</code> تأخذ enum مباشرة. إن تجاوزت الحجج اثنتين فاجمعها في <code>input</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>type CreateBookInput</code> بدل <code>input</code>.</li>
+<li>إرجاع <code>CreateBookInput</code> من المحلل.</li>
+<li>تمثيل الحالة بـ <code>String</code> ثم مقارنتها في كل خدمة.</li>
+<li>اختراع scalar للتاريخ في أول مخطط قبل أن يستقر شكل ISO في الفريق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>input</code> لكل كتابة لها أكثر من حجة أو ستنمو. <code>enum</code> لكل مجموعة مغلقة. <code>type</code> لما يقرأه العميل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضع <code>passwordHash</code> على <code>type User</code> لأنه موجود في الجدول. المخطط واجهة، لا انعكاسًا لصف Prisma.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الكلمة</th>
+<th>الاتجاه</th>
+<th>في المتجر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>type Book</code></td>
+<td>خرج</td>
+<td>ما يُرسم</td>
+</tr>
+<tr>
+<td><code>input CreateBookInput</code></td>
+<td>دخل</td>
+<td>ما يُقبل عند الإنشاء</td>
+</tr>
+<tr>
+<td><code>enum BookStatus</code></td>
+<td>قيمة مغلقة</td>
+<td><code>DRAFT</code> أو <code>PUBLISHED</code></td>
+</tr>
+<tr>
+<td><code>String</code> / <code>ID</code></td>
+<td>ورقة</td>
+<td>عنوان ومعرف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل يُعاد <code>CreateBookInput</code> في حقل الرد؟</p>
+<details>
+<summary>الحل</summary>
+لا. الرد `Book` أو نوع خرج آخر. المدخل للعملية فقط.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>UpdateBookInput.title</code> بلا علامة <code>!</code>؟</p>
+<details>
+<summary>الحل</summary>
+لأن التحديث الجزئي يفسّر الغياب كإبقاء القيمة. الإنشاء هو الذي يفرض العنوان.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>العميل أرسل <code>status: &quot;draft&quot;</code>. أين يُرفض الطلب؟</p>
+<details>
+<summary>الحل</summary>
+عند التحقق من المخطط. `BookStatus` لا يحتوي هذا الرمز. المحلل لا يُستدعى.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الـ scalars الخمسة الأساسية؟</li>
+<li>لماذا لا تضع <code>id</code> في مدخل الإنشاء؟</li>
+<li>متى تجمع الحجج في <code>input</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الخرج <code>type</code> والدخل <code>input</code> والحالة المغلقة <code>enum</code> والورقة scalar. المخطط يمنع حقول الجدول التي لا تريد كشفها.</p>
+<h2>ماذا بعد؟</h2>
+<p>تركيب هذا المخطط داخل Nest مع Apollo، وما زالت الزينة في الدرس الذي يلي الإعداد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>GraphQL — Schemas and types: <a href="https://graphql.org/learn/schema/">https://graphql.org/learn/schema/</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

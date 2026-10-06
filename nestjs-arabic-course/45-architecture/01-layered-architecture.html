@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Layered Architecture</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-layered-architecture.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Layered Architecture</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ترتيب كود Nest في طبقات اتجاهها واحد: مدخل HTTP، ثم حالة الاستخدام، ثم التخزين، حتى لا يصل Prisma إلى المتحكم ولا يصل <code>Response</code> إلى قاعدة البيانات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>متحكم يستدعي <code>prisma.book.create</code> ويتحقق من الدور ويحسب الخصم يصعب اختباره بلا شبكة وقاعدة، وأي تغيير في الجدول يمس HTTP. الطبقات تسمي مكان كل تغيير. Nest لا يفرض الأسماء، ويمنح أماكن طبيعية: Controller و Service و Provider للتخزين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الطلب يدخل من الطبقة الخارجية. كل طبقة تنادي التي تحتها بعقد صغير وترجع نتيجة. الطبقة السفلى لا تستورد المتحكم ولا <code>@Req()</code>. في مشروع الكتب الآن: طبقة مدخل، طبقة تطبيق، طبقة بيانات. ثلاث تكفي.</p>
+<h2>التعريف التقني</h2>
+<p>طبقة المدخل: <code>BooksController</code> يقرأ DTO ويعيد شكل HTTP. لا يعرف أعمدة SQL.</p>
+<p>طبقة التطبيق: <code>BooksService</code> تقرر إنشاء الكتاب وتتحقق من قاعدة العمل (العنوان غير فارغ بعد أن مر Pipe، الخصم لا يتجاوز السعر). تستقبل أنواعًا plain و <code>userId</code> نصًا.</p>
+<p>طبقة البيانات: <code>PrismaService</code> أو دالة تغلف الاستعلام. تعرف الجدول وتخفي <code>select</code> عن الخدمة قدر الحاجة.</p>
+<p>الاتجاه: Controller → Service → Prisma. السهم العكسي ممنوع. الاستثناءات التي ترميها الخدمة يمكن أن تكون أخطاء دومين يترجمها Filter إلى HTTP، لا أن تستورد الخدمة <code>Response</code>.</p>
+<p>هذا ليس كل Clean Architecture. لا كيانات غنية ولا منافذ بعد. إنه ترتيب اعتماد يناسب معظم وحدات Nest في هذه الدورة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">HTTP DTO
+  -&gt; BooksController
+  -&gt; BooksService
+  -&gt; PrismaService
+  -&gt; جدول books
+الرجوع: سجل -&gt; كائن -&gt; JSON
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Post } from &#39;@nestjs/common&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+import { CreateBookDto } from &#39;./create-book.dto.js&#39;;
+
+@Controller(&#39;books&#39;)
+export class BooksController {
+  constructor(private readonly books: BooksService) {}
+
+  @Post()
+  create(@Body() dto: CreateBookDto) {
+    return this.books.create(dto);
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+import { CreateBookDto } from &#39;./create-book.dto.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  create(dto: CreateBookDto) {
+    return this.prisma.book.create({ data: { title: dto.title, priceMinor: dto.priceMinor } });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المتحكم لا يرى <code>data:</code>. الخدمة لا ترى <code>@Body</code>. تغيير اسم العمود يمس الخدمة أو طبقة البيانات، لا توقيع المسار إن بقي DTO ثابتًا. إن كبر <code>create</code> فانقل SQL إلى دالة <code>BooksStore</code> وأبقِ الخصم في الخدمة. تلك ما زالت طبقات ثلاثًا بأسماء أوضح.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المسار يضرب المتحكم فقط.</li>
+<li>الحقن يعطي الخدمة نسخة Singleton.</li>
+<li>الخدمة تنادي العميل.</li>
+<li>الكائن الراجع يصعد. طبقة HTTP في Nest تحوله إلى JSON.</li>
+<li>فشل القيد في القاعدة يستثنى في الأسفل ويُترجم في Filter أعلى، لا داخل <code>prisma</code> بتفاصيل المسار.</li>
+<li>اختبار الخدمة يمرر عميلًا مزيفًا بلا <code>listen</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>وحدة طلبات: <code>OrdersController</code> يستخرج <code>userId</code> من الديكور. <code>OrdersService.place</code> يتحقق أن السلة غير فارغة ثم ينادي <code>prisma.order.create</code>. لا تضع التحقق في المتحكم بعد وجود Pipe للشكل، ولا في استدعاء Prisma الخام إن كانت القاعدة ستتكرر من مهمة طابور لاحقة. الطابور يستدعي الخدمة نفسها لا المتحكم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>PrismaClient</code> داخل المتحكم.</li>
+<li>تمرير <code>Request</code> إلى الخدمة.</li>
+<li>طبقة «Manager» رابعة بلا فرق عن الخدمة.</li>
+<li>جعل الطبقة السفلى ترمي <code>HttpException</code> لكل مخالفة قيد، فتُربط القاعدة بـ HTTP.</li>
+<li>مجلدات layers على مستوى المستودع كله بدل وحدة لكل ميزة. الحدود بين الميزات درس المعمارية النمطية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>أي ميزة CRUD في هذه الدورة: مدخل، تطبيق، بيانات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تزد طبقة لأن رسمًا في مقال فيه خمس طبقات. أضف طبقة عندما يوجد تغيير مستقل، مثل استعلام معقد يتكرر من أكثر من خدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>تعرف</th>
+<th>لا تعرف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Controller</td>
+<td>مسار، DTO، رمز HTTP</td>
+<td>جداول</td>
+</tr>
+<tr>
+<td>Service</td>
+<td>قواعد العمل</td>
+<td><code>Response</code></td>
+</tr>
+<tr>
+<td>Prisma</td>
+<td>الاستعلام</td>
+<td>شكل جسم HTTP</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يحق له استدعاء <code>prisma.book.create</code> في الترتيب أعلاه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>BooksService</code> أو طبقة بيانات تناديها الخدمة، لا المتحكم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>مهمة طابور تريد إنشاء كتاب. أي طبقة تستدعي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>BooksService.create</code>، حتى لا تعتمد المهمة على HTTP ولا تنسخ SQL.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>قيد فريد على <code>title</code> فشل. أين يُترجم إلى <code>409</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في Exception Filter أو ترجمة عند حافة HTTP، لا داخل <code>PrismaService</code> التي قد تُستدعى من غير HTTP.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما اتجاه الاستيراد؟</li>
+<li>ماذا يستقبل الدومين من الهوية: <code>Request</code> أم <code>userId</code>؟</li>
+<li>متى تضيف طبقة رابعة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ثلاث طبقات باتجاه واحد تكفي لمعظم وحدات Nest الآن: مدخل، خدمة، تخزين. امنع السهم العكسي قبل أن تسمي المعمارية.</p>
+<h2>ماذا بعد؟</h2>
+<p>Modular Architecture: الحد بين الميزات، لا بين الطبقات فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

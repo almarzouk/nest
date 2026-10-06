@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>TypeORM كما في التوثيق الرسمي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-typeorm.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>TypeORM كما في التوثيق الرسمي</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة مسار <code>@nestjs/typeorm</code> كما يوثّقه Nest: <code>forRoot</code> و <code>forFeature</code> ومستودع وكيان، مع إبقاء <code>synchronize</code> خارج الإنتاج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>من يرى Prisma فقط يظن أن أي كيان بزينة هو Prisma. مشاريع قائمة تستخدم TypeORM، وصفحة Nest ما زالت المرجع لذلك التكامل. نسخ مثال البداية كما هو إلى الإنتاج يفتح <code>synchronize: true</code>، والتوثيق يحذّر أنه قد يفقد بيانات الإنتاج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الكيان صنف يصف الجدول. <code>TypeOrmModule.forRoot</code> يفتح مصدر البيانات. <code>forFeature([Book])</code> يسجّل مستودعًا في الوحدة. الخدمة تحقن <code>@InjectRepository(Book)</code>. الترحيلات أداة CLI منفصلة عن حقن Nest، لأن أصناف الترحيل لا تعيش داخل دورة التطبيق.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة <code>@nestjs/typeorm</code> مع <code>typeorm</code> ومشغّل القاعدة. مثال الصفحة يستخدم MySQL و <code>mysql2</code>. الدورة على PostgreSQL تبدّل <code>type: &quot;postgres&quot;</code> ومشغّل <code>pg</code>. بقية الشكل واحد.</p>
+<pre><code class="language-ts">TypeOrmModule.forRoot({
+  type: &quot;postgres&quot;,
+  url: process.env.DATABASE_URL,
+  autoLoadEntities: true,
+  synchronize: false,
+});
+</code></pre>
+<p>صفحة Nest تعرض <code>synchronize: true</code> في مثال البداية، ثم تحذّر: لا تستخدمه في الإنتاج. في هذه الدورة القيمة <code>false</code>، والتغيير عبر migrations التي يوفّرها CLI الخاص بـ TypeORM. أصناف الترحيل بلا DI.</p>
+<p><code>autoLoadEntities: true</code> يحمّل الكيانات المسجّلة في <code>forFeature</code> حتى لا تُسرد كلها في الجذر فتتسرب تفاصيل الوحدات.</p>
+<pre><code class="language-ts">@Entity()
+export class Book {
+  @PrimaryGeneratedColumn()
+  id: number;
+
+  @Column()
+  title: string;
+}
+</code></pre>
+<pre><code class="language-ts">constructor(
+  @InjectRepository(Book)
+  private readonly books: Repository&lt;Book&gt;,
+) {}
+</code></pre>
+<p><code>forRootAsync</code> مع <code>ConfigService</code> هو الشكل الذي عاينّاه في فصل الإعداد. <code>getRepositoryToken(Book)</code> يبني رمز المزيف في الاختبار.</p>
+<p>المعاملات في التوثيق عبر <code>QueryRunner</code> أو مدير المعاملة، لا عبر <code>prisma.$transaction</code>. لا تخلط الاثنين في المشروع نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">forRoot            مصدر بيانات التطبيق
+forFeature([Book]) Repository في BooksModule
+BooksService       this.books.find()
+synchronize: false الترحيل خارج الإقلاع
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { InjectRepository } from &quot;@nestjs/typeorm&quot;;
+import { Repository } from &quot;typeorm&quot;;
+import { Book } from &quot;./book.entity.js&quot;;
+
+@Injectable()
+export class BooksService {
+  constructor(
+    @InjectRepository(Book)
+    private readonly books: Repository&lt;Book&gt;,
+  ) {}
+
+  findAll() {
+    return this.books.find();
+  }
+
+  findOne(id: number) {
+    return this.books.findOneBy({ id });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>find</code> و <code>findOneBy</code> واجهة المستودع. الكيان يطابق جدولًا. الوحدة التي تملك الخدمة تستورد <code>TypeOrmModule.forFeature([Book])</code>. لتستخدم مستودعًا خارجها، أعد تصدير <code>TypeOrmModule</code> كما في الصفحة.</p>
+<p>هذا المسار مفهوم إن ورثت مشروعًا عليه. مشروع الدورة الجديد يكمل على <code>PrismaService</code> الذي سبق بناؤه.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>forRoot</code> ينشئ <code>DataSource</code> ويهيّئه عند إقلاع الوحدة ما لم تضبط <code>manualInitialization</code>. <code>synchronize: true</code> يقارن الكيانات بالقاعدة ويغيّر الجداول عند الإقلاع. هذا مناسب لتجربة سريعة على قاعدة فارغة، وخطر على بيانات قائمة. مع <code>false</code> لا يُلمس المخطط حتى تشغّل ترحيل CLI.</p>
+<p><code>retryAttempts</code> و <code>retryDelay</code> خيارات إضافية على <code>forRoot</code> فوق خيارات <code>DataSource</code>.</p>
+<h2>مثال عملي</h2>
+<p>خدمة قديمة للإعارات على TypeORM تبقى كما هي إن كان النشر قائمًا عليها. خدمة جديدة في الدورة لا تضاف بجانبها على الجدول نفسه بـ Prisma في الأسبوع نفسه. اختر واحدًا. إن انتقلت، انقل القراءة والكتابة معًا، وأبقِ الترحيلات مصدر شكل الجدول.</p>
+<p>اختبار يستبدل المستودع:</p>
+<pre><code class="language-ts">{ provide: getRepositoryToken(Book), useValue: { find: vi.fn() } }
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>synchronize: true</code> على الإنتاج.</li>
+<li>سرد كل الكيانات في <code>AppModule</code> مع كسر حدود الوحدات، بدل <code>autoLoadEntities</code>.</li>
+<li>ترحيل TypeORM يحاول حقن خدمة Nest.</li>
+<li>تشغيل TypeORM و Prisma وكتابة الاثنين على جدول واحد بلا مالك واضح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مشروع قائم على الكيانات والمستودعات، أو فريق يفضّل مسار Nest الرسمي هذا على التوليد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بجانب Prisma في مكتبة الدورة «للتجربة». مسار واحد يكفي حتى تتقن الترحيل والمعاملات.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Prisma في الدورة</th>
+<th>TypeORM في التوثيق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>schema.prisma</code> وعميل مولَّد</td>
+<td>كيان و <code>Repository</code></td>
+</tr>
+<tr>
+<td><code>$transaction</code></td>
+<td><code>QueryRunner</code></td>
+</tr>
+<tr>
+<td>ترحيل Prisma</td>
+<td>ترحيل CLI لـ TypeORM</td>
+</tr>
+<tr>
+<td>بلا <code>synchronize</code></td>
+<td><code>synchronize: false</code> عندنا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحقن <code>@InjectRepository(Book)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Repository&lt;Book&gt;</code> المسجّل عبر <code>TypeOrmModule.forFeature([Book])</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مثال التوثيق الذي يضع <code>synchronize: true</code> لا يُنسخ إلى الإنتاج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصفحة تحذّر أن المزامنة قد تفقد بيانات الإنتاج. التغيير يمر بترحيل يُراجع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيان في <code>BooksModule</code> عبر <code>forFeature</code>، و <code>forRoot</code> بلا <code>entities</code> وبلا <code>autoLoadEntities</code>. لماذا لا يرى المصدر الجدول؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>forFeature</code> يسجّل المستودع، لكن تحميل الكيان في مصدر البيانات يحتاج إضافتهم إلى <code>entities</code> أو <code>autoLoadEntities: true</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما دور <code>forFeature</code> مقابل <code>forRoot</code>؟</li>
+<li>أين تُكتب ترحيلات TypeORM نسبة إلى DI؟</li>
+<li>لماذا لا نخلطه مع Prisma على المشروع نفسه في الدورة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>TypeORM مسار رسمي بالكيان والمستودع. نقرأه حتى نفهم التوثيق، ونطفئ المزامنة التلقائية، ونُبقي بناء المكتبة على Prisma.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./12-drizzle.html">Drizzle و @nestjs/drizzle</a> البديل الموثّق الذي يبني الجداول بدوال TypeScript.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — TypeORM: <a href="https://docs.nestjs.com/data/typeorm">https://docs.nestjs.com/data/typeorm</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

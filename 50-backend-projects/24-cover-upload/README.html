@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>24 — غلاف المقال</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>24 — غلاف المقال</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new cover-upload</code></p>
+<h2>ماذا تبني</h2>
+<p>رفع صورة غلاف لمقال. النوع والحجم يُفحصان. الملف يُخزَّن باسم مولَّد لا باسم المستخدم. الرد بيانات لا بايتات.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>أول مدخل ليس JSON. الحدود هنا تحمي القرص.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>FileInterceptor</li>
+<li>mime و size</li>
+<li>اسم تخزين آمن</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>S3</li>
+<li>معالجة صور</li>
+<li>CDN</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الأدوار. اربط الرفع بالمحرر صاحب المقال أو بالمدير.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/27-file-upload/README.html">27-file-upload</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>image/jpeg و image/png فقط.</li>
+<li>السقف 1 ميغابايت.</li>
+<li>اسم الملف على القرص uuid لا originalname.</li>
+<li>المقال الغائب 404 ولا يُكتب ملف.</li>
+<li>احذف الملف القديم عند الاستبدال أو وثّق أنك تتركه. اختر الحذف.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/articles/:id/cover</code></td>
+<td>201</td>
+<td>يرفع ويحفظ المسار الداخلي</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/articles/:id</code></td>
+<td>200</td>
+<td>يتضمن coverUrl نسبيًا</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new cover-upload</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ارفض قبل الكتابة إن أمكن، وإن كُتب ملف مرفوض فاحذفه.</li>
+<li>لا تضع مجلد الرفع تحت مسار عام بلا قرار. في هذا المشروع الرد يعيد معرف الملف ومسارًا يخدمه Nest بحد واضح، أو أرجئ الخدمة العامة إلى ملاحظة في التمديد.</li>
+<li>اختبر ملفًا نصيًا وتوقع 400.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/covers/covers.controller.ts
+uploads/  (غير متابع في git)
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">@Post(&quot;:id/cover&quot;)
+@UseInterceptors(FileInterceptor(&quot;file&quot;, { limits: { fileSize: 1_000_000 } }))
+upload(@Param(&quot;id&quot;) id: string, @UploadedFile() file?: Express.Multer.File) {
+  return this.covers.save(id, file);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>الثقة بامتداد الاسم.</li>
+<li>حفظ originalname في المسار فيصير ../../ ممكنًا.</li>
+<li>إرجاع الملف داخل JSON بترميز ضخم.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>نص عادي يُرفض.</li>
+<li>صورتان متتاليتان لا تتركان الأولى على القرص.</li>
+<li>مقال غير موجود لا يترك ملفًا.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف حذف الغلاف من غير حذف المقال.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 24» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../23-editorial-roles/README.html">23. أدوار التحرير</a></li>
+<li>التالي: <a href="../25-partner-api-keys/README.html">25. مفاتيح الشركاء</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

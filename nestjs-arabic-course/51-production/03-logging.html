@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Logging في الإنتاج</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-logging.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Logging في الإنتاج</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إخراج سجلات يمكن جمعها: مستوى مناسب، سطر مفهوم للآلة، ومن غير أسرار أو أجسام طلب كاملة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>console.log</code> لكل جسم طلب يكتب كلمات السر ويغرق القرص. صمت الإنتاج يخفي سبب <code>500</code>. السجل الجيد يجيب: أي طلب، أي مسار، أي خطأ، من غير أن يصبح نسخة من قاعدة البيانات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>استعمل <code>Logger</code> من <code>@nestjs/common</code> أو مسجّل JSON مثل Pino عبر تكامل تعرفه. المستوى من متغير <code>LOG_LEVEL</code>. في الإنتاج <code>log</code> و <code>warn</code> و <code>error</code> لا <code>debug</code> الدائم. لا تسجل <code>Authorization</code> ولا جسم <code>POST /login</code>. أضف معرف طلب إن وضعه الوكيل أو أنشأته في middleware. الخطأ الداخلي في السجل، والعميل يرى رسالة عامة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Logger } from &#39;@nestjs/common&#39;;
+
+const logger = new Logger(&#39;OrdersService&#39;);
+logger.log(`order cancelled ${orderId}`);
+logger.error(&#39;invoice failed&#39;, err.stack);
+</code></pre>
+<p><code>Logger</code> يكتب إلى الطرفية التي يجمعها Docker أو systemd. JSON أسهل للبحث عندما تتعدد الحقول:</p>
+<pre><code class="language-json">{&quot;level&quot;:&quot;error&quot;,&quot;msg&quot;:&quot;invoice failed&quot;,&quot;orderId&quot;:&quot;o1&quot;}
+</code></pre>
+<p>لا تبنِ التنسيق بيديك في كل سطر إن كانت المكتبة تخرجه. المهم الحقول الثابتة: الوقت، المستوى، الرسالة، المعرف.</p>
+<p><code>LOG_LEVEL=debug</code> مؤقت على نسخة واحدة تشخص عطلًا ثم ترجع. تركه على كل النسخ يضخ الحجم.</p>
+<p>استثناء غير ممسوك يسجله الإطار. أضف في فلتر الإنتاج سجلًا بالمكدس وردًا بلا مكدس. لا تعِد <code>err.stack</code> في JSON للعميل.</p>
+<p>معرف الطلب: إن أرسل الوكيل <code>x-request-id</code> فمرره في السجلات التابعة. لا تسجل كل الترويسات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الطرفية -&gt; جامع السجلات
+المستوى من البيئة
+السر لا يُكتب
+المكدس في السجل لا في الرد
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">logger.log(`issue ${orderId}`);
+</code></pre>
+<p>بدل <code>logger.log(dto)</code>. <code>dto</code> قد يحوي عنوان الشحن أو رمز قسيمة. المعرف يكفي لربط السطر بصف في القاعدة تحت صلاحية من يشخص.</p>
+<h2>شرح المثال</h2>
+<p>البحث في المجمع عن <code>o1</code> يجد الإصدار والفشل. جسم البطاقة لا يظهر في نفس البحث لأنك لم تكتبه. هذا فرق إنتاج عن سجل تطوير يطبع الطلب كاملًا على جهازك.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المكتبة تكتب إلى stdout/stderr.</li>
+<li>Docker يلتقط المخرجات.</li>
+<li>المجمع يخزن حسب المستوى.</li>
+<li><code>debug</code> المعطل لا يبني سلاسل ضخمة إن راعيت ذلك في المكتبة.</li>
+<li>خطأ متزامن في المعالج يصل إلى الفلتر فيُسجل مرة. لا تسجله في كل طبقة فيتضاعف.</li>
+<li>سجل الصحة كل ثانية يغرق المهم. الفحص الناجح لا يُسجل بمستوى error.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عند <code>RpcException</code> أو فشل Prisma سجّل الرمز واسم العملية لا سلسلة الاتصال. إن فشل الاتصال فقل «database unreachable» من غير <code>DATABASE_URL</code>. أضف <code>requestId</code> من middleware خفيف يضعه على <code>AsyncLocalStorage</code> إن كانت السجلات من خدمات عميقة، من غير تعليم الخدمات <code>REQUEST</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>طباعة <code>process.env</code>.</li>
+<li>مستوى debug دائم.</li>
+<li>مكدس في جسم <code>500</code> للعميل.</li>
+<li>سجل صحة ناجح بمستوى خطأ.</li>
+<li>تكرار السجل في المتحكم والخدمة والفلتر لنفس الاستثناء.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل مسار يغيّر حالة وعلى كل فشل تعتمد عليه في التشخيص.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسجل كل قراءة ناجحة لقائمة عامة تحت حمل عالٍ. عيّنة أو مقياس لاحقًا. ولا تسجل حمولة بطاقة حتى في debug.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>يُكتب</th>
+<th>لا يُكتب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>معرف الطلب والطلبية</td>
+<td>كلمة السر والتوكن</td>
+</tr>
+<tr>
+<td>اسم الخطأ</td>
+<td><code>DATABASE_URL</code></td>
+</tr>
+<tr>
+<td>المكدس في السجل</td>
+<td>المكدس في JSON العميل</td>
+</tr>
+<tr>
+<td>فشل الصحة</td>
+<td>كل نجاح صحة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يذهب مكدس الخطأ في الإنتاج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إلى السجل على الطرفية أو المجمع، لا إلى جسم الاستجابة للعميل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>logger.log(dto)</code> خطر على <code>POST /login</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الجسم قد يحوي كلمة السر. سجّل معرفًا أو اسم العملية فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تربط سطور خدمة عميقة بطلب HTTP من غير <code>Scope.REQUEST</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>معرف في middleware يُخزن في <code>AsyncLocalStorage</code> ويقرأه المسجّل Singleton. الخدمات تبقى على النطاق الافتراضي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يأتي المستوى؟</li>
+<li>ماذا يجمع Docker؟</li>
+<li>أي سجل لا ترفعه إلى error؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>سجل الإنتاج مستوى مضبوط وحقول بلا أسرار، والمكدس عندك لا عند العميل. الطرفية كافية ما دام المجمع يقرأها.</p>
+<h2>ماذا بعد؟</h2>
+<p>Graceful Shutdown: إيقاف لا يقطع الطلب الذي يسجله هذا السطر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/techniques/logger">https://docs.nestjs.com/techniques/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

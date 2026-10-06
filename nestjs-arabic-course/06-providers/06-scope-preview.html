@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Scope: نظرة أولى</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-scope-preview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Scope: نظرة أولى</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز عمر Provider: <code>DEFAULT</code> نسخة للتطبيق، <code>REQUEST</code> نسخة لكل طلب وتعدي السلسلة، <code>TRANSIENT</code> نسخة لكل موضع حقن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حقل <code>memberId</code> على Service افتراضية يخلط أعضاء المكتبة لأن النسخة واحدة. جعل كل الخدمات <code>REQUEST</code> يحل الخلط وينشئ شجرة كائنات لكل طلب. Scope يسمي العمر الذي تحتاجه فعلًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Singleton هو الافتراضي ويُنصح به. <code>Scope.REQUEST</code> يربط العمر بالطلب ثم تُجمع النسخة بعده، وأي مستهلك يحقنه يصبح <code>REQUEST</code> أيضًا. <code>Scope.TRANSIENT</code> يعطي كل مستهلك نسخته من غير أن يغيّر Scope المستهلك.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>القيمة</th>
+<th>العمر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Scope.DEFAULT</code></td>
+<td>نسخة واحدة لعمر التطبيق. تُنشأ مع الإقلاع وتُدمَّر مع الإيقاف</td>
+</tr>
+<tr>
+<td><code>Scope.REQUEST</code></td>
+<td>نسخة لكل طلب وارد، ثم تصبح قابلة للجمع</td>
+</tr>
+<tr>
+<td><code>Scope.TRANSIENT</code></td>
+<td>نسخة مخصصة لكل من يحقن الرمز، تُنشأ مع ذلك المستهلك</td>
+</tr>
+</tbody></table>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class VisitContext {}
+</code></pre>
+<p>على الوصفة الطويلة: <code>scope: Scope.TRANSIENT</code> بجانب <code>provide</code>. <code>Scope</code> من <code>@nestjs/common</code>. التصريح الصريح بـ Singleton هو <code>Scope.DEFAULT</code>.</p>
+<p>حقن الرمز <code>REQUEST</code> من <code>@nestjs/core</code> يجعل المزود مرتبطًا بالطلب أصلًا، حتى من غير إعادة كتابة <code>scope</code>. أي مزود يعتمد على مزود <code>REQUEST</code> يرث هذا العمر، وهذا السلوك لا يُلغى.</p>
+<p>WebSocket gateway و Cron وبعض استراتيجيات Passport تبقى Singleton. لا تضع عليها <code>REQUEST</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">VisitContext  scope REQUEST
+LoansService  تحقن VisitContext  -&gt; تصبح REQUEST
+LoansController تحقن LoansService -&gt; تصبح REQUEST
+FeeRates      لا تعتمد على السلسلة -&gt; تبقى DEFAULT
+</code></pre>
+<p><code>TRANSIENT</code> لا يصعد هكذا. <code>AuditService</code> الـ Singleton التي تحقن <code>StampClock</code> العابرة تأخذ ساعة خاصة عند إنشائها مرة واحدة، وتبقى <code>AuditService</code> نسخة تطبيق.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Inject, Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { REQUEST } from &#39;@nestjs/core&#39;;
+import type { Request } from &#39;express&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class VisitContext {
+  constructor(@Inject(REQUEST) private readonly request: Request) {}
+
+  memberId() {
+    return this.request.header(&#39;x-member&#39;);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Inject(REQUEST)</code> يمرر طلب المنصة لهذه النسخة فقط.</li>
+<li><code>import type</code> لـ <code>Request</code> مقبول لأنه نوع Express لا رمز تسجيل.</li>
+<li><code>header</code> يقرأ رأس هذا الطلب. النسخة لن تخدم طلبًا ثانيًا.</li>
+<li>كتابة <code>@Injectable({ scope: Scope.REQUEST })</code> مع <code>REQUEST</code> توثيق ظاهر. التوثيق يقول إن إعادة تحديد Scope تُتجاهل لأن الرمز نفسه Request-scoped.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>سلسلة <code>REQUEST</code> تُبنى لكل طلب ثم تُهمل. Controller في أعلى السلسلة يُعاد إنشاؤه مع الخدمة. تحت حمل مرتفع هذا تخصيص وجمع مستمر، فيزيد زمن الاستجابة. التوثيق يطلب الإبقاء على Singleton إلا عندما يلزم العمر بالطلب فعلًا، ويذكر أن تصميمًا منضبطًا لا يتجاوز غالبًا زيادة صغيرة. المؤشر العملي هنا: كل سلف في سلسلة الحقن يُعاد إنشاؤه.</p>
+<p><code>TRANSIENT</code> ينشئ نسخة لكل موضع <code>constructor</code>، وقت إنشاء ذلك الموضع. مستهلكان Singleton يأخذان ساعتين مختلفتين، وكل ساعة تعيش عمر مستهلكها. هذا ليس «نسخة لكل استدعاء دالة» ولا «نسخة لكل طلب».</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { VisitContext } from &#39;./visit-context.js&#39;;
+
+@Injectable()
+export class LoansService {
+  constructor(private readonly visit: VisitContext) {}
+
+  open(isbn: string) {
+    return { isbn, member: this.visit.memberId() };
+  }
+}
+
+@Injectable({ scope: Scope.TRANSIENT })
+export class StampClock {
+  readonly at = new Date();
+}
+</code></pre>
+<p><code>LoansService</code> مكتوبة من غير Scope، لكن حقن <code>VisitContext</code> يجعلها <code>REQUEST</code>. <code>StampClock</code> عابرة: من يحقنها يحصل على تاريخ إنشاء نسخته هو.</p>
+<p>مزوّد Durable الذي يعيد استخدام شجرة حسب مستأجر موجود في توثيق Injection scopes. خارج هذه النظرة الأولى.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حفظ <code>memberId</code> على Service افتراضية</td>
+<td>الطلب التالي يرى عضو الطلب السابق</td>
+</tr>
+<tr>
+<td><code>REQUEST</code> على عميل قاعدة البيانات المشترك</td>
+<td>كل من يحقن العميل يصبح لكل طلب، والتكلفة تصعد</td>
+</tr>
+<tr>
+<td>توقع أن <code>TRANSIENT</code> يغيّر عمر Controller</td>
+<td>المستهلك Singleton يبقى Singleton ويحتفظ بنسخته العابرة</td>
+</tr>
+<tr>
+<td><code>REQUEST</code> على WebSocket gateway</td>
+<td>البوابة يجب أن تبقى نسخة واحدة حول المقبس</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p><code>DEFAULT</code> للحساب والوصول إلى مخزن مشترك. <code>REQUEST</code> عندما تكون حالة هذا الطلب جزءًا من هوية الكائن، مثل سياق العضو المأخوذ من الطلب. <code>TRANSIENT</code> عندما يحتاج كل مستهلك حالة بداية خاصة، مثل ساعة أو متتبع لا تريد مشاركته مع مستهلك ثانٍ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p><code>REQUEST</code> لقراءة الرأس ثم تمرير النص كوسيط دالة. تمرير <code>memberId</code> من Controller إلى دالة Singleton أبقي على الشجرة الافتراضية. متجر <code>AsyncLocalStorage</code> لكل طلب موثّق كبديل لاحق عندما تكثر الطلبات؛ لا تبنِه في هذا الدرس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Scope</th>
+<th>متى تُنشأ النسخة</th>
+<th>هل يصعد إلى من يحقنها</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DEFAULT</code></td>
+<td>مرة عند الإقلاع</td>
+<td>النسخة تُشارك</td>
+</tr>
+<tr>
+<td><code>REQUEST</code></td>
+<td>لكل طلب</td>
+<td>نعم، والسلسلة كلها لكل طلب</td>
+</tr>
+<tr>
+<td><code>TRANSIENT</code></td>
+<td>مع كل مستهلك</td>
+<td>لا؛ المستهلك يبقي Scope</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما Scope صنف عليه <code>@Injectable()</code> من غير خيارات؟</p>
+<details><summary>الحل</summary>
+
+<p><code>Scope.DEFAULT</code>، أي Singleton لعمر التطبيق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>LoansController</code> يحقن <code>LoansService</code> التي تحقن <code>VisitContext</code> ذات <code>REQUEST</code>. ما عمر Controller؟</p>
+<details><summary>الحل</summary>
+
+<p><code>REQUEST</code>. العدوى تصعد حتى Controller، فيُنشأ لكل طلب مع الخدمة والسياق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>AuditService</code> افتراضية تحقن <code>StampClock</code> العابرة. كم نسخة ساعة تُنشأ لطلبين متتاليين، ولماذا؟</p>
+<details><summary>الحل</summary>
+
+<p>نسخة ساعة واحدة. <code>AuditService</code> تُنشأ مرة عند الإقلاع فتأخذ ساعتها العابرة حينها. <code>TRANSIENT</code> لا يعني نسخة لكل طلب ما دام المستهلك Singleton.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا تُوصف <code>REQUEST</code> بأنها مكلفة؟</li>
+<li>ماذا يرث مزود يحقن رمز <code>REQUEST</code>؟</li>
+<li>ما الفرق بين «لكل حقن» و«لكل طلب»؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الافتراضي نسخة تطبيق واحدة. <code>REQUEST</code> نسخة لكل طلب وتسحب من يحقنها إلى العمر نفسه. <code>TRANSIENT</code> نسخة لكل موضع حقن من غير أن تغيّر عمر المستهلك.</p>
+<h2>ماذا بعد؟</h2>
+<p>استبدال الصنف المرتبط بالرمز: Class Providers.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

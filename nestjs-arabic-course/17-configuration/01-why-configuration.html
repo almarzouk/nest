@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا Configuration</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-configuration.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا Configuration</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز ما يتغيّر بين جهازك وجهاز زميلك وخادم الإنتاج، ولماذا لا يُكتب ذلك داخل الأصناف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>منفذ الاستماع، عنوان PostgreSQL، وسر التوقيع ليست قواعد عمل. هي ظروف تشغيل. إن كتبت <code>3000</code> و <code>localhost</code> داخل <code>main.ts</code>، النسخة التي تعمل على جهازك ترفض الإقلاع على الخادم، أو تتصل بقاعدة ليست قاعدتها.</p>
+<p><code>process.env</code> يحل النقل، لكنه يترك القراءة مبعثرة. كل ملف يسحب مفتاحًا نصيًا، والاختبار يضطر إلى تعديل البيئة العامة للعملية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الإعداد طبقة إقلاع. القيم تأتي من خارج المستودع، والتطبيق يقرأها من مكان واحد بعد أن يتحقق أنها موجودة وبالشكل المتوقع. الخدمة تطلب <code>port</code> أو <code>databaseUrl</code>. لا تفتح البيئة في كل دالة.</p>
+<h2>التعريف التقني</h2>
+<p>في Node، المتغيرات الخارجية تظهر في <code>process.env</code>، وكل قيمة فيه نص أو <code>undefined</code>. Nest يوفّر الحزمة <code>@nestjs/config</code>، وهي تغلّف dotenv داخل <code>ConfigModule</code> وتكشف القيم عبر <code>ConfigService</code>.</p>
+<p>هذا الفصل يبني تلك الطبقة: ملف <code>.env</code> للتطوير، ثم <code>ConfigModule.forRoot</code>، ثم <code>ConfigService</code>، ثم التحقق، ثم تجميع المفاتيح في namespace، ثم نوع يقيّد أسماء المفاتيح، ثم <code>forRootAsync</code> حين تحتاج وحدة أخرى تلك القيم عند الإقلاع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">جهاز التطوير     .env محلي          PORT=3000
+خادم الإنتاج     بيئة المنصة        PORT=8080
+                       |
+                 ConfigModule
+                       |
+                 ConfigService.get(&#39;PORT&#39;)
+                       |
+                 app.listen(port)
+</code></pre>
+<p>الكود واحد. الظرف يتغيّر. السر لا يدخل Git.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+
+@Injectable()
+export class LibrarySettings {
+  constructor() {
+    const port = Number(process.env.PORT ?? &quot;3000&quot;);
+    if (!Number.isInteger(port) || port &lt; 1 || port &gt; 65535) {
+      throw new Error(&quot;PORT must be an integer from 1 to 65535&quot;);
+    }
+    this.port = port;
+  }
+
+  readonly port: number;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>LibrarySettings</code> يجمع قرار المنفذ في بنّاء واحد. <code>Number(&quot;3000&quot;)</code> يعطي <code>3000</code>. <code>Number(&quot;&quot;)</code> يعطي <code>0</code>، و <code>Number(&quot;abc&quot;)</code> يعطي <code>NaN</code>، لذلك الفحص يرفضهما قبل <code>listen</code>.</p>
+<p>هذا ليس <code>@nestjs/config</code> بعد. هو الحد الأدنى الذي يبرّر الحزمة: مكان واحد، تحويل من نص إلى عدد، وفشل عند الإقلاع إذا كانت القيمة غير صالحة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Node يملأ <code>process.env</code> قبل تنفيذ أول سطر من تطبيقك، من صدفة التشغيل أو من علم <code>--env-file</code>. أي سطر يقرأ المفتاح لاحقًا يرى النص نفسه. لا يوجد تحويل أنواع، ولا استثناء إن غاب المفتاح: الغياب هو <code>undefined</code>.</p>
+<p>إن قرأت <code>DATABASE_URL</code> في عشرة ملفات، تغيّر اسم المفتاح يصبح بحثًا في المشروع. وإن طبعته في السجل، السر يخرج مع التتبع.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة صغيرة تعمل بثلاثة ظروف:</p>
+<table>
+<thead>
+<tr>
+<th>الظرف</th>
+<th><code>PORT</code></th>
+<th><code>DATABASE_URL</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تطوير</td>
+<td><code>3000</code></td>
+<td>عنوان PostgreSQL محلي</td>
+</tr>
+<tr>
+<td>اختبار</td>
+<td><code>0</code> أو منفذ يختاره نظام التشغيل</td>
+<td>قاعدة اختبار منفصلة</td>
+</tr>
+<tr>
+<td>إنتاج</td>
+<td>ما تحدده المنصة</td>
+<td>عنوان يديره مشغّل القاعدة</td>
+</tr>
+</tbody></table>
+<p>ثابت المجال يبقى في الكود: الحد الأقصى لطول عنوان الكتاب <code>200</code>. هذا لا يتغيّر بين الأجهزة، فلا مكان له في البيئة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع كلمة مرور القاعدة في مستودع لأن «الجهاز واحد».</li>
+<li>قراءة <code>process.env</code> داخل كيان <code>Book</code> أو داخل دالة حساب السعر.</li>
+<li>اعتبار كل نص في البيئة عددًا صالحًا لأن <code>Number</code> لا يرمي.</li>
+<li>طباعة كائن البيئة كاملًا عند الإقلاع لتشخيص النقص.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل قيمة تختلف بين التطوير والاختبار والإنتاج: منافذ، عناوين، أسرار، أعلام تشغيل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقواعد المكتبة الثابتة، مثل «لا يُنشر كتاب بلا عنوان». تلك تعيش في الخدمة أو في قيد الجدول.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>داخل الكود</th>
+<th>من البيئة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نفس القيمة على كل جهاز</td>
+<td>قيمة لكل ظرف</td>
+</tr>
+<tr>
+<td>تظهر في مراجعة Git</td>
+<td>تبقى خارج المستودع</td>
+</tr>
+<tr>
+<td>مناسبة لحد عنوان الكتاب</td>
+<td>مناسبة لـ <code>DATABASE_URL</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أيّ هذه القيم إعداد، وأيها قاعدة عمل: منفذ HTTP، الحد الأدنى لطول كلمة المرور، اسم مضيف PostgreSQL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المنفذ واسم المضيف إعداد. الحد الأدنى لكلمة المرور قاعدة عمل تُكتب في التحقق أو في الخدمة، ويمكن لاحقًا جعلها إعدادًا إن اختلفت بين المنتجات، لكنها ليست سرًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>const port = process.env.PORT</code> يمرّ نوعيًا كأنه نص، ويفشل عمليًا إن مرّرته إلى مكان ينتظر عددًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>process.env</code> يخزّن نصوصًا. <code>&quot;3000&quot;</code> ليس <code>3000</code>. <code>listen</code> في Node يتقبل النص أحيانًا، لكن الجمع والمقارنات العددية تنكسر. التحويل والفحص يتمّان عند الحدود.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يشغّل تطبيقين في العملية نفسها. ما خطر قراءة المنفذ من <code>process.env</code> مباشرة داخل الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البيئة عامة على العملية. التطبيق الثاني يغيّر المفتاح فيرى الأول القيمة الجديدة. <code>ConfigService</code> المحقون لكل تطبيق يحمل اللقطة التي حُمّلت عند إقلاعه، وهذا ما تبنيه الدروس التالية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يختلف بين الأجهزة ويبقى خارج Git؟</li>
+<li>لماذا النص في <code>process.env</code> لا يكفي لمنفذ؟</li>
+<li>أين تعيش قاعدة «عنوان الكتاب مطلوب»؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Configuration تفصل ظرف التشغيل عن قواعد المكتبة. القراءة المبعثرة من <code>process.env</code> تخفي المطلوب وتصعّب الاختبار. الطبقة التالية تحمّل ملف التطوير من غير أن يصبح مستودعًا للأسرار.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-env-files.html">ملفات .env</a> تضع قيم التطوير في ملف محلي، وتُبقي الأسرار خارج Git.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+<li>Node.js — Environment variables: <a href="https://nodejs.org/api/process.html#processenv">https://nodejs.org/api/process.html#processenv</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

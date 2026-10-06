@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>مسار دار النيل كما تتراكم الشرائح، كل مثال يضيف طبقة لا يعيد المشروع كله.</p>
+<h2>المثال 1 — من الحساب إلى المسودة</h2>
+<p>تسجيل سارة يعيد 201 بلا تجزئة. <code>POST /organizations</code> ينشئ <code>org_nile</code> بعضوية <code>owner</code> من الإثبات. <code>POST /projects</code> بترويسة <code>org_nile</code> وجسم <code>{ &quot;title&quot;: &quot;موسم الهجرة&quot; }</code> يعيد 201 و <code>draft</code>. <code>GET /projects</code> لمكتبة بلا صفوف يعيد 200 و <code>data: []</code>.</p>
+<h2>المثال 2 — نشر بلا تفعيل كاذب</h2>
+<p>الصف <code>trial</code> يسمح بـ <code>POST /projects/:id/publish</code>. المعاملة تكتب <code>published</code> وتدقيق <code>project.publish</code> وصف ويب هوك <code>pending</code>. المهمة <code>project.cover</code> تُجدول بعد الالتزام. <code>GET /billing/success</code> يقرأ <code>trial</code> ولا يكتب <code>active</code>.</p>
+<h2>المثال 3 — جارة واختبار</h2>
+<p>مكتبة <code>org_other</code> تطلب معرّف الموسم بترويستها فتأخذ 404. وثيقة OpenAPI لا تحتوي <code>organizationId</code> في جسم الإنشاء. صورة التشغيل <code>node dist/main.js</code>. اختبار Vitest يثبّت الحالتين: 201 ثم 404، و 200 مع <code>data: []</code>.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mocking Providers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-mocking-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Mocking Providers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استبدال مزوّد مسجّل داخل وحدة مستوردة بـ <code>overrideProvider</code> قبل <code>compile</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>BooksModule</code> تسجل <code>BooksService</code> و <code>PrismaService</code> معًا. إعادة كتابة <code>providers</code> في الاختبار تنسخ الوحدة وتبتعد عنها. تمرير <code>useValue</code> بجانب الصنف نفسه يسجل نسختين إن لم تُزل الأصلية. <code>overrideProvider</code> يستبدل الرمز الذي ستحقنه الحاوية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>استورد الوحدة كما في التطبيق، ثم سلسلة <code>overrideProvider(Token).useValue(mock)</code> أو <code>useClass</code>، ثم <code>compile</code>. كل حقن لذلك الرمز يرى الوهم. الخدمة تحت الاختبار تبقى الصنف الحقيقي.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">const prisma = {
+  book: {
+    update: vi.fn(async () =&gt; ({ id: &#39;42&#39;, status: &#39;PUBLISHED&#39; })),
+  },
+};
+
+const moduleRef = await Test.createTestingModule({
+  imports: [BooksModule],
+})
+  .overrideProvider(PrismaService)
+  .useValue(prisma)
+  .compile();
+</code></pre>
+<p>على قالب Jest استبدل <code>vi.fn</code> بـ <code>jest.fn</code>. الفكرة واحدة.</p>
+<p><code>overrideProvider</code> للصنف أو للرمز مثل <code>CACHE_MANAGER</code> أو <code>getQueueToken(coverQueueName)</code> من <code>@nestjs/bullmq</code> إن كان الطابور مسجّلًا في الوحدة. وهم الطابور <code>{ add: async () =&gt; ({ id: &#39;job&#39; }) }</code> يمنع Redis.</p>
+<p>أشكال أخرى من الصفحة عند الحاجة: <code>overrideGuard</code> و <code>overrideInterceptor</code> و <code>overridePipe</code> و <code>overrideFilter</code>. لاستبدال وحدة كاملة <code>overrideModule().useModule(...)</code>. لا تستبدل الحارس في كل اختبار إن كان موضوع الرحلة هو الحارس نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">imports BooksModule
+  override Prisma و Queue
+    compile
+      BooksService الحقيقية تعمل على الوهم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">.overrideProvider(getQueueToken(coverQueueName))
+.useValue({ add: async () =&gt; ({ id: &#39;job-1&#39; }) })
+</code></pre>
+<p>بعد إنشاء كتاب تتوقع <code>add</code> استُدعي بـ <code>&#39;resize&#39;</code> وحمولة فيها <code>bookId</code> لا نموذج Prisma.</p>
+<h2>شرح المثال</h2>
+<p><code>getQueueToken</code> هو رمز <code>@InjectQueue</code>. تمرير السلسلة <code>&#39;covers&#39;</code> وحدها قد لا يطابق الرمز الداخلي. استعمل دالة الحزمة حتى يطابق الاستبدال ما تحقنه Nest. بعد <code>compile</code> أي خدمة في الوحدة تطلب الطابور تأخذ <code>add</code> الوهمي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الباني يبدّل تعريف المزود قبل إنشاء الحاوية. النسخة الواحدة من الوهم تذهب إلى كل من يحقن الرمز في هذه الوحدة الاختبارية، ما لم يكن المزود <code>request</code> النطاق. الأوهام كائنات في الذاكرة. <code>mockClear</code> أو إنشاء وحدة جديدة في <code>beforeEach</code> يمنع توقعًا من حالة سابقة. <code>useClass</code> يبني صنفًا بديلًا بالحاوية إن كان البديل يحتاج حقنًا أيضًا. <code>useValue</code> أبسط عندما لا يحتاج الوهم إلى شيء.</p>
+<h2>مثال عملي</h2>
+<p>رحلة HTTP ما زالت تستبدل الطابور لا الخدمة:</p>
+<pre><code class="language-ts">const moduleRef = await Test.createTestingModule({ imports: [AppModule] })
+  .overrideProvider(PrismaService)
+  .useValue(prismaTest)
+  .overrideProvider(getQueueToken(coverQueueName))
+  .useValue({ add: async () =&gt; ({ id: &#39;job-1&#39; }) })
+  .compile();
+</code></pre>
+<p><code>AppModule</code> هنا ثقيل. مقبول لرحلة واحدة، لا لكل فرع. الأفضل وحدة <code>BooksModule</code> زائد ما ينقصها من إعداد. إن سحب الجذر <code>ScheduleModule</code> فقد تنطلق مؤقتات. استبدلها أو لا تستورد الجذر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>overrideProvider</code> بعد <code>compile</code>. الاستبدال يُتجاهل.</li>
+<li>توقع أن الوهم يصل إلى وحدة لم تُستورد في هذا <code>createTestingModule</code>.</li>
+<li>استبدال <code>BooksService</code> ثم اختبار <code>BooksService</code>. استبدلت ما تريد إثباته.</li>
+<li>نسيان رمز الطابور واستبدال صنف <code>Queue</code> العام.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تكون الوحدة الحقيقية هي موضوع الاختبار والحدود حولها تُستبدل: قاعدة، طابور، ناشر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستبدال الصنف الذي تختبر فروعه. ولا كطريقة لتجنب استخراج دالة نقية كانت ستُختبر بـ <code>new</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>الوحدة الأصلية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نسخ <code>providers</code> يدويًا</td>
+<td>قد تنحرف</td>
+</tr>
+<tr>
+<td><code>overrideProvider</code> قبل <code>compile</code></td>
+<td>تبقى، والرمز يُستبدل</td>
+</tr>
+<tr>
+<td><code>useValue</code> في القائمة مع الصنف نفسه</td>
+<td>نسختان إن لم يُزل الأصل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>قبل أي نداء يجب أن يقع <code>overrideProvider</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قبل <code>compile</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>getQueueToken</code> لا السلسلة فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الحقن يستعمل الرمز الذي تبنيه الحزمة من الاسم. السلسلة قد لا تطابق ذلك الرمز.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا يصبح الاختبار إن استبدلت <code>BooksService</code> في ملف يزعم اختبار النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يثبت أن الحاوية تعيد الوهم، لا أن <code>publish</code> يحفظ ويعلن. اترك الخدمة واستبدل Prisma والمُصدِر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مزودات تُستبدل حول الخدمة لا الخدمة نفسها؟</li>
+<li>متى <code>useClass</code> بدل <code>useValue</code>؟</li>
+<li>لماذا الجذر الكامل خطر على المؤقتات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>overrideProvider(token).useValue(mock)</code> قبل <code>compile</code> يبدّل حدًا داخل الوحدة الحقيقية. لا تستبدل الصنف الذي تريد مراقبة سلوكه.</p>
+<h2>ماذا بعد؟</h2>
+<p>تطبيق ذلك على خدمة الكتب: حالات النشر بلا HTTP.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

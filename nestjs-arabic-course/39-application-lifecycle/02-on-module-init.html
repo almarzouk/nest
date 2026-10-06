@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OnModuleInit</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-on-module-init.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OnModuleInit</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع التهيئة التي تحتاج اعتماديات محلولة في <code>onModuleInit</code>، وإبقاء <code>constructor</code> خاليًا من الشبكة والملفات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>constructor</code> يتلقى الاعتماديات ولا ينتظر <code>Promise</code> بشكل نظيف داخل حاوية Nest. فتح Prisma أو عميل HTTP هناك يخفي الفشل، وقد يكتمل الإقلاع بينما الاتصال ما زال معلقًا. <code>onModuleInit</code> يُستدعى بعد حل اعتماديات الوحدة المضيفة، وإن أرجعت الدالة وعدًا ينتظره الإطار قبل الانتقال.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عندما تنتهي الحاوية من بناء هذه الوحدة، تستدعي <code>onModuleInit</code> على الوحدة وعلى Providers و Controllers فيها. هذا أول خطاف إقلاع. مناسب لـ <code>$connect</code>، أو تحميل سرّ إلى ذاكرة الخدمة، أو فشل الإقلاع إن كان المورد الإلزامي غائبًا.</p>
+<h2>التعريف التقني</h2>
+<p>الواجهة <code>OnModuleInit</code> من <code>@nestjs/common</code> تعرّف <code>onModuleInit(): void | Promise&lt;void&gt;</code>. التوثيق: تُستدعى مرة بعد حل اعتماديات الوحدة المضيفة.</p>
+<p>الاستدعاء يسير من الوحدات الأعمق في رسم الاستيراد (والوحدات العامة) إلى الجذر. كل وحدة تُنتظر قبل التالية. لذلك وحدة قاعدة مستوردة بعمق تُنهى تهيئتها قبل وحدة الميزة التي تستوردها، وقبل <code>AppModule</code>.</p>
+<p>الخطاف يعمل مع <code>app.listen()</code> و <code>app.init()</code> و <code>NestFactory.createApplicationContext()</code>. لا يعمل على صنف <code>Scope.REQUEST</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حل اعتماديات الوحدة
+  -&gt; constructor (تعيين الحقول فقط)
+  -&gt; onModuleInit (اتصال، تحقق، انتظار)
+  -&gt; الوحدة التالية الأقرب إلى الجذر
+</code></pre>
+<p>إن رميت من <code>onModuleInit</code> يتوقف الإقلاع. هذا مرغوب لقاعدة إلزامية، وضار لفحص اختياري يمكن تأجيله.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit {
+  async onModuleInit(): Promise&lt;void&gt; {
+    await this.$connect();
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;./prisma.service.js&#39;;
+
+@Module({
+  providers: [PrismaService],
+  exports: [PrismaService],
+})
+export class PrismaModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>PrismaClient</code> يُنشأ في <code>constructor</code> الافتراضي من غير فتح الشبكة. <code>onModuleInit</code> ينتظر <code>$connect</code>. بما أن <code>PrismaModule</code> ورقة في الرسم غالبًا، الاتصال يتم قبل <code>onModuleInit</code> في وحدات الكتب التي تحقن <code>PrismaService</code>. التصدير يتيح الحقن، ولا يستدعي الخطاف مرة ثانية.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Nest يبني <code>PrismaService</code> ويحقن من تحتاجه هذه الوحدة.</li>
+<li>يستدعي <code>onModuleInit</code> وينتظر الـ <code>Promise</code>.</li>
+<li>إن نجح، ينتقل إلى الوحدة التالية في اتجاه الجذر.</li>
+<li><code>onApplicationBootstrap</code> لم يحن بعد، و <code>listen</code> لم يفتح المنفذ. فشل الاتصال يعني أن العملية لا تستقبل طلبات بنصف قاعدة.</li>
+<li>الخدمات التي تعتمد على <code>PrismaService</code> يمكنها افتراض أن التهيئة في وحدة أعمق قد اكتملت إن كانت تلك الوحدة مستوردة أسفلها. لا تفترض ترتيب خدمتين شقيقتين داخل الوحدة نفسها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تهيئة عميل ترفض الإقلاع إن غاب المتغير:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { ConfigService } from &#39;@nestjs/config&#39;;
+
+@Injectable()
+export class PaymentsClient implements OnModuleInit {
+  constructor(private readonly config: ConfigService) {}
+
+  async onModuleInit(): Promise&lt;void&gt; {
+    const key = this.config.getOrThrow&lt;string&gt;(&#39;PAYMENTS_KEY&#39;);
+    await this.ping(key);
+  }
+
+  private async ping(key: string): Promise&lt;void&gt; {
+    void key;
+  }
+}
+</code></pre>
+<p><code>getOrThrow</code> يرمي قبل الاستماع. المفتاح يبقى في الخدمة، و <code>constructor</code> لم يفتح شبكة. أغلق العميل لاحقًا في <code>onModuleDestroy</code>، لا في هذا الخطاف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>await</code> داخل <code>constructor</code> عبر استدعاء من غير ربطه بخطاف، فيضيع الوعد.</li>
+<li>عمل ثقيل غير لازم للإقلاع، فيطول cold start.</li>
+<li>قراءة <code>REQUEST</code> هنا. لا يوجد طلب.</li>
+<li>نسيان أن الوعد المرفوض يوقف السلسلة. التقط الخطأ فقط إن كان المورد اختياريًا وتريد الإقلاع بدونه.</li>
+<li>استدعاء الخطاف يدويًا من اختبار بعد أن استدعاه الإطار، فيتصل مرتين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>اتصال إلزامي، تحقق من مخطط، أو تسخين ذاكرة محلية يجب أن ينجح قبل أن تكمل الوحدات الأعلى.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عمل يحتاج كل الوحدات مهيأة، مثل <code>ClientProxy.connect()</code> الذي يوثّقه Nest داخل <code>onApplicationBootstrap</code>. وكذلك أي منطق طلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>ما يعرفه</th>
+<th>هل يُنتظر؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>constructor</code></td>
+<td>الاعتماديات المحقونة</td>
+<td>لا تنتظر وعدًا عن الإطار</td>
+</tr>
+<tr>
+<td><code>onModuleInit</code></td>
+<td>اعتماديات هذه الوحدة محلولة</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>onApplicationBootstrap</code></td>
+<td>كل الوحدات أُنهيت تهيئتها</td>
+<td>نعم، وقبل الاستماع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يضمن الإطار إن كانت <code>onModuleInit</code> دالة <code>async</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ينتظر اكتمال الوعد أو رفضه قبل الانتقال إلى الوحدة التالية في سلسلة الإقلاع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>$connect</code> أنسب هنا من <code>constructor</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الاتصال غير متزامن ويجب أن يفشل الإقلاع إن فشل، بعد أن تكون الاعتماديات جاهزة. <code>constructor</code> للتعيين.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>BooksService</code> و <code>PrismaService</code> في الوحدة نفسها. هل يجوز أن تفترض <code>BooksService.onModuleInit</code> أن <code>$connect</code> انتهى؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الترتيب الموثق بين الوحدات حسب البعد عن الجذر، لا بين أصناف الوحدة الواحدة. انقل الاتصال إلى وحدة أعمق تُستورد، أو اجعل الكتب تتصل عبر الخدمة عند أول استخدام بعد أن تكون وحدة القاعدة ورقة في الرسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى يُستدعى <code>onModuleInit</code> نسبة إلى حل الاعتماديات؟</li>
+<li>أي وحدات تُستدعى أولًا؟</li>
+<li>لماذا لا يصلح لصنف Request-scoped؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>onModuleInit</code> هو مكان التهيئة غير المتزامنة بعد حقن الوحدة. انتظر الوعد، وافشل الإقلاع إن كان المورد شرطًا للاستماع.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>OnApplicationBootstrap</code>: ما الذي ينتظر اكتمال كل الوحدات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

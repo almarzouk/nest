@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Exceptions</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-exceptions.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Exceptions</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ماذا يحدث لاستثناء لم تمسكه أنت داخل تطبيق Nest، وماذا يحدث لاستثناء ابتلعته.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>throw new Error(&#39;seat&#39;)</code> في الخدمة يخرج من العملية كصفحة HTML أو كاتصال مقطوع إن لم توجد طبقة ترد JSON. وفي الجهة الأخرى <code>try/catch</code> فارغ يخفي العطل ويرجع <code>200</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الاستثناء غير الممسوك يصل إلى طبقة الاستثناءات. <code>HttpException</code> يُترجم إلى رمزه. الخطأ غير المعروف يصبح <code>500</code> بجسم عام. الاستثناء الذي تمسكه بنفسك لا يصل إلى الفلتر.</p>
+<h2>التعريف التقني</h2>
+<p>Nest يملك فلترًا عامًا مدمجًا. يتعامل مع <code>HttpException</code> وفئاتها. غير ذلك الرد الافتراضي:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 500,
+  &quot;message&quot;: &quot;Internal server error&quot;
+}
+</code></pre>
+<p>تلميح الصفحة: أخطاء مكتبة <code>http-errors</code> التي تحمل <code>statusCode</code> و <code>message</code> بالشكل الذي تعرفه الطبقة تُعاد بتلك القيم بدل <code>500</code> الأعمى.</p>
+<p>الفلاتر التي تكتبها أنت لاحقًا تشارك هذه الطبقة. هذا الدرس لا يكتب <code>@Catch</code> بعد. يثبت القاعدة: ما لم يُلتقط يصعد، وما التُقط لا يصعد.</p>
+<p>دورة الطلب تقول: الفلاتر تعمل عند استثناء غير ممسوك أثناء معالجة الطلب. <code>try/catch</code> الذي لا يعيد الرمي يمنع الفلتر. عند أول استثناء غير ممسوك تُتخطى بقية الدورة نحو الفلتر.</p>
+<p>مكان الرمي يغيّر أي فلتر يراه:</p>
+<ul>
+<li>من Middleware: الفلاتر العامة فقط، لأن المعالج لم يُختر.</li>
+<li>من حارس أو أنبوب أو متحكم أو خدمة: من فلتر المسار إلى المتحكم إلى العام.</li>
+</ul>
+<p>الخدمة التي ترمي والخادم الذي يمسك في المتحكم يقطع الطريق. الفلتر يرى ما يخرج من المتحكم لا ما حدث داخل <code>catch</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">throw في الخدمة
+  try/catch في المتحكم يعيد قيمة → الفلتر لا يرى شيئًا
+  لا catch → فلتر المسار أو المتحكم أو العام
+throw في Middleware → فلتر عام فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Get(&#39;:id&#39;)
+find(@Param(&#39;id&#39;) id: string): never {
+  throw new Error(`missing ticket ${id}`);
+}
+</code></pre>
+<p>من غير <code>HttpException</code>، العميل يرى <code>500</code> والرسالة العامة، لا نص <code>missing ticket</code>، لأن الفلتر المدمج لا ينشر خطأً غير معروف. هذا حماية. التشخيص يبقى في السجل لا في JSON.</p>
+<pre><code class="language-ts">@Get(&#39;:id&#39;)
+findSoft(): { ok: true } {
+  try {
+    throw new Error(&#39;missing ticket&#39;);
+  } catch {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p>هنا الفلتر لا يعمل. العميل يرى نجاحًا كاذبًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>never</code> في الأول يوثّق أن الدالة لا ترجع. الرمي هو المخرج.</li>
+<li>الرسالة داخل <code>Error</code> لا تصبح <code>message</code> في الرد الافتراضي لخطأ غير معروف.</li>
+<li><code>catch</code> الفارغ يبتلع الطبقة كلها. إن أردت شكلًا مختلفًا فأعد الرمي كـ <code>HttpException</code> أو اترك الخطأ يصعد إلى فلتر كتبته.</li>
+<li>Middleware الذي يرمي <code>Error</code> عاديًا ما زال <code>500</code> عبر الفلتر العام فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الرمي يرفض وعد الدالة أو يقطع المكدس حتى منطقة الاستثناءات التي يلف Nest بها المسار. الفلتر المدمج يفحص نوع الخطأ. <code>HttpException</code> يعرف <code>getStatus()</code>. غيره يُكتب <code>500</code> من غير تسريب <code>stack</code> إلى العميل.</p>
+<p>الصفحة تذكر أن <code>HttpException</code> يرث <code>IntrinsicException</code> وأن الفلتر المدمج لا يسجّل هذه العائلة في الطرفية لأنها جزء من التدفق العادي. <code>Error</code> غير المعروف يُسجَّل كعطل. لذلك اختيار النوع يغيّر الضجيج لا الرمز فقط.</p>
+<p><code>try/catch</code> في المعترض عبر <code>catchError</code> الذي يرجع قيمة يبتلع أيضًا: الفلتر لا يرى خطأ التيار الذي صار نجاحًا.</p>
+<h2>مثال عملي</h2>
+<p><code>TicketsService.find</code> ترمي <code>Error</code> حين يغيب الصف. التجربة الأولى: الرد <code>500</code> والواجهة تعرض عطل خادم رغم أن المعنى «لا تذكرة». التجربة الثانية: المتحكم يمسك ويرجع <code>{ ok: true }</code> فيختفي العطل من المراقبة. الاتجاه: ارمِ استثناء HTTP بمعنى صحيح في الدرس التالي، واتركه يصعد، ودع الفلتر المدمج أو فلترك يكتب الجسم. لا تبتلع في المتحكم إلا لتترجم إلى رمي أوضح.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار كل استثناء <code>500</code> حتى غياب السجل.</li>
+<li><code>catch</code> يسجّل ثم يرجع <code>null</code> فيصير الرد فارغًا ناجحًا.</li>
+<li>توقع فلتر على المتحكم أن يرى رمي Middleware.</li>
+<li>نشر <code>error.stack</code> في JSON للعميل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>افهم القاعدة قبل أي فلتر مخصص: الصعود لغير الممسوك، والترجمة حسب النوع، والصمت حين تبتلع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تترك <code>Error</code> عامًا لغياب تذكرة. ولا تبتلع لتوحيد الرد. الترجمة رمي <code>HttpException</code> أو فلتر يميّز الأنواع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>غير ممسوك <code>Error</code></th>
+<th>غير ممسوك <code>HttpException</code></th>
+<th>ممسوك ولا يُعاد رميه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العميل</td>
+<td><code>500</code> عام</td>
+<td>رمز الاستثناء</td>
+<td>ما رجعته أنت</td>
+</tr>
+<tr>
+<td>الفلتر</td>
+<td>يعمل</td>
+<td>يعمل</td>
+<td>لا يرى</td>
+</tr>
+<tr>
+<td>Middleware</td>
+<td>عام فقط</td>
+<td>عام فقط</td>
+<td>لا شيء إن ابتُلع هناك</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرى العميل عند <code>throw new Error(&#39;x&#39;)</code> من الخدمة من غير فلتر مخصص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>500</code> ورسالة <code>Internal server error</code>. نص <code>x</code> لا يُنشر في الجسم الافتراضي.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يعدّل فلتر المسار رد <code>findSoft</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاستثناء ممسوك داخل الدالة ولا يُعاد رميه. الطبقة لا تُستدعى. الرد هو <code>{ ok: true }</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رمي من <code>BoxPassGuard</code> ورمي من Middleware كلاهما <code>HttpException</code>. أيهما يستطيع فلتر على <code>TicketsController</code> تشكيله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>رمي الحارس، لأن المسار مختار. رمي Middleware تراه الفلاتر العامة فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تعمل طبقة الاستثناءات؟</li>
+<li>ماذا يصبح الخطأ غير المعروف؟</li>
+<li>ماذا يفعل <code>try/catch</code> الذي لا يعيد الرمي؟</li>
+<li>لماذا لا يُسرَّب المكدس في الرد الافتراضي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>غير الممسوك يصل إلى الفلتر: <code>HttpException</code> برمزه، وغيره <code>500</code> عام. الممسوك داخل الدالة أو المحوَّل إلى قيمة نجاح لا يصل. مكان الرمي يحدد إن كان فلتر المسار مشاركًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي صنف <code>HttpException</code>: الرسالة والرمز و <code>cause</code> وجسم JSON.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

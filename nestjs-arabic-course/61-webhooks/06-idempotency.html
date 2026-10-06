@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Idempotency</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-idempotency.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Idempotency</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جعل معالجة حدث الويب هوك في رف مرة واحدة لكل معرّف، سواء أعاد المزود الوارد أو أعاد عاملكم الصادر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حفظتم الاشتراك <code>active</code> ثم انقطع الرد، فأعاد Stripe نفس <code>evt_1</code> وطبّقتم «مدد الخطة شهرًا» مرتين. أو الشريك لم ير 2xx فاستلم <code>book.published</code> مرتين وأخرج شحنتين. التوقيع صحيح في المرتين لأن الجسم نفسه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>مفتاح التكرار هو معرّف الحدث الذي يختاره المرسل ويبقى ثابتًا عبر المحاولات. قبل الأثر، أدرجوا صفًا فريدًا <code>(source, eventId)</code>. النجاح الثاني يجد الصف ويعيد 200 بلا أثر جديد. الصادر يرسل نفس المعرّف في كل محاولة ويطلب من الشريك هذا العقد.</p>
+<h2>التعريف التقني</h2>
+<p>قيد فريد على <code>eventId</code> القادم من المزود. العملية: INSERT الحدث. إن خالف القيد، فالحدث شُوف سابقًا: ردوا 200 ولا تعيدوا تحديث الاشتراك. إن نجح INSERT، طبّقوا الأثر في نفس المعاملة إن أمكن ثم التزموا. سباق نسختين: واحدة تفوز بالقيد والأخرى ترى التعارض. هذا ليس <code>Idempotency-Key</code> الذي يولّده جوال لإنشاء كتاب، لكن الفكرة واحدة: مفتاح ثابت ونتيجة واحدة. للصادر، الترويسة مثل <code>X-Raf-Event-Id</code> جزء من العقد المكتوب للشريك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">evt_1 أول مرة → INSERT + أثر + 200
+evt_1 مرة أخرى → القيد يمنع → 200 بلا أثر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export async function once(seen: Set&lt;string&gt;, eventId: string, effect: () =&gt; Promise&lt;void&gt;) {
+  if (seen.has(eventId)) return { duplicate: true };
+  seen.add(eventId);
+  await effect();
+  return { duplicate: false };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>Set</code> في الذاكرة تختفي مع العملية فلا تكفي إنتاجًا. القيد في Postgres يبقى.</li>
+<li><code>duplicate: true</code> ما زال نجاحًا من جهة المزود (200) لا 409. المزود لا يستطيع «إصلاح» التكرار؛ هو متوقع.</li>
+<li>الأثر لا يعمل في الفرع المكرر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>التوقيع ينجح على <code>rawBody</code>.</li>
+<li>تقرأون <code>id</code> من JSON.</li>
+<li>تحاولون إدراج <code>webhook_events</code> بالمفتاح.</li>
+<li><code>P2002</code> يعني مكرر: التزموا بلا أثر إضافي وأرجعوا 200.</li>
+<li>الإدراج الجديد يحدّث الاشتراك في نفس المعاملة. فشل التحديث يتراجع عن الإدراج أيضًا حتى يعيد المزود المحاولة فعلًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Prisma } from &#39;@prisma/client&#39;;
+
+export async function applyBillingEvent(tx: {
+  webhookEvent: { create: (args: { data: { id: string } }) =&gt; Promise&lt;unknown&gt; };
+  subscription: { update: Function };
+}, event: { id: string; organizationId: string; status: string }) {
+  try {
+    await tx.webhookEvent.create({ data: { id: event.id } });
+  } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError &amp;&amp; error.code === &#39;P2002&#39;) return;
+    throw error;
+  }
+  await tx.subscription.update({
+    where: { organizationId: event.organizationId },
+    data: { status: event.status },
+  });
+}
+</code></pre>
+<p>إن كان <code>organizationId</code> من ربط عميل Stripe لا من جسم غير موثوق، كما في درس الوارد. المكرر يخرج بلا <code>update</code> ثانٍ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>409 على المكرر فيعيد المزود إلى الأبد أو يوقف الأحداث.</li>
+<li>فحص <code>SELECT</code> ثم <code>INSERT</code> بلا قيد فيمر سباق النسختين.</li>
+<li>اعتبار كل إعادة جسمًا جديدًا لأن الطابع في الترويسة تغيّر.</li>
+<li>مفتاح تكرار صادر يتغير مع <code>attempts</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل حدث وارد له أثر، وعلى عقد كل صادر تعدّون شريكًا عليه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا به التوقيع. المكرر بلا توقيع ما زال مرفوضًا. ولا تستخدموا عنوان IP كمفتاح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>من يولّده</th>
+<th>التكرار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Idempotency-Key</code> لإنشاء كتاب</td>
+<td>جوال رف</td>
+<td>نفس 201</td>
+</tr>
+<tr>
+<td><code>event.id</code> الوارد</td>
+<td>المزود</td>
+<td>200 بلا أثر ثانٍ</td>
+</tr>
+<tr>
+<td><code>X-Raf-Event-Id</code> الصادر</td>
+<td>رف</td>
+<td>الشريك يطبّق مرة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>وصل <code>evt_9</code> مرتين والتوقيع صحيح. كم مرة يُحدَّث الاشتراك؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مرة. الثانية تصطدم بالقيد وترد 200 بلا <code>update</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يتراجع INSERT إذا فشل تحديث الاشتراك؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يُعلَّم الحدث منجزًا بلا أثر. المزود سيعيد، والمعاملة الجديدة تستطيع الإدراج من جديد. إن التزمتم الإدراج فقط فلن تُطبَّق الإعادة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>نسختا API عالجتا <code>evt_9</code> معًا. ما الذي يجعل واحدة فقط تكتب <code>active</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القيد الفريد على <code>id</code>. واحدة تُدرج وتحدّث، والأخرى تحصل على <code>P2002</code> وتخرج. فحص الوجود في الذاكرة على كل عملية لا يكفي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مفتاح الوارد؟</li>
+<li>لماذا الرد على المكرر 200 لا 409؟</li>
+<li>لماذا القيد لا الاستعلام ثم الإدراج؟</li>
+<li>ماذا يبقى ثابتًا في محاولات الصادر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>كل حدث ويب هوك له معرّف ثابت وقيد فريد. المعالجة الأولى تُحدث الأثر، والإعادة ترد نجاحًا بلا أثر ثانٍ. التوقيع يثبت المرسل، والمفتاح يثبت المرة الواحدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الوارد الأشيع في رف هو Stripe. الفصل التالي يضع حدود Checkout والاشتراك والويب هوك ومفتاح المزود نفسه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Webhooks: <a href="https://docs.nestjs.com/http/webhooks">https://docs.nestjs.com/http/webhooks</a></li>
+<li>NestJS — Idempotency keys: <a href="https://docs.nestjs.com/reliability/idempotency">https://docs.nestjs.com/reliability/idempotency</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

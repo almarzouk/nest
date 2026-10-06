@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Body</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-body.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Body</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة جسم الطلب بـ <code>@Body</code>: الكائن كاملًا أو حقلًا واحدًا، ووصف الشكل بصنف يبقى وقت التشغيل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إنشاء إعارة يحتاج ISBN ومعرف العضو في JSON، لا في المسار. مسار <code>POST /loans</code> ثابت، والحمولة في الجسم. <code>@Body</code> هو المدخل الذي يمرر هذه الحمولة إلى المعالج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد محلّل JSON يصبح <code>req.body</code> كائنًا. <code>@Body()</code> يمرره كاملًا. <code>@Body(&#39;isbn&#39;)</code> يمرر حقلًا. صنف DTO يصف الشكل ويبقى موجودًا بعد الترجمة، والواجهة TypeScript تُمسح.</p>
+<h2>التعريف التقني</h2>
+<p>DTO كائن يصف شكل البيانات على الشبكة. التوثيق يفضّل صنفًا لأن الصنف كيان JavaScript. الواجهة تُحذف عند الترجمة، فلا تجد Nest نوعًا وقت التشغيل عندما تحتاج Pipes إلى metatype.</p>
+<pre><code class="language-ts">export class CreateLoanDto {
+  isbn: string;
+  memberId: string;
+}
+</code></pre>
+<p>الصنف هنا وصف. <code>ValidationPipe</code> الذي يحذف الحقول الزائدة ويتحقق من الأنواع يأتي في فصل Validation. من غير Pipe تصل الحقول كما فكّها المحلّل، بما فيها مفاتيح لم تُذكر في الصنف.</p>
+<p><code>@Body()</code> و <code>@Body(&#39;isbn&#39;)</code> يقبلان لاحقًا كائن خيارات فيه <code>schema</code> و <code>pipes</code> لربط Standard Schema. ربط المخطط Metadata فقط. التحقق يتم بعد تسجيل <code>StandardSchemaValidationPipe</code> أو Pipe يقرأ <code>metadata.schema</code>. ذلك فصل لاحق؛ هنا نقرأ الجسم.</p>
+<p>JSON غير الصالح يتوقف عند المحلّل ولا تدخل الدالة. مع المحلّل المعتاد، جسم غائب على طلب JSON يعطي كائنًا فارغًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /loans
+Content-Type: application/json
+{&quot;isbn&quot;:&quot;9780001&quot;,&quot;memberId&quot;:&quot;m-9&quot;}
+
+@Post()
+create(@Body() dto: CreateLoanDto)
+  dto.isbn     -&gt; &quot;9780001&quot;
+  dto.memberId -&gt; &quot;m-9&quot;
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Post } from &#39;@nestjs/common&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+import { CreateLoanDto } from &#39;./create-loan.dto.js&#39;;
+
+@Controller(&#39;loans&#39;)
+export class LoansController {
+  constructor(private readonly loans: LoansService) {}
+
+  @Post()
+  create(@Body() dto: CreateLoanDto) {
+    return this.loans.open(dto);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Post()</code> على بادئة <code>loans</code> يستقبل الإنشاء. الرمز الافتراضي 201 لأن الطريقة POST.</li>
+<li><code>CreateLoanDto</code> نوع الوسيط. وقت التشغيل القيمة هي كائن الجسم، والصنف يفيد لاحقًا أي Pipe تعتمد على metatype.</li>
+<li><code>open</code> في الخدمة تقرر هل الإعارة مسموحة. Controller لا يفحص المخزون.</li>
+<li>إعادة نتيجة <code>open</code> تجعل Nest ترسل JSON.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Middleware المحلّل، قبل اختيار تفاصيل المعالج التي تهمك هنا، يملأ <code>req.body</code>. <code>@Body()</code> ينسخ ذلك الكائن إلى الوسيط. <code>@Body(&#39;isbn&#39;)</code> يأخذ الخاصية. ترتيب القراءة داخل الدالة هو ترتيب الوسائط التي كتبتها.</p>
+<p>حقل غائب يكون <code>undefined</code> على الكائن. حقل زائد مثل <code>note</code> يبقى موجودًا إلى أن يزيله Pipe. الواجهة التالية لا تغيّر هذا السلوك لأنها تُمسح:</p>
+<pre><code class="language-ts">interface CreateLoanDto {
+  isbn: string;
+}
+</code></pre>
+<p>استخدم الصنف عندما تتوقع Pipe لاحقًا. للتجربة القصيرة قبل فصل التحقق، الصنف ما زال أوضح عقدًا للمبرمج التالي.</p>
+<h2>مثال عملي</h2>
+<p>تجديد إعارة يقرأ الجسم كاملًا، ومسار ضيق يقرأ الأيام فقط:</p>
+<pre><code class="language-ts">import { Body, Controller, Param, Patch, Post } from &#39;@nestjs/common&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+import { RenewLoanDto } from &#39;./renew-loan.dto.js&#39;;
+
+@Controller(&#39;loans&#39;)
+export class LoanRenewalsController {
+  constructor(private readonly loans: LoansService) {}
+
+  @Patch(&#39;:id&#39;)
+  renew(@Param(&#39;id&#39;) id: string, @Body() dto: RenewLoanDto) {
+    return this.loans.renew(id, dto);
+  }
+
+  @Post(&#39;estimate&#39;)
+  estimate(@Body(&#39;days&#39;) days: number) {
+    return this.loans.estimateFee(days);
+  }
+}
+</code></pre>
+<p><code>days</code> في JSON رقمًا يصل رقمًا لأن JSON يميز الأعداد. هذا غير <code>@Query</code> الذي يصل نصًا. تعليق النوع <code>number</code> يوثّق العقد، والمحلّل هو من أنشأ العدد إن كان الجسم <code>{&quot;days&quot;:14}</code>. نص <code>&quot;14&quot;</code> داخل JSON يبقى نصًا.</p>
+<p><code>RenewLoanDto</code> صنف بحقل <code>days</code>. مسار <code>:id</code> يحدد الإعارة، والجسم يحدد التعديل.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وصف الجسم بواجهة فقط ثم توقع أن Pipe لاحقًا ترى النوع</td>
+<td>الواجهة تُمسح و metatype فارغ</td>
+</tr>
+<tr>
+<td>اعتبار الصنف تحققًا</td>
+<td>الحقول الزائدة والناقصة تصل حتى يُسجَّل Pipe</td>
+</tr>
+<tr>
+<td>قراءة <code>@Body(&#39;days&#39;)</code> وتوقع تحويل <code>&quot;14&quot;</code> النصي</td>
+<td>JSON يحافظ على نوع القيمة المكتوبة</td>
+</tr>
+<tr>
+<td>وضع ISBN في الاستعلام على <code>POST</code></td>
+<td>الحمولة التي تُعاد وتُسجَّل تنتمي إلى الجسم</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>على <code>@Post</code> و <code>@Put</code> و <code>@Patch</code> عندما يحمل العميل تمثيلًا أو تعديلًا. <code>@Body()</code> للعقد الكامل، و <code>@Body(&#39;field&#39;)</code> لحقل واحد في عملية ضيقة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على <code>GET</code> الذي لا جسم له في الاستعمال المعتاد. التصفية <code>@Query</code>، والهوية <code>@Param</code>. التحقق من إلزام الحقول فصل Validation.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوسيلة</th>
+<th>ماذا تصل إليه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Body()</code></td>
+<td>كائن <code>req.body</code></td>
+</tr>
+<tr>
+<td><code>@Body(&#39;isbn&#39;)</code></td>
+<td>خاصية واحدة أو <code>undefined</code></td>
+</tr>
+<tr>
+<td>صنف DTO</td>
+<td>شكل موثّق يبقى وقت التشغيل لـ Pipes لاحقة</td>
+</tr>
+<tr>
+<td>واجهة TypeScript</td>
+<td>فحص المترجم فقط، ثم تُحذف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي Decorator يقرأ <code>{&quot;isbn&quot;:&quot;9780001&quot;}</code> على <code>POST /loans</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Body()</code> على وسيط الدالة، أو <code>@Body(&#39;isbn&#39;)</code> إن لزم الحقل فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفضّل التوثيق صنف <code>CreateLoanDto</code> على واجهة بالشكل نفسه؟</p>
+<details><summary>الحل</summary>
+
+<p>الصنف يبقى في JavaScript بعد الترجمة، فتستطيع Pipes قراءة metatype. الواجهة تُحذف ولا تترك رمزًا وقت التشغيل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الجسم <code>{&quot;isbn&quot;:&quot;9780001&quot;,&quot;note&quot;:&quot;هدية&quot;}</code> والصنف يذكر <code>isbn</code> فقط. ماذا يصل إلى <code>open</code> قبل أي Pipe؟</p>
+<details><summary>الحل</summary>
+
+<p>الكائن كاملًا بما فيه <code>note</code>. الصنف لا يحذف المفاتيح. الحذف سلوك <code>ValidationPipe</code> أو Pipe مكافئ في فصل لاحق.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يقرأ <code>@Body()</code> بعد محلّل JSON؟</li>
+<li>لماذا لا تكفي الواجهة عندما ستُضاف Pipes؟</li>
+<li>كيف تقرأ حقلًا واحدًا باسم <code>days</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Body</code> يمرر جسم الطلب إلى المعالج. صنف DTO يوثّق الشكل ويبقى للخطوات اللاحقة، والتحقق نفسه Pipe يأتي بعد هذا الفصل.</p>
+<h2>ماذا بعد؟</h2>
+<p>رؤوس الطلب الواردة: Headers.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request payloads: <a href="https://docs.nestjs.com/controllers#request-payloads">https://docs.nestjs.com/controllers#request-payloads</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

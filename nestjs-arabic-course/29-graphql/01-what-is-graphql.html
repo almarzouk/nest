@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو GraphQL</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-graphql.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو GraphQL</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وصف GraphQL كلغة استعلام ومخطط تنفيذ، قبل مقارنة REST وقبل زينة Nest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>شاشة كتاب قد تحتاج العنوان واسم المؤلف وعدد المراجعات. شاشة أخرى تحتاج العنوان فقط. مسار REST يعيد شكلًا ثابتًا، فتأتي حقول لا تُرسم أو تُستدعى مسارات إضافية لإكمال الشاشة. GraphQL يجعل شكل الرد جزءًا من نص الطلب، والمخطط هو العقد الذي يحدد ما يجوز طلبه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المخطط يسمّي الأنواع والحقول. العميل يرسل عملية: <code>query</code> أو <code>mutation</code> أو <code>subscription</code>. المحرك يتحقق من النص ضد المخطط ثم يستدعي دالة لكل حقل. الدالة اسمها resolver. الناتج شجرة تطابق ما طُلب، لا وثيقة الكتاب كاملة بالضرورة.</p>
+<p>GraphQL ليست قاعدة بيانات ولا بديلًا تلقائيًا عن SQL. هي طبقة عقد فوق دوالك.</p>
+<h2>التعريف التقني</h2>
+<p>مواصفة GraphQL تفصل:</p>
+<ul>
+<li><strong>Schema</strong>: أنواع، وحقول، وأنواع الحجج.</li>
+<li><strong>Operation</strong>: النص الذي يرسله العميل.</li>
+<li><strong>Resolver</strong>: دالة تُرجع قيمة حقل. إن لم تكتبها، القيمة تُقرأ من الكائن الأب بنفس اسم الحقل.</li>
+<li><strong>Scalar</strong>: ورقة الشجرة مثل <code>String</code> و <code>Int</code> و <code>ID</code> و <code>Boolean</code> و <code>Float</code>.</li>
+</ul>
+<p>النقل المعتاد <code>POST</code> إلى مسار واحد، غالبًا <code>/graphql</code>، والجسم JSON فيه <code>query</code> وربما <code>variables</code>. هذا نقل شائع فوق HTTP، وليس تعريف اللغة نفسها. الاشتراك لاحقًا قناة أطول عمرًا.</p>
+<p>Nest لا تنفّذ اللغة. <code>@nestjs/graphql</code> يربط المخطط بمحرك. الدورة تستخدم Apollo عبر <code>@nestjs/apollo</code>. Mercurius خيار رسمي آخر على Fastify، وليس مسار هذه الدروس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">schema: Book { id title author }
+query { book(id: &quot;42&quot;) { title } }
+        |
+        resolver Query.book ثم Book.title
+        |
+        { &quot;data&quot;: { &quot;book&quot;: { &quot;title&quot;: &quot;...&quot; } } }
+</code></pre>
+<p>الحقل الذي لم يُطلب لا يُستدعى محلله.</p>
+<h2>أبسط مثال</h2>
+<p>مخطط صغير ومتجر كتب:</p>
+<pre><code class="language-graphql">type Book {
+  id: ID!
+  title: String!
+}
+
+type Query {
+  book(id: ID!): Book
+}
+</code></pre>
+<p>عملية العميل:</p>
+<pre><code class="language-graphql">query OneBook($id: ID!) {
+  book(id: $id) {
+    title
+  }
+}
+</code></pre>
+<p>المتغيرات <code>{ &quot;id&quot;: &quot;42&quot; }</code> تبقى خارج نص العملية حتى يُعاد استخدام النص ويُسجَّل من غير قيم المستخدم.</p>
+<h2>شرح المثال</h2>
+<p><code>Book</code> نوع كائن. <code>Query</code> جذر القراءة. <code>!</code> يعني القيمة مطلوبة في المخطط. العملية تطلب <code>title</code> فقط، فالرد الناجح لا يحتوي <code>id</code> رغم أنه في النوع. إن طلب العميل <code>price</code> وهو غير موجود في <code>Book</code>، المحرك يرفض النص قبل أي خدمة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المحرك يحلّل النص إلى شجرة، يطابقها بالمخطط، ثم يمشي الحقول. جذر <code>book</code> يستدعي الدالة المرتبطة به ومعها الحجة <code>id</code>. الناتج كائن. الحقل <code>title</code> إن لم يملك دالة خاصة يُقرأ من ذلك الكائن. الأخطاء الحقلية تظهر تحت <code>errors</code> مع <code>data</code> جزئية أحيانًا، وهذا شكل مختلف عن رمز HTTP واحد لكل الطلب. رمز النقل قد يبقى <code>200</code> رغم خطأ حقلي. لا تحكم على النجاح من رمز HTTP وحده عندما تعمل مع GraphQL.</p>
+<h2>مثال عملي</h2>
+<p>شاشتان على المخطط نفسه:</p>
+<pre><code class="language-graphql">query Card {
+  book(id: &quot;42&quot;) { title }
+}
+
+query Detail {
+  book(id: &quot;42&quot;) { id title }
+}
+</code></pre>
+<p>الخدمة التي تجلب الكتاب قد تُستدعى في الحالتين. الفرق ما يُسلسَل في JSON. هذا لا يلغي تكلفة الجلب إن كان المحلل يجلب الصف كاملًا. اختيار الحقول يقلل شكل الرد، وتحسين الاستعلام قرار لاحق في المحلل لا سحر في اللغة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>معاملة GraphQL كأنها SQL يصل من المتصفح إلى الجداول.</li>
+<li>افتراض أن كل خطأ يحمل <code>404</code>.</li>
+<li>تصميم نوع بحقول بلا مالك واضح ثم الاستغراب من N+1. ذلك يُلمح في درس لاحق ويُعمَّق في فصل <code>57-graphql-advanced</code>.</li>
+<li>نسخ نقطة <code>/graphql</code> بلا مخطط، فيصبح المسار صندوقًا بلا عقد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتعدد أشكال الشاشات على البيانات نفسها، ويريد العميل عقدًا واحدًا يصف الحقول المسموحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لرفع ملف غلاف. ذلك multipart على HTTP كما في الفصل السابق. ولواجهة داخلية ثابتة الشكل يكفيها مسار REST واضح، المخطط تكلفة إضافية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الفكرة</th>
+<th>أين تعيش</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ما يجوز طلبه</td>
+<td>المخطط</td>
+</tr>
+<tr>
+<td>ما طُلب هذه المرة</td>
+<td>نص العملية</td>
+</tr>
+<tr>
+<td>من أين تأتي القيمة</td>
+<td>المحلل</td>
+</tr>
+<tr>
+<td>أين تُخزَّن</td>
+<td>خدمتك وقاعدتك، خارج اللغة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الذي يحدد الحقول المسموحة: نص العميل أم المخطط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المخطط. نص العميل يختار من الحقول المعلنة فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد لا يظهر <code>id</code> في الرد رغم وجوده على <code>Book</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العملية لم تطلبه. الرد يتبع شجرة الطلب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رمز HTTP <code>200</code> مع مصفوفة <code>errors</code>. هل نجحت العملية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النقل نجح. التنفيذ أعاد أخطاء حقلية. افحص <code>errors</code> و <code>data</code>، ولا تكتفِ بالرمز.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين المخطط والعملية؟</li>
+<li>ماذا يفعل المحلل؟</li>
+<li>لماذا GraphQL ليست طبقة قاعدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>GraphQL عقد حقول زائد نص يختار منها. المحرك يتحقق ثم يستدعي المحللات. Nest ستربط هذا لاحقًا، بعد أن يصير الشكل مألوفًا بلا زينة.</p>
+<h2>ماذا بعد؟</h2>
+<p>متى يبقى REST أوضح، ومتى يدفعك تعدد الشاشات إلى هذا العقد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>GraphQL — Learn: <a href="https://graphql.org/learn/">https://graphql.org/learn/</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

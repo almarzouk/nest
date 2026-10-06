@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>N+1</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-n-plus-one.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>N+1</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية نمط N+1 في مخطط كتب رف: استعلام للقائمة ثم استعلام لكل عنصر، وأين يُقطع في طبقة الحل لا في شكل الاستعلام الذي يكتبه العميل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>query { books { title author { name } } }</code> يبدو طلبًا واحدًا على السلك. سجل SQL يظهر <code>SELECT</code> للكتب ثم <code>SELECT</code> لكل <code>authorId</code>. مع خمسين كتابًا تصبح القاعدة هي السقف، بينما العميل ظن أنه وفّر جولات HTTP.</p>
+<h2>الفكرة ببساطة</h2>
+<p>N هو عدد الآباء و +1 هو استعلام الآباء نفسه. كل حقل علاقة يُنفَّذ دالة مستقلة ما لم تجمع المفاتيح. العميل لا يخطئ بطلب <code>author</code>. الخادم يخطئ إن حوّل كل حقل إلى رحلة قاعدة.</p>
+<h2>التعريف التقني</h2>
+<p>محرك GraphQL يستدعي دالة الحقل لكل أب. <code>@Query</code> التي تعيد <code>[Book]</code> تعمل مرة. <code>@ResolveField(&#39;author&#39;)</code> تعمل مرة لكل كتاب. هذا سلوك التنفيذ لا سلوك Nest الخاص. <code>@nestjs/graphql</code> لا يحوّل الحقل تلقائيًا إلى <code>JOIN</code> ولا إلى DataLoader. القطع يتم داخل الحقل: إما DataLoader كما في الدرس السابق، أو تحميل العلاقات في استعلام الجذر عندما تكون شكلًا ثابتًا تعرفه (Prisma <code>include</code>) وتقبل ثمن الأعمدة الزائدة حتى لو لم يطلبها العميل — وهذا قد يناقض طبيعة GraphQL، لذا التجميع عند الحقل أقرب لطلب العميل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">1  SELECT books
+N  SELECT author WHERE id = ?
+بدل
+1  SELECT books
+1  SELECT authors WHERE id IN (?)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@ResolveField()
+author(@Parent() book: { authorId: string }) {
+  return this.prisma.author.findUnique({ where: { id: book.authorId } });
+}
+</code></pre>
+<p>هذا هو النمط. الدالة صحيحة لمعزل واحد وخاطئة لقائمة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>كل نداء <code>findUnique</code> رحلة.</li>
+<li>إضافة <code>@ResolveField</code> ثانٍ لـ <code>publisher</code> يضرب العدد مرة أخرى: N للمؤلف و N للناشر.</li>
+<li>السجل الذي يعد الاستعلامات أثناء اختبار القائمة هو الذي يكشف النمط، لا زمن جهاز هادئ.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>يصل مستند GraphQL واحد عبر HTTP.</li>
+<li>الجذر يجلب الكتب.</li>
+<li>لكل كتاب يُستدعى حقل <code>author</code> على حدة.</li>
+<li>من غير تجميع، Prisma يرسل N استعلامات.</li>
+<li>مع DataLoader تُجمع المفاتيح في دورة واحدة ويخرج استعلام <code>IN</code>، ويبقى عدد دوال الحقل N بينما عدد رحلات القاعدة ثابت.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختبار يعد الاستعلامات على قائمة كتابين بمؤلفين مختلفين:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class QueryCounter {
+  count = 0;
+  async authorsByIds(ids: string[]) {
+    this.count += 1;
+    return ids.map((id) =&gt; ({ id, name: id }));
+  }
+}
+</code></pre>
+<p>الحل عبر المجمّع يستدعي <code>authorsByIds</code> مرة و <code>count === 1</code>. الحل عبر <code>findUnique</code> يجعل <code>count === 2</code> لكتابين. ثبّت هذا التوقع في اختبار الوحدة للمزمّع حتى لا يعود <code>findUnique</code> في مراجعة لاحقة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>منع العميل من طلب <code>author</code> بدل تجميع القراءة.</li>
+<li><code>include</code> لكل العلاقات في الجذر ثم تجاهل أن العميل طلب حقلًا واحدًا، فيكبر الصف بلا داعٍ — مقبول كقياس مؤقت لا كشكل نهائي لكل الحقول.</li>
+<li>عدّ طلبات HTTP. N+1 هنا SQL رغم أن HTTP واحد.</li>
+<li>مجمّع بلا قيد <code>tenantId</code> فيصلح العدد ويفسد العزل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كعدسة مراجعة على كل <code>@ResolveField</code> يصل إلى قاعدة أو إلى HTTP داخلي. إن كان لكل أب نداء، فالمسار N+1.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسمِّ استعلام معرّف واحد N+1. ولا تعتبر صفحة REST التي تعمل <code>include</code> ثابتًا نفس المشكلة؛ هناك شكل الاستجابة مغلق وأنت اخترته.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>رحلات القاعدة لقائمة من N</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>findUnique</code> في الحقل</td>
+<td>1 + N</td>
+</tr>
+<tr>
+<td>DataLoader</td>
+<td>1 + 1 لكل نوع علاقة</td>
+</tr>
+<tr>
+<td><code>include</code> في الجذر</td>
+<td>1 (أو JOIN) حتى لحقول لم تُطلب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>قائمة 10 كتب وحقل <code>author</code> بلا تجميع. كم استعلام مؤلف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>10، بالإضافة إلى استعلام القائمة. المجموع 11 إن لم يتكرر أي تحسين.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>المؤلف نفسه على الكتب العشرة. ماذا يتغير مع DataLoader مقارنة بـ <code>findUnique</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>findUnique</code> قد يضرب القاعدة 10 مرات. DataLoader يمرر المفتاح مرة إلى <code>batch</code> بعد إزالة التكرار، فتنزل الرحلة إلى استعلام مؤلف واحد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حقل <code>reviews</code> يعيد مصفوفة، وكل مراجعة لها <code>user</code>. أين طبقتا N+1؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طبقة بين الكتب والمراجعات إن جُلبت المراجعات لكل كتاب باستعلام، وطبقة بين المراجعات والمستخدمين. كل مستوى علاقة يحتاج تجميعًا خاصًا به. مجمّع المؤلف لا يجمع المستخدمين.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا HTTP واحد لا ينفي N+1؟</li>
+<li>من الذي يكرر النداء: العميل أم دالة الحقل؟</li>
+<li>ماذا يثبت اختبار يعد <code>count</code>؟</li>
+<li>هل <code>@nestjs/graphql</code> يدرج JOIN تلقائيًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>N+1 هو استعلام آباء ثم استعلام لكل ابن. يظهر في <code>@ResolveField</code> الذي يلمس القاعدة مباشرة. قطعه تجميع لكل طلب، لا منع الحقل عن العميل.</p>
+<h2>ماذا بعد؟</h2>
+<p>حتى بعد التجميع، العميل يستطيع طلب شجرة عميقة أو حقلًا غاليًا يتكرر. الدرس التالي يضع سقفًا رقميًا لتعقيد الاستعلام.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Resolvers: <a href="https://docs.nestjs.com/graphql/resolvers">https://docs.nestjs.com/graphql/resolvers</a></li>
+<li>DataLoader: <a href="https://github.com/graphql/dataloader">https://github.com/graphql/dataloader</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

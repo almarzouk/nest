@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>البناء والإنتاج</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-build-and-production.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>البناء والإنتاج</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التمييز بين كود TypeScript الذي تكتبه وناتج JavaScript الذي تشغّله Node.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>Node لا يشغّل زينة TypeScript ومصدر <code>.ts</code> كبيئة إنتاج من غير خطوة بناء تضبطها Nest. تشغيل <code>ts-node</code> على الخادم العام أسلوب تطوير.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>npm run build</code> يكتب JavaScript إلى <code>dist/</code>. <code>npm run start:prod</code> يشغّل ذلك الناتج.</p>
+<h2>التعريف التقني</h2>
+<p>CLI يستدعي المترجم حسب <code>nest-cli.json</code> و <code>tsconfig</code>. الناتج يعكس ESM أو CommonJS الذي اخترته. في monorepo الإصدار 12 يجعل Rspack البنّاء الافتراضي، وأعلام webpack القديمة deprecated لصالح <code>--builder rspack</code>. تطبيقنا المفرد في أول الدورة لا يحتاج monorepo.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">src/**/*.ts  -&gt;  build  -&gt;  dist/**/*.js  -&gt;  node
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npm run build
+npm run start:prod
+</code></pre>
+<h2>شرح المثال</h2>
+<p>البناء يفشل إن وُجد خطأ نوع في <code>strict</code>. أصلح المصدر ثم أعد البناء. <code>start:prod</code> لا يراقب الملفات. هذا ما تريده في بيئة مستقرة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المترجم يمسح الأنواع ويبقي Metadata الزينة إن كانت الخيارات مفعلة في <code>tsconfig</code> الذي يقرأه البناء فعلًا، لا في ملف آخر نسيته. <code>nest build</code> يستخدم مسار <code>tsconfig</code> المشار إليه من إعداد CLI. ناتج ESM ما زال يحمل استيرادات <code>.js</code>.</p>
+<h2>مثال عملي</h2>
+<p>بعد أول بناء افتح <code>dist/main.js</code> ولاحظ اختفاء واجهة لو كتبت واحدة، وبقاء صنف الخدمة. لا تعدّل <code>dist</code> يدويًا. أضف <code>dist</code> إلى التجاهل في Git إن لم يكن القالب قد فعل ذلك.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تشغيل <code>node src/main.ts</code> وتوقع نجاح الزينة دائمًا.</li>
+<li>نسخ المشروع إلى الخادم من غير <code>build</code> ومن غير <code>node_modules</code> إنتاجية.</li>
+<li>تفعيل webpack قديم لأن درسًا ذكره. في monorepo الحالي المسار الموثّق هو Rspack.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قبل أي تجربة إنتاج أو Docker لاحقًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنِ بعد كل سطر وأنت في <code>start:dev</code>. البناء خطوة تسليم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>تطوير</th>
+<th>إنتاج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الأمر</td>
+<td><code>start:dev</code></td>
+<td><code>build</code> ثم <code>start:prod</code></td>
+</tr>
+<tr>
+<td>الملفات</td>
+<td><code>src</code></td>
+<td><code>dist</code></td>
+</tr>
+<tr>
+<td>المراقبة</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مجلد يكتب فيه البناء عادة؟</p>
+<details><summary>الحل</summary>
+
+<p><code>dist</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد ينجح المحرر ويفشل <code>npm run build</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>المحرر قد يستخدم <code>tsconfig</code> مختلفًا عن الذي يمر به <code>nest build</code>، أو لا يفحص ملفًا خارج المشروع المفتوح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الذي يجب أن يبقى مفعّلًا في tsconfig البناء حتى يعمل الحقن بعد الترجمة؟</p>
+<details><summary>الحل</summary>
+
+<p><code>experimentalDecorators</code> و <code>emitDecoratorMetadata</code>، مع تحميل <code>reflect-metadata</code> عند الإقلاع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يشغّل <code>start:prod</code>؟</li>
+<li>لماذا لا نعدّل <code>dist</code>؟</li>
+<li>أي بنّاء أصبح افتراضي monorepo في CLI 12؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التطوير يراقب <code>src</code>. الإنتاج يشغّل JavaScript مبنيًا في <code>dist</code> مع Metadata الزينة سليمة.</p>
+<h2>ماذا بعد؟</h2>
+<p>القالب يجهّز lint وتنسيقًا حتى لا نؤجلهما إلى ما لا نهاية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

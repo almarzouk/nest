@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Authentication و Guards و Context</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-auth-guards-context.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Authentication و Guards و Context</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إتاحة طلب HTTP للمحلل والحارس، حتى تعرف من ينشئ الكتاب من غير قراءة <code>req</code> الخام في كل دالة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس REST يقرأ <code>Authorization</code> من <code>ExecutionContext</code> الخاص بـ HTTP. على GraphQL السياق نفسه لا يحمل <code>switchToHttp().getRequest()</code> بشكل تعتمد عليه. المحلل الذي يستدعي <code>req</code> من وسيط عام لا يراه إلا إذا وضعته في context عند الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>context</code> في <code>GraphQLModule.forRoot</code> يبني كائنًا لكل عملية، وفيه <code>req</code> و <code>res</code>. <code>@Context()</code> يقرأ هذا الكائن في المحلل. الحارس يستعمله عبر <code>GqlExecutionContext.create(context).getContext()</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة البداية:</p>
+<pre><code class="language-ts">GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  autoSchemaFile: join(process.cwd(), &#39;src/schema.gql&#39;),
+  context: ({ req, res }) =&gt; ({ req, res }),
+});
+</code></pre>
+<p>في المحلل:</p>
+<pre><code class="language-ts">@Query(() =&gt; String)
+userAgent(@Context(&#39;req&#39;) req: Request): string {
+  return req.headers[&#39;user-agent&#39;] ?? &#39;&#39;;
+}
+</code></pre>
+<p>الحارس:</p>
+<pre><code class="language-ts">import { CanActivate, ExecutionContext, Injectable } from &#39;@nestjs/common&#39;;
+import { GqlExecutionContext } from &#39;@nestjs/graphql&#39;;
+
+@Injectable()
+export class GqlAuthGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const ctx = GqlExecutionContext.create(context);
+    const req = ctx.getContext&lt;{ req: { headers: Record&lt;string, string&gt; } }&gt;().req;
+    return Boolean(req.headers.authorization);
+  }
+}
+</code></pre>
+<p>هذا الحارس يتحقق من وجود الترويسة فقط. التحقق من الرمز نفسه يبقى في خدمة الهوية عندما تصلون إليها. على الاشتراكات، شكل context مختلف لأن الاتصال ليس طلب HTTP نفسه. لا تعِد استعمال هذا الحارس على <code>Subscription</code> من غير درس الاشتراك.</p>
+<p><code>@UseGuards(GqlAuthGuard)</code> على <code>createBook</code> أو على المحلل كله.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /graphql
+  context({ req, res })
+    Guard: GqlExecutionContext -&gt; req.headers
+    Mutation: @Context() -&gt; نفس الكائن
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>إنشاء كتاب ينسب المالك من الطلب، لا من المدخل:</p>
+<pre><code class="language-ts">@Mutation(() =&gt; Book)
+@UseGuards(GqlAuthGuard)
+createBook(
+  @Args(&#39;input&#39;) input: CreateBookInput,
+  @Context(&#39;req&#39;) req: { userId: string },
+) {
+  return this.books.create(input, req.userId);
+}
+</code></pre>
+<p>افترض أن وسيطًا سابقًا، أو الحارس نفسه، وضع <code>userId</code> على <code>req</code> بعد التحقق. الحقل لا يوجد في <code>CreateBookInput</code>. العميل لا يرسل هوية نفسه داخل <code>input</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>@Context(&#39;req&#39;)</code> يختار خاصية من كائن context. <code>@Context()</code> بلا اسم يعيد الكائن كاملًا. الحارس والمُحلّل يريان النتيجة نفسها لـ <code>context</code> الخاصة بهذه العملية. إن نسيت دالة <code>context</code> في <code>forRoot</code>، يكون <code>req</code> غائبًا ويسقط الحارس أو يرفض الجميع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>لكل طلب HTTP إلى <code>/graphql</code> يستدعي Apollo دالة <code>context</code> ويمرر لها الطلب والرد. الناتج يُخزَّن مع تنفيذ العملية. الحارس يعمل قبل المحلل إن كان مزينًا على الدالة. <code>GqlExecutionContext</code> الغلاف الذي يترجم <code>ExecutionContext</code> العام إلى هذا الكائن. <code>switchToHttp()</code> على المسار نفسه قد لا يعيد طلب GraphQL الذي تتوقعه، لذلك الصفحة تحيل الحراس إلى <code>getContext()</code>.</p>
+<p>لا تضع كائن Prisma أو كلمة المرور في context. ضع معرف المستخدم بعد التحقق. context يُبنى لكل طلب، وهو أيضًا المكان الذي سيعيش فيه DataLoader لاحقًا حتى لا يُشارك بين مستخدمين.</p>
+<h2>مثال عملي</h2>
+<p><code>books</code> بلا حارس لأنها كتالوج منشور. <code>createBook</code> عليه الحارس. لا تضع <code>@UseGuards</code> على الصنف كله ثم تحاول إعفاء القراءة. GraphiQL للتطوير يرسل الترويسة من محرره. إغلاق الواجهة في الإنتاج لا يلغي الترويسة على <code>POST</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قراءة المستخدم من <code>input.userId</code>.</li>
+<li>حارس HTTP جاهز على المحلل من غير <code>GqlExecutionContext</code>.</li>
+<li>تخزين <code>req</code> في خاصية على المحلل الـ singleton، فيختلط مستخدمان.</li>
+<li>مشاركة الحارس كما هو مع اشتراك <code>graphql-ws</code> الذي لا يملك <code>req</code> نفسه.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تعتمد العملية على هوية الطلب: إنشاء، تحديث، أو قراءة مسودة لا تُعرض في <code>books</code> العامة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على استعلام الكتالوج المنشور إن كان عامًا. الحارس هناك تكلفة ورفض بلا قصة منتج. وعلى الملفات المرفوعة التي بقيت على REST، فالحارس هناك HTTP عادي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الباب</th>
+<th>كيف تصل إلى الطلب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>متحكم REST</td>
+<td><code>ExecutionContext.switchToHttp()</code></td>
+</tr>
+<tr>
+<td>محلل GraphQL</td>
+<td><code>context</code> ثم <code>@Context</code> أو <code>GqlExecutionContext</code></td>
+</tr>
+<tr>
+<td>اشتراك</td>
+<td>سياق الاتصال، درس منفصل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيار في <code>forRoot</code> يمرر <code>req</code> إلى التنفيذ؟</p>
+<details>
+<summary>الحل</summary>
+`context: ({ req, res }) => ({ req, res })`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تقرأ الحارس عبر <code>switchToHttp()</code> هنا؟</p>
+<details>
+<summary>الحل</summary>
+لأن تنفيذ GraphQL يغلّف الطلب داخل سياقه. `GqlExecutionContext.create(context).getContext()` هو باب الصفحة.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا context لكل طلب أنسب من خاصية <code>this.user</code> على المحلل؟</p>
+<details>
+<summary>الحل</summary>
+المحلل singleton. الخاصية تتغير بين الطلبات المتزامنة. context معزول مع العملية.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يضع <code>userId</code> الذي يقرؤه <code>createBook</code>؟</li>
+<li>لماذا الهوية ليست حقلًا في <code>CreateBookInput</code>؟</li>
+<li>أي استعلام في المثال يبقى بلا حارس؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>context</code> يسلّم طلب HTTP لهذه العملية. الحارس يفتحه بـ <code>GqlExecutionContext</code>. العميل لا يرسل هويته داخل مدخل الكتاب.</p>
+<h2>ماذا بعد؟</h2>
+<p>لمحة عن N+1 وDataLoader على هذا الـ context نفسه، بلا بناء مكتبة كاملة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Quick start (context): <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

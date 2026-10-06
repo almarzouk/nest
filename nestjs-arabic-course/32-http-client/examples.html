@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>عميل ISBN واحد خلف <code>IsbnService</code>. Axios عبر <code>@nestjs/axios</code>. المجال يرى وعدًا.</p>
+<h2>مثال 1 — الوحدة</h2>
+<pre><code class="language-ts">HttpModule.registerAsync({
+  imports: [ConfigModule],
+  inject: [ConfigService],
+  useFactory: (config: ConfigService) =&gt; ({
+    baseURL: config.getOrThrow&lt;string&gt;(&#39;ISBN_BASE_URL&#39;),
+    timeout: Number(config.get&lt;string&gt;(&#39;ISBN_TIMEOUT_MS&#39;) ?? 800),
+    maxRedirects: 2,
+    headers: {
+      accept: &#39;application/json&#39;,
+      authorization: `Bearer ${config.getOrThrow&lt;string&gt;(&#39;ISBN_TOKEN&#39;)}`,
+    },
+  }),
+});
+</code></pre>
+<h2>مثال 2 — الترجمة</h2>
+<pre><code class="language-ts">async lookup(isbn: string): Promise&lt;{ title: string } | null&gt; {
+  try {
+    const response = await firstValueFrom(
+      this.http.get&lt;{ title?: string }&gt;(`/isbns/${encodeURIComponent(isbn)}`),
+    );
+    if (typeof response.data?.title !== &#39;string&#39;) {
+      throw new BadGatewayException(&#39;isbn payload missing title&#39;);
+    }
+    return { title: response.data.title };
+  } catch (error) {
+    if (error instanceof BadGatewayException) throw error;
+    const axiosError = error as AxiosError;
+    if (axiosError.code === &#39;ECONNABORTED&#39; || !axiosError.response) {
+      throw new GatewayTimeoutException(&#39;isbn timed out&#39;);
+    }
+    if (axiosError.response.status === 404) return null;
+    throw new BadGatewayException(&#39;isbn upstream failed&#39;);
+  }
+}
+</code></pre>
+<h2>مثال 3 — الاستعمال الاختياري</h2>
+<pre><code class="language-ts">let title = input.title;
+if (!title &amp;&amp; input.isbn) {
+  title = (await this.isbn.lookup(input.isbn))?.title;
+}
+</code></pre>
+<p>إن رمت <code>lookup</code> بمهلة، الإنشاء يتوقف. من يريد الإكمال عند العطل يلتقط <code>GatewayTimeoutException</code> حول هذا السطر فقط، ويبقي <code>null</code> لـ <code>404</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>axios.get</code> في المتحكم.</li>
+<li>لا طباعة لترويسة <code>authorization</code>.</li>
+<li><code>404</code> الخارجي لا يصبح <code>NotFoundException</code> لصفك.</li>
+<li>اختبار الوحدة يستبدل <code>IsbnService</code> ولا يتصل بالناشر.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

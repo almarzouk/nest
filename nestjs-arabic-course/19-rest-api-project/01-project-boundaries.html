@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>حدود المشروع</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-project-boundaries.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>حدود المشروع</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رسم أصغر API منشورات يبقى داخل ما سبق: وحدات، DTO، أخطاء، و Prisma، بلا مصادقة ولا توثيق OpenAPI بعد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بناء «كل شيء» في ملف واحد يعيد HTTP و SQL والتحقق إلى دالة مسار. بناء عشر موارد قبل أن يعمل مورد واحد يؤخر أول طلب ناجح. الحدود تمنع إضافة أدوار وصلاحيات في الأسبوع نفسه الذي ما زال فيه شكل <code>User</code> غير مستقر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ثلاثة موارد: <code>users</code> و <code>posts</code> و <code>comments</code>. كل مورد وحدة فيها متحكم وخدمة. القاعدة عبر <code>PrismaModule</code>. الجسم عبر DTO. الغياب <code>404</code>. التكرار <code>409</code>. القائمة تقبل صفحة وتصفية وترتيبًا بسيطين على المنشورات فقط. الهوية «من أنت» فصل لاحق. هنا نعرف كيف يُخزَّن المستخدم وكيف يُشار إليه.</p>
+<h2>التعريف التقني</h2>
+<p>عقد القراءة والكتابة الذي سنثبّته:</p>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /users</code></td>
+<td>إنشاء مستخدم من بريد واسم وكلمة مرور ستُجزَّأ لاحقًا</td>
+</tr>
+<tr>
+<td><code>GET /users/:id</code></td>
+<td>مستخدم واحد بلا سر</td>
+</tr>
+<tr>
+<td><code>POST /posts</code></td>
+<td>منشور لمؤلف موجود</td>
+</tr>
+<tr>
+<td><code>GET /posts</code></td>
+<td>قائمة بصفحة ومرشّح وترتيب</td>
+</tr>
+<tr>
+<td><code>GET /posts/:id</code></td>
+<td>منشور واحد</td>
+</tr>
+<tr>
+<td><code>POST /posts/:postId/comments</code></td>
+<td>تعليق على منشور</td>
+</tr>
+<tr>
+<td><code>GET /posts/:postId/comments</code></td>
+<td>تعليقات ذلك المنشور</td>
+</tr>
+</tbody></table>
+<p>الأرقام في المسار تُفحص بـ <code>ParseIntPipe</code> إن كان <code>id</code> عددًا صحيحًا كما في نماذج Prisma في الفصل السابق. كلمة المرور لا ترجع في JSON. الإخفاء الكامل بأدوات التسلسل في فصل <code>25</code>. هنا الخدمة تختار الحقول في <code>select</code>.</p>
+<p>خارج الحدود: تسجيل الدخول، الأدوار، رفع الملفات، الكاش، GraphQL.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">UsersModule     يملك User
+PostsModule     يملك Post ويشير إلى authorId
+CommentsModule  يملك Comment ويشير إلى postId
+PrismaModule    مشترك
+لا Guard هوية في هذا الفصل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  name         String
+  passwordHash String
+  posts        Post[]
+}
+
+model Post {
+  id        Int       @id @default(autoincrement())
+  title     String
+  body      String
+  published Boolean   @default(false)
+  author    User      @relation(fields: [authorId], references: [id])
+  authorId  Int
+  comments  Comment[]
+}
+
+model Comment {
+  id      Int    @id @default(autoincrement())
+  body    String
+  post    Post   @relation(fields: [postId], references: [id])
+  postId  Int
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>العلاقات مفاتيح أجنبية كما في فصل القاعدة. <code>passwordHash</code> عمود موجود لأن التسجيل سيحتاجها في فصل المصادقة، والاستجابة لا تضمّنه. <code>published</code> يسمح بتمرين التصفية. تعليق بلا منشور مرفوض من القيد.</p>
+<p>الترحيل ملف جديد <code>add_posts_comments</code> بعد دمج المخطط، ثم <code>prisma generate</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>طلب لا يعرفه الجدول يمر على Nest حتى الخدمة، والقاعدة ترفض المفتاح الأجنبي. لذلك «مؤلف موجود» يُفحص في الخدمة برسالة <code>404</code> قبل الكتابة حين نريد رسالة أوضح، والقيد يبقى للحالة المتزامنة.</p>
+<p>لا توجد جلسة. أي عميل يستطيع <code>POST /users</code> في هذا الفصل. هذا متعمَّد حتى يُرى المورد قبل حارس الهوية. لا تنشر هذا الشكل على إنترنت مفتوح.</p>
+<h2>مثال عملي</h2>
+<p>اكتب قائمة الملفات قبل الكود: <code>users.module.ts</code>، <code>users.service.ts</code>، <code>users.controller.ts</code>، ومثلها للمنشور والتعليق، و DTOs بجانب كل مورد. <code>AppModule</code> يستورد الوحدات الثلاث و <code>PrismaModule</code> و <code>ConfigModule</code>. إن لم تستطع تسمية الملف الذي سيحتوي قاعدة «لا تعليق على منشور محذوف»، فالحد ما زال ضبابيًا: القاعدة في <code>CommentsService</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مورد واحد اسمه <code>AppController</code> لكل المسارات.</li>
+<li>إرجاع <code>passwordHash</code> مع المستخدم.</li>
+<li>بدء OAuth قبل أن ينجح <code>GET /posts/1</code>.</li>
+<li>ترقيم عام معقّد قبل أن تعمل صفحة واحدة. التعميم في الفصل <code>26</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كهيكل أول API عملي في الدورة، وعلى أي تمرين يريد ثلاث موارد مترابطة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كنسخة إنتاج فيها هوية وصلاحيات. تلك تُضاف في الفصول التالية على نفس الموارد، لا في مشروع ثانٍ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>داخل الحدود</th>
+<th>مؤجَّل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وحدات المستخدم والمنشور والتعليق</td>
+<td>تسجيل الدخول</td>
+</tr>
+<tr>
+<td>DTO و <code>404</code> و <code>409</code></td>
+<td>الأدوار</td>
+</tr>
+<tr>
+<td><code>skip</code> و <code>take</code> على القائمة</td>
+<td>عقد ترقيم مشترك</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي وحدة تملك كتابة <code>Comment</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CommentsModule</code> عبر <code>CommentsService</code>. <code>PostsModule</code> لا تفتح جدول التعليقات مباشرة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>passwordHash</code> في المخطط وليس في JSON الاستجابة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العمود لازم للتحقق لاحقًا. العقد العام لا يرسل السر. الخدمة تستخدم <code>select</code> بلا هذا الحقل إلى أن يأتي فصل التسلسل فيوحّد المنع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>صمّم مسارًا بديلًا <code>POST /users/:id/posts</code>. ماذا يبقى في <code>PostsService</code> رغم تغيّر الشكل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التحقق من وجود المؤلف، وكتابة <code>authorId</code> من المعامل لا من جسم غير موثوق إن كان المسار هو مصدر الهوية هنا. القاعدة «منشور لمؤلف موجود» لا تنتقل إلى المتحكم كـ SQL.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الموارد الثلاثة؟</li>
+<li>ماذا لن نبني في هذا الفصل؟</li>
+<li>أين تعيش علاقة التعليق بالمنشور؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المشروع ثلاثة موارد على Prisma بعقد HTTP صغير. الهوية والتوثيق والتسلسل فصول لاحقة على الهيكل نفسه.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-users-module.html">Users</a> يبني المورد الأول.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

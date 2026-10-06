@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hot Reload</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-hot-reload.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Hot Reload</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز إعادة تشغيل <code>nest start --watch</code> التي يستخدمها رف عن استبدال الوحدات الساخن، ومعرفة أن وصفة HMR الحالية تستهدف webpack المهمل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل حفظ يعيد إقلاع Nest وثواني انتظار. نسخ سكربت <code>nest build --webpack --webpackPath ...</code> من مقال قديم إلى مساحة v12 يعيد علمًا مهملًا. أو توقع أن HMR ينسخ ملفات <code>.graphql</code> و HTML القوالب وحده.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>npm run start:dev</code> في التطبيق المولَّد يترجم من جديد ويعيد تشغيل العملية. هذا مسار رف اليومي. التحميل الساخن يبقي العملية ويستبدل الوحدات. صفحة Hot reload تبني ذلك على webpack و <code>module.hot</code>، وتنص أن باني webpack صار مهملًا في v12 وأن Rspack هو المُجمّع الافتراضي للمساحات، وتنصح المشاريع الجديدة بـ <code>--builder rspack</code>. علم <code>manualRestart</code> يتيح كتابة <code>rs</code> لإعادة التشغيل يدويًا أثناء المراقبة.</p>
+<h2>التعريف التقني</h2>
+<p>المراقبة من CLI: <code>nest start --watch</code> أو سكربت <code>start:dev</code>. في <code>nest-cli.json</code> يمكن <code>&quot;manualRestart&quot;: true</code> تحت <code>compilerOptions</code> فيصبح الاختصار <code>rs</code> متاحًا. وصفة HMR تثبّت <code>webpack-node-externals</code> و <code>run-script-webpack-plugin</code> و <code>webpack</code>، وتضيف <code>HotModuleReplacementPlugin</code>، وفي <code>main.ts</code> تنتظر <code>module.hot.data.closePromise</code> قبل <code>listen</code> حتى لا يظهر <code>EADDRINUSE</code>، مع <code>forceCloseConnections: !!module.hot</code>. الصفحة تقول إن الأمثلة CommonJS لهذا السبب (<code>bootstrap()</code> بلا <code>await</code> في المستوى الأعلى). سكربت الوصفة <code>nest build --webpack --webpackPath webpack-hmr.config.js --watch</code> يستخدم الأعلام المهملة. مشروع جديد على ESM لا يُنقل إلى ذلك المسار. أصول <code>compilerOptions.assets</code> مع <code>watchAssets</code> هي طريق CLI لنسخ JSON و HTML عند البناء والمراقبة على <code>tsc</code> و <code>swc</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حفظ → watch → إيقاف العملية → إقلاع
+HMR (وصفة webpack) → استبدال وحدات داخل العملية
+مشروع جديد → راقبوا أو Rspack، لا --webpack
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npm run start:dev
+</code></pre>
+<pre><code class="language-json">{
+  &quot;compilerOptions&quot;: {
+    &quot;manualRestart&quot;: true,
+    &quot;assets&quot;: [&quot;mail/templates/**/*&quot;, &quot;i18n/**/*.json&quot;],
+    &quot;watchAssets&quot;: true
+  }
+}
+</code></pre>
+<p>غيّروا عنوان كتاب في الذاكرة أو في كود المتحكم. العملية تعيد الإقلاع والطلب التالي يرى الكود الجديد. <code>rs</code> ثم Enter يعيد التشغيل بلا حفظ إن فُعّل العلم.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الإقلاع الكامل يعيد تشغيل <code>onModuleInit</code> واتصال Prisma. هذا واضح في السجلات.</li>
+<li>القوالب وأدلة الترجمة ملفات ليست TypeScript. <code>watchAssets</code> ينسخها إلى <code>dist</code> عند الحفظ. الصفحة تحذّر أن webpack لا ينسخ الأصول تلقائيًا ولا يتوافق مع مسارات glob الثابتة لكيانات TypeORM.</li>
+<li>Rspack في المساحة يختصر وقت البناء إلى ملف واحد. ذلك ليس سطر HMR في الوصفة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>وضع المراقبة يعيد ترجمة الملف المتغير ثم يعيد تشغيل Node.</li>
+<li>المنفذ يُغلق مع العملية فيتحرر قبل العملية التالية.</li>
+<li>في وصفة webpack، <code>dispose</code> يخزن وعد <code>app.close()</code> لأن الإضافة لا تنتظر الـ callback. العملية التالية تنتظر الوعد ثم تنادي <code>listen</code>.</li>
+<li><code>forceCloseConnections</code> يغلق الاتصالات حتى لا يبقى المنفذ محجوزًا.</li>
+<li>علم <code>--webpack</code> في مساحة v12 يشير إلى المسار المهمل. <code>&quot;builder&quot;: &quot;rspack&quot;</code> هو ما يكتبه CLI للمساحة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مطوّر رف على ESM يبقي:</p>
+<pre><code class="language-json">&quot;start:dev&quot;: &quot;nest start --watch&quot;
+</code></pre>
+<p>ويضع قوالب البريد في <code>assets</code>. لا يضيف <code>webpack-hmr.config.js</code> ليرى الحفظ أسرع. إن صار البناء هو البطء على الوضع القياسي فالباني <code>swc</code> من الدرس السابق. إن صارت المساحة كبيرة فالمُجمّع <code>rspack</code>. قياس الوقت على مشروعكم يسبق نقل الوصفة القديمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>لصق <code>--webpack</code> و <code>--webpackPath</code> في monorepo جديد.</li>
+<li>توقع بقاء جلسة REPL أو ذاكرة الطلب بعد إعادة تشغيل watch.</li>
+<li>قالب HTML لا يظهر لأن <code>assets</code> غائبة و webpack لا ينسخها.</li>
+<li><code>module.hot</code> في <code>main.ts</code> الخاص بـ ESM بينما التشغيل <code>nest start --watch</code> بلا تلك الوصفة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>start:dev</code> كل يوم. <code>manualRestart</code> حين تريدون إعادة إقلاع بلا تعديل ملف. قياس Rspack أو SWC حين تكون الترجمة هي الانتظار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعتمدوا وصفة webpack HMR لمشروع رف الجديد. ولا تستبدلوا إعادة التحميل باختبار يثبت السلوك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>ماذا يبقى حيًا</th>
+<th>في Nest 12</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>nest start --watch</code></td>
+<td>لا شيء من العملية السابقة</td>
+<td>مسار التطبيق المولَّد</td>
+</tr>
+<tr>
+<td>HMR عبر webpack</td>
+<td>العملية مع استبدال الوحدات</td>
+<td>الوصفة، والباني مهمل</td>
+</tr>
+<tr>
+<td>Rspack</td>
+<td>ناتج بناء مجمّع</td>
+<td>افتراضي المساحة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفعل <code>npm run start:dev</code> في مشروع <code>nest new</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يترجم ويعيد تحميل التطبيق عند تغيير المصدر، كما تصف نظرة CLI. هذا إعادة تشغيل تطوير لا وصفة <code>module.hot</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تنتظر الوصفة <code>closePromise</code> قبل <code>listen</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.close()</code> غير متزامن و webpack لا ينتظر <code>dispose</code>. بلا الانتظار تحاول العملية الجديدة المنفذ ويظهر <code>EADDRINUSE</code>. <code>forceCloseConnections</code> يرافق ذلك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مساحة رف على Rspack. أي سطر ترفضونه في <code>package.json</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>nest build --webpack --webpackPath webpack-hmr.config.js</code>. الأعلام مهملة. الإعداد <code>&quot;builder&quot;: &quot;rspack&quot;</code> هو مسار المساحة في v12.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما فرق watch عن HMR؟</li>
+<li>أي باني تفضله الصفحة للمشاريع الجديدة؟</li>
+<li>ماذا يفعل <code>manualRestart</code>؟</li>
+<li>من ينسخ قوالب البريد إلى <code>dist</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>تطوير رف اليومي هو <code>nest start --watch</code> مع <code>assets</code> عند الحاجة. التحميل الساخن الموثق مبني على webpack والصفحة تعتبر ذلك الباني مهملًا أمام Rspack.</p>
+<h2>ماذا بعد؟</h2>
+<p>لرؤية الوحدات والمسارات وهي تعمل، الدرس التالي Nest Devtools.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Hot reload: <a href="https://docs.nestjs.com/recipes/hot-reload">https://docs.nestjs.com/recipes/hot-reload</a></li>
+<li>NestJS — Workspaces: <a href="https://docs.nestjs.com/cli/monorepo">https://docs.nestjs.com/cli/monorepo</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

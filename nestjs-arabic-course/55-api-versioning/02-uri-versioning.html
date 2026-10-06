@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>URI Versioning</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-uri-versioning.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>URI Versioning</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل نسختي كتالوج رف على المسار: <code>/v1/books</code> و <code>/v2/books</code>، مع مكان النسخة الذي يحدده Nest بعد البادئة العامة وقبل مسار المتحكم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العميل القديم يثبت العنوان في التطبيق ولا يرسل ترويسات إضافية. يحتاج أن يرى النسخة في الشريط. في الوقت نفسه لا تريد شرط <code>if (url.startsWith(&#39;/v1&#39;))</code> داخل كل Handler.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>VersioningType.URI</code> يأخذ النسخة من المسار. تكتب <code>@Controller({ version: &#39;1&#39; })</code> أو <code>@Version(&#39;2&#39;)</code> على المسار. Nest يدرج <code>v</code> قبل الرقم ما لم تغيّر <code>prefix</code>. الطلب الذي لا يطابق نسخة معلنة يعيد 404.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">app.enableVersioning({ type: VersioningType.URI });
+</code></pre>
+<p><code>VersioningType</code> من <code>@nestjs/common</code>. البادئة الافتراضية <code>v</code>، فالنسخة <code>&#39;1&#39;</code> تصبح <code>/v1/...</code>. غيّرها بـ <code>prefix</code> أو عطّلها بـ <code>prefix: false</code>. النسخة تُوضع بعد <code>setGlobalPrefix</code> إن وُجدت، ثم يأتي مسار المتحكم. <code>@Version</code> على الدالة يتجاوز نسخة المتحكم. مصفوفة <code>version: [&#39;1&#39;, &#39;2&#39;]</code> تخدم الدالة نفسها للنسختين. <code>VERSION_NEUTRAL</code> مسار بلا مقطع نسخة في URI، ويلتقط الطلب أيًا كانت نسخته بما فيها غياب النسخة. <code>defaultVersion: &#39;1&#39;</code> يجعل المسار الذي لم يصرح بنسخة يتصرف كـ v1.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">/api   +  /v1  +  /books/:id
+بادئة     نسخة    مسار المتحكم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+import { toV1 } from &#39;./book.presenters.js&#39;;
+
+@Controller({ path: &#39;books&#39;, version: &#39;1&#39; })
+export class BooksV1Controller {
+  constructor(private readonly books: BooksService) {}
+
+  @Get(&#39;:id&#39;)
+  async find(@Param(&#39;id&#39;) id: string) {
+    return toV1(await this.books.find(id));
+  }
+}
+</code></pre>
+<p>أضف <code>Param</code> إلى الاستيراد من <code>@nestjs/common</code>. المسار الفعلي <code>/v1/books/:id</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>&#39;1&#39;</code> بلا حرف <code>v</code>. الحرف يأتي من <code>prefix</code>.</li>
+<li>الخدمة تعيد النموذج الداخلي. <code>toV1</code> وحدها تعرف <code>price</code> كعدد.</li>
+<li>متحكم ثانٍ <code>version: &#39;2&#39;</code> يستدعي <code>toV2</code> على نفس الخدمة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>enableVersioning</code> يغيّر بناء المسارات عند الإقلاع.</li>
+<li>طلب <code>GET /v1/books/b1</code> يطابق متحكم النسخة 1.</li>
+<li>طلب <code>GET /books/b1</code> لا يطابق إن لم يوجد <code>defaultVersion</code> أو <code>VERSION_NEUTRAL</code>، والنتيجة 404 كما في الصفحة.</li>
+<li>طلب <code>GET /v3/books/b1</code> بلا متحكم v3 يعيد 404 أيضًا.</li>
+<li>مع <code>setGlobalPrefix(&#39;api&#39;)</code> يصبح العنوان <code>/api/v1/books/b1</code> لا <code>/v1/api/books/b1</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>نسختان ودالة صحة محايدة:</p>
+<pre><code class="language-ts">import { Controller, Get, Version, VERSION_NEUTRAL } from &#39;@nestjs/common&#39;;
+
+@Controller({ version: &#39;2&#39;, path: &#39;books&#39; })
+export class BooksV2Controller {
+  @Get()
+  list() {
+    return [{ id: &#39;b1&#39;, price: { amount: 2500, currency: &#39;SAR&#39; } }];
+  }
+
+  @Version(&#39;1&#39;)
+  @Get(&#39;legacy-count&#39;)
+  count() {
+    return { count: 1 };
+  }
+}
+
+@Controller({ version: VERSION_NEUTRAL })
+export class HealthController {
+  @Get(&#39;health&#39;)
+  live() {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p><code>legacy-count</code> على متحكم v2 يتصرف كـ v1 لأن <code>@Version(&#39;1&#39;)</code> يتجاوز نسخة الصنف. الصحة على <code>/health</code> بلا مقطع نسخة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة <code>version: &#39;v1&#39;</code> فتبحث Nest عن مقطع <code>vv1</code> مع البادئة الافتراضية.</li>
+<li>توقع أن البادئة العالمية تأتي بعد رقم النسخة.</li>
+<li>نسخ <code>BooksService</code> لكل إصدار.</li>
+<li>نسيان اختبار 404 للنسخة غير الموجودة، فيُظن أن أي رقم يصل إلى v1.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجب أن يظهر العقد في العنوان: جوال لا تضبط ترويساته، أو وكيل يوجّه حسب بادئة المسار، أو توثيق عام يُقرأ من غير مجموعة ترويسات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تريد إبقاء المسار ثابتًا وتبديل التمثيل بتفاوض المحتوى. ذلك Media Type. وعندما تكسر كل الإشارات المرجعية المخزنة عند كل إصدار بلا داعٍ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>مع <code>version: &#39;1&#39;</code> على books</th>
+<th>مع <code>defaultVersion: &#39;1&#39;</code> لمسار بلا نسخة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/v1/books</code></td>
+<td>يطابق</td>
+<td>يطابق المصرح به</td>
+</tr>
+<tr>
+<td><code>/books</code></td>
+<td>404</td>
+<td>يطابق الافتراضي</td>
+</tr>
+<tr>
+<td><code>/v9/books</code></td>
+<td>404</td>
+<td>404 إن لم تُصرَّح 9</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>المتحكم <code>version: &#39;2&#39;</code> والمسار <code>books</code>. ما عنوان القائمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>/v2/books</code> مع البادئة الافتراضية <code>v</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>setGlobalPrefix(&#39;api&#39;)</code> و <code>prefix: false</code> والنسخة <code>&#39;1&#39;</code>. كيف يصير المسار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>/api/1/books</code> لأن البادئة العالمية أولًا، و <code>prefix: false</code> يلغي حرف <code>v</code>، وتبقى النسخة قبل مسار المتحكم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>صحة Terminus يجب أن تبقى <code>/health</code> للموازن الذي لا يعرف النسخ، بينما الكتب تتغير. أي رمز نسخة للصحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>VERSION_NEUTRAL</code> على متحكم الصحة. الصفحة تقول إن المورد المحايد في URI لا يظهر فيه مقطع النسخة، ويطابق الطلب بنسخة أو بلاها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يأتي حرف <code>v</code>؟</li>
+<li>أين تقع النسخة بالنسبة لـ <code>setGlobalPrefix</code>؟</li>
+<li>ماذا يتجاوز <code>@Version</code> على الدالة؟</li>
+<li>متى تعيد Nest 404 رغم وجود الدالة في الملف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>URI Versioning يضع العقد في المسار بعد البادئة العامة وقبله مسار المتحكم. الرقم في الكود بلا <code>v</code> إلا إذا غيّرت <code>prefix</code>. المسار بلا نسخة 404 إلى أن تضع افتراضيًا أو <code>VERSION_NEUTRAL</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعض عملاء رف يثبتون <code>/books</code> في العناوين المخزنة ويريدون النسخة في ترويسة. الدرس التالي Header Versioning.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Versioning: <a href="https://docs.nestjs.com/techniques/versioning">https://docs.nestjs.com/techniques/versioning</a></li>
+<li>NestJS — Global prefix: <a href="https://docs.nestjs.com/faq/global-prefix">https://docs.nestjs.com/faq/global-prefix</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

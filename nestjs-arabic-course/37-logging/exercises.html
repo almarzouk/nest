@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي مستوى لطابور طويل ما زال يعمل؟</li>
+<li>ماذا يفعل <code>bufferLogs</code>؟</li>
+<li>أي حقول تصف الطلب الوارد؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>warn</code>.</li>
+<li>يؤجل أسطر الإقلاع حتى <code>useLogger</code>.</li>
+<li><code>method</code> و <code>path</code> و <code>statusCode</code> و <code>durationMs</code>، ومعها <code>requestId</code> بعد درس المعرف.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم سطر فشل ISBN وسطر <code>POST /books</code> الناجح بحيث يجدهما المجمع معًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الوسيط يضع <code>requestId</code> في <code>AsyncLocalStorage</code>. سطر HTTP من المعترض بلا جسم وبلا استعلام. سطر <code>IsbnService</code> فيه <code>isbn</code> و <code>code</code> و <code>requestId</code> نفسه بلا ترويسات. البحث على <code>requestId</code> يعيد الاثنين.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>القص فشل بعد دقيقتين من الرد. ما الذي يجب أن يكون قد نُسخ عند <code>add</code>، ولماذا لا يكفي التخزين المحلي داخل العامل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>requestId</code> داخل حمولة <code>{ bookId, coverKey, requestId }</code>. العامل سياق لاحق أو عملية أخرى فلا يرى <code>AsyncLocalStorage</code> الخاص بالطلب. <code>jobId</code> يبقى <code>resize:${bookId}</code> ولا يُستبدل بالمعرف. السجل في <code>process</code> يطبع الحقلين. لا كلمة مرور ولا مفتاح ناشر في أي سطر.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

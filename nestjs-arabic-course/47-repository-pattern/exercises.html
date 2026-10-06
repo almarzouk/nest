@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>ما الفرق بين <code>save(order: Order)</code> و <code>Repository&lt;BookEntity&gt;.save</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأول يحفظ جذر الدومين بعد قواعده. الثاني مساعد TypeORM لصف الكيان كما تعرّفه الأداة، وقد يُستدعى من طبقة بيانات بلا تلك القواعد.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>أين يقف <code>prisma.book.findMany</code> لقائمة المتجر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في قارئ أو خدمة كتالوج تعيد DTO. ليس على مستودع جذر الطلب. إن لم يوجد جذر أصلًا، الاستدعاء المباشر في خدمة الوحدة مقبول حتى يظهر ألم العزل.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>صمّم اختبار «لا يُلغى المشحون» واختبار «العمود يُحدَّث» من غير أن يشتركا في نفس البطء.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأول <code>CancelOrder</code> مع <code>inMemoryOrders</code> ويرمي من <code>Order.cancel</code>. الثاني <code>PrismaOrdersRepository</code> ضد Postgres: <code>save</code> ثم <code>findById</code> ويتأكد من <code>status</code>. لا تعِد سيناريوهات الكيان في اختبار SQL.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

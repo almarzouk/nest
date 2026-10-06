@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>قاعدة البيانات والفهارس</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-database-and-indexes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>قاعدة البيانات والفهارس</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط بطء <code>GET /books</code> بخطة Postgres: أي فهرس يخدم التصفية والترتيب اللذين يرسلهما العميل فعلًا، وأي فهرس يزيد الكتابة بلا أن يلمس هذا المسار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>القائمة في رف تعرض الكتب المنشورة لمستأجر واحد مرتبة بأحدث نشر، مع تصفية اختيارية بالمؤلف. الجدول يكبر والرد يتجاوز مئات الميلي ثواني. إضافة فهرس على كل عمود لا تغيّر الخطة، لأن الاستعلام يصفّي بعمودين ويرتب بثالث.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الفهرس هيكل بحث يسرّع نمط قراءة محدد. المخطط بلا فهرس مناسب يجعل القاعدة تقرأ الجدول (sequential scan) ثم ترتبه في الذاكرة. الفهرس الزائد يبطئ <code>INSERT</code> و <code>UPDATE</code> لأن القاعدة تحافظ عليه عند كل كتابة.</p>
+<h2>التعريف التقني</h2>
+<p>في Prisma، <code>@@index</code> يصرّح بالأعمدة التي تُفهرس معًا. ترتيب الأعمدة في الفهرس المركب يتبع ترتيب الاستخدام: مساواة أولًا (<code>tenantId</code>, <code>status</code>) ثم نطاق أو ترتيب (<code>publishedAt</code>). الاستعلام الذي لا يطابق بادئة الفهرس قد يتجاهله المخطط. <code>EXPLAIN ANALYZE</code> هو الحكم، لا اسم الفهرس. صفحة Prisma في توثيق Nest تضع الوصول إلى البيانات خلف خدمة؛ الفهرس قرار مخطط لا قرار Controller.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">WHERE tenantId = $1 AND status = &#39;published&#39;
+ORDER BY publishedAt DESC
+LIMIT 20
+
+فهرس مفيد: (tenantId, status, publishedAt DESC)
+فهرس ضعيف لهذا المسار: (title) وحده
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model Book {
+  id          String   @id @default(cuid())
+  tenantId    String
+  status      String
+  author      String
+  publishedAt DateTime
+  title       String
+
+  @@index([tenantId, status, publishedAt(sort: Desc)])
+  @@index([tenantId, author])
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الفهرس الأول يخدم قائمة الرف المنشورة مرتبة.</li>
+<li>الفهرس الثاني يخدم <code>?author=</code> داخل المستأجر. من غير <code>tenantId</code> في الفهرس قد يقرأ المؤلف عبر كل المكتبات.</li>
+<li><code>title</code> بلا فهرس هنا مقبول إن كان البحث النصي مسارًا آخر بأداة بحث، لا <code>LIKE &#39;%كلمة%&#39;</code> على هذا الجدول.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الخدمة تبني <code>where</code> و <code>orderBy</code> من عقد القائمة، لا من سلسلة حرة يلصقها العميل في SQL.</li>
+<li>Prisma يرسل SQL معاملات.</li>
+<li>المخطط يختار فهرسًا إن كانت بادئته مطابقة ويقدّر أن تكلفته أقل من مسح الجدول.</li>
+<li><code>LIMIT</code> مع ترتيب يطابق الفهرس يوقف القراءة بعد عشرين صفًا.</li>
+<li>إن غاب الترتيب عن الفهرس، قد يُجلب عدد كبير ثم يُفرز (<code>Sort</code>) قبل القص.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  list(tenantId: string, author?: string) {
+    return this.prisma.book.findMany({
+      where: {
+        tenantId,
+        status: &#39;published&#39;,
+        ...(author ? { author } : {}),
+      },
+      orderBy: { publishedAt: &#39;desc&#39; },
+      take: 20,
+      select: { id: true, title: true, author: true, publishedAt: true },
+    });
+  }
+}
+</code></pre>
+<p><code>select</code> يُبقي الصفوف ضيقة. عند تصفية المؤلف، الفهرس <code>(tenantId, author)</code> يجد المرشحين، وقد تحتاج فهرسًا يغطي المؤلف مع <code>publishedAt</code> إذا صار هذا النمط هو الأشيع. القرار بعد <code>EXPLAIN</code> لا قبله.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فهرس على <code>id</code> فقط ثم التعجب من بطء القائمة. المفتاح الأساسي لا يخدم <code>WHERE status</code>.</li>
+<li><code>OR</code> عريض أو <code>LIKE &#39;%نجيب%&#39;</code> يفسد استخدام الفهرس العادي.</li>
+<li>جلب العلاقات في حلقة: كتاب ثم مؤلفه باستعلام لكل صف. هذا N+1 في SQL، ويُجمع بـ <code>include</code> واعٍ أو استعلام واحد.</li>
+<li>فتح <code>PrismaClient</code> داخل كل طلب بدل نسخة واحدة و pool جاهز.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما <code>EXPLAIN</code> على الاستعلام الحقيقي (بقيم تشبه الإنتاج) يظهر Seq Scan أو Sort على جدول كبير، والمسار يصفّي ويرتب بنفس الأعمدة كل مرة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتسريع حلقة في Node أو ضغط HTTP. ولجداول صغيرة تُقرأ كلها في الذاكرة أصلًا. ولكل عمود «احتياطًا» على جدول كثير الكتابة مثل سجلات التدقيق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النمط</th>
+<th>ما يفيده</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مساواة ثم ترتيب</td>
+<td>فهرس مركب بهذا الترتيب</td>
+</tr>
+<tr>
+<td>بحث <code>LIKE</code> في الطرف الأيسر</td>
+<td>فهرس B-tree العادي لا يكفي</td>
+</tr>
+<tr>
+<td>كتابة كثيرة وقراءة نادرة</td>
+<td>فهارس أقل</td>
+</tr>
+<tr>
+<td>عمود فريد أصلًا</td>
+<td>القيد الفريد يغطي البحث بالمساواة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>القائمة دائمًا <code>where tenantId + status</code> و <code>orderBy publishedAt desc</code>. أي ترتيب أعمدة أقرب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>(tenantId, status, publishedAt DESC)</code>. وضع <code>publishedAt</code> أولًا لا يخدم مساواة المستأجر. وضع <code>title</code> في الفهرس لا يغير هذه الخطة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>بعد إضافة الفهرس ما زال p95 عاليًا، و <code>EXPLAIN</code> يقول Index Scan لكن الصفوف العائدة آلاف قبل أن تقصها الخدمة في JavaScript. أين الخطأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القص حدث بعد جلب الجدول تقريبًا. ضع <code>take</code> في الاستعلام نفسه. الفهرس يسرّع إيجاد الصفوف؛ <code>LIMIT</code> هو الذي يمنع سحبها كلها إلى Node.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مسار المؤلف اختياري. متى تبقي فهرسين، ومتى تدمجهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أبقِ <code>(tenantId, status, publishedAt)</code> للقائمة العامة. أضف فهرس المؤلف إذا كان <code>EXPLAIN</code> لمسار <code>author</code> يمسح كثيرًا. ادمجهما فقط إذا صار النمط الغالب <code>tenantId + author + order publishedAt</code> وتبيّن أن الفهرس الأعرض يخدم الحالتين من غير أن يثقل الكتابة. القياس على النسبتين، لا على شكل الكود.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا ترتيب الأعمدة داخل الفهرس المركب جزء من التصميم؟</li>
+<li>ماذا يثبت <code>EXPLAIN ANALYZE</code> مما لا يثبته وجود <code>@@index</code>؟</li>
+<li>أين يُقص العدد: في SQL أم بعد وصول المصفوفة إلى Nest؟</li>
+<li>ما أثر فهرس لا يستخدمه أي استعلام ساخن؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الفهرس يعد مسار قراءة واحدًا. في رف، قائمة المستأجر المنشورة تحتاج فهرسًا يطابق <code>where</code> ثم <code>orderBy</code> ثم <code>take</code>. ما لا يظهر في تلك الجملة لا يستحق فهرسًا حتى يفرضه مسار آخر مقاس.</p>
+<h2>ماذا بعد؟</h2>
+<p>الاستعلام رخيص، وبعض القوائم لا تتغير بين الطلبات. الدرس التالي يقرر ماذا يُخزَّن ومتى يُبطَل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>PostgreSQL — Indexes: <a href="https://www.postgresql.org/docs/current/indexes.html">https://www.postgresql.org/docs/current/indexes.html</a></li>
+<li>Prisma — Indexes: <a href="https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes">https://www.prisma.io/docs/orm/prisma-schema/data-model/indexes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

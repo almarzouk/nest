@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مشكلة new</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-the-problem-with-new.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مشكلة new</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية ما الذي ينكسر عندما ينشئ الصنف اعتمادياته بـ <code>new</code> بدل أن يطلبها جاهزة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>DraftService</code> التي تنادي <code>new RegionalTax(new SystemClock())</code> تخفي الشبكة داخل الدالة. اختبار مسودة بلا ضريبة المنطقة يعدّل الخدمة أو ينتظر ساعة الجهاز. Controller ثانٍ يعيد <code>new</code> فيحصل على ضريبة مستقلة عن الأولى.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>new</code> قرار إنشاء في مكان الاستخدام. كل استدعاء يختار الصنف والوسائط والترتيب. استبدال <code>RegionalTax</code> في الاختبار يعني تحرير كل المواضع، لا موضع تسجيل واحد.</p>
+<h2>التعريف التقني</h2>
+<p>سلسلة نموذجية لمكتب المشتريات:</p>
+<pre><code class="language-ts">const clock = new SystemClock();
+const tax = new RegionalTax(clock);
+const vendors = new VendorGateway(&#39;https://vendors.internal&#39;);
+const drafts = new DraftService(tax, vendors);
+</code></pre>
+<p>الترتيب إلزامي لأن كل سطر يحتاج ناتج ما قبله. عنوان البوابة مكتوب حيث تُبنى المسودة، لا حيث تُدار الإعدادات. <code>DraftService</code> إن أعادت البناء داخل <code>open()</code> تتكرر السلسلة عند كل فاتورة.</p>
+<p>نسخة لكل Controller تعني أن عدّادًا على <code>RegionalTax</code> لا يمثل المكتب كله. نسخة واحدة يدوية في متغير عام تُصلح العدّاد وتفتح اعتمادًا خفيًا: أي ملف يستدعي <code>getTax()</code> يصير مرتبطًا بالمتغير من غير أن يظهر في توقيعه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Controller
+  new DraftService
+      new RegionalTax
+          new SystemClock
+      new VendorGateway
+</code></pre>
+<p>الشجرة صحيحة الشكل وصعبة الاستبدال. كل عقدة تعرف أصناف أبنائها.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class SystemClock {
+  now() {
+    return new Date();
+  }
+}
+
+export class RegionalTax {
+  constructor(private readonly clock: SystemClock) {}
+
+  rate() {
+    return this.clock.now().getMonth() === 11 ? 0.05 : 0.15;
+  }
+}
+
+export class DraftService {
+  private readonly tax = new RegionalTax(new SystemClock());
+
+  total(net: number) {
+    return net * (1 + this.tax.rate());
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>DraftService</code> تعرف <code>RegionalTax</code> و <code>SystemClock</code> بالاسم.</li>
+<li>اختبار <code>total</code> في ديسمبر يختلف عن اختباره في يونيو لأن الساعة ساعة الجهاز.</li>
+<li>تمرير شهر ثابت مستحيل من غير تعديل <code>rate</code> أو كسر الحقل الخاص.</li>
+<li>Controller الذي ينشئ <code>DraftService</code> لا يرى أن النتيجة تعتمد على الشهر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل <code>new</code> يحجز كائنًا ويسند حقوله. لا سجل يبحث عن رمز، ولا مشاركة إلا ما تخزنه أنت في متغير. عند طلبين متوازيين، نسختان من <code>DraftService</code> تعنيان ساعتين. هذا واضح في المثال، ويصبح خفيًا عندما يكون <code>new</code> داخل دالة عميقة.</p>
+<p>الاستبدال للاختبار يتطلب أحد ثلاثة: تغيير الأصناف، أو متغيرًا عامًا يضبطه الاختبار، أو إعادة كتابة <code>total</code> لتقبل الضريبة وسيطًا في كل نداء. الوسيط في كل نداء ينفع دالة واحدة، ولا يصف شبكة مكتب فيها بوابة وضريبة وساعة.</p>
+<h2>مثال عملي</h2>
+<p>مسار يعيد البناء:</p>
+<pre><code class="language-ts">import { Controller, Get, Query } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+
+@Controller(&#39;drafts&#39;)
+export class DraftsController {
+  @Get(&#39;preview&#39;)
+  preview(@Query(&#39;net&#39;) net = &#39;100&#39;) {
+    const drafts = new DraftService();
+    return { gross: drafts.total(Number(net)) };
+  }
+}
+</code></pre>
+<p><code>preview</code> تبدو رفيعة، والاعتماد على ديسمبر داخل <code>DraftService</code>. اختبار HTTP يحتاج تثبيت التاريخ أو يقبل نتيجة متغيرة. عنوان <code>VendorGateway</code> لو أُضيف داخل <code>open</code> يتكرر القرار نفسه في كل مسار ينادي <code>new DraftService()</code>.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>new</code> داخل الدالة لكل طلب</td>
+<td>لا مشاركة مقصودة، ولا مكان واحد لاستبدال الاختبار</td>
+</tr>
+<tr>
+<td>متغير عام <code>tax</code> يستدعيه أي ملف</td>
+<td>الاعتمادية غائبة عن توقيع الصنف</td>
+</tr>
+<tr>
+<td>تمرير كل الاعتماديات وسائط على كل دالة</td>
+<td>التوقيع يطول، والشبكة تبقى قرار المستدعي</td>
+</tr>
+<tr>
+<td>نسخ سلسلة <code>new</code> في Controller ثانٍ</td>
+<td>عدّادات وحالات تتفرع</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p><code>new</code> مناسب لكائن قيمة يصنعه المجال ولا تديره الحاوية: <code>new Date()</code> داخل ساعة، أو DTO تملأه من جسم الطلب. تلك ليست خدمات المكتب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإنشاء Service أو بوابة أو سياسة يعيش مستهلكوها داخل Nest. التسجيل في <code>providers</code> وطلب النوع في <code>constructor</code> ينقلان قرار الإنشاء إلى موضع واحد. آلية ذلك الفصل كله بعد هذا الدرس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>new</code> عند الاستخدام</th>
+<th>طلب الاعتمادية جاهزة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الصنف يسمي أبناءه</td>
+<td>الصنف يسمي ما يحتاجه</td>
+</tr>
+<tr>
+<td>الاستبدال بتعديل المواضع</td>
+<td>الاستبدال في التسجيل</td>
+</tr>
+<tr>
+<td>الترتيب مسؤولية المستدعي</td>
+<td>الترتيب مسؤولية من يبني الشجرة</td>
+</tr>
+<tr>
+<td>النسخ بعدد الاستدعاءات</td>
+<td>النسخ حسب Scope المسجّل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا يختلف <code>total(100)</code> بين يونيو وديسمبر في المثال؟</p>
+<details><summary>الحل</summary>
+
+<p><code>RegionalTax</code> تقرأ شهر <code>SystemClock</code> المبنية داخل الخدمة، وهي ساعة الجهاز. ديسمبر يعطي 0.05 وغيره 0.15.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الذي يخفيه <code>preview</code> عندما تنشئ <code>DraftService</code> رغم أن الدالة سطران؟</p>
+<details><summary>الحل</summary>
+
+<p>سلسلة <code>RegionalTax</code> و <code>SystemClock</code> داخل الخدمة، وأي بوابة تُضاف هناك لاحقًا. توقيع <code>preview</code> لا يذكرها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا المتغير العام <code>getTax()</code> يحل مشاركة النسخة ويبقي الاختبار صعبًا؟</p>
+<details><summary>الحل</summary>
+
+<p>النسخة واحدة، لكن أي صنف يستدعي الدالة يعتمد عليها من غير معامل. الاختبار يضبط حالة عامة ويخشى أن يراها اختبار آخر. التوقيع ما زال لا يعلن الاحتياج.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يختار <code>new</code> في مكان الاستخدام؟</li>
+<li>لماذا نسخة Controller لكل مسار تفرق الحالة؟</li>
+<li>أي <code>new</code> يبقى مقبولًا لكائن قيمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>new</code> داخل الخدمة يثبّت الأصناف والوسائط والترتيب عند الاستخدام. الشبكة تعمل، واستبدال فرع واحد للاختبار أو لمكتب آخر يعني تعديل كل موضع بناء.</p>
+<h2>ماذا بعد؟</h2>
+<p>الاسم الذي يصف طلب الاعتمادية من الخارج: ما هي DI.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers (DI fundamentals): <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

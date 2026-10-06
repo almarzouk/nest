@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا Serialization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-serialization.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا Serialization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد ما يغادر المعالج نحو العميل قبل أن يصبح JSON، حتى لا يقرر كل مسار حقوله بالصدفة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>findUnique</code> يعيد صف المستخدم كما في الجدول: <code>id</code> و <code>email</code> و <code>passwordHash</code> و <code>role</code>. <code>return user</code> في <code>GET /me</code> يمرّر الصف إلى JSON. التوثيق في OpenAPI قد يقول إن الاستجابة بلا تجزئة، والشبكة تعرض <code>$scrypt$...</code>. نسخ الحقول يدويًا في كل معالج ينسى مسارًا واحدًا، مثل خطأ <code>409</code> يعيد الكيان أو سجلًا تشخيصيًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التسلسل هنا قواعد إخراج تُطبَّق قبل إرسال الشبكة. Nest يوفّر <code>ClassSerializerInterceptor</code> مع مزخرفات <code>class-transformer</code>، و <code>StandardSchemaSerializerInterceptor</code> مع مخطط يصف المسموح. الاثنان يشكّلان الاستجابة. لا يغيّران ما كُتب في PostgreSQL. الصفحة تقول إن التحويل اليدوي في كل معالج سهل نسيانه.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Serialization، الاعتراضان في <code>@nestjs/common</code>:</p>
+<ul>
+<li><code>ClassSerializerInterceptor</code> يستدعي <code>instanceToPlain</code> على القيمة المعادة ويحترم <code>@Exclude</code> و <code>@Expose</code> و <code>@Transform</code>.</li>
+<li><code>StandardSchemaSerializerInterceptor</code> يمرّر القيمة على مخطط Standard Schema. <code>z.object</code> في Zod يحذف ما لم يُعلن، فتسقط <code>password</code> حتى لو أعادتها الخدمة.</li>
+</ul>
+<p>كلاهما يترك <code>StreamableFile</code> كما هو.</p>
+<p>القاعدة التي تثبتها الصفحة: بيانات حساسة مثل كلمات المرور تُستبعد دائمًا. في المكتبة الاسم <code>passwordHash</code>. استبعاد الحقل في JSON لا يستبدل <code>select</code> في Prisma. الأفضل ألا تُجلب التجزئة أصلًا، وأن تكون طبقة الإخراج شبكة أمان إن جُلبت.</p>
+<p>التسلسل ليس <code>ValidationPipe</code>. الأنبوب يفحص الداخل. الاعتراض يشكّل الخارج. فشل مخطط الاستجابة خطأ خادم <code>500</code> لا <code>400</code>، لأن العيب في ما بناه المعالج لا في طلب العميل. الصفحة تذكر ذلك لمسار المخطط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">جدول فيه passwordHash
+  خدمة قد تجلب الصف
+  اعتراض الإخراج يحذف أو يرفض الزائد
+  JSON للعميل بلا سر
+القاعدة تبقى كما هي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const row = {
+  id: 4,
+  email: &quot;ada@library.test&quot;,
+  passwordHash: &quot;$scrypt$example&quot;,
+  role: &quot;reader&quot;,
+};
+const body = { id: row.id, email: row.email, role: row.role };
+</code></pre>
+<h2>شرح المثال</h2>
+<p>هذا انتقاء يدوي صحيح لمرة واحدة. يتكرر في <code>GET /me</code> و <code>PATCH /me</code> ورسالة التسجيل. كل نسخة فرصة لنسخ <code>passwordHash</code> مع <code>email</code>. الدروس التالية تنقل القاعدة إلى مزخرف أو مخطط يُطبَّق حيث يُربَط الاعتراض.</p>
+<p>الكائن <code>body</code> هو ما يجب أن يطابق <code>UserResponseDto</code> في OpenAPI. إن اختلف الاثنان فالعميل المولَّد والشبكة يرويان قصتين.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد المعالج تأتي الاعتراضات. آخر مرحلة قبل الشبكة تحوّل القيمة إلى كائن عادي ثم إلى JSON. إن لم يوجد اعتراض، <code>JSON.stringify</code> ينشر كل خاصية قابلة للعد. Prisma يعيد كائنات عادية لا نسخًا من صنفك، لذلك <code>@Exclude</code> على صنف لا يعمل حتى يمر الكائن بتحويل إلى نسخة أو بمخطط. ذلك تفصيل الدرس التالي، وهو سبب شائع لبقاء التجزئة.</p>
+<p>السجلات التي تطبع <code>user</code> كاملًا تسريب آخر. التسلسل لا ينظّف <code>Logger</code>. لا تسجّل الصف الخام.</p>
+<h2>مثال عملي</h2>
+<p>راجع استجابات <code>POST /users</code> و <code>GET /me</code> و <code>GET /posts/:id</code>. القائمة المسموحة للمستخدم: <code>id</code> و <code>email</code> و <code>role</code>. للمقال: <code>id</code> و <code>title</code> و <code>published</code> و <code>authorId</code> من غير كائن مؤلف فيه تجزئة. إن كان <code>include: { author: true }</code> فصف المؤلف كاملًا يدخل الشجرة. التسلسل يجب أن يطبَّق على الفرع أو أن يكون <code>select</code> أضيق.</p>
+<p>اكتب اختبارًا يتوقع غياب المفتاح <code>passwordHash</code> في الجسم. الاختبار أوضح من مراجعة بصرية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاكتفاء بـ <code>@ApiHideProperty</code> وحذف الحقل من الوثيقة فقط.</li>
+<li>ظن أن <code>whitelist</code> على الأنبوب ينظّف الاستجابة.</li>
+<li>إرجاع كيان Prisma من معالج «مؤقت» بلا قائمة حقول.</li>
+<li>طباعة الصف في الاستثناء.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على أي مسار يعيد نموذجًا فيه حقول لا تخص العميل، بدءًا من المستخدم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتفويض القراءة. إخفاء <code>published: false</code> في JSON لا يمنع من جلب المسودة إن كان الاستعلام بلا شرط. السياسة و <code>where</code> يقرران الوجود. التسلسل يقرر الشكل بعد القرار.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>انتقاء يدوي</th>
+<th>قاعدة إخراج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>واضح في معالج واحد</td>
+<td>مكان واحد للسر</td>
+</tr>
+<tr>
+<td>يُنسى في المسار الثاني</td>
+<td>يحتاج اعتراضًا موصولًا</td>
+</tr>
+<tr>
+<td>لا يلمس الوثيقة وحده</td>
+<td>يطابق صنف الاستجابة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل حذف <code>passwordHash</code> من وثيقة OpenAPI يمنعه في JSON؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الوثيقة وصف. الإخراج يتغير بـ <code>select</code> أو بتسلسل يطبَّق فعلًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين الأنبوب وتسلسل الاستجابة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأنبوب يفحص جسم الطلب واستعلامه. التسلسل يشكّل ما يعيده المعالج قبل الشبكة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>include</code> للمؤلف قد يعيد التجزئة رغم صنف مقال نظيف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكائن المتداخل صف مستخدم كامل. نظّف الفرع أو استعمل <code>select</code> يحد الأعمدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُستبعد دائمًا حسب صفحة Nest؟</li>
+<li>هل التسلسل يغيّر صف القاعدة؟</li>
+<li>أي رمز حين يخالف مخطط الاستجابة القيمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التسلسل قواعد لما يخرج. الوثيقة والجدول لا يكفيان. التجزئة لا تُرسل، والجلب الضيق يبقى الخط الأول.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-class-serializer-interceptor.html">ClassSerializerInterceptor</a> تطبيق القواعد على نسخة الصنف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Serialization: <a href="https://docs.nestjs.com/application/serialization">https://docs.nestjs.com/application/serialization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

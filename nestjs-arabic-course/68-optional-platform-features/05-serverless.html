@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Serverless</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-serverless.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Serverless</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ما يغيّره التشغيل عند الطلب في زمن إقلاع رف، ومتى يكفي <code>createApplicationContext</code> بدل تطبيق HTTP كامل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>دالة باردة تعيد بناء Nest واتصال قاعدة قبل أول بايت. أو مزود <code>async</code> يتصل بـ Redis في كل استدعاء حتى لو المسار لا يقرأ الذاكرة. أو عملية API كاملة داخل دالة واحدة بلا قياس. أو نسيان تخزين معالج Lambda فيُعاد الإقلاع على كل نداء دافئ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Serverless يشغّل الدالة حين يصل العمل ويفك الموارد حين يهدأ. البداية الباردة تشمل تحميل الشيفرة وتهيئة Nest. صفحة الأسئلة الشائعة تنشر أرقامًا على جهاز قديم: Express حوالي 8ms، و Nest مع منصة Express حوالي 197ms بلا تجميع و 81ms مع webpack، والسياق المستقل حوالي 112ms بلا تجميع و 32ms مجمّعًا. التطبيق الأكبر في الصفحة (عشر موارد) حوالي 130ms مجمّعًا، والصفحة تقول إن تشغيل المتراص كله كدالة نادرًا ما يناسب. منذ Nest 12 مساحة العمل تُجمَّع بـ Rspack افتراضيًا؛ أرقام الصفحة قيست بـ webpack على تلك الآلة فلا تُنقل كوعد لزمن رف.</p>
+<h2>التعريف التقني</h2>
+<p>قللوا العمل المتزامن في البناء. لا تجعلوا اتصالًا يُستخدم أحيانًا مزودًا يؤخر الإقلاع. <code>LazyModuleLoader.load</code> يستورد وحدة عند الحاجة، كما في مثال الصفحة لذاكرة التخزين. لعامل بلا مسارات: <code>NestFactory.createApplicationContext</code> ثم <code>get</code> على الخدمة. لـ HTTP على Lambda مع Express توضّح الصفحة <code>@codegenie/serverless-express</code>: <code>app.init()</code> لا <code>listen</code>، و <code>getHttpAdapter().getInstance()</code>، وتخزين <code>handler</code> في متغير وحدة:</p>
+<pre><code class="language-ts">server = server ?? (await bootstrap());
+</code></pre>
+<p><code>serverless.yml</code> في المثال يستهدف <code>nodejs22.x</code> و <code>dist/main.handler</code>. إن لزم Swagger خلف بوابة، أصلِحوا <code>originalUrl</code> لمسار الواجهة حتى لا تدور إعادة التوجيه، كما في التحذير. الحراس لا يعملون على <code>createApplicationContext</code>. إن لزموا فـ <code>NestFactory.create</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نداء بارد → إقلاع → معالج مُخزَّن
+نداء دافئ → نفس المعالج
+وحدة نادرة → LazyModuleLoader
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+import { EventsService } from &#39;./events.service.js&#39;;
+
+export const handler = async (event: unknown) =&gt; {
+  const app = await NestFactory.createApplicationContext(AppModule, {
+    logger: [&#39;error&#39;],
+  });
+  return app.get(EventsService).process(event);
+};
+</code></pre>
+<p>هذا الشكل من الصفحة لعامل خفيف. أغلقوا السياق إن كانت المنصة لا تعيد استخدام البيئة، وأبقوه مخزّنًا إن كانت تعيد الاستخدام حتى لا تدفعوا الإقلاع كل مرة. قرار الإغلاق يتبع عمر بيئة المزود.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>logger: [&#39;error&#39;]</code> يقلل العمل في القياس الذي تعرضه الصفحة.</li>
+<li><code>process</code> يأخذ الحدث وسيطًا. لا يوجد جسم HTTP موثوق حتى تبنوه.</li>
+<li>معرف المنظمة داخل الحدث يُتحقق منه ضد توقيع المزوّد أو سجل داخلي.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>البيئة الباردة تحمّل الحزمة ثم تنفّذ الوحدة.</li>
+<li><code>create</code> يبني Express وكل المسارات. <code>createApplicationContext</code> يبني الحاوية فقط، لذا رقمه في الجدول أصغر.</li>
+<li>التجميع إلى ملف واحد يقلل القراءة من <code>node_modules</code>. الصفحة فعلت ذلك بـ webpack و <code>externals: []</code> مع تجاهل حزم خدمات مصغرة غير مثبتة.</li>
+<li>المزود غير المتزامن الذي ينتظر قاعدة يضيف زمنه إلى كل بداية باردة.</li>
+<li>الاستدعاء الدافئ يعيد <code>handler</code> المخزّن في المثال HTTP فلا يعيد <code>bootstrap</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>واجهة رف الكاملة تبقى عملية طويلة مع Docker من المشروع الختامي. دالة منفصلة تصلح لعامل «أعِد محاولة صندوق واحد» إن قيس إقلاعها. <code>LazyModuleLoader</code> يحمّل وحدة الغلاف فقط حين <code>workerType</code> كذلك. لا تفعّلوا اشتراكًا لأن الدالة استُدعيت من عنوان نجاح في المتصفح. حدث Stripe يبقى على مسار التوقيع والـ <code>rawBody</code>. أرقام 81ms و 32ms في الوثائق قياس آلة 2014 لا هدف SLO لدار النيل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نقل جدول webpack كأنه زمن Rspack على إنتاجكم.</li>
+<li>اتصال Redis في <code>onModuleInit</code> لكل الدوال.</li>
+<li><code>listen</code> داخل Lambda فيعلق الإقلاع على منفذ.</li>
+<li>متراص فيه GraphQL ولوحة و Stripe في دالة واحدة بلا تقسيم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عامل ضيق أو مسار قليل يتذبذب حمله إلى الصفر، بعد قياس البداية الباردة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بدل عملية رف التي فيها جلسات ودفق SSE واتصالات قاعدة طويلة. الصفحة نفسها تستبعد المتراص كدالة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشكل</th>
+<th>من جدول الصفحة بلا تجميع</th>
+<th>مع تجميع webpack</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Express فقط</td>
+<td>~8ms</td>
+<td>~7ms</td>
+</tr>
+<tr>
+<td>Nest HTTP</td>
+<td>~197ms</td>
+<td>~81ms</td>
+</tr>
+<tr>
+<td>سياق مستقل</td>
+<td>~112ms</td>
+<td>~32ms</td>
+</tr>
+</tbody></table>
+<p>الآلة مذكورة في الصفحة: MacBook Pro منتصف 2014.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا الرقم المجمّع أصغر في الجدول؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ملف واحد يقلل كلفة تحميل حزم كثيرة عند البداية الباردة. الصفحة قاست ذلك بـ webpack.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى تختارون <code>createApplicationContext</code> داخل الدالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حين لا تحتاجون مسارات ولا حراسًا ولا أنابيب. العامل يستدعي خدمة بـ <code>get</code>. إن لزم HTTP فـ <code>create</code> و <code>init</code> ومحول المنصة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>نداء دافئ ما زال يستغرق زمن إقلاع كامل. ماذا ينقص مثال HTTP في الصفحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تخزين المعالج: <code>server = server ?? (await bootstrap())</code>. بلا التخزين كل نداء يعيد بناء Nest حتى داخل نفس البيئة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تضيف البداية الباردة؟</li>
+<li>أي مصنع أخف بلا HTTP؟</li>
+<li>لماذا لا يُنقل رقم 32ms كما هو؟</li>
+<li>أين يُستخدم <code>LazyModuleLoader</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Serverless يجعل إقلاع رف جزءًا من زمن الطلب. خففوا البناء، وخزّنوا المعالج، وافصلوا العامل عن المتراص. أرقام الوثائق قياس webpack على آلة محددة.</p>
+<h2>ماذا بعد؟</h2>
+<p>عملية HTTP مع مستمع رسائل في نفس التطبيق هي التطبيق الهجين، آخر درس في المسار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Serverless: <a href="https://docs.nestjs.com/faq/serverless">https://docs.nestjs.com/faq/serverless</a></li>
+<li>NestJS — Standalone applications: <a href="https://docs.nestjs.com/standalone-applications">https://docs.nestjs.com/standalone-applications</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

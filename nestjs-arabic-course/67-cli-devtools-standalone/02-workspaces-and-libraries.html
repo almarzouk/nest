@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Workspaces و Libraries</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-workspaces-and-libraries.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Workspaces و Libraries</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جمع واجهة رف وعامل التصدير في مساحة عمل واحدة، ومشاركة وحدة العضوية عبر مكتبة، مع Rspack كمُجمّع افتراضي للمساحة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>MembershipService</code> بين مستودعين فيفترقان. أو حزمة npm داخلية لكل تعديل صغير. أو علم <code>webpack</code> قديم في <code>nest-cli.json</code> بينما Nest 12 يتوقع <code>builder</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الوضع القياسي تطبيق واحد ومترجم <code>tsc</code>. إضافة تطبيق ثانٍ بـ <code>nest generate app</code> تحوّل المجلد إلى monorepo: مجلد <code>apps</code> و <code>nest-cli.json</code> فيه <code>&quot;monorepo&quot;: true</code> و <code>&quot;builder&quot;: &quot;rspack&quot;</code>. المكتبة <code>nest g library</code> تعيش في <code>libs</code> ولا تملك <code>main.ts</code>. الاستيراد عبر بادئة مثل <code>@app/membership</code>. علما <code>webpack</code> و <code>webpackConfigPath</code> مسار قديم؛ الخيار الحالي <code>builder</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>nest generate app worker</code> ينقل <code>src</code> التطبيق الأصلي تحت <code>apps</code> ويضيف التطبيق الجديد. التحويل يفترض هيكل Nest المعتاد (<code>src</code> و <code>test</code>). <code>nest start</code> يشغّل المشروع الافتراضي من خاصية <code>&quot;root&quot;</code>. <code>nest start worker</code> يسمي المشروع. المكتبة: <code>type</code> هو <code>library</code> و <code>entryFile</code> هو <code>index</code>. البادئة الافتراضية <code>@app</code> ما لم تُضبط <code>defaultLibraryPrefix</code>. في ESM يشير <code>paths</code> في <code>tsconfig.json</code> إلى <code>./libs/membership/src/index.ts</code>. Rspack ينتج ملفًا واحدًا يجمع التطبيق ومكتباته. للملفات المنفصلة اضبطوا <code>builder</code> على <code>tsc</code> أو <code>swc</code>. خيارات المترجم على مستوى المشروع تستبدل مصفوفة <code>assets</code> العليا ولا تدمجها؛ <code>includeLibraryAssets</code> ينسخ أصول مكتبة عند بناء التطبيق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">apps/api        HTTP رف
+apps/worker     تصدير بلا نسخ الكود
+libs/membership وحدة العضوية
+builder: rspack
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">cd raf-api
+nest generate app worker
+nest g library membership
+</code></pre>
+<p>بعدها <code>nest start</code> يشغّل التطبيق الافتراضي، و <code>nest build worker</code> يبني العامل. المكتبة تُستورد ولا تُشغَّل وحدها.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>التحويل يعيد ترتيب المجلدات. نفّذوه على فرع نظيف.</li>
+<li><code>@app/membership</code> اسم المسار لا اسم حزمة في <code>npm</code>.</li>
+<li>Rspack هنا قرار CLI للمساحة لا استبدال Express داخل التطبيق.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المخطط يضع <code>&quot;monorepo&quot;: true</code> ويكتب <code>projects</code> لكل تطبيق ومكتبة.</li>
+<li>كل مشروع يأخذ <code>tsconfig.app.json</code> أو <code>tsconfig.lib.json</code> يمتد من جذر المساحة.</li>
+<li><code>tsc</code> لا يفهم تشغيل الاختبار. Vitest يحتاج <code>resolve.alias</code> يطابق <code>paths</code>. مشروع CommonJS على Jest يضع <code>moduleNameMapper</code> كما تذكر صفحة المكتبات.</li>
+<li><code>nest build api</code> يمر على المكتبات المستوردة ويجمعها لأن المُجمّع الافتراضي Rspack.</li>
+<li>علم <code>compilerOptions.webpack: true</code> مهمل. استبدلوه بـ <code>&quot;builder&quot;: &quot;rspack&quot;</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-json">{
+  &quot;monorepo&quot;: true,
+  &quot;root&quot;: &quot;apps/api&quot;,
+  &quot;compilerOptions&quot;: {
+    &quot;builder&quot;: &quot;rspack&quot;,
+    &quot;deleteOutDir&quot;: true,
+    &quot;tsConfigPath&quot;: &quot;apps/api/tsconfig.app.json&quot;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { MembershipModule } from &#39;@app/membership&#39;;
+
+@Module({ imports: [MembershipModule] })
+export class AppModule {}
+</code></pre>
+<p><code>organizationId</code> يبقى وسيط الدوال في المكتبة. المكتبة لا تقرأ جسم الطلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تحويل مشروع غيّر مكان <code>src</code> فيفشل المخطط أو يبعثر الملفات.</li>
+<li>الإبقاء على <code>--webpack</code> و <code>--webpackPath</code> في سكربتات مساحة Nest 12.</li>
+<li>نسيان alias الاختبار فيمر <code>nest build</code> ويفشل <code>vitest</code>.</li>
+<li>مكتبة فيها <code>listen</code> كأنها تطبيق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتشارك تطبيقات الفريق الوحدات يوميًا وتريدون بناءً واحدًا للأصول وقواعد oxlint.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمستودع رف وهو ما زال عملية HTTP واحدة. الوضع القياسي و <code>tsc</code> يكفي. حزمة npm تبقى للتوزيع خارج المستودع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>الوضع القياسي</th>
+<th>مساحة العمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المترجم الافتراضي</td>
+<td><code>tsc</code></td>
+<td><code>rspack</code></td>
+</tr>
+<tr>
+<td>المكتبة</td>
+<td>حزمة npm يدوية</td>
+<td><code>libs</code> و <code>nest g library</code></td>
+</tr>
+<tr>
+<td><code>package.json</code></td>
+<td>لكل تطبيق</td>
+<td>واحد للجذر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي أمر يحوّل مشروعًا قياسيًا إلى monorepo؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>nest generate app</code> لتطبيق ثانٍ. المكتبة وحدها تأتي بعد أن تكون المساحة موجودة، والأمر الموثق للتحويل في الصفحة هو إضافة تطبيق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا ملف Rspack واحد لا يعفيكم من alias في Vitest؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>paths</code> يفهمها مترجم TypeScript والمُجمّع عند البناء. Vitest يحل الوحدات وقت الاختبار بقاعدته. ضعوا <code>resolve.alias</code> نحو <code>libs/membership/src</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أصول المكتبة لا تظهر في <code>dist</code> التطبيق مع أن <code>assets</code> معرفة في جذر <code>nest-cli.json</code>. أين تُضاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خيارات المشروع لا تُدمج مع العليا. ضعوا اسم المكتبة في <code>includeLibraryAssets</code> على التطبيق، أو أعيدوا تعريف <code>assets</code> على المشروع نفسه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تعيش المكتبة وما <code>entryFile</code>؟</li>
+<li>ما البادئة الافتراضية؟</li>
+<li>أي <code>builder</code> يكتبه Nest 12 للمساحة؟</li>
+<li>أي علم مترجم صار قديمًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>مساحة العمل تنسق تطبيقات رف ومكتبة العضوية في <code>nest-cli.json</code>. المُجمّع الافتراضي Rspack. علما webpack القديمان يُستبدلان بـ <code>builder</code>. المكتبة تُستورد ولا تُشغَّل وحدها.</p>
+<h2>ماذا بعد؟</h2>
+<p>إن بقيتم على الوضع القياسي وأردتم ترجمة أسرع من <code>tsc</code> أثناء التطوير، الدرس التالي SWC.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Workspaces: <a href="https://docs.nestjs.com/cli/monorepo">https://docs.nestjs.com/cli/monorepo</a></li>
+<li>NestJS — Libraries: <a href="https://docs.nestjs.com/cli/libraries">https://docs.nestjs.com/cli/libraries</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

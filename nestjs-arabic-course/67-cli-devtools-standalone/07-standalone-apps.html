@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Standalone Apps</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-standalone-apps.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Standalone Apps</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل حاوية رف بلا مستمع شبكة عبر <code>NestFactory.createApplicationContext</code>، لمهمة تصدير أو سكربت ينتهي ثم يغلق.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تصدير الفواتير يفتح <code>listen(3000)</code> بلا داعٍ فيحجز منفذًا. أو السكربت يستدعي الخدمة بـ <code>new</code> فيتجاوز الوحدات. أو العملية تبقى معلقة بعد انتهاء العمل لأن <code>close()</code> لم يُستدعَ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التطبيق المستقل غلاف حول حاوية الحقن. <code>createApplicationContext(AppModule)</code> يبني المزودات بلا HTTP. <code>app.get(InvoiceExportJob)</code> يجلب النسخة. <code>app.select(BillingModule).get(..., { strict: true })</code> يحصر البحث في وحدة. في النهاية <code>await app.close()</code> يطلق خطافات الإيقاف ويخرج. الحراس والاعتراضات والأنابيب لا تلتف حول استدعائكم المباشر.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Standalone applications:</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.createApplicationContext(AppModule);
+  await app.close();
+}
+await bootstrap();
+</code></pre>
+<p><code>get</code> يجد متحكمًا أو مزودًا من الوحدات المسجّلة. بلا <code>strict</code> الجذر هو المحدد. <code>select</code> يمشي في الشجرة. للوحدة الديناميكية مرّروا نفس كائن <code>register</code> الذي استوردته <code>AppModule</code>، لا استدعاء <code>register</code> جديدًا. الصفحة تذكر المهام المجدولة و CLI فوق هذا الغلاف. <code>nest-commander</code> في الدرس التالي يبني أوامر فوق الفكرة نفسها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">createApplicationContext → مزودات بلا منفذ
+get(المهمة) → وسيط المنظمة صريح
+close → خطافات الإيقاف وخروج العملية
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+import { InvoiceExportJob } from &#39;./billing/invoice-export.job.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.createApplicationContext(AppModule);
+  const job = app.get(InvoiceExportJob);
+  await job.exportDay();
+  await app.close();
+}
+await bootstrap();
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا <code>listen</code>. لا مسار نجاح في المتصفح.</li>
+<li><code>exportDay</code> يمر على المنظمات من القاعدة أو من وسيط السكربت. لا يقرأ ترويسة غير موجودة.</li>
+<li><code>close</code> يغلق اتصال Prisma إن كانت الوحدة تربط الإغلاق بخطاف الإيقاف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المصنع يهيئ الوحدات ويستدعي <code>onModuleInit</code> كما في تطبيق HTTP.</li>
+<li>لا محول Express ولا Fastify فلا وسيط منصة ولا أنابيب مسار.</li>
+<li><code>get</code> يبحث عن الرمز. نسخة ثانية من وحدة ديناميكية لا تطابق الكائن المسجّل فيفشل <code>select</code>.</li>
+<li>استدعاء تابع على الكائن لا يمر بحارس <code>TenantGuard</code> حتى لو كان الحارس عامًا على تطبيق HTTP.</li>
+<li><code>close</code> يشغّل <code>onModuleDestroy</code> و <code>onApplicationShutdown</code>. بلاها قد تبقى مقابض مفتوحة وتعلق العملية.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مهمة ليلية في رف:</p>
+<pre><code class="language-ts">const job = app
+  .select(BillingModule)
+  .get(InvoiceExportJob, { strict: true });
+await job.exportOrganization(&#39;org_nile&#39;);
+</code></pre>
+<p>القفل <code>@OnOneInstance</code> من فصل الاعتمادية يبقى لازمًا إذا شغّلت أكثر من آلة نفس السكربت. السياق المستقل لا يوحّد العمليات. مرّروا معرف المنظمة في سطر الأمر بعد التحقق، لا من ملف يرفعه عميل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>listen</code> داخل سكربت التصدير.</li>
+<li>افتراض أن الحارس العام فحص المنظمة.</li>
+<li><code>ConfigModule.register</code> مرتين بكائنين مختلفين ثم <code>select</code> على الثاني.</li>
+<li>نسيان <code>close</code> فيبقى عامل Kubernetes في حالة Running.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>سكربت، مهمة تنتهي، عامل بلا HTTP، أو دالة serverless بلا مسارات كما في فصل المنصة الاختياري.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لواجهة رف التي تخدم المتصفح. تلك <code>NestFactory.create</code> ثم <code>listen</code>. ولا بدل اختبار وحدة يعزل مزودًا بـ <code>Test.createTestingModule</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصنع</th>
+<th>الشبكة</th>
+<th>الحراس على التابع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>create</code> + <code>listen</code></td>
+<td>HTTP</td>
+<td>على المسار</td>
+</tr>
+<tr>
+<td><code>createApplicationContext</code></td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>create</code> + <code>init</code> بلا <code>listen</code></td>
+<td>لا HTTP، والحاوية كاملة</td>
+<td>حسب ما تستدعون</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استدعاء يغلق السكربت بشكل مرتب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>await app.close()</code> بعد انتهاء العمل. يطلق خطافات الإيقاف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>app.get(controller)</code> ثم استدعاء التابع لا يطبّق الأنبوب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأنابيب والوسيط والاعتراضات مربوطة بمعالجة الطلب. السياق المستقل لا يملك مستمعًا. التابع يُستدعى كدالة على الكائن.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>select(ConfigModule.register({ folder: &#39;./config&#39; }))</code> لا يجد الخدمة رغم أن <code>AppModule</code> يستورد الإعداد. ما الشرط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مرّروا نفس مرجع الوحدة الديناميكية المصدَّر والمستورَد في <code>AppModule</code>. استدعاء <code>register</code> من جديد كائن آخر فلا يطابق الرسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مصنع؟</li>
+<li>ماذا يفعل <code>strict: true</code>؟</li>
+<li>هل يوجد منفذ؟</li>
+<li>متى <code>close</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>createApplicationContext</code> يشغّل حاوية رف لمهمة بلا شبكة. المنظمة وسيط صريح. <code>close</code> ينهي العملية. الحارس لا يعمل لأنكم لم تمروا بمسار.</p>
+<h2>ماذا بعد؟</h2>
+<p>إن صار للسكربت أوامر وخيارات، <code>nest-commander</code> يغلّف هذا النمط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Standalone applications: <a href="https://docs.nestjs.com/standalone-applications">https://docs.nestjs.com/standalone-applications</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

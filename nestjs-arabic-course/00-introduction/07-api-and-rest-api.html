@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>API و REST API</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-api-and-rest-api.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>API و REST API</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية العقد بين برنامجين، وتمييز REST API عن الصفحة وعن المكتبة الداخلية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق الواجهة وفرق الجوال وفريق الخادم لا يشاركون الذاكرة. يحتاجون اتفاقًا مكتوبًا بالسلوك: أي عنوان، وأي فعل، وأي جسم، وأي رمز، وأي شكل JSON.</p>
+<p>إذا بقي الاتفاق في رأس شخص واحد، كل عميل جديد يكتشف الواجهة بالتجربة والأخطاء.</p>
+<h2>الفكرة ببساطة</h2>
+<p><strong>API</strong> هي الواجهة التي يسمح لك برنامج أن تستخدمه من خلالها، من غير أن تفتح داخله.</p>
+<p><strong>REST API</strong> هي API على HTTP مصممة بأسلوب الموارد الذي مر في الدرس السابق، وتمثيلها الشائع JSON.</p>
+<h2>التعريف التقني</h2>
+<p>Application Programming Interface: مجموعة عمليات ظاهرة، بمدخلات ومخرجات متفق عليها، تخفي التنفيذ.</p>
+<p>في مكتبة JavaScript، الـ API هي الدوال التي تصدّرها. في هذه الدورة، عندما نقول API من غير قيد، نقصد <strong>Web API</strong>: عمليات يصل إليها Client عبر الشبكة.</p>
+<p>REST API: Web API تخاطب موارد بعناوين HTTP وأفعاله، وتنقل تمثيلات. توثيق Nest يسمي هذا النوع من التطبيقات عند الحديث عن Controllers و OpenAPI.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عقد عام                         تنفيذ مخفي
+GET /books/:id                 SELECT و Prisma وملفات داخل src/
+
+العميل يرى العقد
+الخادم يبدل التنفيذ من غير أن يبدل العنوان
+</code></pre>
+<p>الاستقرار المطلوب هو استقرار العقد، لا استقرار أسماء الملفات الداخلية.</p>
+<h2>أبسط مثال</h2>
+<p>عقد كتاب واحد:</p>
+<table>
+<thead>
+<tr>
+<th>البند</th>
+<th>الاتفاق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العملية</td>
+<td>قراءة كتاب</td>
+</tr>
+<tr>
+<td>الطلب</td>
+<td><code>GET /books/2</code></td>
+</tr>
+<tr>
+<td>نجاح</td>
+<td><code>200</code> و JSON فيه <code>id</code> و <code>title</code> و <code>price</code></td>
+</tr>
+<tr>
+<td>غياب</td>
+<td><code>404</code> و JSON فيه رسالة</td>
+</tr>
+<tr>
+<td>العميل لا يعرف</td>
+<td>اسم الجدول، أو أن السعر محسوب من خصم داخلي</td>
+</tr>
+</tbody></table>
+<p>هذا العقد كافٍ لكتابة الواجهة بالتوازي مع الخادم.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>العنوان والفعل جزء من العقد، لا تفصيل تنفيذ.</li>
+<li>أسماء الحقول جزء من العقد. تغيير <code>title</code> إلى <code>name</code> يكسر العملاء.</li>
+<li>إضافة حقل جديد غالبًا أسهل على العملاء القديمين من حذف حقل أو تغيير نوعه. هذا تمهيد للإصدارات، وفصل API Versioning سيضع سياسة.</li>
+<li>رمز الحالة جزء من العقد، كما ثبّتنا في درس الطلب والاستجابة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العميل يبني HTTP Request حسب العقد.</li>
+<li>الشبكة توصله إلى عملية Nest.</li>
+<li>التوجيه يجد الدالة المرتبطة بالمسار.</li>
+<li>الدالة تستدعي منطق العمل والمخزن.</li>
+<li>الناتج يُحوَّل إلى التمثيل المتفق عليه، لا إلى شكل الجدول بالضرورة.</li>
+<li>Response ترجع. العميل يبرمج ضد العقد، لا ضد سجلات خادمك.</li>
+</ol>
+<p>نقطة داخلية ستكبر لاحقًا: إذا أعادت الدالة كائن JavaScript عاديًا، فهناك طبقة في Nest تحوله إلى JSON وتكتب <code>200</code> ما لم تغيّر ذلك. اسم السلوك في التوثيق Standard response handling. سنشرحه مع Controllers. الآن يكفي أن العقد هو ما يخرج على السلك، لا ما طبعته في <code>console.log</code>.</p>
+<h2>مثال عملي</h2>
+<p>REST API صغيرة لملاحظات:</p>
+<pre><code class="language-text">GET    /notes
+POST   /notes
+GET    /notes/:id
+PATCH  /notes/:id
+DELETE /notes/:id
+</code></pre>
+<p>شكل الإنشاء الذي يرسله العميل:</p>
+<pre><code class="language-json">{ &quot;title&quot;: &quot;شراء حبر&quot;, &quot;body&quot;: &quot;أسود&quot; }
+</code></pre>
+<p>شكل ما يعيده الخادم:</p>
+<pre><code class="language-json">{ &quot;id&quot;: &quot;8f0&quot;, &quot;title&quot;: &quot;شراء حبر&quot;, &quot;body&quot;: &quot;أسود&quot;, &quot;createdAt&quot;: &quot;2026-10-05T07:00:00.000Z&quot; }
+</code></pre>
+<p>العميل لا يرسل <code>id</code> ولا <code>createdAt</code> عند الإنشاء. الخادم يملكهما. هذا فرق بين <strong>مدخلات العقد</strong> و <strong>مخرجاته</strong>. في Nest سيصبح لكل منهما DTO، حتى لا نثق بكل حقل يرسله العميل.</p>
+<p>وثّق هذا الجدول قبل كتابة الواجهة. لاحقًا سيولّد <code>@nestjs/swagger</code> وصف OpenAPI من الكود. الأداة لا تخترع العقد إذا كان الكود بلا شكل واضح.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية أي دالة داخل المشروع API. الدالة الداخلية تفصيل. الـ API هنا ما يعبر حدود العملية.</li>
+<li>كسر حقل مستخدم لأن &quot;لا أحد يفترض أن يعتمد على الاسم&quot;. إذا خرج في JSON فهناك من اعتمد عليه.</li>
+<li>جعل شكل JSON نسخة من جدول قاعدة البيانات. غيّرت العمود فانكسر الجوال. التمثيل طبقة مستقلة.</li>
+<li>توثيق العقد في رسالة دردشة فقط. الدردشة تضيع. العقد يعيش مع الكود، ثم مع OpenAPI.</li>
+</ul>
+<h2>متى ننشر REST API؟</h2>
+<p>عندما يوجد عميل آخر: صفحة، جوال، شريك، أو حتى واجهة سطر أوامر يكتبها فريق ثانٍ. حدود الشبكة هي مكان العقد.</p>
+<h2>متى لا نحتاج هذه الطبقة؟</h2>
+<p>برنامج يعمل كله في عملية واحدة ولا يناديه أحد عبر الشبكة. ما زلت تستطيع ترتيب الكود، لكن لا توجد REST API بعد. Nest يقدر أن يعمل كتطبيق Standalone بلا HTTP، وهذا درس متأخر في أدوات CLI.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Library API</th>
+<th>Web API</th>
+<th>REST API</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين تُستدعى</td>
+<td>داخل العملية، <code>import</code></td>
+<td>عبر الشبكة</td>
+<td>عبر HTTP بأسلوب موارد</td>
+</tr>
+<tr>
+<td>شكل الاستدعاء</td>
+<td>دالة</td>
+<td>Request</td>
+<td>Method + مسار + تمثيل</td>
+</tr>
+<tr>
+<td>مثال</td>
+<td><code>JSON.parse</code></td>
+<td>أي خدمة HTTP</td>
+<td><code>GET /notes/8f0</code></td>
+</tr>
+</tbody></table>
+<p>Express ينشر Web API عندما تربط المسارات. الالتزام بأسماء الموارد هو ما يجعلها REST API. Nest لا يضيف بروتوكولًا جديدًا؛ يرتب الكود الذي يفي بهذا العقد.</p>
+<pre><code class="language-text">Express:
+app.get(&#39;/notes&#39;, handler)
+
+NestJS لاحقًا:
+@Get()
+findAll() {}
+</code></pre>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من القائمة، ما الذي يعتبر جزءًا من عقد REST API؟</p>
+<ol>
+<li><code>GET /notes/:id</code> يعيد <code>404</code> عند الغياب.</li>
+<li>اسم ملف <code>notes.service.ts</code>.</li>
+<li>الحقل <code>title</code> نص في الاستجابة.</li>
+<li>اسم جدول SQL.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 و 3 جزء من العقد لأن العميل يراهما. 2 و 4 تنفيذ داخلي يمكن تغييره مع بقاء العقد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>العميل كان يرسل <code>{ &quot;title&quot;: &quot;...&quot; }</code> وأنت تريد دعم لغة ثانية. اقترح إضافة لا تكسر العملاء الحاليين، من غير نظام i18n كامل.</p>
+<details>
+<summary>الحل</summary>
+
+<p>أبقِ <code>title</code> كما هو للعملاء الحاليين. أضف حقلًا جديدًا اختياريًا مثل <code>titleAr</code> أو كائن <code>titles</code> إذا اتفق الفريق على ذلك من الإصدار الأول. حذف <code>title</code> أو تغييره من نص إلى كائن يكسر من يقرأه كنص. الإضافة الاختيارية أهون من تغيير النوع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمة داخلية تبحث في قاعدة البيانات وتُستدعى من Controller مباشرة، ثم قررتم أن يفتحها تطبيق الجوال أيضًا. ماذا يصبح API، وما الذي يجب أن يتوقف الجوال عن معرفته؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الـ API تصبح عمليات HTTP المتفق عليها، لا توقيع الدالة الداخلية. الجوال يعرف المسار والحقول والرموز. يتوقف عن معرفة أسماء الأعمدة وترتيب الاستدعاء داخل الخدمة. لو نقلت البحث إلى خدمة أخرى وأبقيت <code>GET /notes?q=</code> فالعقد يبقى.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي تخفيه API؟</li>
+<li>ما الشرطان اللذان يجعلان Web API تستحق اسم REST API في هذه الدورة؟</li>
+<li>لماذا إضافة حقل أهون من تغيير نوع حقل؟</li>
+<li>أين يعيش العقد: في شكل الجدول أم في شكل الرسالة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>API عقد على حدود البرنامج. REST API عقد HTTP حول موارد وتمثيلات JSON. العملاء يُبرمجون ضد العقد، والخادم حر داخل حدوده ما دام الكلام على السلك ثابتًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>العقد واضح. نحتاج بيئة تشغّل JavaScript خارج المتصفح حتى نكتب الطرف الخادم. تلك البيئة هي Node.js.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>MDN — HTTP overview: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview">https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview</a></li>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — OpenAPI (توثيق العقد، لاحقًا): <a href="https://docs.nestjs.com/openapi/introduction">https://docs.nestjs.com/openapi/introduction</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

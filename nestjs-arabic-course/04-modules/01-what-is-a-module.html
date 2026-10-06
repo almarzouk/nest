@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-a-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية الوحدة كحد لميزة: ما الذي يُنشأ معًا، وما الذي يُسمح لغير هذه الميزة باستخدامه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استيراد أي ملف من أي ملف يلغي الحدود. خدمة الكتب تصبح تفصيلًا تعرفه الفواتير والنشرات. عندما يتغير منشئ الكتب تنكسر ملفات لا علاقة لها بالمسار. الوحدة تجعل &quot;من يرى من&quot; قرارًا صريحًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Module صنف معلّم بـ <code>@Module()</code>. التوثيق يقول إن الزينة تعطي Metadata تنظم بها Nest هيكل التطبيق. كل تطبيق فيه جذر واحد على الأقل، والتطبيق الواقعي فيه عدة وحدات، كل واحدة تغلف قدرات مترابطة.</p>
+<h2>التعريف التقني</h2>
+<p>كائن الزينة فيه:</p>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>المعنى في التوثيق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>providers</code></td>
+<td>ما تنشئه الحاوية وقد يُشارك داخل هذه الوحدة على الأقل</td>
+</tr>
+<tr>
+<td><code>controllers</code></td>
+<td>المتحكمات التي يجب أن تُنشأ</td>
+</tr>
+<tr>
+<td><code>imports</code></td>
+<td>وحدات تُستورد لأن هذه الوحدة تحتاج ما تصدّره</td>
+</tr>
+<tr>
+<td><code>exports</code></td>
+<td>ما يجوز للوحدات المستورِدة حقنه. الصنف أو رمزه</td>
+</tr>
+</tbody></table>
+<p>الوحدة تغلّف مزوّداتها افتراضيًا. الواجهة العامة هي ما في <code>exports</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksModule
+  controllers: BooksController
+  providers:   BooksService
+  exports:     BooksService     إن احتاجتها وحدة أخرى
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { BooksController } from &#39;./books.controller.js&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+@Module({
+  controllers: [BooksController],
+  providers: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الملف يعيش في مجلد <code>books/</code> كما يشجع القالب: وحدة لكل مجلد.</li>
+<li><code>@Module</code> من <code>@nestjs/common</code>.</li>
+<li>تسجيل المتحكم ينشر مساراته عند استيراد الوحدة من الجذر.</li>
+<li>تسجيل الخدمة يجعلها قابلة للحقن داخل هذه الوحدة.</li>
+<li>غياب <code>exports</code> يعني أن وحدة الطلبات لا تحقن <code>BooksService</code> حتى لو استوردت الملف TypeScript. الحاوية تنظر إلى التسجيل لا إلى إمكانية قراءة الملف.</li>
+</ul>
+<p>أمر التوثيق لإنشاء الوحدة: <code>nest g module books</code>. المولّد يضيفها غالبًا إلى <code>imports</code> في الجذر إن ولّدتها من المكان المناسب. تحقق من <code>AppModule</code> بعد الأمر.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تُقرأ Metadata الجذر ثم كل وحدة مستوردة. تُنشأ المزوّدات وتُربط المتحكمات. الوحدات singleton افتراضيًا: الوحدة تُنشأ مرة وتُعاد عند الاستيراد من أكثر من مكان، والمزوّد المصدَّر منها النسخة نفسها. إعادة تسجيل الصنف في كل وحدة تنشئ نسخة لكل تسجيل. التوثيق يذكر أن النسخ المتعددة تزيد الذاكرة وقد تفرق الحالة إن حملت الخدمة حالة داخلية.</p>
+<h2>مثال عملي</h2>
+<p>مجلد:</p>
+<pre><code class="language-text">src/books/books.module.ts
+src/books/books.controller.ts
+src/books/books.service.ts
+src/app.module.ts    imports: [BooksModule]
+</code></pre>
+<p>الجذر لا يعيد إعلان <code>BooksService</code> في <code>providers</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>ملف وحدة بلا استيراد من الجذر أو من وحدة مستوردة. لا تدخل الرسم.</li>
+<li>وضع كل المتحكمات في <code>AppModule</code>.</li>
+<li><code>export class BooksModule {}</code> من غير الزينة. الصنف وحده لا يكفي.</li>
+</ul>
+<h2>متى نفتح وحدة؟</h2>
+<p>عندما تجتمع متحكم وخدمة لميزة واحدة: كتب، طلبات، مستخدمون.</p>
+<h2>متى لا نفتحها؟</h2>
+<p>لكل دالة. وحدة من ملف واحد بلا حد حقيقي ضوضاء.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Express</th>
+<th>Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مجلد تتفقون عليه</td>
+<td>Module يفرض التسجيل والحدود</td>
+</tr>
+<tr>
+<td><code>require</code> لأي ملف</td>
+<td>حقن لما هو مسجّل ومصدَّر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الزينة التي تجعل الصنف وحدة؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Module()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الخدمة مسجّلة في <code>BooksModule</code> والجذر لا يستورد الوحدة. هل تُنشأ؟</p>
+<details><summary>الحل</summary>
+
+<p>لا تدخل الرسم ما لم تُستورد الوحدة من الجذر أو من سلسلة تصل إليه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا مشاركة الخدمة بتسجيل الصنف في كل وحدة تختلف عن تصديرها مرة واحدة؟</p>
+<details><summary>الحل</summary>
+
+<p>كل تسجيل ينشئ نسخة لتلك الوحدة. التصدير من وحدة واحدة ثم استيرادها يشارك النسخة التي أنشأتها الحاوية لتلك الوحدة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تغلّفه الوحدة افتراضيًا؟</li>
+<li>ما الفرق بين <code>providers</code> و <code>exports</code>؟</li>
+<li>ماذا يبدأ application graph؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوحدة حد معلن: متحكمات، مزوّدات، ما تستورده، وما تصدّره. الملف على القرص ليس تسجيلًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>شكل كائن <code>@Module</code> حقلًا حقلًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

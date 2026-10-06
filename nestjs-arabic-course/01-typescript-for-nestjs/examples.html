@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>تجميع لغة الفصل على أصناف تشبه Nest، من غير تشغيل الإطار. الوسوم تُذكر حيث يلزم Metadata، وتسجيل الوحدة ما زال مؤجلًا إلى فصل Modules.</p>
+<h2>المثال 1 — حدود النوع والاستنتاج</h2>
+<pre><code class="language-ts">interface CreateBook {
+  title: string;
+  price: number;
+}
+
+function draftLabel(input: CreateBook): string {
+  const label = `${input.title} (${input.price})`;
+  return label;
+}
+</code></pre>
+<p><code>label</code> يُستنتج <code>string</code>. <code>CreateBook</code> واجهة ممحوة. هذا العقد بين دوالك، لا فحص JSON.</p>
+<h2>المثال 2 — غياب واتحاد</h2>
+<pre><code class="language-ts">type Book = { id: string; title: string; price: number };
+
+function find(id: string, rows: Book[]): Book | null {
+  return rows.find((row) =&gt; row.id === id) ?? null;
+}
+</code></pre>
+<p>المستدعي يفحص <code>null</code> قبل <code>title</code>. المصفوفة الفارغة تعيد <code>null</code> بسبب <code>??</code>.</p>
+<h2>المثال 3 — السطر الكامل</h2>
+<pre><code class="language-ts">class BooksService {
+  async findOne(id: string): Promise&lt;Book | null&gt; {
+    return id === &#39;2&#39; ? { id, title: &#39;Refactoring&#39;, price: 40 } : null;
+  }
+}
+
+class BooksController {
+  constructor(private readonly booksService: BooksService) {}
+
+  async detail(id: string): Promise&lt;string&gt; {
+    const book = await this.booksService.findOne(id);
+    if (!book) {
+      return &#39;missing&#39;;
+    }
+    return book.title;
+  }
+}
+
+const controller = new BooksController(new BooksService());
+</code></pre>
+<ul>
+<li><code>private readonly</code> يصرح بالحقل ويمنعه من إعادة التعيين في الفحص.</li>
+<li><code>await</code> يفك <code>Promise</code>.</li>
+<li><code>new</code> هنا للتعليم. Nest ستمرر النسخة المسجّلة.</li>
+<li><code>&#39;missing&#39;</code> كنص ليس عقد HTTP. لاحقًا ترمي استثناء يحمل <code>404</code>.</li>
+</ul>
+<h2>المثال 4 — زينة ومخزن وصف</h2>
+<pre><code class="language-ts">import &#39;reflect-metadata&#39;;
+
+const PATH = Symbol(&#39;path&#39;);
+
+function Path(path: string): ClassDecorator {
+  return (target) =&gt; {
+    Reflect.defineMetadata(PATH, path, target);
+  };
+}
+
+@Path(&#39;/books&#39;)
+class Catalog {}
+
+Reflect.getMetadata(PATH, Catalog);
+</code></pre>
+<p>التحميل يخزن <code>&#39;/books&#39;</code> على الصنف. لا منفذ مفتوح. <code>Symbol</code> مفتاح يصعب أن يصطدم بنص عشوائي. Nest تستخدم مفاتيحها الخاصة بالفكرة نفسها.</p>
+<h2>المثال 5 — ما الذي لا يفعله النوع</h2>
+<pre><code class="language-ts">async function pretend&lt;T&gt;(raw: string): Promise&lt;T&gt; {
+  return JSON.parse(raw) as T;
+}
+</code></pre>
+<p><code>as T</code> يسكت المترجم ولا يفحص <code>price</code>. أبقِ المثال في رأسك كتحذير، لا كنمط. الفحص الحي في فصلي DTO و Validation.</p>
+<h2>ماذا بعد؟</h2>
+<p>حل تمارين الفصل ثم انتقل إلى إنشاء المشروع.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

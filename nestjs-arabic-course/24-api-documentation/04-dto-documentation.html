@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>توثيق DTO</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-dto-documentation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>توثيق DTO</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إظهار خصائص <code>CreatePostDto</code> وزملائه في OpenAPI عبر <code>@ApiProperty</code>، إلى أن تتولى إضافة CLI ذلك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>createDocument</code> يرى <code>@Body() dto: CreatePostDto</code> ويصنع نموذجًا باسم الصنف. الخصائص تبقى فارغة لأن TypeScript لا يحتفظ بها وقت التشغيل. Swagger UI يعرض جسمًا بلا حقول، فيرسل المجرب <code>{}</code> ويأخذ <code>400</code> من غير أن يفهم العقد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@ApiProperty</code> على كل حقل يُنشر في الوثيقة. <code>@ApiPropertyOptional</code> للحقل غير الإلزامي. المصفوفة تحتاج <code>type: [String]</code> أو <code>isArray</code>. التعداد يُمرَّر في <code>enum</code>، ومع <code>enumName</code> يصبح مخططًا يعاد استخدامه. الحقول التي لا يرسلها العميل، مثل <code>authorId</code>، لا تُوضع على DTO الإنشاء أصلًا.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { ApiProperty, ApiPropertyOptional } from &quot;@nestjs/swagger&quot;;
+import { IsBoolean, IsOptional, IsString, MaxLength, MinLength } from &quot;class-validator&quot;;
+
+export class CreatePostDto {
+  @ApiProperty({ example: &quot;Sunday shelves&quot;, minLength: 1, maxLength: 120 })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(120)
+  title: string;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  published?: boolean;
+}
+</code></pre>
+<p><code>example</code> يظهر في الواجهة. لا تضع كلمة مرور حقيقية. الحدود في <code>@ApiProperty</code> توثيق. <code>@MinLength</code> هو الذي يرفض الطلب. الإضافة لاحقًا تستطيع نقل بعض قواعد <code>class-validator</code> إلى المخطط، وما زلت تبقي المزخرفات للأنبوب.</p>
+<p>مصفوفة وسوم: <code>@ApiProperty({ type: [String] }) tags: string[]</code>. صفحة الأنواع تقول إن الإضافة تكتشف المصفوفة وحدها.</p>
+<p>مرجع دائري: <code>@ApiProperty({ type: () =&gt; CommentDto })</code>. الإضافة تكتشف الدوران أيضًا.</p>
+<p><code>enum</code> مع <code>enumName: &quot;PostSort&quot;</code> يمنع تكرار التعداد في العملاء المولَّدين، كما تشرح الصفحة مع NSwag. <code>@ApiQuery({ name: &quot;sort&quot;, enum: PostSort, enumName: &quot;PostSort&quot; })</code> للاستعلام.</p>
+<p><code>@ApiSchema({ name: &quot;CreatePostRequest&quot; })</code> يغيّر اسم المخطط في <code>components</code>. مفيد حين يختلف اسم الصنف عن لغة العقد.</p>
+<p><code>@ApiExtraModels</code> يسجّل صنفًا لا يظهر كـ <code>@Body</code> مباشر، مثل غلاف صفحة ستركّبه في درس الأمثلة. <code>getSchemaPath</code> يعيد <code>#/components/schemas/...</code>.</p>
+<p><code>@ApiBody({ type: [CreatePostDto] })</code> لإنشاء جماعي لأن المصفوفة العامة لا تُحفظ في الانعكاس.</p>
+<p><code>PartialType</code> المستخدم في DTO التحديث يُستورد من <code>@nestjs/swagger</code> حين تعمل الإضافة، حتى يلتقط المخطط الحقول الاختيارية. من غير الإضافة يمكنك توثيق <code>UpdatePostDto</code> بمزخرفات اختيارية مباشرة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">صنف TypeScript غير مرئي لـ Swagger
+@ApiProperty يجعل الحقل مرئيًا
+class-validator يبقى حارس الطلب
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class CreateCommentDto {
+  @ApiProperty({ maxLength: 500 })
+  @IsString()
+  @MaxLength(500)
+  body: string;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>التعليق جسم ونص فقط. <code>postId</code> في المسار لا في الجسم، لذلك لا خاصية له هنا. وثيقة <code>POST /posts/{postId}/comments</code> ستظهر المعامل من <code>@Param</code>، والجسم من هذا الصنف بعد المزخرف. أضف وصفًا قصيرًا إن كان الحد <code>500</code> غير واضح من الاسم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند بناء الوثيقة تُقرأ البيانات الوصفية لـ <code>@ApiProperty</code> وتُكتب تحت <code>components.schemas.CreateCommentDto.properties.body</code>. الواجهة تبني نموذجًا يمكن ملؤه. الطلب إلى Nest لا يمر على <code>@ApiProperty</code>. <code>ValidationPipe</code> يقرأ <code>@MaxLength</code>. حذف مزخرف التحقق وإبقاء <code>@ApiProperty</code> يوثّق حدًا لا يُفرض.</p>
+<p>حقل بلا مزخرف توثيق يبقى خارج النموذج حتى مع وجوده في الصنف، فيختلف Swagger عن السلوك إن كان <code>whitelist</code> يمرّر الحقل المزخرف للتحقق فقط. زامن الاثنين.</p>
+<h2>مثال عملي</h2>
+<p><code>ListPostsQueryDto</code> وثّق <code>page</code> و <code>pageSize</code> مع <code>minimum</code> و <code>maximum: 50</code> حتى ترى الواجهة السقف الذي يفرضه <code>@Max</code>. <code>sort</code> تعداد <code>id</code> و <code>title</code> مع <code>enumName</code>. لا توثّق <code>password</code> في أي استجابة. DTO الدخول يمكن أن يوثّق الحقل للتجربة في بيئة مغلقة، والمثال سلسلة واضحة أنها وهمية مثل <code>correct-horse-battery</code>.</p>
+<p>افتح <code>/api</code> بعد إعادة التشغيل وتأكد أن النموذج لم يعد <code>{}</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@ApiProperty</code> بلا <code>@IsString</code> ثم ظن أن الوثيقة تتحقق.</li>
+<li>توثيق <code>authorId</code> لأن العمود موجود في الجدول.</li>
+<li><code>enum</code> بلا <code>enumName</code> في عميل يولَّد فيتكرر النوع.</li>
+<li>نسيان <code>type: [String]</code> للمصفوفة قبل تفعيل الإضافة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل DTO يدخل الوثيقة قبل أن تعتمد على إضافة CLI، وعلى أي حقل تريد مثاله أوحدّه ظاهرًا فوق ما تستنتجه الإضافة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإخفاء سلوك الأنبوب. إن رفضت الحقل في التحقق فاحذفه من العقد لا تكتفِ بإغفال المثال.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>@ApiProperty</code></th>
+<th><code>@ApiPropertyOptional</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الحقل في <code>required</code></td>
+<td><code>required: false</code></td>
+</tr>
+<tr>
+<td>إنشاء العنوان</td>
+<td><code>published</code> له افتراض</td>
+</tr>
+<tr>
+<td>ما زال يحتاج محققًا</td>
+<td>ما زال يحتاج <code>@IsOptional</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا يظهر <code>CreatePostDto</code> فارغًا بلا مزخرفات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الانعكاس لا يرى خصائص TypeScript. <code>@ApiProperty</code> أو إضافة CLI تكتبانها في الوثيقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف توثّق مصفوفة وسوم نصية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ApiProperty({ type: [String] })</code> أو <code>isArray: true</code> مع النوع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عميل NSwag كرّر تعداد الترتيب في كل DTO. ماذا تضيف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>enumName</code> بجانب <code>enum</code> حتى يُنشر المخطط مرة في <code>components.schemas</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة تصدّر <code>@ApiProperty</code>؟</li>
+<li>هل المثال في المزخرف يفرض القيمة؟</li>
+<li>أين يُوثَّق <code>postId</code> للتعليق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@ApiProperty</code> يملأ نموذج OpenAPI بما يسمح الانعكاس بإظهاره. التحقق يبقى على <code>class-validator</code>. الحقول التي لا يكتبها العميل لا تدخل DTO حتى تبدو قانونية في Swagger.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-auth-in-swagger.html">توثيق Auth</a> قفل الكعكة و <code>bearer</code> على العمليات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Types and parameters: <a href="https://docs.nestjs.com/openapi/types-and-parameters">https://docs.nestjs.com/openapi/types-and-parameters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

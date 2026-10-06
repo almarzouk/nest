@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Distributed Locks</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-distributed-locks.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Distributed Locks</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>منع نسختين من رف من تشغيل نفس التصدير الليلي معًا، بقفل <code>@nestjs/locks</code> في مخزن تشترك فيه العمليات لا في ذاكرة واحدة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Cron</code> من <code>@nestjs/schedule</code> يشتعل على كل نسخة. ثلاث حاويات تصدّر فواتير دار النيل ثلاث مرات. قفل <code>Map</code> داخل العملية لا تراه الحاوية المجاورة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>القفل إيجار تُجدده النسخة التي تعمل، في مخزن مشترك (Postgres أو Redis) تنفّذون عقده <code>LockStore</code>. <code>@OnOneInstance()</code> يشغّل المهمة على نسخة واحدة. <code>@WithoutOverlapping()</code> يمنع تداخل التشغيل التالي إن طالت المهمة. الذاكرة الافتراضية للحزمة لا تكفي لعدة عمليات. من فقد الإيجار يُجهَض عمله بإشارة، ورمز السياج يمنع كتابة متأخرة من مالك قديم.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/locks</code> و <code>LocksModule</code>. المخزن في الذاكرة يستبعد المتداخلين داخل العملية فقط؛ ثلاث عمليات لكل منها ذاكرتها تأخذ القفل جميعًا. الصفحة تطلب <code>LockStore</code> مشتركًا (المثال على Drizzle/Postgres أو TypeORM أو Redis) لأن الحزمة تعرّف العقد لا قاعدة جاهزة لكل تطبيق. <code>@OnOneInstance</code> و <code>@WithoutOverlapping</code> على دوال <code>@Cron</code>. القفل الذي تأخذونه يدويًا يعيد <code>AbortSignal</code> عند ضياع الإيجار و fencing token يزيد مع كل استحواذ. لا تقفلوا طلب <code>GET /projects</code> بهذا؛ ذلك عنق زجاجة لا تكرار مجدول.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">03:00 على ثلاث نسخ
+قفل مشترك في Postgres
+نسخة واحدة تصدّر
+الأخريان تتخطيان
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { OnOneInstance } from &#39;@nestjs/locks&#39;;
+import { Cron } from &#39;@nestjs/schedule&#39;;
+
+@Injectable()
+export class InvoiceExportJob {
+  @Cron(&#39;0 3 * * *&#39;)
+  @OnOneInstance()
+  exportDay() {
+    return this.export.run();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>بلا مخزن مشترك الديكور لا يوحّد الحاويات.</li>
+<li>العمل ما زال يقيّد <code>organizationId</code> داخل التصدير إن كان لكل مكتبة ملف، أو يمر على المنظمات صراحة في مهمة منصة لا عبر ترويسة.</li>
+<li>اسم المفتاح الافتراضي للدالة يجب أن يبقى مستقرًا حتى لا يصبح لكل نسخة مفتاح.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>كل نسخة تستيقظ على <code>@Cron</code>.</li>
+<li>واحدة تحصل على الإيجار في الجدول المشترك وتجدده.</li>
+<li>الباقي يرون القفل مشغولًا ويخرجون.</li>
+<li>إن تجمدت المالكة بعد انتهاء الإيجار، غيرها يأخذه. <code>AbortSignal</code> يوقف المالكة القديمة إن استفاقت.</li>
+<li>كتابة بلا فحص fencing token قد تُكمل تصديرًا قديمًا بعد ما بدأ الجديد. الصفحة تجعل الرمز جزءًا من الثقة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختبار الصفحة يشغّل ثلاث نسخ على قاعدة واحدة ويثبت أن التصدير مرة. أعيدوا الفكرة لرف: عدّاد في قاعدة الاختبار يزيد مرة لا ثلاثًا عند إطلاق الجدولة. مخزن الذاكرة في الاختبار ذي العملية الواحدة لا يثبت هذا. استخدموا Postgres الاختبار أو عقد <code>lockStoreContract</code> الذي تشير إليه الصفحة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتماد على مخزن الذاكرة في الإنتاج متعدد النسخ.</li>
+<li>قفل حول كل طلب قراءة.</li>
+<li>تجاهل <code>AbortSignal</code> ومواصلة الكتابة بعد فقد الإيجار.</li>
+<li>مهمة بلا قيد منظمة فتصدر كل المكتبات في ملف واحد بلا قرار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على <code>@Cron</code> الذي له أثر مرة لكل موعد: تصدير، مطابقة، إعادة محاولات صندوق إن لم يقفلها المرحّل أصلًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بدل قيد فريد على <code>event.id</code>. القفل لا يصلح تكرار حدثين بمعرّفين مختلفين. ولا لعنق طلب المستخدم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المخزن</th>
+<th>ثلاث حاويات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ذاكرة الحزمة</td>
+<td>ثلاث عمليات تصدير</td>
+</tr>
+<tr>
+<td>Postgres / Redis مشترك</td>
+<td>عملية واحدة</td>
+</tr>
+<tr>
+<td>بلا قفل</td>
+<td>ثلاث عمليات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>@Cron</code> على ثلاث نسخ يصدّر ثلاث مرات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المجدول محلي لكل عملية. القفل المشترك يجعل واحدة تكمل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مخزن الذاكرة الافتراضي لا يغيّر إنتاج رف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل حاوية لها ذاكرتها فتأخذ «القفل» كلها. يلزم <code>LockStore</code> في قاعدة أو Redis يراه الجميع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المالكة تجمدت ثم أكملت الكتابة بعد ما أخذت نسخة أخرى الإيجار. ماذا ينقص الكتابة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الالتزام بإشارة الإلغاء ورمز السياج. الصفحة ترفض كتابة مالك خسر الإيجار حتى لا يطمس التصدير الجديد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي ديكور يختار نسخة واحدة؟</li>
+<li>لماذا الذاكرة لا تكفي؟</li>
+<li>ماذا تفعل الإشارة عند فقد الإيجار؟</li>
+<li>أين لا تضعون هذا القفل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@OnOneInstance</code> مع <code>@nestjs/locks</code> يجعل المهمة المجدولة مرة واحدة عندما يكون المخزن مشتركًا بين النسخ. ذاكرة العملية لا تحمي ثلاث حاويات. من يفقد الإيجار يتوقف عن الكتابة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أدوات اليوم التي تشغّل هذا الكود: CLI، والمساحات، وSWC، وREPL. الفصل التالي أدوات العمل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Distributed locks: <a href="https://docs.nestjs.com/reliability/locks">https://docs.nestjs.com/reliability/locks</a></li>
+<li>NestJS — Task scheduling: <a href="https://docs.nestjs.com/application/task-scheduling">https://docs.nestjs.com/application/task-scheduling</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

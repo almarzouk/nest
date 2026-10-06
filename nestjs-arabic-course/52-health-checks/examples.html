@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>مساران بلا حارس. الاستيراد ينتهي بـ <code>.js</code>. الحياة لا ترى Prisma. الجاهزية تجمع القاعدة والكاش.</p>
+<h2>الحياة</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;health&#39;)
+export class LiveController {
+  @Get(&#39;live&#39;)
+  live(): { status: string } {
+    return { status: &#39;ok&#39; };
+  }
+}
+</code></pre>
+<h2>وحدة Terminus</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { TerminusModule } from &#39;@nestjs/terminus&#39;;
+import { HealthController } from &#39;./health.controller.js&#39;;
+import { RedisHealthIndicator } from &#39;./redis.health.js&#39;;
+
+@Module({
+  imports: [
+    TerminusModule.forRoot({ gracefulShutdownTimeoutMs: 1000 }),
+  ],
+  controllers: [HealthController],
+  providers: [RedisHealthIndicator],
+})
+export class HealthModule {}
+</code></pre>
+<p><code>enableShutdownHooks()</code> في <code>main.ts</code> حتى يصير الرد <code>shutting_down</code>.</p>
+<h2>الجاهزية: قاعدة لازمة وكاش متدهور</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import {
+  HealthCheck,
+  HealthCheckService,
+  HealthIndicatorService,
+  PrismaHealthIndicator,
+} from &#39;@nestjs/terminus&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+import type { Redis } from &#39;ioredis&#39;;
+
+@Controller(&#39;health&#39;)
+export class HealthController {
+  constructor(
+    private readonly health: HealthCheckService,
+    private readonly indicators: HealthIndicatorService,
+    private readonly prismaHealth: PrismaHealthIndicator,
+    private readonly prisma: PrismaService,
+    private readonly redis: Redis,
+  ) {}
+
+  @Get(&#39;ready&#39;)
+  @HealthCheck()
+  ready() {
+    return this.health.check([
+      () =&gt; this.prismaHealth.pingCheck(&#39;database&#39;, this.prisma).withTimeout(1000),
+      () =&gt; this.cache(),
+    ]);
+  }
+
+  private async cache() {
+    const indicator = this.indicators.check(&#39;cache&#39;);
+    try {
+      await this.redis.ping();
+      return indicator.up();
+    } catch {
+      return indicator.degraded(&#39;cache unreachable, serving without cache&#39;);
+    }
+  }
+}
+</code></pre>
+<p><code>Redis</code> يُقدَّم كمزود <code>useFactory</code> في وحدة البيانات، لا يُنشأ داخل المتحكم. إن كان الطابور لا يعمل بلا Redis فاستبدل <code>degraded</code> بـ <code>attempt(() =&gt; this.redis.ping())</code> حتى يصبح الفشل <code>down</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li><code>/health/live</code> بلا <code>HealthCheckService</code>.</li>
+<li>مهلة المؤشر أقصر من مهلة المسبار.</li>
+<li>لا <code>AuthGuard</code> ولا كاش Nginx على المسارين.</li>
+<li>TypeORM، إن استُعمل، <code>pingCheck(&#39;database&#39;).withTimeout(1000)</code> وينفّذ <code>SELECT 1</code>.</li>
+<li>لا تبحث عن مؤشر Redis جاهز في الحزمة.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

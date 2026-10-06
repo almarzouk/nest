@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>49 — فهرس GraphQL</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>49 — فهرس GraphQL</h1>
+<p><strong>المستوى:</strong> إنتاج<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new library-graphql</code></p>
+<h2>ماذا تبني</h2>
+<p>كتب ومؤلفون عبر GraphQL بالكود أولًا. قائمة كتب مع المؤلف لا تضرب القاعدة مرة لكل صف بعد إضافة DataLoader.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>العقد هنا شجرة يطلبها العميل. من غير محمّل، الصفحة الهادئة تهدم القاعدة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>Resolver</li>
+<li>عدم وضع الخصم المالي هنا</li>
+<li>DataLoader</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>Federation</li>
+<li>اشتراكات حية إلا كتمديد</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>فهرس الكتب على Prisma، وفصل GraphQL.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/29-graphql/README.html">29-graphql</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الاستعلام يقرأ. التعديل mutation.</li>
+<li>عمق معقول. ارفض شكلًا متداخلًا خطرًا بحد بسيط أو راقب العدد.</li>
+<li>اختبار يثبت عدد استعلامات المؤلف قبل المحمّل وبعده على 5 كتب.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/graphql</code></td>
+<td>200</td>
+<td>استعلام books</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new library-graphql</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ابنِ النوعين Book و Author.</li>
+<li>قس عدد الاستعلامات بسجل بسيط.</li>
+<li>أدخل DataLoader للمؤلف وأعد القياس.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/books/books.resolver.ts
+src/authors/authors.loader.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">@Query(() =&gt; [Book])
+books() {
+  return this.books.findAll();
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>Resolver ينقص المخزون.</li>
+<li>N+1 يبقى بعد أن ظننت أن Prisma يخفيه دائمًا.</li>
+<li>فتح GraphQL من غير حد على الإنتاج لاحقًا.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>استعلام يعيد الكتب والمؤلف.</li>
+<li>عدد ضربات المؤلف لا يساوي عدد الكتب بعد المحمّل.</li>
+<li>REST السابق يمكن أن يبقى لقراءة بسيطة. لا تحذف عقدًا نافعًا بلا سبب.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف حد تعقيد بسيطًا وترفض الاستعلام العميق.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 49» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../48-request-trace/README.html">48. أثر الطلب</a></li>
+<li>التالي: <a href="../50-library-platform/README.html">50. منصة المكتبة للإنتاج</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

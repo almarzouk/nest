@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Reverse Proxy و Nginx</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-reverse-proxy-and-nginx.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Reverse Proxy و Nginx</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع Nginx أمام Node لينهي TLS ويوزع المرور، بينما Nest يستمع على منفذ داخلي بلا شهادات في العملية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تعريض <code>node dist/main.js</code> مباشرة على <code>443</code> يخلط إنهاء الشهادة مع التطبيق ويمنع ضغطًا وتحديد حجم جسم في طبقة مستقرة. الوكيل العكسي يستقبل العميل ويمرر إلى <code>api:3000</code> على شبكة خاصة. Nest يحتاج <code>trust proxy</code> حتى يرى أن الاتصال كان HTTPS.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nginx يستمع على <code>443</code>، يتحقق من الشهادة، ويمرر إلى العملية مع ترويسات <code>Host</code> و <code>X-Forwarded-For</code> و <code>X-Forwarded-Proto</code>. التطبيق على <code>3000</code> غير منشور للإنترنت إن كانت الشبكة تمنع ذلك. حد حجم الجسم <code>client_max_body_size</code> يوافق حد الرفع في Nest. الصحة على مسار يتحدث إلى التطبيق أو إلى الوكيل حسب ما يفحصه المنسّق.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-nginx">server {
+  listen 443 ssl;
+  server_name shop.example;
+
+  client_max_body_size 10m;
+
+  location / {
+    proxy_pass http://api:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+</code></pre>
+<p><code>api</code> اسم الحاوية على شبكة Docker. على جهاز واحد <code>http://127.0.0.1:3000</code>.</p>
+<p>في Nest مع Express:</p>
+<pre><code class="language-ts">app.getHttpAdapter().getInstance().set(&#39;trust proxy&#39;, 1);
+</code></pre>
+<p>قفزة واحدة لأن Nginx واحد. بعدها <code>req.ip</code> و <code>secure</code> للكوكي يقرآن البروتوكول الأصلي.</p>
+<p>لا تنهِ TLS في Node و Nginx معًا بلا سبب. شهادة في مكان واحد.</p>
+<p><code>gzip</code> هنا أو في التطبيق كما في درس الضغط، لا الاثنين.</p>
+<p>WebSocket يحتاج ترويسات <code>Upgrade</code> و <code>Connection</code> إن فتحت بوابة. REST وحده يكتفي بالمقطع أعلاه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل --TLS--&gt; Nginx:443 --HTTP داخلي--&gt; Nest:3000
+X-Forwarded-Proto: https
+trust proxy = 1
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الملف أعلاه مع <code>listen</code> للتطبيق على <code>0.0.0.0:3000</code> داخل الشبكة. الجدار يمنع <code>3000</code> من الخارج. افتح <code>https://shop.example</code> فقط.</p>
+<h2>شرح المثال</h2>
+<p><code>proxy_pass</code> يختار العملية. إن شغّلت عدة نسخ فاسم يشير إلى موازن أو إلى <code>upstream</code> فيه أكثر من عنوان. الصحة تسحب النسخة المريضة من <code>upstream</code>. ذلك يلتقي مع فصل الصحة. هنا العقد أن Nginx لا يرسل إلى منفذ مغلق بصمت بلا سجل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العميل يتم TLS مع Nginx.</li>
+<li>Nginx يفتح اتصالًا داخليًا إلى Node.</li>
+<li>الترويسات تخبر التطبيق بالأصل.</li>
+<li><code>trust proxy</code> يجعل Express يحسب العنوان والبروتوكول.</li>
+<li>الاستجابة ترجع عبر الوكيل وقد تُضغط هناك.</li>
+<li>إعادة تحميل إعداد Nginx لا تعيد تشغيل Node إن لم تغيّر الصورة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>رفع ملف حتى 10 ميغابايت: <code>client_max_body_size 10m</code> و حد Multer أو ما تستعمله في Nest عند نفس السقف. اختلاف الحد يعطي <code>413</code> من الوكيل قبل أن يرى التطبيق الطلب، أو العكس فيُرهق Node. مسار <code>/health</code> يمكن أن يمر عبر نفس <code>location</code> أو <code>location /health</code> بلا كاش حتى لا يخزن الوكيل <code>200</code> قديمًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نشر <code>3000</code> على الإنترنت مع الوكيل.</li>
+<li><code>trust proxy</code> بقيمة مفتوحة.</li>
+<li>نسيان <code>X-Forwarded-Proto</code> فالكوكي <code>secure</code> لا تُضبط.</li>
+<li>حد جسم مختلف بين الطبقتين.</li>
+<li>شهادة منتهية على الوكيل والتطبيق سليم فيُظن أن Nest تعطّل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يأتي مرور المتصفح من الإنترنت إلى عملية Node.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>اتصال خدمة بشبكة خاصة بلا TLS عام، مثل TCP داخلي بين خدمتين. لا تضع Nginx في كل مسار رسالة بلا حاجة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>تنهي TLS</th>
+<th>تشغّل Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Nginx</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>Node</td>
+<td>لا في هذا التصميم</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>موازن المنصة</td>
+<td>غالبًا نعم</td>
+<td>يمرر إلى النسخ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>إلى أين يشير <code>proxy_pass</code> في المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إلى <code>http://api:3000</code>، أي عملية Nest على الشبكة الداخلية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>trust proxy</code> يساوي 1 مع هذا الملف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن وكيلًا واحدًا هو Nginx يضيف الترويسة. الثقة بقفزة واحدة تمنع تزوير العميل للعنوان.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا كاش الوكيل على <code>/health</code> يضلل المنسّق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن استجابة <code>200</code> القديمة تُعاد بعد أن أصبحت النسخة غير جاهزة. مسار الصحة يمر بلا كاش.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من ينهي TLS في هذا التصميم؟</li>
+<li>أي ترويسة تنقل البروتوكول الأصلي؟</li>
+<li>ماذا توحّد مع حد الرفع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Nginx يستقبل الإنترنت ويمرر إلى Nest على منفذ داخلي مع ترويسات مُمررة و <code>trust proxy</code> بعدد قفزات واحد. لا تعرض منفذ Node، ولا تخزّن الصحة، ووحّد حد حجم الجسم.</p>
+<h2>ماذا بعد؟</h2>
+<p>نموذج العملية: حلقة أحداث واحدة ومتى تشغّل نسخة ثانية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — FAQ حول الوكيل والثقة: <a href="https://docs.nestjs.com/faq/http-adapter">https://docs.nestjs.com/faq/http-adapter</a></li>
+<li>Nginx — proxy_pass: <a href="https://nginx.org/en/docs/http/ngx_http_proxy_module.html">https://nginx.org/en/docs/http/ngx_http_proxy_module.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

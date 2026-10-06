@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Docker و Tests</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="14-docker-and-tests.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Docker و Tests</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل رف في حاوية مع Postgres و Redis، وإثبات اختبارين: قائمة فارغة 200، ومنظمة لا تقرأ مشروع الأخرى. ESM يستخدم Vitest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الاختبار الوحيد <code>should be defined</code> على الخدمة. أو صورة Docker تشغّل <code>nest start</code> وتبني داخل الإنتاج. أو Jest على مشروع <code>&quot;type&quot;: &quot;module&quot;</code> فيفشل الاستيراد. أو الاختبار يتصل بقاعدة التطوير المشتركة فيمسح مكتبات حقيقية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Dockerfile</code> متعدد المراحل: بناء ثم <code>node dist/main.js</code>. Compose يرفع Postgres و Redis و API. الصحة <code>ready</code> تنتظر القاعدة. الاختبارات على قاعدة اختبار. مشروع Nest 12 الافتراضي ESM مع Vitest؛ CommonJS هو الذي يبقى على Jest. لا مستودع يُنشأ في مجلد الدورة؛ المقتطف يُنسخ عندما تبنون رف عندكم.</p>
+<h2>التعريف التقني</h2>
+<p>اختبار وحدة لـ <code>PlanPolicy</code> و <code>projects.create</code> بمنفذ مزدوج إن شئتم. اختبار تطبيق واحد على الأقل بـ <code>supertest</code> أو عميل HTTP: سجّلوا مستخدمين، منظمتين، مشروعًا في الأولى، واطلبوه بترويسة الثانية فتوقعوا 404، واطلبوا قائمة الثانية فتوقعوا 200 و <code>data: []</code>. لا تختبروا Stripe الحي؛ ازرعوا <code>trial</code>. Vitest يشغّل ملفات <code>*.spec.ts</code>. لا تضعوا <code>STRIPE_SECRET_KEY</code> الحقيقي في Compose العام.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">compose: postgres + redis + api
+اختبار: org A ترى مشروعها
+        org B قائمة فارغة 200 و 404 على معرّف A
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-dockerfile">FROM node:22 AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:22
+WORKDIR /app
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/package*.json ./
+RUN npm ci --omit=dev
+CMD [&quot;node&quot;, &quot;dist/main.js&quot;]
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>مرحلة التشغيل بلا سلسلة البناء الكاملة إن اكتفيتم بـ <code>dist</code>. إن احتاج Prisma المحرك، انسخوا المخطط وولّدوا العميل في مرحلة مناسبة حتى لا تفشل الإقلاع.</li>
+<li><code>node:22</code> يوافق خط Nest 12 (22.12 أو أحدث على هذا الخط).</li>
+<li>الأمر <code>node</code> لا <code>nest start</code> حتى لا يعيد البناء في الإنتاج.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Compose يشغّل Postgres ثم API بعد الجاهزية.</li>
+<li>الترحيل أمر منفصل لا يُخفى داخل طلب القارئ: <code>prisma migrate deploy</code> في مهمة إطلاق.</li>
+<li><code>GET /health/ready</code> ينجح عندما تقبل القاعدة الاتصال.</li>
+<li>اختبار العزل يزرع صفين منظمة.</li>
+<li>الفشل يعني <code>where</code> ناقصًا لا «المختبِر».</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { describe, expect, it } from &#39;vitest&#39;;
+
+describe(&#39;project isolation&#39;, () =&gt; {
+  it(&#39;hides other organizations&#39;, async () =&gt; {
+    const created = await asOrg(&#39;org_a&#39;).post(&#39;/projects&#39;).send({ title: &#39;موسم&#39; });
+    expect(created.status).toBe(201);
+    const list = await asOrg(&#39;org_b&#39;).get(&#39;/projects&#39;);
+    expect(list.status).toBe(200);
+    expect(list.body.data).toEqual([]);
+    const foreign = await asOrg(&#39;org_b&#39;).get(`/projects/${created.body.id}`);
+    expect(foreign.status).toBe(404);
+  });
+});
+</code></pre>
+<p><code>asOrg</code> يضع الإثبات و <code>X-Tenant-Id</code>. هذا اختبار تطبيق لا وحدة منعزلة. جهّزوا <code>app</code> كما في توثيق اختبار Nest.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>Jest على ESM افتراضي بلا إعداد، بينما Vitest هو الافتراضي.</li>
+<li>اختبار يتوقع 404 للقائمة الفارغة.</li>
+<li>Compose يشغّل نجاح Stripe وهمي يكتب <code>active</code>.</li>
+<li>صورة واحدة فيها أسرار إنتاج.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كآخر شريحة عندما تعمل المسارات محليًا. العزل أول اختبار تطبيق لا آخره.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تنتظروا Docker لتجريب <code>PlanPolicy</code>. الوحدة أسرع. ولا تضيفوا عنقود Kubernetes في هذا الفصل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الفحص</th>
+<th>الأداة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>سياسة الخطة</td>
+<td>وحدة Vitest</td>
+</tr>
+<tr>
+<td>عزل المنظمات</td>
+<td>تطبيق على قاعدة اختبار</td>
+</tr>
+<tr>
+<td>إقلاع حقيقي</td>
+<td>Compose وصحة ready</td>
+</tr>
+<tr>
+<td>ESM</td>
+<td>Vitest لا Jest</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تتوقع قائمة منظمة بلا مشاريع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>200 و <code>data: []</code> لا 404.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>CMD</code> هو <code>node dist/main.js</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن البناء تم في المرحلة الأولى. <code>nest start</code> يعيد البناء ويحتاج سلسلة التطوير.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اكتبوا حالة اختبار ثالثة تمنع success من تفعيل الخطة.</p>
+<details>
+<summary>الحل</summary>
+
+<p>ازرعوا <code>trial</code>، استدعوا مسار success، توقعوا بقاء <code>trial</code> أو <code>incomplete</code> وأن النشر ما زال مسموحًا بسبب التجربة لا لأن المسار كتب <code>active</code>. لا اتصال بـ Stripe.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مشغّل مع ESM؟</li>
+<li>ماذا يثبت اختبار المنظمتين؟</li>
+<li>ماذا لا يُكتب في success داخل الاختبار؟</li>
+<li>أين يُشغَّل الترحيل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحاوية تشغّل <code>dist</code> بجانب Postgres و Redis. Vitest يثبت أن القائمة الفارغة 200 وأن منظمة لا تقرأ مشروع الأخرى. صفحة النجاح لا تُختبر كزر تفعيل.</p>
+<h2>ماذا بعد؟</h2>
+<p>نطاق رف اكتمل على الورق حتى الاختبار. الفصل التالي أنماط الاعتمادية عندما لا تكفي إعادة المحاولة البسيطة: مفاتيح، صندوق صادر كامل، وتدفقات وقوف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+<li>Vitest: <a href="https://vitest.dev/">https://vitest.dev/</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

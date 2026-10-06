@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>خريطة دورة الحياة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-lifecycle-map.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>خريطة دورة الحياة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية المراحل الثلاث لتطبيق Nest من الإقلاع حتى خروج العملية، ومعرفة أي خطاف يقع في أي مرحلة قبل كتابة أي اتصال أو تنظيف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وضع <code>$connect</code> داخل <code>constructor</code>، أو إغلاق القاعدة بعد أن أُغلقت المقابس، أو انتظار إشارة إيقاف لن تصل أصلًا. الخريطة تمنع هذه الأخطاء لأنها تُظهر أن الإقلاع والتشغيل والإيقاف ثلاث مراحل، وأن خطافات الإيقاف لا تُستدعى وحدها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nest يدير عمر التطبيق وعناصره. أنت تسجّل دوالًا على Module أو Provider أو Controller، والإطار يستدعيها في أحداث معروفة. الإقلاع خطافان: <code>onModuleInit</code> ثم <code>onApplicationBootstrap</code>. التشغيل هو الاستماع للاتصالات. الإيقاف ثلاثة خطافات، وبالترتيب: <code>onModuleDestroy</code> ثم <code>beforeApplicationShutdown</code> ثم <code>onApplicationShutdown</code>.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Lifecycle events تقسم العمر إلى initializing و running و terminating. الخطافان الأولان يُستدعيان عند <code>app.init()</code> أو <code>app.listen()</code> أو عند <code>NestFactory.createApplicationContext()</code> الذي يهيّئ التطبيق بنفسه.</p>
+<p>خطافات الإيقاف تُستدعى عند <code>app.close()</code> صراحة، أو عند إشارة نظام مثل <code>SIGTERM</code> بعد <code>enableShutdownHooks()</code>. من غير أحد هذين المسارين تبقى دوال الإيقاف صامتة.</p>
+<p>الواجهات: <code>OnModuleInit</code> و <code>OnApplicationBootstrap</code> و <code>OnModuleDestroy</code> و <code>BeforeApplicationShutdown</code> و <code>OnApplicationShutdown</code>. الواجهة اختيارية بعد الترجمة لأن TypeScript يمحوها، وتبقى مفيدة للأنواع.</p>
+<table>
+<thead>
+<tr>
+<th>الخطاف</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>onModuleInit()</code></td>
+<td>بعد حل اعتماديات الوحدة المضيفة</td>
+</tr>
+<tr>
+<td><code>onApplicationBootstrap()</code></td>
+<td>بعد تهيئة كل الوحدات، وقبل الاستماع</td>
+</tr>
+<tr>
+<td><code>onModuleDestroy()</code></td>
+<td>بعد إشارة الإنهاء</td>
+</tr>
+<tr>
+<td><code>beforeApplicationShutdown(signal)</code></td>
+<td>بعد اكتمال كل <code>onModuleDestroy</code>، ثم تُغلق الاتصالات</td>
+</tr>
+<tr>
+<td><code>onApplicationShutdown(signal)</code></td>
+<td>بعد إغلاق الاتصالات، آخر خطوة في <code>app.close()</code></td>
+</tr>
+</tbody></table>
+<p>Nest يستدعي خطافات الإقلاع من الوحدات الأبعد عن الجذر (والوحدات العامة) نحو <code>AppModule</code>، وينتظر كل وحدة قبل التي تليها. خطافات الإيقاف تعكس هذا الاتجاه: من الجذر نحو الأوراق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">initializing
+  أوراق الرسم -&gt; onModuleInit -&gt; onApplicationBootstrap -&gt; الجذر
+running
+  listen / الاتصالات مفتوحة
+terminating   (app.close أو إشارة بعد enableShutdownHooks)
+  الجذر -&gt; onModuleDestroy -&gt; beforeApplicationShutdown
+  -&gt; إغلاق الاتصالات -&gt; onApplicationShutdown -&gt; الأوراق
+</code></pre>
+<p>أصناف <code>Scope.REQUEST</code> خارج هذه الخريطة. عمرها مربوط بالطلب، وخطافات التطبيق لا تُستدعى عليها.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleInit, OnApplicationBootstrap } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BootLogService implements OnModuleInit, OnApplicationBootstrap {
+  onModuleInit(): void {
+    console.log(&#39;init&#39;);
+  }
+
+  onApplicationBootstrap(): void {
+    console.log(&#39;bootstrap&#39;);
+  }
+}
+</code></pre>
+<p>على تطبيق فيه هذه الخدمة فقط، الترتيب في الطرفية هو <code>init</code> ثم <code>bootstrap</code> ثم فتح المنفذ. لا يظهر سطر إيقاف إلا إذا استدعيت <code>app.close()</code> أو فعّلت مستمعي الإشارات.</p>
+<h2>شرح المثال</h2>
+<p>الصنف Provider عادي. الواجهتان تفرضان اسم الدالة. Nest يكتشف الدالة بالاسم أثناء الإقلاع، فتنفيذ الواجهة يساعدك في المحرر ولا يُشترط كي يعمل الخطاف. <code>console.log</code> هنا أداة قراءة للترتيب، ويُحذف عندما تضع عملًا حقيقيًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تحميل الملفات يلصق metadata.</li>
+<li>الحاوية تبني الرسم وتحل الاعتماديات من الأوراق.</li>
+<li>لكل وحدة، بالبعد عن الجذر: <code>onModuleInit</code> ثم لاحقًا <code>onApplicationBootstrap</code>. الوعد يُنتظر.</li>
+<li><code>listen</code> يبدأ قبول الاتصالات. هذه مرحلة running.</li>
+<li><code>app.close()</code> أو إشارة مفعّلة تبدأ terminating بالترتيب العكسي بين الوحدات، ثم إغلاق السيرفر، ثم <code>onApplicationShutdown</code>.</li>
+<li><code>app.close()</code> نفسه لا يقتل عملية Node إن بقي <code>setInterval</code> أو مهمة خلفية.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>ارسم لمشروع الكتب ثلاث مراحل على ورقة قبل أن تختار ملفًا:</p>
+<pre><code class="language-text">PrismaModule.onModuleInit     -&gt; $connect
+OrdersModule.onApplicationBootstrap -&gt; لا تفتح منفذًا هنا
+إشارة SIGTERM
+PrismaModule.onModuleDestroy  -&gt; $disconnect
+قبل إغلاق HTTP                -&gt; beforeApplicationShutdown
+بعد إغلاق المقابس             -&gt; onApplicationShutdown
+</code></pre>
+<p>إن احتجت المستخدم الحالي فذلك طلب، وخطاف التطبيق ليس مكانه. الدرس التالي يفصل <code>OnModuleInit</code> وحده.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حفظ خريطة Request lifecycle (Middleware و Guard) على أنها خريطة إقلاع العملية.</li>
+<li>افتراض أن <code>SIGTERM</code> يستدعي الإيقاف من غير <code>enableShutdownHooks()</code>.</li>
+<li>وضع عمل طلب داخل خطاف إقلاع.</li>
+<li>توقع خطاف على خدمة <code>Scope.REQUEST</code>.</li>
+<li>الاعتماد على ترتيب البناء بين خدمتين في الوحدة نفسها من غير انتظار صريح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند أي سؤال: أين أفتح عميلًا، وأين أغلقه، وهل الكود يعمل قبل <code>listen</code> أم بعده.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>اترك الخريطة عندما يكون العمل داخل طلب واحد: تحقق، صلاحية، أو قراءة مستخدم. تلك محطات الفصل 08.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المرحلة</th>
+<th>سؤالها</th>
+<th>خطافاتها</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>initializing</td>
+<td>هل الاعتماد جاهز قبل الباب؟</td>
+<td><code>onModuleInit</code> ثم <code>onApplicationBootstrap</code></td>
+</tr>
+<tr>
+<td>running</td>
+<td>هل نقبل عملًا؟</td>
+<td>لا خطاف تطبيق؛ الطلب يمر بمساره</td>
+</tr>
+<tr>
+<td>terminating</td>
+<td>هل نغلق بالترتيب؟</td>
+<td>destroy ثم before ثم shutdown</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الخطافان اللذان يسبقان <code>listen</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>onModuleInit</code> ثم <code>onApplicationBootstrap</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>وحدة <code>DatabaseModule</code> مستوردة من <code>BooksModule</code> المستوردة من الجذر. أي وحدة ترى <code>onModuleInit</code> أولًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأبعد عن الجذر أولًا، فـ <code>DatabaseModule</code> قبل <code>BooksModule</code> قبل الجذر. Nest ينتظر كل وحدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تبقى خدمة الطلب بلا <code>onModuleDestroy</code> رغم أن العملية استلمت <code>SIGTERM</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أصناف <code>Scope.REQUEST</code> غير مربوطة بدورة حياة التطبيق. تُنشأ للطلب وتُجمع بعد الرد. التنظيف الذي يخص العملية يوضع على Singleton.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما المراحل الثلاث؟</li>
+<li>ما شرط استدعاء خطافات الإيقاف عند إشارة النظام؟</li>
+<li>أي اتجاه يسلكه الإيقاف بين الوحدات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الخريطة ثابتة: إقلاع من الأوراق، تشغيل، ثم إيقاف من الجذر إن أُغلق التطبيق أو وصلت إشارة بعد تفعيل المستمعين. الترتيب قرار الإطار.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>OnModuleInit</code>: ماذا تضع فيه بعد حل اعتماديات الوحدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

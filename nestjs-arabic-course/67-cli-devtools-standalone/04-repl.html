@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REPL</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-repl.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>REPL</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فتح حاوية رف في الطرفية واستدعاء مزود singleton، مثل قراءة مشروع، عبر <code>repl()</code> من <code>@nestjs/core</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كتابة مسار HTTP مؤقت لتجربة دالة. أو تشغيل <code>publish</code> من الطرفية على قاعدة الإنتاج لأن التابع ظاهر. أو <code>get()</code> على مزود بنطاق الطلب فيرجع الحاوية شكلًا بلا سياق مستأجر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ملف <code>repl.ts</code> بجانب <code>main.ts</code> يستدعي <code>await repl(AppModule)</code>. التشغيل <code>npm run start -- --entryFile repl</code>. الدوال الأصلية <code>get</code> و <code>methods</code> و <code>debug</code> و <code>resolve</code> و <code>select</code> تعمل في الجلسة. <code>get</code> للمزود العادي. <code>resolve</code> لنطاق عابر أو نطاق طلب، ومعه سياق. REPL أداة تطوير لا مدخل إنتاج.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { repl } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  await repl(AppModule);
+}
+await bootstrap();
+</code></pre>
+<p>الأمر: <code>npm run start -- --entryFile repl</code>. المراقبة: <code>npm run start -- --watch --entryFile repl</code>، والتاريخ يُحفظ بـ <code>replServer.setupHistory(&#39;.nestjs_repl_history&#39;, ...)</code>. <code>get(token)</code> أو <code>$</code> يجلب نسخة مسجّلة ويرمي إن غابت. <code>methods(ProjectsService)</code> يسرد التوابع العامة. <code>debug()</code> يطبع الوحدات. <code>debug(ProjectsModule)</code> يضيّق. <code>select</code> ينتقل في شجرة الوحدات. <code>help()</code> القائمة، و <code>$.help</code> توقيع الدالة. <code>repl()</code> يعيد خادم REPL في Node ويمكن تمرير خياراته وسيطًا ثانيًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">repl(AppModule) → حاوية بلا listen
+get(خدمة singleton) → استدعاء تابع
+resolve + سياق → نطاق الطلب
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>بعد الإقلاع:</p>
+<pre><code class="language-text">get(ProjectsService)
+methods(ProjectsService)
+debug(ProjectsModule)
+</code></pre>
+<p><code>ProjectsService</code> يجب أن يكون قابلًا للاستدعاء في الجلسة (الاستيراد في <code>repl.ts</code> أو مرجع من وحدة محمّلة). النتيجة كائن الخدمة لا JSON مسار.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا منفذ HTTP. الحراس لا يلفّون التابع الذي تستدعونه بأيديكم.</li>
+<li>مرّروا <code>organizationId</code> وسيطًا صريحًا. لا تضعوا معرف مكتبة تجريبي داخل الخدمة من أجل الجلسة.</li>
+<li><code>methods</code> يعرض العام فقط. تابع خاص لن يظهر ولن يُستدعى من الخارج عن قصد.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>repl</code> يبني التطبيق كما <code>NestFactory</code> ويهيئ الوحدات ويطبع <code>REPL initialized</code>.</li>
+<li>الدوال تُحقن في نطاق الجلسة العام.</li>
+<li><code>get</code> يبحث في الوحدات عن الرمز. الوضع غير الصارم يبدأ من الجذر.</li>
+<li>مزود <code>Scope.REQUEST</code> بلا سياق طلب لا يُؤخذ بـ <code>get</code> العادي. <code>resolve(token, contextId)</code> للنطاق العابر أو الطلب.</li>
+<li><code>--watch</code> يعيد بناء الجلسة ويمسح التاريخ ما لم يُضبط <code>setupHistory</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>قراءة مسودة دار النيل من تطوير محلي:</p>
+<pre><code class="language-text">svc = get(ProjectsService)
+await svc.findOne(&#39;org_nile&#39;, &#39;prj_season&#39;)
+</code></pre>
+<p><code>findOne</code> هنا يفترض التوقيع الذي يفرض المنظمة وسيطًا. إن أعادت الدالة صفًا بلا هذا الوسيط فالجلسة تكشف التصميم الضعيف. لا تستدعوا <code>publish</code> ولا <code>Mailer</code> على بيانات حقيقية من REPL جهاز المطوّر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>--entryFile</code> قبل <code>--</code> في أمر npm فلا يصل إلى Nest.</li>
+<li>تجربة خصم Stripe أو نشر لأن التابع نجح في الجلسة.</li>
+<li><code>get</code> على خدمة طلب ثم قراءة <code>tenantId</code> فارغ.</li>
+<li>فتح REPL على <code>DATABASE_URL</code> الإنتاج.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لاستكشاف الرسم البياني وتجربة تابع خالص على قاعدة تطوير.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بدل اختبار Vitest. الجلسة لا تثبت العقد ولا تُشغَّل في CI. ولا بدل <code>createApplicationContext</code> لمهمة مجدولة على الخادم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>من يستدعيها</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>REPL</td>
+<td>مطوّر على الطرفية</td>
+</tr>
+<tr>
+<td>Vitest</td>
+<td>CI وأمر <code>test</code></td>
+</tr>
+<tr>
+<td>مسار HTTP</td>
+<td>العميل والحارس</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ملف وأي أمر يفتحان الجلسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>repl.ts</code> فيه <code>await repl(AppModule)</code>، والأمر <code>npm run start -- --entryFile repl</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين <code>get</code> و <code>resolve</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>get</code> نسخة مسجّلة عادية. <code>resolve</code> لنطاق عابر أو نطاق طلب ويأخذ <code>contextId</code>. مزود المستأجر لكل طلب لا يُجلب بـ <code>get</code> وحده.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا نجاح <code>publish</code> داخل REPL لا يعني أن الحارس سمح به؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الجلسة تستدعي التابع على الكائن مباشرة. الأنابيب والحراس والمرشحات المرتبطة بالمسار لا تعمل. المنظمة يجب أن تأتي وسيطًا منكم، والاختبار هو الذي يثبت المسار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أي حزمة <code>repl</code>؟</li>
+<li>كيف تُحفظ أوامر الجلسة مع <code>--watch</code>؟</li>
+<li>ماذا يطبع <code>debug()</code>؟</li>
+<li>أي قاعدة بيانات تُفتح؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>REPL يحمّل <code>AppModule</code> في الطرفية ويستدعي المزودات بـ <code>get</code> و <code>resolve</code>. هو عدسة تطوير. النشر والفوترة يبقى لهما مسار واختبار لا سطر جلسة.</p>
+<h2>ماذا بعد؟</h2>
+<p>حفظ الملف اليوم يعيد الترجمة. الدرس التالي يفصل إعادة التشغيل عن التحميل الساخن.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — REPL: <a href="https://docs.nestjs.com/recipes/repl">https://docs.nestjs.com/recipes/repl</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

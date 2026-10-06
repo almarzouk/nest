@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — الأداة</h2>
+<p>لكل سؤال أداة: سجل، مقياس، أثر، health.</p>
+<ol>
+<li>هل العملية ترد؟</li>
+<li>أين قضى الطلب وقته داخل Prisma؟</li>
+<li>هل بطؤ النشر مستمر منذ أمس؟</li>
+<li>ما <code>bookId</code> في الطلب الذي فشل؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 health. 2 أثر. 3 مقياس. 4 سجل مرتبط بـ <code>requestId</code>.</p>
+</details>
+
+<h2>تمرين متوسط — علم الإنشاء</h2>
+<p>تريدون مستودع تمرين بلا إرسال إلى Observe، ولاحقًا تجربة اللوحة على فرع. أي علم لكل مرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>--no-observe</code> على <code>nest new</code> للتمرين. فرع التجربة <code>--observe</code> أو إضافة <code>createObserveModule</code> و <code>instrument</code> يدويًا. لا تحذفوا health في أي الفرعين.</p>
+</details>
+
+<h2>تمرين متقدم — تسريب سياق</h2>
+<p>الخدمة تحفظ <code>this.requestId = ...</code> في interceptor. ماذا يحدث لطلبين متزامنين، وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الطلب الثاني يطمس حقل singleton فيقرأ الأول معرّف الثاني. البديل <code>AsyncLocalStorage.run</code> حول بقية السلسلة، مع ترويسة رد لكل طلب.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

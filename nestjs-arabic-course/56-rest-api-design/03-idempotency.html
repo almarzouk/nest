@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Idempotency</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-idempotency.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Idempotency</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تصميم <code>POST /books</code> في رف بحيث إعادة نفس الطلب من العميل لا تنشئ كتابين، باستخدام مفتاح يرسله العميل ويخزّن الخادم نتيجته.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الجوال أرسل إنشاء كتاب وانقطع الرد. أعاد الإرسال. القاعدة فيها صفان بنفس العنوان. الرمز 201 في المرتين صحيح شكليًا وخاطئ تجاريًا. التحقق من «عنوان مكرر» لا يكفي لأن العنوان نفسه قد يكون مقصودًا لكتابين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>العميل يولّد مفتاحًا لكل محاولة إنشاء ويضعه في <code>Idempotency-Key</code>. الخادم ينفذ مرة واحدة لكل مفتاح ضمن نطاق المستخدم، ويحفظ الوضع والجسم. الإعادة ترى نفس النتيجة. هذا عقد تصميم. الحزمة <code>@nestjs/idempotency</code> في فصل الاعتمادية تنفذه لاحقًا بـ <code>@Idempotent()</code>؛ هنا نثبت معنى المفتاح.</p>
+<h2>التعريف التقني</h2>
+<p>المفتاح خاص بعملية واحدة لا بكل المستخدم إلى الأبد. نفس المفتاح مع جسم مختلف خطأ عقد (409) لا تنفيذ ثانٍ. نفس المفتاح مع نفس المعنى يعيد الرد المخزن، بما فيه 201 الأول، ولا ينشئ صفًا. المفتاح يسافر في الترويسة لا في الجسم حتى تبقى إعادة المحاولة نسخة طبق الأصل. نطاق المفتاح يتضمن هوية العميل حتى لا يعيد مفتاح شخص نتيجة شخص آخر. <code>GET</code> و <code>PUT</code> بمعرّف ثابت و <code>DELETE</code> لمعرّف ثابت تحمل تكرارًا آمنًا من معنى HTTP؛ <code>POST</code> الإنشاء هو الذي يحتاج المفتاح لأنه كل نداء قد يعني فردًا جديدًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المحاولة 1: مفتاح K → إنشاء b1 → خزّن 201
+المحاولة 2: مفتاح K → أعد 201 و b1
+مفتاح K وجسم مختلف → 409
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface StoredReply {
+  status: number;
+  body: unknown;
+}
+
+export class CreateBookLedger {
+  private readonly replies = new Map&lt;string, StoredReply&gt;();
+
+  replay(userId: string, key: string) {
+    return this.replies.get(`${userId}:${key}`);
+  }
+
+  save(userId: string, key: string, reply: StoredReply) {
+    this.replies.set(`${userId}:${key}`, reply);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المفتاح المركب <code>userId + key</code> هو النطاق.</li>
+<li><code>replay</code> يعيد الرد كما حُفظ، لا يعيد تشغيل <code>create</code>.</li>
+<li>الذاكرة هنا للشرح. الإنتاج مخزن يبقى بعد إعادة تشغيل العملية، وإلا ضاع الحماية.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العميل يولّد UUID للمحاولة ويثبته عبر إعادات هذه المحاولة فقط.</li>
+<li>الخادم يبحث عن الرد. إن وجده يكتبه كما هو، مع 201 إن كان الأول إنشاءً.</li>
+<li>إن لم يجده، ينشئ الكتاب ويحفظ الرد ثم يرسله.</li>
+<li>طلبان متزامنان بنفس المفتاح يحتاجان قفلًا أو قيدًا فريدًا على المفتاح حتى لا يمر كلاهما من «غير موجود».</li>
+<li>جسم مختلف لنفس المفتاح يرفض. التنفيذ الثاني بمعنى آخر يكسر وعد الإعادة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Body, Controller, Headers, HttpCode, Post } from &#39;@nestjs/common&#39;;
+import { CreateBookLedger } from &#39;./create-book.ledger.js&#39;;
+
+@Controller(&#39;books&#39;)
+export class BooksCreateController {
+  constructor(private readonly ledger: CreateBookLedger) {}
+
+  @Post()
+  @HttpCode(201)
+  create(
+    @Headers(&#39;idempotency-key&#39;) key: string,
+    @Body() body: { title: string },
+  ) {
+    const userId = &#39;u1&#39;;
+    const prior = this.ledger.replay(userId, key);
+    if (prior) return prior.body;
+    const book = { id: &#39;b1&#39;, title: body.title };
+    this.ledger.save(userId, key, { status: 201, body: book });
+    return book;
+  }
+}
+</code></pre>
+<p>المثال يختصر القفل ومقارنة الجسم. العقد الكامل: بلا ترويسة على هذا المسار → 400 لأن الإعادة غير آمنة، ومفتاح معاد بجسم مختلف → 409. <code>@HttpCode(201)</code> يبقى للنداء الأول؛ الإعادة يجب أن تعيد 201 أيضًا لا 200، لأن العميل يقرأ الرمز. إن صعب إرجاع الرمز المخزن من <code>return</code> فقط، اكتب الوضع صراحة من السجل. صفحة Idempotency keys لاحقًا تفعل ذلك داخل المعترض.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اشتقاق المفتاح من العنوان فقط، فيمتنع كتابان مقصودان بنفس الاسم.</li>
+<li>تخزين المفتاح بلا هوية المستخدم.</li>
+<li>تنفيذ الإنشاء ثم حفظ المفتاح بعد إرسال الرد، فيضيع الحفظ عند الانقطاع وتُنشأ نسخة عند الإعادة.</li>
+<li>اعتبار <code>Idempotency-Key</code> بديلًا عن قيد ISBN. القيد قاعدة كتالوج، والمفتاح قاعدة نقل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على <code>POST</code> الذي ينشئ أثرًا لا يُستنتج من المعرّف في المسار: إنشاء كتاب، إنشاء طلب، خصم رصيد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على <code>GET</code>. وعلى <code>PUT /books/b1</code> عندما الاستبدال الكامل لنفس المعرّف أصلًا يعيد نفس الحالة. ولا كمفتاح تفرضه أنت من عنوان IP.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النداء</th>
+<th>التكرار بلا مفتاح</th>
+<th>مع المفتاح</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET /books</code></td>
+<td>آمن</td>
+<td>غير لازم</td>
+</tr>
+<tr>
+<td><code>PUT /books/b1</code> بنفس الجسم</td>
+<td>يستقر على نفس الفرد</td>
+<td>غالبًا غير لازم</td>
+</tr>
+<tr>
+<td><code>POST /books</code></td>
+<td>كتاب جديد كل مرة</td>
+<td>نفس الكتاب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>الجوال أعاد <code>POST /books</code> بنفس <code>Idempotency-Key</code> بعد 201. كم صفًا جديدًا يُسمح به؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صفر. الرد الثاني هو الرد المخزن للأول، بما فيه <code>id</code> الأصلي.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>نفس المفتاح وصل مع <code>title</code> مختلف. ما الرمز، ولماذا لا ننفذ العنوان الجديد؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol start="409">
+<li>المفتاح يعد بنتيجة واحدة. تنفيذ الجسم الثاني يعني أن إحدى الإعادات كانت ستنجح بمعنى غير الذي خزنه العميل.</li>
+</ol>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلبان بنفس المفتاح وصلا معًا قبل أي حفظ. ماذا يمنع كتابين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قيد فريد على <code>(userId, key)</code> أو قفل حول «اقرأ ثم أنشئ». الفحص في الذاكرة بلا ذرية يمر من الفرعين معًا. الخاسر يرى الصف الفائز ويعيد نفس الرد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يولّد المفتاح: العميل أم الخادم؟</li>
+<li>لماذا لا يكفي تشابه العنوان؟</li>
+<li>ماذا يُعاد في الإعادة الناجحة: تنفيذ جديد أم الرد المخزن؟</li>
+<li>أي طلبات HTTP لا تحتاج المفتاح عادة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>Idempotency-Key</code> يربط محاولات إنشاء واحدة بنتيجة واحدة داخل نطاق المستخدم. الإعادة تعيد نفس 201 ونفس <code>id</code>. جسم مختلف لنفس المفتاح تعارض.</p>
+<h2>ماذا بعد؟</h2>
+<p>القائمة التي نجح إنشاؤها تحتاج عقد صفحة: ماذا يعني <code>page</code> وما شكل الفراغ. الدرس التالي pagination كعقد لا كمعامل حر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>IETF — Idempotency-Key draft (المعنى الذي تشير إليه صفحة Nest لاحقًا): <a href="https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/">https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/</a></li>
+<li>NestJS — Idempotency keys: <a href="https://docs.nestjs.com/reliability/idempotency">https://docs.nestjs.com/reliability/idempotency</a></li>
+<li>MDN — 201: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/201">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/201</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

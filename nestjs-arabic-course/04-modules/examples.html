@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة تراكيب للوحدات على متجر كتب صغير. الكود الحديث يفترض مشروع ESM كما يولّده NestJS 12، لذلك الاستيراد ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — ميزة مغلّفة</h2>
+<p><code>BooksModule</code> تملك الخدمة والمتحكم. جدول الأسعار خاص. الخدمة هي الواجهة الوحيدة.</p>
+<pre><code class="language-ts">@Module({
+  controllers: [BooksController],
+  providers: [BooksService, PriceTable],
+  exports: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<p><code>PriceTable</code> تُحقن داخل <code>BooksService</code> لأن الاثنين في الوحدة نفسها. وحدة أخرى لا ترى الجدول.</p>
+<h2>مثال 2 — نواة تعيد التصدير</h2>
+<p>التسجيل والتدقيق يُستهلكان معًا.</p>
+<pre><code class="language-ts">@Module({
+  imports: [LoggerModule, AuditModule],
+  exports: [LoggerModule, AuditModule],
+})
+export class CoreModule {}
+</code></pre>
+<p><code>OrdersModule</code> تستورد <code>CoreModule</code> و <code>BooksModule</code>. تحقن <code>BooksService</code> و <code>AuditService</code> إن كان الثاني في <code>exports</code> الخاصة بـ <code>AuditModule</code>.</p>
+<h2>مثال 3 — إعداد مرة واحدة</h2>
+<p>تحية أو عنوان يمر من الجذر. الميزة لا تعيد <code>forRoot</code>.</p>
+<pre><code class="language-ts">@Module({
+  imports: [
+    GreetingModule.forRoot(&quot;أهلًا&quot;),
+    CoreModule,
+    BooksModule,
+    OrdersModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p><code>NestFactory.create(AppModule)</code> هو سبب وجود هذه الشجرة: الإطار يبدأ من الجذر ويمشي على <code>imports</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>كل Controller مستخدَم مذكور في <code>controllers</code>، لا يكفي وجود الملف.</li>
+<li>كل مزوّد تحقنه وحدة أخرى مذكور في <code>exports</code> ومسجّل مرة واحدة.</li>
+<li><code>@Global()</code> غير مستخدم هنا. الاستيراد ظاهر في الجذر والميزات.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

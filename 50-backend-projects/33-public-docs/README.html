@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>33 — توثيق الكتالوج</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>33 — توثيق الكتالوج</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new public-docs</code></p>
+<h2>ماذا تبني</h2>
+<p>كتالوج المنتجات يخرج له وصف OpenAPI. المسارات والردود والرمز 201 وأمن المفتاح ظاهرة في /docs.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>العقد الذي كتبته في الجداول يجب أن يطابق ما يولّده الإطار.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>SwaggerModule</li>
+<li>زينة العمليات</li>
+<li>bearer أو apiKey</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>بوابة مطورين مدفوعة</li>
+<li>توليد عميل بعدة لغات كمنتج</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الكتالوج ومفاتيح الشركاء إن أردت قفل بعض المسارات.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/24-api-documentation/README.html">24-api-documentation</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>كل مسار ظاهر له ملخص.</li>
+<li>مثال لجسم الإنشاء.</li>
+<li>201 موثّق لا 200 للإنشاء.</li>
+<li>المسار الإداري معلّم بأمن.</li>
+<li>/docs نفسه للقراءة المحلية.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/docs</code></td>
+<td>200</td>
+<td>واجهة Swagger</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/products</code></td>
+<td>200</td>
+<td>موثّق</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/products</code></td>
+<td>201</td>
+<td>موثّق مع مثال</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new public-docs</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ركّب @nestjs/swagger وأنشئ الوثيقة في bootstrap.</li>
+<li>أضف @ApiTags و @ApiCreatedResponse.</li>
+<li>قارن الجدول في هذا الملف بما يظهر في /docs وأصلح الفرق.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/main.ts
+src/products/products.controller.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">const config = new DocumentBuilder().setTitle(&quot;Catalog&quot;).addApiKey({ type: &quot;apiKey&quot;, name: &quot;x-api-key&quot;, in: &quot;header&quot; }, &quot;apiKey&quot;).build();
+SwaggerModule.setup(&quot;docs&quot;, app, SwaggerModule.createDocument(app, config));
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>توثيق 200 لمسار يرجع 201.</li>
+<li>ترك DTO بلا وصف ثم الاعتذار أن التوثيق ناقص.</li>
+<li>نشر /docs من غير قرار في الإنتاج. هنا للتعلم محليًا.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>المسارات ظاهرة.</li>
+<li>الإنشاء موضح كمثال.</li>
+<li>فرق بين المسار المفتوح والمسار ذي المفتاح واضح في الوثيقة.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أخفِ مسارًا داخليًا بـ @ApiExcludeEndpoint.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 33» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../32-notes-versioning/README.html">32. إصداران للملاحظات</a></li>
+<li>التالي: <a href="../34-tested-tasks/README.html">34. مهام مُختبرة</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

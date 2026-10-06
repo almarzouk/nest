@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SWC</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-swc.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>SWC</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسريع حلقة تطوير رف بباني <code>swc</code> عبر <code>npm run start -- -b swc</code>، مع إبقاء فحص الأنواع على <code>tsc</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>tsc</code> على كل حفظ يبطئ التجربة. إغلاق فحص الأنواع كليًا يمرر <code>organizationId</code> خاطئًا إلى الإنتاج. أو إعداد webpack قديم لمساحة تستخدم Rspack أصلًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>SWC مترجم Rust. الوثائق تقدّر أنه أسرع بنحو عشرين مرة من <code>tsc</code> في الترجمة، ونظرة CLI تقول حوالي عشر مرات في بناء التطوير. هو لا يفحص الأنواع. <code>--type-check</code> يشغّل <code>tsc --noEmit</code> بجانب SWC. في مساحة Nest 12 المُجمّع الافتراضي Rspack ويترجم عبر <code>swc-loader</code> داخله؛ قسم webpack في صفحة SWC يخص الباني المهمل فقط. سكربت npm يحتاج <code>--</code> حتى تصل الأعلام إلى <code>nest start</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i --save-dev @swc/cli @swc/core</code>. التشغيل:</p>
+<pre><code class="language-bash">npm run start -- -b swc
+</code></pre>
+<p>لأن سكربت <code>start</code> هو <code>nest start</code>، و <code>--</code> يمرر <code>-b</code> إلى CLI. الشكل المباشر في الوثائق: <code>nest start -b swc</code> أو <code>nest start --builder swc</code>. المراقبة: <code>nest start -b swc -w</code>. في <code>nest-cli.json</code>: <code>&quot;compilerOptions&quot;: { &quot;builder&quot;: &quot;swc&quot;, &quot;typeCheck&quot;: true }</code>. SWC يخرج صيغة الوحدات التي يخرجها <code>tsc</code>: ESM حين <code>&quot;type&quot;: &quot;module&quot;</code>، وإلا CommonJS. ملف <code>.swcrc</code> يقدر أن يغيّر ذلك؛ اتركوا الافتراضي لرف. إضافات CLI مثل Swagger تُنفَّذ مع <code>--type-check</code> وتكتب ملف بيانات وصفية. الاستيراد الدائري مع TypeORM يُكسر بنوع <code>Relation&lt;T&gt;</code> حتى لا يُحفظ النوع في بيانات الانعكاس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حفظ الملف → SWC يترجم
+typeCheck → tsc --noEmit بجانب الترجمة
+monorepo → Rspack (swc-loader) لا -b swc فوق webpack
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-json">{
+  &quot;compilerOptions&quot;: {
+    &quot;builder&quot;: &quot;swc&quot;,
+    &quot;typeCheck&quot;: true
+  }
+}
+</code></pre>
+<pre><code class="language-bash">npm run start -- -b swc --watch
+</code></pre>
+<p>العلم على سطر الأمر يغطي ما في الملف لتلك العملية. <code>typeCheck</code> يبقى من الملف إن لم تمرروا <code>--type-check</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>-b</code> اختصار <code>--builder</code>.</li>
+<li>بلا <code>typeCheck</code> قد يُشغَّل كود فيه خطأ نوع حتى يفشل وقت التشغيل.</li>
+<li>Vite/Vitest في مشروع ESM يستطيع أن يبني الاختبارات بـ <code>unplugin-swc</code> كما في قسم Vitest من الصفحة. ذلك إعداد اختبار لا بديل عن باني التطبيق.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>CLI يستدعي SWC على ملفات <code>src</code> ويكتب <code>dist</code> بنفس شكل الوحدات.</li>
+<li>مع <code>typeCheck</code> تنطلق عملية <code>tsc</code> بلا إصدار ملفات، والأخطاء تظهر في الطرفية بينما الخادم يعمل على ناتج SWC.</li>
+<li>الإضافات تولّد <code>metadata.ts</code> عند فحص الأنواع حتى تعمل الزخارف التي تقرأ تعليقات التصميم.</li>
+<li>في monorepo، Rspack يحمّل <code>swc-loader</code> مسبقًا. لا تثبّتوا <code>swc-loader</code> مع <code>webpack.config.js</code> إلا إن بقيتم على الباني المهمل عن قصد.</li>
+<li>استيراد دائري يحفظ نوع الخاصية في <code>design:type</code> فيفشل SWC. <code>Relation</code> أو <code>WrapperType</code> المحلي يقطع تلك الدورة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>رف ESM. غلاف المشروع يُنشأ في مهمة. إن ظهرت دورة بين <code>ProjectsService</code> و <code>CoversService</code> فالنوع على الخاصية المحقونة:</p>
+<pre><code class="language-ts">import { Inject, Injectable, forwardRef } from &#39;@nestjs/common&#39;;
+import type { CoversService } from &#39;./covers.service.js&#39;;
+
+type WrapperType&lt;T&gt; = T;
+
+@Injectable()
+export class ProjectsService {
+  constructor(
+    @Inject(forwardRef(() =&gt; CoversService))
+    private readonly covers: WrapperType&lt;CoversService&gt;,
+  ) {}
+}
+</code></pre>
+<p>هذا نمط الصفحة للدورات. الأفضل تفكيك الدورة بواجهة أصغر حين يسمح التصميم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>npm run start -b swc</code> بلا <code>--</code> فيبتلع npm العلم.</li>
+<li>اعتبار SWC بديلًا لـ <code>tsc</code> في CI بلا <code>typeCheck</code> أو خطوة <code>tsc --noEmit</code>.</li>
+<li>نسخ إعداد webpack من صفحة SWC إلى مساحة Rspack.</li>
+<li><code>&quot;module&quot;</code> داخل <code>.swcrc</code> يخالف <code>&quot;type&quot;: &quot;module&quot;</code> فيُكسر الاستيراد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على الوضع القياسي حين تصبح إعادة <code>tsc</code> هي انتظاركم اليومي، مع فحص أنواع مفعّل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا به Rspack في monorepo إلا بقرار <code>builder</code> صريح تريدون معه ملفاتًا منفصلة (<code>tsc</code> أو <code>swc</code>). ولا تلغوا فحص الأنواع قبل الدمج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>الترجمة</th>
+<th>فحص الأنواع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قياسي <code>tsc</code></td>
+<td>أبطأ</td>
+<td>داخل المترجم</td>
+</tr>
+<tr>
+<td><code>-b swc</code></td>
+<td>أسرع</td>
+<td>مع <code>--type-check</code> فقط</td>
+</tr>
+<tr>
+<td>monorepo Rspack</td>
+<td>SWC عبر المُجمّع</td>
+<td>ما زلتم تحتاجون <code>tsc</code> في CI</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اكتبوا الأمر الذي يمرر الباني عبر سكربت <code>npm run start</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>npm run start -- -b swc</code></p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يمر بناء SWC ثم يفشل Prisma أو نوع المعرّف لاحقًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>SWC لا يفحص الأنواع. فعّلوا <code>typeCheck</code> أو شغلوا <code>tsc --noEmit</code> في CI.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المساحة على Rspack. هل تثبّتون <code>swc-loader</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا لهذا المسار. الصفحة تقول إن monorepo منذ الإصدار 12 يترجم بـ SWC داخل Rspack. <code>swc-loader</code> مع webpack يخص الباني المهمل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما حزم التطوير اللازمة؟</li>
+<li>أين يُكتب <code>builder</code>؟</li>
+<li>ماذا يخرج SWC لمشروع <code>&quot;type&quot;: &quot;module&quot;</code>؟</li>
+<li>متى يُستخدم <code>Relation</code> أو <code>WrapperType</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>npm run start -- -b swc</code> يترجم رف بسرعة. الأنواع تُفحص بأمر مستقل. مساحة العمل تبقى على Rspack ما لم تختاروا <code>builder</code> آخر.</p>
+<h2>ماذا بعد؟</h2>
+<p>لاستدعاء <code>ProjectsService</code> من الطرفية بلا طلب HTTP، الدرس التالي REPL.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — SWC: <a href="https://docs.nestjs.com/recipes/swc">https://docs.nestjs.com/recipes/swc</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

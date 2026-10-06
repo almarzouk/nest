@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>أي حقل يبني صنفًا، وأي حقل يخزن مرجعًا جاهزًا، وأي حقل يشير إلى رمز موجود؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>useClass</code> يبني، <code>useValue</code> يخزن المرجع، <code>useExisting</code> يشير إلى رمز مسجّل أصلًا.</p>
+</details>
+
+<h2>متوسط</h2>
+<p><code>PaymentGateway</code> مجرد و <code>StripeGateway</code> تنفيذ، ومسار قديم يحقن <code>&#39;PAYMENTS&#39;</code>. كيف تبقى نسخة Stripe واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>سجّل <code>StripeGateway</code>، ثم <code>{ provide: PaymentGateway, useExisting: StripeGateway }</code> و <code>{ provide: &#39;PAYMENTS&#39;, useExisting: StripeGateway }</code>. لا تكرر <code>useClass</code> تحت كل رمز.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>عميل بحث يُفتح بـ <code>await</code> ويُغلق عند <code>SIGTERM</code>. صمّم الرمز والمصنع والإغلاق، وكيف يتخطى الاختبار الشبكة.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Symbol</code> مثل <code>SEARCH</code>. <code>useFactory</code> غير متزامن يعمل <code>ping</code> أو <code>open</code> ويرجع صنف <code>SearchClient</code> يطبّق <code>OnModuleDestroy</code>. التفعيل <code>enableShutdownHooks</code>. الاختبار <code>{ provide: SEARCH, useValue: fake }</code> فلا يُستدعى المصنع.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

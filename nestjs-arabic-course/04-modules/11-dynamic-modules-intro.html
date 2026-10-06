@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مقدمة Dynamic Modules</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-dynamic-modules-intro.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مقدمة Dynamic Modules</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تميّز الوحدة الساكنة عن الوحدة التي تُبنى بياناتها وقت الإقلاع عبر <code>forRoot</code> أو <code>register</code>، من غير بناء مكتبة بعد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Module({ imports, providers })</code> ثابت في الكود. وحدة قاعدة البيانات تحتاج عنوان الاتصال من الخارج. إن كتبت العنوان داخل الملف صارت الوحدة غير قابلة لإعادة الاستخدام. الوحدة الديناميكية دالة تُرجع <code>@Module</code> بعد أن تستلم الخيارات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الصنف ما زال وحدة. الدالة <code>forRoot</code> تُرجع كائنًا يصف الوحدة ومعها المزوّدات التي صُنعت من الخيارات. من يستورد يستدعي الدالة مرة في مكان التكوين.</p>
+<h2>التعريف التقني</h2>
+<p>Dynamic Module كائن له شكل بيانات <code>@Module</code> زائد المفتاح <code>module</code> الذي يشير إلى الصنف. التوثيق يعرّف دوالًا معتادة: <code>forRoot</code> و <code>forRootAsync</code> لإعداد مرة على مستوى التطبيق، و <code>register</code> و <code>registerAsync</code> لإعداد قد يختلف عند كل استيراد.</p>
+<p><code>forRootAsync</code> تنتظر مصنعًا أو حقنًا قبل بناء الخيارات، مثل قراءة <code>ConfigService</code>. الخصائص الثابتة على <code>@Module</code> تُدمَج مع ما ترجعه الدالة.</p>
+<p>من يعيد تصدير الوحدة بعد التكوين يصدّر الصنف ولا يستدعي <code>forRoot</code> من جديد.</p>
+<p>هذا الدرس مدخل. <code>ConfigurableModuleBuilder</code> و <code>ModuleRef</code> والتحميل الكسول في فصل Dynamic Modules المتقدم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+  imports: [DataModule.forRoot({ url })]
+       |
+       دالة تُرجع { module: DataModule, providers, exports }
+ميزات أخرى
+  imports: [DataModule]   // الصنف فقط، بعد أن كُوّنت مرة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { DynamicModule, Module } from &quot;@nestjs/common&quot;;
+
+@Module({})
+export class GreetingModule {
+  static forRoot(message: string): DynamicModule {
+    return {
+      module: GreetingModule,
+      providers: [
+        {
+          provide: &quot;GREETING&quot;,
+          useValue: message,
+        },
+      ],
+      exports: [&quot;GREETING&quot;],
+    };
+  }
+}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [GreetingModule.forRoot(&quot;مرحبًا&quot;)],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>GreetingModule</code> صنف فارغ تقريبًا على <code>@Module({})</code>. التكوين الحقيقي يرجع من <code>forRoot</code>. المفتاح <code>module</code> يخبر Nest أي صنف يمثّل هذا الوصف.</p>
+<p><code>&quot;GREETING&quot;</code> رمز حقن. القيمة النص تمر من مستدعي <code>forRoot</code> إلى من يحقن الرمز. التصدير يجعل الرمز مرئيًا خارج الوحدة إن لزم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest يستدعي الدالة أثناء قراءة <code>imports</code>. الناتج Dynamic Module يُعامل كبيانات وحدة: مزوّداته تُسجَّل وتصديراته تُحترم كأي <code>@Module</code> ساكن. لا يوجد نوع ثانٍ من الحاوية.</p>
+<p><code>useValue</code> هنا يضع النص كما هو. لاحقًا سترى <code>useClass</code> و <code>useFactory</code> عندما يصير الخيار كائن اتصال لا نصًا.</p>
+<p>إن استوردت <code>GreetingModule</code> من غير <code>forRoot</code> فلن يُسجَّل <code>&quot;GREETING&quot;</code> لأن بيانات الزينة الساكنة فارغة. هذا فرق عملي عن الوحدة التي تكتب مزوّداتها مباشرة فوق الصنف.</p>
+<h2>مثال عملي</h2>
+<p><code>TypeOrmModule.forRoot({ url })</code> أو <code>ConfigModule.forRoot()</code> في الجذر يتبعان هذا الشكل: خيار خارجي يصنع مزوّدات. وحدات الميزات تستورد <code>TypeOrmModule.forFeature([...])</code> أو تعيد استخدام ما صُدّر، حسب المكتبة. الفكرة واحدة حتى لو اختلف اسم الدالة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استدعاء <code>forRoot</code> في كل Feature Module فيتكرر التكوين.</li>
+<li>نسيان المفتاح <code>module</code> في الكائن المُرجَع.</li>
+<li>توقع أن خصائص <code>@Module</code> الساكنة تُستبدَل كليًا. التوثيق يقول إنها تُدمَج مع الناتج.</li>
+<li>بناء Dynamic Module الآن لكل ميزة في المتجر. الأكثر وحدة ساكنة حتى تظهر خيارات حقًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تكتب مكتبة أو وحدة داخلية لا تعرف خياراتها إلا عند تركيب التطبيق: عنوان، سر، اسم طابور.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لوحدة كتب عناوينها معروفة داخل التطبيق نفسه. <code>@Module</code> ساكن أوضح. أرجئ <code>forRootAsync</code> حتى درس الإعداد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>وحدة ساكنة</th>
+<th>Dynamic Module</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين البيانات</td>
+<td>فوق الصنف</td>
+<td>كائن تُرجعه دالة</td>
+</tr>
+<tr>
+<td>الخيارات</td>
+<td>ثابتة في الكود</td>
+<td>يمررها المستدعي</td>
+</tr>
+<tr>
+<td>إعادة الاستخدام كحزمة</td>
+<td>أضعف إن كان فيها سر المشروع</td>
+<td>هذا هو سبب النمط</td>
+</tr>
+</tbody></table>
+<p>مقابل إعادة التصدير: إعادة التصدير تمرر وحدة موجودة. الديناميكي يصنع بيانات الوحدة من وسيط.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يمثل المفتاح <code>module</code> داخل الكائن الذي تُرجعه <code>forRoot</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صنف الوحدة الذي يمثّله هذا الوصف، مثل <code>GreetingModule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تستدعي الميزة التي تريد فقط استخدام المزوّد المُعد مسبقًا الصنف المعاد تصديره بدل <code>DataModule.forRoot(options)</code> مرة ثانية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>forRoot</code> مكان التكوين. الاستدعاء الثاني يعيد البناء. بعد التكوين يكفي استيراد الصنف أو إعادة تصديره.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ارسم توقيع <code>forRoot</code> لوحدة <code>CacheModule</code> تأخذ <code>{ ttl: number }</code> وتصدّر رمز <code>&quot;CACHE_TTL&quot;</code>. لا تكتب مصنعًا غير متزامن بعد.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">static forRoot(options: { ttl: number }): DynamicModule {
+  return {
+    module: CacheModule,
+    providers: [{ provide: &quot;CACHE_TTL&quot;, useValue: options.ttl }],
+    exports: [&quot;CACHE_TTL&quot;],
+  };
+}
+</code></pre>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين بيانات <code>@Module</code> الساكنة و Dynamic Module؟</li>
+<li>متى تختار <code>forRoot</code> ومتى يكفي <code>@Module</code> عادي؟</li>
+<li>لماذا لا يُستدعى <code>forRoot</code> عند كل مستورد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الوحدة الديناميكية دالة تُرجع وصف وحدة مبنيًا من خيارات. <code>module</code> يربط الوصف بالصنف. التكوين مرة في الجذر، والميزات تستهلك الناتج. التفصيل الأكبر مؤجَّل حتى تبني وحدات ساكنة بثقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>فصل الوحدات اكتمل بما يكفي لتركيب التطبيق. الفصل التالي هو Controllers: أين يُعلَن مسار HTTP، ولماذا تبقى القاعدة خارج المتحكم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/fundamentals/dynamic-modules">Dynamic modules</a></li>
+<li><a href="https://docs.nestjs.com/modules">Modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

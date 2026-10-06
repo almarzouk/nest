@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما لا يُخزَّن في Cache</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-what-not-to-cache.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما لا يُخزَّن في Cache</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>منع نوعين من القيم: قرار صلاحية لا يحتوي المفتاح على صاحبه، وأي خطأ عابر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مخبأ سريع يغري بوضع نتيجة <code>canReadDraft(bookId, userId)</code> تحت المفتاح <code>draft:42</code> فقط. المستخدم التالي يصيب النسخة ويرى مسودة غيره. وكذلك تخزين <code>502</code> تحت <code>isbn:978</code> يبقي الناشر معطلًا داخل Redis بعد عودته. السرعة هنا تغيّر الصحة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>إن اختلفت القيمة بين مستخدمين، فالمفتاح يتضمن معرف المستخدم أو لا تُخزَّن القيمة. قرار «مسموح / ممنوع» يتغير مع العضوية، فالأسلم حسابه من المصدر في كل طلب حتى يكون لديك سبب قوي ومدة قصيرة جدًا ومفتاح فيه <code>userId</code>. أخطاء الشبكة والاستثناءات لا تُكتب في <code>set</code>.</p>
+<h2>التعريف التقني</h2>
+<p>ممنوع في هذا المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>القيمة</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>canReadDraft</code> تحت <code>bookId</code> فقط</td>
+<td>الإجابة تخص الزوج (مستخدم، كتاب)</td>
+</tr>
+<tr>
+<td>جسم <code>AxiosError</code> أو علم <code>failed</code></td>
+<td>العطل مؤقت ويصبح إصابة دائمة حتى TTL</td>
+</tr>
+<tr>
+<td>جلسة أو رمز JWT</td>
+<td>المخبأ ليس خزنة أسرار، والنسخ تكثر سطح التسريب</td>
+</tr>
+<tr>
+<td>رصيد أو مخزون لحظة الدفع</td>
+<td>المصدر القاعدة، والسباق أغلى من النداء</td>
+</tr>
+</tbody></table>
+<p>مسموح كما سبق: <code>{ title }</code> و <code>null</code> المتعمد لـ ISBN بمفتاح الرقم.</p>
+<p>إن اضطررت لتخزين قرار قراءة ثقيل، المفتاح <code>authz:${userId}:${bookId}</code> والمدة ثوانٍ، والحذف عند تغيير العضوية. غياب <code>userId</code> من المفتاح يلغي هذا الاستثناء. الفصل لا يبني ذلك المخبأ. هو يضع الشرط.</p>
+<p><code>CacheInterceptor</code> على <code>GET /drafts/:id</code> خطير للسبب نفسه: مفتاح المسار بلا مستخدم يشارك الجسم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">المفتاح يصف كل ما يغيّر القيمة
+  bookId وحده لا يكفي للمسودة
+  isbn يكفي لعنوان الناشر العام
+الخطأ ليس قيمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async canReadDraft(bookId: string, userId: string): Promise&lt;boolean&gt; {
+  return this.membership.has(bookId, userId);
+}
+</code></pre>
+<p>لا <code>cache.get(\</code>draft:${bookId}`)` حول هذه الدالة. التكلفة استعلام عضوية أرخص من تسريب مسودة.</p>
+<h2>شرح المثال</h2>
+<p><code>has</code> تقرأ الجدول في كل نداء. إن أصبحت ثقيلة، أعد تصميم الاستعلام أو فهرسه قبل المخبأ. إن أضفت مخبأ لاحقًا فالمفتاح يحتوي <code>userId</code> و <code>bookId</code> معًا، و <code>del</code> عند إزالة العضو من الكتاب. TTL وحدها تترك نافذة يرى فيها المطرود المسودة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المخزن لا يعرف أن القيمة سر. هو يعيد ما كُتب لأي من يملك المفتاح. على Redis المشترك كل عقدة تقرأ الخطأ نفسه. لذلك منع <code>set</code> في فرع <code>catch</code> حماية لكل النسخ لا للعقدة فقط. المعترض التلقائي الذي يسلسل الرد الكامل يحفظ ما أرسلته للمتصفح، بما فيه حقول قد لا تخص الزائر التالي على العنوان نفسه.</p>
+<h2>مثال عملي</h2>
+<p>مراجعة مفاتيح <code>IsbnModule</code> ووحدة المسودات:</p>
+<pre><code class="language-text">isbn:978...            عنوان عام أو null     مسموح
+authz:user:book        لم نبنِه              إن بُني فالمعرفان في المفتاح
+draft:42               جسم مسودة             ممنوع
+isbn:978...:error      مهلة                  ممنوع
+</code></pre>
+<p>اختبار يمنع الانحدار: استدعِ <code>canReadDraft</code> لمستخدمين مختلفين وتأكد أن لا <code>set</code> حدث على <code>CACHE_MANAGER</code> الوهمي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مفتاح المسار فقط على صفحة خاصة.</li>
+<li>تخزين <code>false</code> لصلاحية رُفضت بسبب عطل قاعدة، فيبقى المنع بعد عودة القاعدة.</li>
+<li>TTL طويلة على عضوية.</li>
+<li>وضع رمز الناشر في القيمة للتصحيح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>هذه القواعد عند أي <code>set</code> جديد في مراجعة الشيفرة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحظر على عنوان ISBN العام الذي لا يختلف بين الزوار. ذلك يخزن. الحظر على ما يتغير مع الهوية أو مع العطل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>القيمة</th>
+<th>الحكم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>isbn:978</code></td>
+<td><code>{ title }</code></td>
+<td>مناسب</td>
+</tr>
+<tr>
+<td><code>draft:42</code></td>
+<td>نص المسودة</td>
+<td>مرفوض</td>
+</tr>
+<tr>
+<td><code>authz:7:42</code></td>
+<td><code>true</code> لمدة قصيرة مع حذف عند التغيير</td>
+<td>استثناء ضيق</td>
+</tr>
+<tr>
+<td><code>isbn:978</code></td>
+<td><code>TimeoutError</code></td>
+<td>مرفوض</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الناقص في مفتاح <code>draft:42</code> لقرار قراءة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>معرف المستخدم. القرار يخص الزوج لا الكتاب وحده.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تخزين <code>502</code> أسوأ على Redis من الذاكرة المحلية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل النسخ تقرأ الفشل نفسه حتى تنتهي المدة، فلا تنجو عقدة بالصدفة وتعيد المحاولة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى يجوز استثناء تخزين قرار صلاحية، وما شرطان معه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يكون الحساب ثقيلًا بعد قياس. الشرط أن يحتوي المفتاح <code>userId</code> والمورد، وأن يُحذف عند تغيير العضوية أو تبقى مدته قصيرة جدًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي نتيجة ISBN ما زالت تُخزَّن؟</li>
+<li>ماذا يفعل معترض المسار الخاص بلا هوية في المفتاح؟</li>
+<li>لماذا <code>false</code> بسبب عطل قاعدة ليس قرار صلاحية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>خزّن قراءة عامة ناجحة أو غيابًا متعمدًا. لا تخزّن صلاحية بمفتاح ناقص، ولا خطأ شبكة، ولا أسرارًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>إخراج العمل الثقيل من مسار الطلب إلى طابور، عندما لا يكفي تخزين النتيجة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Caching: <a href="https://docs.nestjs.com/data/caching">https://docs.nestjs.com/data/caching</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

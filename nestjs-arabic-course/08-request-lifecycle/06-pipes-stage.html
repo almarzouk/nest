@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مرحلة Pipes</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-pipes-stage.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مرحلة Pipes</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت متى تعمل Pipes: من العام إلى Controller إلى المسار ثم إلى معامل المسار، والمعاملات من الأخير إلى الأول.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Body()</code> ثم <code>@Param()</code> ثم <code>@Query()</code> يوحي أن الجسم يُفحص أولًا. التوثيق يعكس هذا داخل المستوى: آخر معامل يُعالَج أولًا. و Pipe على الصنف تكمل معاملات الدالة قبل أن تبدأ Pipe على <code>@Patch</code>. خلط المستويين يجعل التحقق العام يبدو كأنه داخل كل معامل مع تحقق المسار، وهو غير ترتيب Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد دخول Interceptors وقبل الدالة: Pipes العامة، ثم Pipes الـ Controller، ثم Pipes المسار، ثم Pipes الخاصة بالمعامل. <code>@UsePipes(A, B)</code> يشغّل <code>A</code> ثم <code>B</code> على ذلك المستوى. كل مستوى يمشي المعاملات من الأخير إلى الأول قبل الانتقال إلى المستوى التالي.</p>
+<p><code>ValidationPipe</code> و <code>ParseIntPipe</code> أداتا تحويل وتحقق. إتقانهما فصل Pipes. هنا موضعهما في الدورة فقط.</p>
+<h2>التعريف التقني</h2>
+<p>المثال المكافئ لتوثيق Nest، على إعارة:</p>
+<pre><code class="language-ts">@UsePipes(GeneralValidationPipe)
+@Controller(&#39;loans&#39;)
+export class LoansController {
+  @UsePipes(RouteSpecificPipe)
+  @Patch(&#39;:id&#39;)
+  update(
+    @Body() body: UpdateLoanDto,
+    @Param() params: LoanParams,
+    @Query() query: LoanQuery,
+  ) {
+    return this.loans.update(body, params, query);
+  }
+}
+</code></pre>
+<p><code>GeneralValidationPipe</code> تعمل على <code>query</code> ثم <code>params</code> ثم <code>body</code>. بعد أن تنتهي هذه الجولة تبدأ <code>RouteSpecificPipe</code> الجولة نفسها: <code>query</code> ثم <code>params</code> ثم <code>body</code>. أي Pipe على معامل بعينه تعمل بعد مستويي Controller والمسار، وما زال آخر معامل أولًا.</p>
+<p>Pipe عامة تسبق <code>GeneralValidationPipe</code> وتمشي المعاملات من الأخير إلى الأول أيضًا.</p>
+<p>المعالج لا يبدأ إلا بعد هذه الجولات. رمي Pipe يتخطى الدالة والخدمة. Interceptor الذي لف الدخول يقدر أن يرى الخطأ في <code>catchError</code>. إن بقي غير ممسوك تنتقل Exception Filters.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">لكل مستوى من: عام -&gt; Controller -&gt; مسار
+  آخر معامل -&gt; … -&gt; أول معامل
+ثم Pipes المكتوبة على المعاملات نفسها
+  من الأخير إلى الأول
+ثم جسم الدالة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Param, Patch, Query, UsePipes } from &#39;@nestjs/common&#39;;
+import { GeneralValidationPipe } from &#39;./general-validation.pipe.js&#39;;
+import { LoanQuery } from &#39;./loan.query.js&#39;;
+import { LoanParams } from &#39;./loan.params.js&#39;;
+import { LoansService } from &#39;./loans.service.js&#39;;
+import { RouteSpecificPipe } from &#39;./route-specific.pipe.js&#39;;
+import { UpdateLoanDto } from &#39;./update-loan.dto.js&#39;;
+
+@UsePipes(GeneralValidationPipe)
+@Controller(&#39;loans&#39;)
+export class LoansController {
+  constructor(private readonly loans: LoansService) {}
+
+  @UsePipes(RouteSpecificPipe)
+  @Patch(&#39;:id&#39;)
+  update(
+    @Body() body: UpdateLoanDto,
+    @Param() params: LoanParams,
+    @Query() query: LoanQuery,
+  ) {
+    return this.loans.update(body, params, query);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>ترتيب المعاملات في التوقيع: جسم، ثم مسار، ثم استعلام. المعالجة داخل المستوى تبدأ من الاستعلام.</li>
+<li><code>RouteSpecificPipe</code> لا تبدأ على <code>query</code> قبل أن تكمل <code>GeneralValidationPipe</code> الجسم.</li>
+<li><code>update</code> في الخدمة تستلم القيم بعد الجولتين.</li>
+<li>الأصناف هنا أسماء مواضع. جسم <code>transform</code> يُكتب في فصل Pipes.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تجمع Pipes كل مستوى وتنفذها أولًا فأولًا على المستوى، ولكل Pipe تمشي قائمة المعاملات عكس كتابتها. لذلك آخر معامل في المصدر هو أول من يمر على <code>GeneralValidationPipe</code>.</p>
+<p>Pipe على المعامل، مثل <code>ParseIntPipe</code> داخل <code>@Param(&#39;id&#39;, ParseIntPipe)</code>، تُجدول بعد <code>@UsePipes</code> الخاصة بالمسار و Controller والعام. إن وُجدت على أكثر من معامل، فالأخير منها يعمل قبل الأول.</p>
+<p>نجاح الجميع يستدعي الدالة بالقيم الناتجة. النوع <code>number</code> بعد <code>ParseIntPipe</code> قيمة محوّلة، لا تعليق TypeScript. قبل هذه المرحلة القيمة كانت نص المسار كما في درس Route Params.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Patch(&#39;:id&#39;)
+@UsePipes(RouteSpecificPipe)
+extend(
+  @Body() body: UpdateLoanDto,
+  @Param(&#39;id&#39;, ParseIntPipe) id: number,
+) {
+  return this.loans.extend(id, body);
+}
+</code></pre>
+<p>افترض <code>GeneralValidationPipe</code> ما زالت على الصنف. الترتيب: الجولة العامة على <code>id</code> ثم على <code>body</code>، ثم <code>RouteSpecificPipe</code> على <code>id</code> ثم على <code>body</code>، ثم <code>ParseIntPipe</code> على <code>id</code> لأنه Pipe معامل والـ <code>body</code> بلا Pipe معامل في هذا التوقيع. الدالة ترى <code>id</code> عددًا بعد ذلك. فشل <code>ParseIntPipe</code> لا ينادي <code>extend</code>.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>افتراض أن <code>@Body</code> يُفحص قبل <code>@Query</code> لأنهما كُتبا هكذا</td>
+<td>داخل المستوى الأخير أولًا</td>
+</tr>
+<tr>
+<td>افتراض أن Pipe المسار تتداخل مع Pipe الصنف على المعامل نفسه قبل إكمال الصنف</td>
+<td>الصنف يكمل الجولة ثم يبدأ المسار</td>
+</tr>
+<tr>
+<td>الاعتماد على تعليق <code>number</code> من غير Pipe</td>
+<td>النص يبقى نصًا وتصل الخدمة كما في فصل Controllers</td>
+</tr>
+<tr>
+<td>وضع Pipe قبل Guard في توقعك</td>
+<td>Guards مرحلة أسبق؛ المنع يلغي هذه المرحلة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لتحويل معامل أو رفض شكل البيانات قبل أن تلمس Service القيمة: عدد في المسار، أو جسم يطابق DTO. اربط العام لما يشمل التطبيق، والمسار لما يخص دالة، والمعامل لما يخص وسيطًا واحدًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمنع عضو. ذلك Guard ويحدث قبل هذه المرحلة، فلن تُستهلك Pipe على طلب مرفوض. لختم الطلب قبل اختيار المسار. ذلك Middleware. لتشكيل الاستجابة بعد الدالة. ذلك Interceptor على طريق الخروج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الربط</th>
+<th>متى بالنسبة لغيره</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Pipe عامة</td>
+<td>أول جولة معاملات، من الأخير إلى الأول</td>
+</tr>
+<tr>
+<td><code>@UsePipes</code> على الصنف</td>
+<td>بعد العام، وتكمل جولتها قبل المسار</td>
+</tr>
+<tr>
+<td><code>@UsePipes</code> على الدالة</td>
+<td>بعد الصنف، بالجولة نفسها</td>
+</tr>
+<tr>
+<td>Pipe على المعامل</td>
+<td>بعد المستويات الثلاثة، وآخر معامل أولًا</td>
+</tr>
+<tr>
+<td>داخل <code>@UsePipes(A, B)</code></td>
+<td><code>A</code> ثم <code>B</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في المثال، ماذا تعالج <code>GeneralValidationPipe</code> أولًا: <code>body</code> أم <code>query</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>query</code>، لأنه آخر معامل. ثم <code>params</code> ثم <code>body</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى تبدأ <code>RouteSpecificPipe</code> على <code>query</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>بعد أن تنهي <code>GeneralValidationPipe</code> جولتها كلها، بما فيها <code>body</code>. ثم تمشي <code>RouteSpecificPipe</code> من <code>query</code> إلى <code>body</code> أيضًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين يقع <code>ParseIntPipe</code> على <code>@Param</code> بالنسبة إلى <code>@UsePipes</code> على الصنف وعلى الدالة؟</p>
+<details><summary>الحل</summary>
+
+<p>بعدهما. Pipes المعامل آخر بند في المرحلة، ومن آخر معامل إلى أول معامل إن تعددت.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب مستويات Pipes الأربعة؟</li>
+<li>من أي معامل تبدأ جولة المستوى؟</li>
+<li>ماذا يحدث للدالة إن رمت Pipe؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Pipes بعد دخول Interceptors وقبل الدالة: عام، ثم Controller، ثم مسار، ثم معامل. كل مستوى يكمل المعاملات من الأخير إلى الأول قبل المستوى التالي، و <code>@UsePipes</code> داخل المستوى من الأول المكتوب إلى التالي.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعد نجاح التحويل: Controller و Service.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle (Pipes): <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

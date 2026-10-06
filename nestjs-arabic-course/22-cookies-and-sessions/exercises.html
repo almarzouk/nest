@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي رأس يعيد المتصفح للكعكة؟</li>
+<li>أي صفة تخفي <code>__Host-sid</code> عن JavaScript؟</li>
+<li>هل <code>userId=4</code> جلسة آمنة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>Cookie</code>.</li>
+<li><code>HttpOnly</code>.</li>
+<li>لا. الرقم يُزوَّر. الجلسة مفتاح عشوائي يشير إلى سجل.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا <code>maxAge</code> في Nest ليس كما في <code>res.cookie</code>؟</li>
+<li>ماذا يخزّن الخادم بدل رمز الكعكة الخام في الحزمة؟</li>
+<li>لماذا لا يذهب JWT واجهة الموقع إلى <code>localStorage</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Nest يعدّ الثواني و Express يعدّ المللي ثانية في تلك الدالة.</li>
+<li>تجزئة SHA-256 للرمز.</li>
+<li>السكربت يقرأه عند XSS. كعكة الجلسة <code>HttpOnly</code> لا تُقرأ هكذا.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>إنتاج فيه نسختان من API، و <code>express-session</code> بمخزنه الافتراضي، و <code>AuthenticationModule</code> بلا <code>SessionStore</code>، والواجهة تحفظ <code>accessToken</code> في <code>localStorage</code> مع كعكة <code>__Host-sid</code>.</p>
+<ol>
+<li>ماذا تفشل النسختان؟</li>
+<li>أي دليل تبقيه للواجهة؟</li>
+<li>أي دليل للجوال من غير لمس <code>localStorage</code> في الصفحة؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>الجلسات في ذاكرة كل عملية فلا تُشارَك. الحزمة أصلًا ترفض ذاكرة الجلسة في الإنتاج. الوسيط الافتراضي غير مناسب للإنتاج حسب صفحته.</li>
+<li>كعكة <code>__Host-sid</code> مع مخزن مشترك في القاعدة، وصفات <code>HttpOnly</code> و <code>Secure</code> و <code>Lax</code>.</li>
+<li><code>Authorization: Bearer</code> مع تحديث دوار في مخزن الجهاز، لا في JavaScript الصفحة. احذف الرمز من <code>localStorage</code> على الواجهة.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

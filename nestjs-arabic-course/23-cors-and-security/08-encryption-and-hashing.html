@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Encryption و Hashing</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-encryption-and-hashing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Encryption و Hashing</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار التشفير لاسترجاع سر، والتجزئة لكلمة المرور التي تُقارن ولا تُفك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تخزين كلمة المرور بدالة تُفك بمفتاح يعني أن تسريب القاعدة والمفتاح يعيد كلمات المرور. تخزين ملاحظة خاصة بتجزئة يعني أنك لا تستطيع عرضها لصاحبها لاحقًا. الخلط بين العمليتين يكسر الاسترجاع أو يكسر كلمات المرور.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التشفير اتجاهان: نص مفتوح يصبح نصًا مشفرًا، والمفتاح يعيده. التجزئة اتجاه واحد: الناتج يُقارن ولا يُعاد إلى الكلمة. Nest لا يغلّف <code>node:crypto</code> بحزمة إضافية. كلمات المرور في هذه الدورة عبر <code>PasswordHasher</code> من <code>@nestjs/authentication</code>، و scrypt بالمعاملات التي تذكرها صفحة التشفير والتجزئة.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تعرض <code>aes-256-ctr</code>: مفتاح 32 بايت، <code>iv</code> من <code>randomBytes(16)</code>، ثم <code>createCipheriv</code> و <code>createDecipheriv</code>. المثال التعليمي هناك يشتق المفتاح بـ <code>scrypt</code> من عبارة وملح ثابت. في التطبيق ضع مفتاح البيانات في متغير بيئة لا يُلتزم، وولّد <code>iv</code> جديدًا لكل قيمة، وخزّن <code>iv</code> مع النص المشفر. الملح الثابت والعبارة المكتوبة في المصدر مثال توثيقي لا إعداد إنتاج.</p>
+<pre><code class="language-ts">import { createCipheriv, randomBytes } from &quot;node:crypto&quot;;
+
+const iv = randomBytes(16);
+const cipher = createCipheriv(&quot;aes-256-ctr&quot;, key, iv);
+const encrypted = Buffer.concat([
+  cipher.update(plaintext, &quot;utf8&quot;),
+  cipher.final(),
+]);
+</code></pre>
+<p><code>key</code> هنا <code>Buffer</code> بطول 32. فك التشفير <code>createDecipheriv</code> بنفس المفتاح و <code>iv</code>.</p>
+<p>كلمات المرور:</p>
+<pre><code class="language-ts">constructor(private readonly passwordHasher: PasswordHasher) {}
+
+await this.passwordHasher.hash(password);
+await this.passwordHasher.verify(password, storedHash);
+</code></pre>
+<p><code>hash</code> يعيد سلسلة تصف المعاملات والملح والناتج، مثل بادئة <code>$scrypt$</code>. <code>verify</code> يقارن بزمن ثابت. تمرير <code>undefined</code> عند غياب المستخدم يتحقق من تجزئة وهمية حتى لا يكشف الزمن وجود البريد. <code>needsRehash</code> بعد نجاح التحقق يحدّث التجزئة إن تغيّرت المعاملات. <code>hash</code> يرفض الفارغ وما فوق 4KiB بـ <code>RangeError</code>. التطبيع NFKC قبل التجزئة.</p>
+<p>الخيار <code>password.logN</code> في الوحدة يرفع التكلفة. الاختبارات تستطيع <code>new PasswordHasher({ logN: 10 })</code> حتى لا تبطئ المجموعة. الإنتاج يبقى على افتراض الحزمة أو أعلى ضمن السقف الموثّق.</p>
+<p>من يفضّل argon2 أو bcrypt يغلّفهما في مزود خاص: <code>hash</code> و <code>verify</code> لـ argon2، و <code>compare</code> لـ bcrypt. bcrypt يقرأ أول 72 بايت فقط. كلاهما وحدة أصلية. المسار الافتراضي للدورة <code>PasswordHasher</code>.</p>
+<p>لا تمرّر كلمة المرور إلى <code>createCipheriv</code> لكي «تستطيع الدعم فكها».</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كلمة مرور -&gt; hash -&gt; مقارنة لاحقًا
+ملاحظة خاصة -&gt; encrypt مع iv -&gt; decrypt لصاحبها
+مفتاح البيانات في البيئة
+ملح التجزئة داخل سلسلة PasswordHasher
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Injectable()
+export class NoteCrypto {
+  seal(plain: string, key: Buffer) {
+    const iv = randomBytes(16);
+    const cipher = createCipheriv(&quot;aes-256-ctr&quot;, key, iv);
+    const body = Buffer.concat([
+      cipher.update(plain, &quot;utf8&quot;),
+      cipher.final(),
+    ]);
+    return Buffer.concat([iv, body]).toString(&quot;base64&quot;);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>أول 16 بايت هي <code>iv</code>. الباقي النص المشفر. عند القراءة تُقطع البادئة ويُستدعى <code>createDecipheriv</code>. كل ملاحظة <code>iv</code> مختلف حتى لو تكرر النص. المفتاح لا يُخزَّن بجانب الملاحظة في الجدول نفسه بلا حماية. متغير البيئة أو مدير أسرار، وقد مرّ في الإعداد أن <code>.env</code> لا يُلتزم.</p>
+<p>هذه الدالة لملاحظات المكتبة الخاصة، لا لعمود <code>passwordHash</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>aes-256-ctr</code> يولّد تيار مفتاح من المفتاح و <code>iv</code> ويخلطه مع البايتات. فقدان <code>iv</code> يمنع الاسترجاع حتى مع المفتاح. إعادة <code>iv</code> نفسه مع المفتاح نفسه لنصوص كثيرة تضعف التدفق. لذلك <code>randomBytes</code> لكل ختم.</p>
+<p><code>scrypt</code> في <code>PasswordHasher</code> يستهلك ذاكرة عالية حتى يصعب التخمين على معالجات الرسوم، ويعمل على تجمع الخيوط حتى لا يوقف حلقة الأحداث. الناتج لا يكفي وحده لاستعادة الكلمة.</p>
+<p>تسريب جدول المستخدمين بلا مفتاح التشفير لا يعرض كلمات المرور إن كانت مجزأة. تسريب المفتاح يعرض الملاحظات المختومة. الميزانية مختلفة.</p>
+<h2>مثال عملي</h2>
+<p>التسجيل يستدعي <code>hash</code> ويحفظ الناتج في <code>passwordHash</code>. الدخول يستدعي <code>verify</code>. إن نجح و <code>needsRehash</code> أعادت الحقيقة، حدّث العمود بتجزئة جديدة في الطلب نفسه. اختبار رخيص يبني <code>new PasswordHasher({ logN: 10 })</code> ولا يستخدم <code>logN</code> المنخفض في الإنتاج.</p>
+<p>ملاحظة المسودة تختبر أن <code>seal</code> ثم الفك يعيد النص، وأن تغيير بايت في <code>iv</code> يفسد الناتج. لا تطبع المفتاح في السجل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تشفير كلمة المرور بمفتاح التطبيق.</li>
+<li>ملح أو <code>iv</code> ثابت لكل الصفوف.</li>
+<li>مفتاح AES داخل المستودع.</li>
+<li><code>bcrypt</code> على كلمة أطول من 72 بايت مع ظن أن الباقي يُفحص.</li>
+<li>مقارنة التجزئة بـ <code>===</code> على ناتج غير مخصص لذلك. <code>verify</code> هو المقارنة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>التجزئة لأسرار الدخول. التشفير لبيانات يجب أن تُقرأ لاحقًا وتستطيع حماية مفتاحها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتجزئة عنوان مقال تريد البحث عنه. التجزئة لا تُفهرس للبحث النصي. ولا لتشفير معرف الجلسة بدل العشوائية والتجزئة التي تخزنها حزمة المصادقة للرمز.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>PasswordHasher</code></th>
+<th><code>aes-256-ctr</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>لا استرجاع للكلمة</td>
+<td>استرجاع بالمفتاح و <code>iv</code></td>
+</tr>
+<tr>
+<td>ملح داخل الناتج</td>
+<td><code>iv</code> تخزنه مع النص</td>
+</tr>
+<tr>
+<td>دخول وتسجيل</td>
+<td>ملاحظة أو حقل سري يُعرض</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل تستطيع عرض كلمة المرور للمستخدم من <code>passwordHash</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. التجزئة تُقارن عبر <code>verify</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تحفظ مع ناتج <code>createCipheriv</code> حتى تفك لاحقًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>iv</code> العشوائي الذي استُخدم في الختم، مع النص المشفر. المفتاح يبقى خارج الصف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>verify(password, undefined)</code> أفضل من الرجوع فورًا عند غياب البريد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصفحة تقول إن التجزئة الوهمية تمنع اختلاف الزمن الذي يكشف وجود الحساب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما طول مفتاح <code>aes-256</code>؟</li>
+<li>من يجزئ كلمة المرور في الدورة؟</li>
+<li>لماذا <code>iv</code> جديد لكل ختم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التشفير يعيد السر بمفتاح. التجزئة تثبت المعرفة بلا إعادة الكلمة. كلمات المكتبة على <code>PasswordHasher</code>. الأسرار القابلة للعرض على <code>node:crypto</code> بمفتاح خارج المستودع و <code>iv</code> فريد.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> تجمع الحدود على تطبيق المقالات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Encryption and Hashing: <a href="https://docs.nestjs.com/security/encryption-and-hashing">https://docs.nestjs.com/security/encryption-and-hashing</a></li>
+<li>Node.js — Crypto: <a href="https://nodejs.org/api/crypto.html">https://nodejs.org/api/crypto.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

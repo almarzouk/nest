@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>أي حافلة لأمر الإلغاء، وأي حافلة لقراءة اللوحة، وأي حافلة بعد <code>save</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CommandBus.execute</code> للإلغاء، <code>QueryBus.execute</code> للقراءة، <code>EventBus.publish</code> للحدث بعد الحفظ.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>معالج إنشاء كتاب يعيد <code>books.create</code> بلا حدث، و <code>GET</code> يعيد نفس الأعمدة. ماذا تحذف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأمر والمعالج ونداء <code>CommandBus</code>. تبقى <code>BooksService.create</code>. لا حزمة على هذا المسار.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>الإلغاء يحفظ الجذر، وتحديث الولاء والبريد يجب ألا يعيدا الخصم إن فشلا. أين كل قطعة، وماذا لا تضع في <code>rethrowUnhandled</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القاعدة في <code>CancelOrderHandler</code> مع المستودع. بعد <code>save</code> حدث <code>OrderCancelled</code>. معالجان للولاء والبريد. اترك <code>rethrowUnhandled</code> على <code>false</code> حتى لا يفشل مسار الأمر بعد الحفظ بسبب أثر، وراقب <code>UnhandledExceptionBus</code> لإعادة المحاولة.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

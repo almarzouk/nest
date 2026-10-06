@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>50 — منصة المكتبة للإنتاج</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>50 — منصة المكتبة للإنتاج</h1>
+<p><strong>المستوى:</strong> إنتاج<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new library-platform</code></p>
+<h2>ماذا تبني</h2>
+<p>تجمع ما تعلمته في خدمة واحدة صغيرة: كتب، وصحة، وإعداد مُفحص، وصورة متعددة المراحل، و Compose فيه API و PostgreSQL و Redis. التشغيل إنتاج لا start:dev.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>آخر مشروع يثبت أن العقد يعمل خارج جهازك: أسرار من البيئة، وعناوين شبكة Docker، وإيقاف يغلق القاعدة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>بناء dist</li>
+<li>مستخدم غير جذر</li>
+<li>اسم الخدمة postgres لا localhost</li>
+<li>جاهزية</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>عنقود Kubernetes</li>
+<li>عدة مناطق جغرافية</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الصحة، و Prisma، والطابور إن أضفت Redis. يمكن الإبقاء على Redis للجاهزية فقط.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/50-docker/README.html">50-docker</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الأمر في الصورة node dist/main.js.</li>
+<li>DATABASE_URL يستخدم اسم الخدمة.</li>
+<li>لا أسرار في الصورة.</li>
+<li>live لا يلمس القاعدة. ready يلمسها.</li>
+<li>الإيقاف يغلق Prisma.</li>
+<li>المنفذ من البيئة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/health/live</code></td>
+<td>200</td>
+<td>من داخل الحاوية</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/health/ready</code></td>
+<td>200</td>
+<td>بعد صعود Postgres</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/books</code></td>
+<td>201</td>
+<td>عبر المنفذ المنشور</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new library-platform</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>افحص البيئة عند الإقلاع. الناقص يوقف التشغيل برسالة واضحة.</li>
+<li>اكتب Dockerfile بمرحلة بناء ومرحلة تشغيل.</li>
+<li>اكتب compose وأعد التشغيل من صورة نظيفة.</li>
+<li>اطلب /health/ready قبل أول كتاب.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">Dockerfile
+docker-compose.yml
+src/config/env.ts
+src/main.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">FROM node:22-bookworm-slim AS runner
+WORKDIR /app
+USER node
+CMD [&quot;node&quot;, &quot;dist/main.js&quot;]
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>localhost داخل الحاوية للوصول إلى Postgres.</li>
+<li>start:dev في الصورة.</li>
+<li>نسخ node_modules من جهازك بمعمارية مختلفة.</li>
+<li>سر في طبقة الصورة.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>compose up يمر بالجاهزية ثم ينشئ كتابًا.</li>
+<li>إيقاف الحاوية يغلق الاتصال.</li>
+<li>تستطيع شرح كل حد استخدمته من المشاريع السابقة في صفحة واحدة.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف ترحيل Prisma كخطوة قبل الأمر، لا داخل كل طلب.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 50» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../49-library-graphql/README.html">49. فهرس GraphQL</a></li>
+<li>هذا آخر مشروع في المسار.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

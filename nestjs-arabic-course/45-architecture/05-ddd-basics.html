@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أساسيات DDD</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-ddd-basics.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أساسيات DDD</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>التقاط مفردات Domain-Driven Design التي تغيّر حدود وحدة Nest: اللغة المشتركة، الكيان والقيمة، الجذر التجميعي، والسياق المحدود، بلا بناء نموذج تكتيكي كامل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وحدة <code>ShopModule</code> فيها كتاب وفاتورة وشحنة لأن الجداول في قاعدة واحدة. التغيير على الضريبة يكسر صفحة الكتالوج. DDD يطلب أن تتبع الحدود لغة الفريق لا مخطط القاعدة. السياق المحدود مكان تتفق فيه كلمة «طلب» على معنى واحد. في Nest هذا المرشح الأقوى ليكون <code>Module</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اللغة المشتركة ألفاظ يستعملها المنتج والكود معًا: <code>place</code> لا <code>insertOrder</code>. الكيان له هوية تستمر (<code>Order</code> بالمعرف) حتى لو تغيّر المجموع. كائن القيمة يُعرَّف بحقوله (<code>Money</code> بالمبلغ والعملة) ويمكن استبداله. الجذر التجميعي البوابة التي تعدّل ما بداخلها: تعدّل سطور الطلب عبر <code>Order</code> لا عبر حفظ سطر وحده من ميزة أخرى. السياق المحدود حد تتوقف عنده هذه المعاني. خارجه كلمة «حساب» قد تعني مستخدمًا لا فاتورة.</p>
+<h2>التعريف التقني</h2>
+<p>لا حزمة رسمية في Nest لهذه المفردات. التطبيق:</p>
+<ul>
+<li>سياق الكتالوج <code>CatalogModule</code> وكيان <code>Book</code> بمعرف.</li>
+<li>سياق الفوترة <code>BillingModule</code> لا يستورد كيان الكتاب كاملًا. يحتفظ <code>bookId</code> ونسخة سعر إن لزم الاتفاق عند الحافة.</li>
+<li><code>Money</code> صنف أو كائن <code>{ minor: number; currency: &#39;SAR&#39; }</code> بلا معرف. المساواة بالحقول.</li>
+<li>الجذر <code>Order</code> فيه <code>addLine</code> الذي يرفض سطرًا بلا كمية. الحفظ عبر منفذ يحفظ الجذر، لا <code>prisma.orderLine.create</code> من المتحكم.</li>
+</ul>
+<p>بين السياقات: معرف ونسخة بيانات، أو حدث «تم الدفع»، لا مشاركة جدول مع كتابة من الطرفين. مشاركة قاعدة واحدة ممكنة في monolith نمطي، والجداول يمكن أن تُقسَّم لاحقًا إن صارت الحدود صحيحة أولًا.</p>
+<p>التوثيق التكتيكي الأوسع (مصانع، مستودعات غنية، أحداث مجال) يتقاطع مع فصلي المستودع و CQRS. هنا لا تبنِهما لكل سياق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سياق الكتالوج: Book كيان، Money قيمة
+سياق الفوترة: Invoice جذر، يعرف bookId لا كائن Book الحي
+العبور: معرف أو حدث، لا استيراد الكيان وتعديله
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class Money {
+  constructor(
+    readonly minor: number,
+    readonly currency: &#39;SAR&#39;,
+  ) {
+    if (minor &lt; 0) {
+      throw new Error(&#39;مبلغ سالب&#39;);
+    }
+  }
+}
+</code></pre>
+<pre><code class="language-ts">export class Order {
+  private readonly lines: { bookId: string; unit: Money }[] = [];
+
+  addLine(bookId: string, unit: Money): void {
+    this.lines.push({ bookId, unit });
+  }
+}
+</code></pre>
+<p><code>Order</code> لا يستورد Prisma. <code>BillingModule</code> يحفظه عبر منفذ. الكتالوج يبني <code>Money</code> عند عرض السعر ولا يعدّل <code>Order</code>.</p>
+<h2>شرح المثال</h2>
+<p>القاعدة «لا مبلغ سالب» في <code>Money</code> تعيش مع القيمة أينما استُعملت داخل السياق. إن نسخت الفحص في كل خدمة ضاع عند مسار جديد. <code>addLine</code> بوابة التجميع. دفع سطر إلى <code>prisma</code> من <code>CatalogService</code> يكسر الجذر لأن الكتالوج ليس مالك الطلب.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>اللغة في أسماء الدوال تطابق كلام الفريق.</li>
+<li>الهوية (<code>id</code>) تميز الطلب عبر الحفظ.</li>
+<li><code>Money</code> جديد عند كل تغيير بدل تعديل حقول مشتركة من سياقين.</li>
+<li>المنفذ في السياق المالك يحفظ الجذر.</li>
+<li>السياق الآخر يخزن معرفًا. قراءة التفاصيل نداء على واجهة الكتالوج أو نسخة أُخذت عند الشراء.</li>
+<li>حدث بين السياقات يمنع الاستيراد المتبادل الذي رأيته في الدورات.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>كلمة «إلغاء»: في الشحن تعني إرجاع طرد، وفي الفوترة تعني إشعار دائن. سياقان ووحدتان. دالة <code>cancel()</code> عامة في <code>ShopService</code> تخلط المعنيين. سمِّ <code>cancelShipment</code> و <code>voidInvoice</code> في وحدتين، واترك منسقًا يستدعيهما بالترتيب إن كانت عملية المتجر تحتاج الاثنين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كيان لكل جدول بما فيها <code>UserPreference</code> بلا قواعد.</li>
+<li>مشاركة كائن <code>Book</code> الحي وتعديله من الفوترة.</li>
+<li>سياق واحد اسمه Domain فيه كل شيء.</li>
+<li>قيمة <code>Money</code> لها <code>id</code> من الجدول فتنقلب كيانًا مرتبكًا.</li>
+<li>بدء Event Sourcing قبل أن تستقيم الحدود.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتعدد معاني الكلمة الواحدة أو يوجد جذر يجب أن يحمي لامتغيرات. ابدأ بتقسيم الوحدات حسب اللغة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>تطبيق فيه سياق واحد واضح. وحدة نمطية وطبقات تكفي. لا ورشات نمذجة قبل أول مسار يعمل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفهوم</th>
+<th>في المتجر</th>
+<th>في Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>سياق محدود</td>
+<td>كتالوج غير فوترة</td>
+<td><code>Module</code> وتصدير ضيق</td>
+</tr>
+<tr>
+<td>كيان</td>
+<td>طلب له معرف</td>
+<td>صنف بلا Prisma</td>
+</tr>
+<tr>
+<td>قيمة</td>
+<td>مبلغ وعملة</td>
+<td>كائن بلا هوية</td>
+</tr>
+<tr>
+<td>جذر</td>
+<td>الطلب لا السطر اليتيم</td>
+<td>دوال التعديل على الجذر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الفرق العملي بين <code>Order</code> و <code>Money</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الطلب كيان بهوية مستمرة. المبلغ قيمة تُقارن بالحقول ويمكن استبدالها، بلا معرف مستقل داخل السياق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تعدّل <code>CatalogModule</code> سطور الطلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>السطور داخل تجميع يملكه جذر الطلب في سياق آخر. الكتالوج يتعامل بمعرف وسعر، لا بكتابة جدول غيره.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الفريق يقول «حساب» للمستخدم وللفاتورة. ماذا تغيّر في الوحدات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>سياقان أو على الأقل اسمان في الكود: <code>Account</code> للمستخدم و <code>Invoice</code> للفاتورة، ووحدتان لا دالة مشتركة باسم <code>getAccount</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يقابل السياق المحدود غالبًا في Nest؟</li>
+<li>ماذا يعبر بين السياقات؟</li>
+<li>لماذا الجذر يمنع حفظ السطر من الخارج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>DDD هنا لغة وحدود: كيان وهوية، قيمة بلا هوية، جذر يحمي الداخل، وسياق يطابق وحدة. لا تبنِ كل الأنماط التكتيكية قبل أن تستقيم هذه الأربعة.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما لا تستورده إلى مشروع صغير: قائمة ما تؤجله حتى يظهر الألم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Eric Evans، Domain-Driven Design (مصدر المفردات)</li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

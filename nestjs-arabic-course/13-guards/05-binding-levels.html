@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Global و Controller و Route</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-binding-levels.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Global و Controller و Route</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط الحارس على التطبيق أو على صنف المتحكم أو على دالة واحدة، ومعرفة أثر الربط العام على الدخول والصحة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>@UseGuards</code> على كل دالة تنسى مسارًا جديدًا. ربط عام واحد يغلق <code>POST /auth/login</code> و <code>GET /health</code> لأنهما دالتان أيضًا. مكان الربط قرار تغطية لا تفصيل داخل <code>canActivate</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@UseGuards</code> على الصنف يغطي دواله. على الدالة يغطيها وحدها. <code>app.useGlobalGuards</code> أو مزوّد <code>APP_GUARD</code> يغطي كل المسارات. العام الذي يرفض بلا استثناء يغلق الصحة وتسجيل الدخول إلى أن تُستثنى بعلامة لاحقًا.</p>
+<h2>التعريف التقني</h2>
+<p>على المتحكم أو الدالة:</p>
+<pre><code class="language-ts">@UseGuards(BoxPassGuard)
+</code></pre>
+<p>تمرير الصنف يترك البناء للحاوية. <code>new BoxPassGuard()</code> يقطع الحقن.</p>
+<p>عام بلا حقن:</p>
+<pre><code class="language-ts">app.useGlobalGuards(new BoxPassGuard());
+</code></pre>
+<p>عام مع حقن، من أي وحدة، والأفضل وحدة الحارس:</p>
+<pre><code class="language-ts">providers: [{ provide: APP_GUARD, useClass: BoxPassGuard }]
+</code></pre>
+<p><code>APP_GUARD</code> من <code>@nestjs/core</code>. يمكن تسجيله أكثر من مرة، وكل الحراس تعمل بترتيب التسجيل. لا تسترجعه بـ <code>app.get</code>. في تطبيق هجين، <code>useGlobalGuards</code> لا يركب الحراس على الخدمات المتصلة إلا بضبط لاحق. في HTTP العادي التغطية كاملة.</p>
+<p>الحارس العام الذي يرجع <code>false</code> أو يرمي على كل طلب بلا هوية يمنع:</p>
+<ul>
+<li><code>POST /auth/login</code> لأن جسم كلمة المرور لم يُفحص بعد، والبوابة رفضت قبل الأنبوب.</li>
+<li><code>GET /health</code> لأن الفحص بلا ترويسة.</li>
+</ul>
+<p>العلاج الذي سيُبنى في <code>@Public</code> علامة على الدالة يقرأها الحارس ويرجع <code>true</code> قبل فحص الهوية. <code>exclude</code> في Middleware لا يتخطى الحارس. لا تحل الصحة بثقب Middleware.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">APP_GUARD              كل الدوال، بما فيها login و health
+@UseGuards على الصنف   دوال TicketsController
+@UseGuards على الدالة  reserve فقط
+</code></pre>
+<p>اختر أضيق مستوى يغطي القاعدة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Post, UseGuards } from &#39;@nestjs/common&#39;;
+import { BoxPassGuard } from &#39;./box-pass.guard.js&#39;;
+
+@Controller(&#39;tickets&#39;)
+@UseGuards(BoxPassGuard)
+export class TicketsController {
+  @Get()
+  list(): string {
+    return &#39;list&#39;;
+  }
+
+  @Post()
+  reserve(): string {
+    return &#39;reserve&#39;;
+  }
+}
+</code></pre>
+<p><code>list</code> و <code>reserve</code> خلف البوابة. <code>HealthController</code> في ملف آخر بلا الزينة يبقى مفتوحًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الزينة على الصنف مرة واحدة.</li>
+<li>دالة جديدة على <code>TicketsController</code> ترث البوابة.</li>
+<li>الصحة ليست على هذا الصنف فلا ترثه.</li>
+<li>إن نُقل <code>BoxPassGuard</code> إلى <code>APP_GUARD</code>، الصحة تدخل التغطية في اليوم نفسه.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الإطار يجمع حراس الدالة من المستويات الثلاثة عند بناء المسار. عند الطلب ينفّذها بالترتيب الذي يشرحه الدرس التالي: عام، ثم صنف، ثم دالة.</p>
+<p><code>useGlobalGuards(new BoxPassGuard())</code> يبني النسخة خارج الوحدات. اعتماد <code>ConfigService</code> في الباني يفشل أو يبقى فارغًا. <code>APP_GUARD</code> مع <code>useClass</code> يبني من الحاوية.</p>
+<p>حارس على الدالة لا يلغي حارس الصنف. الاثنان يعملان. الاستثناء من العام ليس حذفًا تلقائيًا. هو شرط داخل الحارس العام يقرأ علامة الدالة.</p>
+<p>مسار الدخول يحتاج أن يصل إلى الدالة التي تتحقق من كلمة المرور. إن رفضه الحارس العام قبل ذلك، لا يوجد طلب ينشئ جلسة. لذلك العلامة العامة أو إبقاء الحارس على متحكم التذاكر فقط هما الخطان الآمنان في هذه المرحلة.</p>
+<h2>مثال عملي</h2>
+<p>الشباك يربط <code>BoxPassGuard</code> على <code>TicketsController</code> فقط. <code>AuthController</code> و <code>HealthController</code> بلا زينة. الاختبار ينادي <code>GET /health</code> ويتوقع <code>200</code>، و <code>POST /tickets</code> بلا ترويسة ويتوقع <code>401</code>. ثم يجرّب أحدهم نقل الحارس إلى <code>APP_GUARD</code> من غير علامة، فيفشل الاختباران: الصحة صارت <code>401</code> والدخول صار <code>401</code> قبل أن يُقرأ الجسم. الإعادة إلى ربط المتحكم تصلح الاختبار إلى أن يُكتب <code>@Public</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>APP_GUARD</code> ثم الدهشة أن الصحة مغلقة.</li>
+<li>الاعتقاد أن <code>exclude(&#39;health&#39;)</code> في Middleware يفتح الصحة أمام الحارس.</li>
+<li><code>new</code> داخل <code>@UseGuards</code> مع اعتماد في الباني.</li>
+<li>ربط عام ونسخ الزينة على كل الدوال. التغطية المزدوجة تشغّل البوابة مرتين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الصنف حين كل دوال الميزة خلف القاعدة نفسها. الدالة حين عملية واحدة أشد، مثل الاسترداد. العام حين السياسة للتطبيق كله وأنت مستعد لاستثناء الدخول والصحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تجعل الحارس عامًا قبل أن تعرف أين ستُفتح الدوال العامة. لا تربط حارس التذاكر على <code>HealthController</code> «للاتساق».</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المستوى</th>
+<th>الأداة</th>
+<th>الصحة وتسجيل الدخول</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Route</td>
+<td><code>@UseGuards</code> على الدالة</td>
+<td>لا يمسهما إن كانا على دوال أخرى</td>
+</tr>
+<tr>
+<td>Controller</td>
+<td><code>@UseGuards</code> على الصنف</td>
+<td>يمس دوال ذلك الصنف</td>
+</tr>
+<tr>
+<td>Global</td>
+<td><code>APP_GUARD</code> أو <code>useGlobalGuards</code></td>
+<td>يمسهما إلى أن تُستثنيا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تضع <code>@UseGuards(BoxPassGuard)</code> حتى تغطي <code>list</code> و <code>reserve</code> من غير الصحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على صنف <code>TicketsController</code>، لا على <code>APP_GUARD</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>useGlobalGuards(new BoxPassGuard())</code> لا يحقن <code>ConfigService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البناء في <code>main.ts</code> خارج الوحدات. استخدم <code>{ provide: APP_GUARD, useClass: BoxPassGuard }</code> في وحدة ترى الإعداد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بعد <code>APP_GUARD</code> صار <code>POST /auth/login</code> يرجع <code>401</code> قبل قراءة كلمة المرور. لماذا <code>exclude</code> لا يكفي، وما الاتجاه اللاحق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>exclude</code> يطرح من Middleware فقط. الحارس يعمل بعده على كل المسارات. الاتجاه علامة على دالة الدخول يقرأها الحارس ويرجع <code>true</code>، واسمها الشائع <code>@Public</code> في فصل الزينة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما طرق الربط الثلاث؟</li>
+<li>متى يُكسر الحقن في الربط العام؟</li>
+<li>لماذا يغلق العام مسار الدخول؟</li>
+<li>هل حارس الدالة يلغي حارس الصنف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>اربط على أضيق مستوى يكفي. الصنف للتذاكر والدالة للاستثناء داخلها. الربط العام يغطي الصحة والدخول إلى أن تعلّمهما الدالة نفسها بعلامة يقرأها الحارس.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي ترتيب التنفيذ حين يجتمع العام والصنف والدالة في طلب واحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

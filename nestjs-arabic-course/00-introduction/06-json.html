@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JSON</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-json.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>JSON</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة وقراءة تمثيل البيانات الذي ستتبادله واجهات هذه الدورة، وتمييزه عن كائن JavaScript وعن النوع الذي يكتبه TypeScript.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كائن داخل Node يعيش في ذاكرة العملية. المتصفح عملية أخرى، وربما لغة أخرى. لا نرسل المؤشرات ولا الدوال. نرسل نصًا متفقًا على شكله.</p>
+<p>JSON هذا النص: خفيف، مقروء، ومدعوم في المتصفح و Node من غير مكتبة إضافية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>JSON صيغة نصية لتمثيل بيانات شجرية: كائنات، ومصفوفات، وأرقام، ونصوص، وقيم منطقية، و <code>null</code>.</p>
+<p>عندما ترى <code>Content-Type: application/json</code> فالجسم يُفسَّر بهذه الصيغة.</p>
+<h2>التعريف التقني</h2>
+<p>JavaScript Object Notation صيغة بيانات مستقلة عن اللغة، اشتُقت من طريقة كتابة الكائنات في JavaScript، ثم صارت معيارًا. المواصفة تفرض قواعد أضيق من JavaScript.</p>
+<p>ما يمكن أن يظهر كقيمة:</p>
+<ul>
+<li>نص بين علامتي اقتباس مزدوجتين <code>&quot;title&quot;</code></li>
+<li>عدد: <code>40</code> أو <code>19.5</code></li>
+<li><code>true</code> أو <code>false</code></li>
+<li><code>null</code></li>
+<li>كائن: <code>{ &quot;id&quot;: &quot;2&quot; }</code></li>
+<li>مصفوفة: <code>[1, 2, 3]</code></li>
+</ul>
+<p>المفاتيح داخل الكائن نصوص بين اقتباس مزدوج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كائن في ذاكرة الخادم
+        |
+        |  JSON.stringify
+        v
+نص على الشبكة: {&quot;id&quot;:&quot;2&quot;,&quot;price&quot;:40}
+        |
+        |  JSON.parse عند العميل
+        v
+كائن في ذاكرة العميل
+</code></pre>
+<p>الرحلة تعبر نصًا. ما لا يُكتب في JSON لا يعبر.</p>
+<h2>أبسط مثال</h2>
+<p>تمثيل كتاب:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;2&quot;,
+  &quot;title&quot;: &quot;Refactoring&quot;,
+  &quot;price&quot;: 40,
+  &quot;tags&quot;: [&quot;design&quot;, &quot;code&quot;],
+  &quot;inStock&quot;: true,
+  &quot;replacedBy&quot;: null
+}
+</code></pre>
+<p>قائمة:</p>
+<pre><code class="language-json">[
+  { &quot;id&quot;: &quot;1&quot;, &quot;title&quot;: &quot;Clean Code&quot; },
+  { &quot;id&quot;: &quot;2&quot;, &quot;title&quot;: &quot;Refactoring&quot; }
+]
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>{ ... }</code> كائن واحد.</li>
+<li><code>[ ... ]</code> قائمة مرتبة.</li>
+<li><code>&quot;id&quot;: &quot;2&quot;</code> المفتاح والمعرّف نصان. لو كتبنا <code>2</code> من غير اقتباس لصار عددًا. اختر نوعًا وحافظ عليه. المعرّفات النصية أصدق عندما تأتي من UUID لاحقًا.</li>
+<li><code>40</code> عدد، لا <code>&quot;40&quot;</code>. الفرق يظهر عند الجمع والتحقق.</li>
+<li><code>true</code> منطقي. في JSON تُكتب أحرفًا صغيرة. <code>True</code> غير صالحة.</li>
+<li><code>null</code> غياب قيمة معروفة، ويختلف عن حذف المفتاح. سنتفق في الـ API متى نستخدم كلاهما.</li>
+<li>الفاصلة بعد آخر عنصر غير مسموحة في JSON. في كائن JavaScript الحديث قد يسمح المحرك بها. النص على الشبكة لا يسمح.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>في JavaScript:</p>
+<pre><code class="language-ts">const book = { id: &#39;2&#39;, price: 40 };
+const text = JSON.stringify(book);
+const again = JSON.parse(text) as { id: string; price: number };
+</code></pre>
+<ul>
+<li><code>JSON.stringify</code> يمشي على الشجرة ويكتب نصًا.</li>
+<li><code>JSON.parse</code> يقرأ النص ويبني قيمًا جديدة. الكائن الجديد ليس الكائن القديم. الهوية في الذاكرة انقطعت، وهذا متوقع.</li>
+<li><code>as { ... }</code> تلميح TypeScript لك أنت. <code>JSON.parse</code> يعيد <code>any</code> في كثير من الإعدادات، والمترجم لا يتصل بالشبكة ليتأكد. التحقق الحقيقي وقت التشغيل درس لاحق اسمه Validation.</li>
+</ul>
+<p>قيم تسقط أو ترفض في الطريق:</p>
+<table>
+<thead>
+<tr>
+<th>قيمة JavaScript</th>
+<th>أثر <code>JSON.stringify</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>undefined</code> داخل كائن</td>
+<td>المفتاح يختفي</td>
+</tr>
+<tr>
+<td><code>undefined</code> داخل مصفوفة</td>
+<td>تصبح <code>null</code></td>
+</tr>
+<tr>
+<td>دالة</td>
+<td>تُحذف من الكائن</td>
+</tr>
+<tr>
+<td><code>Symbol</code></td>
+<td>يُحذف</td>
+</tr>
+<tr>
+<td><code>Date</code></td>
+<td>نص تاريخ مثل <code>&quot;2026-10-05T00:00:00.000Z&quot;</code> لا كائن تاريخ</td>
+</tr>
+<tr>
+<td><code>BigInt</code></td>
+<td>يرمي خطأ</td>
+</tr>
+<tr>
+<td>مرجع دائري</td>
+<td>يرمي خطأ</td>
+</tr>
+</tbody></table>
+<p>بعد <code>JSON.parse</code>، التاريخ نص. إذا أردت <code>Date</code> تعيد البناء بنفسك، أو تتركه نصًا في عقد الـ API. النص أوضح على الحدود.</p>
+<h2>مثال عملي</h2>
+<p>طلب إنشاء:</p>
+<pre><code class="language-http">POST /books HTTP/1.1
+Content-Type: application/json
+
+{&quot;title&quot;:&quot;Clean Code&quot;,&quot;price&quot;:30}
+</code></pre>
+<p>رد:</p>
+<pre><code class="language-json">{
+  &quot;id&quot;: &quot;18&quot;,
+  &quot;title&quot;: &quot;Clean Code&quot;,
+  &quot;price&quot;: 30
+}
+</code></pre>
+<p>خطأ تحقق ستراه لاحقًا من Nest بالشكل الافتراضي المشابه لـ:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 400,
+  &quot;error&quot;: &quot;Bad Request&quot;,
+  &quot;message&quot;: [&quot;title must be a string&quot;]
+}
+</code></pre>
+<p>هذا JSON أيضًا. الفشل تمثيل، وله Status منفصل كما في درس Request.</p>
+<p>تعليق داخل JSON غير موجود:</p>
+<pre><code class="language-json">{
+  &quot;title&quot;: &quot;Clean Code&quot; // هذا يكسر JSON.parse
+}
+</code></pre>
+<p>JSON ليست JavaScript. لا تعليقات، ولا مفاتيح عارية، ولا اقتباس مفرد للنصوص.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرسال كائن JavaScript والظن أن HTTP سيفهمه. من غير تحويل إلى نص ورأس <code>Content-Type</code>، الطرف الآخر يرى بايتات أو يرفض.</li>
+<li>الوثوق بنوع TypeScript على جسم الطلب. النوع يختفي بعد الترجمة. الجسم القادم من الشبكة يحتاج فحصًا وقت التشغيل. هذا سبب DTO و Pipes لاحقًا.</li>
+<li>استخدام <code>Number</code> لكل المعرّفات الكبيرة جدًا. أعداد JSON تمر عبر عدد JavaScript، والأعداد الصحيحة الأكبر من المجال الآمن تفقد دقتها. المعرّف النصي يتجنب ذلك.</li>
+<li>تسريب حقول لأن <code>JSON.stringify</code> يكتب كل المفاتيح القابلة للعد. كلمة المرور أو الهاش إذا وُجدت على الكائن تخرج مع الرد. سنبني Serialization لاحقًا حتى يكون الخروج مقصودًا.</li>
+</ul>
+<h2>متى نستخدم JSON؟</h2>
+<p>لتمثيل الموارد في REST API بين NestJS وعملائه، وفي أغلب الأمثلة الرسمية للإطار.</p>
+<h2>متى نستخدم غيره؟</h2>
+<ul>
+<li>ملفات ثنائية ورفع ملفات: <code>multipart/form-data</code>، وله فصل.</li>
+<li>حدث من خادم إلى صفحة عبر قناة نصية أخرى: قد يبقى JSON هو الحمولة داخل WebSocket أو SSE.</li>
+<li>حاجة إلى مخطط إلزامي على السلك مثل Protobuf في gRPC. ذلك مسار Microservices، لا المسار الأول.</li>
+</ul>
+<p>HTML صيغة رد أيضًا عندما نقدّم صفحات. توثيق Nest يذكر MVC مع محرك قوالب. هذه الدورة تركز على API تعيد JSON.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>كائن JavaScript</th>
+<th>نوع TypeScript</th>
+<th>JSON</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يعيش</td>
+<td>في العملية أثناء التشغيل</td>
+<td>أثناء الكتابة والترجمة</td>
+<td>كنص بين العمليتين</td>
+</tr>
+<tr>
+<td>فيه دوال</td>
+<td>نعم</td>
+<td>يصفها</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>يفرضه المترجم على طلب HTTP</td>
+<td>لا</td>
+<td>لا</td>
+<td>المفسر يفرض الشكل النحوي فقط</td>
+</tr>
+<tr>
+<td>مثال مفتاح</td>
+<td><code>title: &quot;A&quot;</code> أو <code>&quot;title&quot;</code></td>
+<td><code>title: string</code></td>
+<td><code>&quot;title&quot;: &quot;A&quot;</code></td>
+</tr>
+</tbody></table>
+<p>الشكل النحوي الصحيح لا يعني أن <code>price</code> موجب أو أن <code>title</code> موجود. النحو وظيفة <code>JSON.parse</code>. المعنى وظيفة Validation.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي الأسطر JSON صالح؟</p>
+<ol>
+<li><code>{ title: &quot;A&quot; }</code></li>
+<li><code>{ &quot;title&quot;: &quot;A&quot; }</code></li>
+<li><code>{ &quot;ok&quot;: True }</code></li>
+<li><code>{ &quot;tags&quot;: [&quot;a&quot;, &quot;b&quot;] }</code></li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>غير صالح: المفتاح بلا اقتباس مزدوج.</li>
+<li>صالح.</li>
+<li>غير صالح: <code>True</code> يجب أن تكون <code>true</code>.</li>
+<li>صالح.</li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يعيد <code>JSON.stringify({ id: &quot;2&quot;, password: undefined, createdAt: new Date(&quot;2026-10-05T00:00:00Z&quot;) })</code> بشكل تقريبي؟ ماذا يضيع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نص قريب من <code>{&quot;id&quot;:&quot;2&quot;,&quot;createdAt&quot;:&quot;2026-10-05T00:00:00.000Z&quot;}</code>. المفتاح <code>password</code> يختفي لأن القيمة <code>undefined</code>. التاريخ يصبح نصًا. بعد <code>parse</code> لن تحصل على كائن <code>Date</code> إلا إذا بنيته.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>دالة Controller مستقبلًا ستأخذ <code>createBookDto: CreateBookDto</code>. لماذا لا يكفي هذا النوع لمنع عميل من إرسال <code>{ &quot;title&quot;: 5 }</code> إذا لم يوجد فحص وقت التشغيل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>TypeScript يمحو الأنواع عند إنتاج JavaScript. القيمة <code>{ &quot;title&quot;: 5 }</code> تُبنى من <code>JSON.parse</code> داخل جسم HTTP، والمترجم لا يرى طلبات الإنتاج. من غير Pipe أو فحص صريح، الدالة تستقبل القيمة كما وصلت. هذا سبب ما سيأتي في فصلي DTO و Validation، لا تفصيله هنا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما القيم التي يسمح بها JSON؟</li>
+<li>لماذا يختفي مفتاح قيمته <code>undefined</code> عند التحويل؟</li>
+<li>ما الفرق بين نجاح <code>JSON.parse</code> ونجاح Validation؟</li>
+<li>لماذا المعرّف النصي قرار آمن على حدود الـ API؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>JSON نص متفق عليه لشجرة بيانات. <code>stringify</code> و <code>parse</code> ينقلانك بين الذاكرة والشبكة. النوع في TypeScript لا يعبر الشبكة. المعنى أدق من النحو، وفحص المعنى طبقة لاحقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>عندنا بروتوكول، وأسلوب موارد، وصيغة جسم. بقي اسم للعقد كله الذي يناديه العميل: API، ومتى يكون REST API.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>MDN — Working with JSON: <a href="https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/JSON">https://developer.mozilla.org/en-US/docs/Learn_web_development/Core/Scripting/JSON</a></li>
+<li>MDN — <code>JSON.stringify</code>: <a href="https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify">https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/JSON/stringify</a></li>
+<li>مواصفة JSON: <a href="https://www.json.org/">https://www.json.org/</a></li>
+<li>NestJS — Validation (ستحتاجها عندما يصبح المعنى مفروضًا وقت التشغيل): <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

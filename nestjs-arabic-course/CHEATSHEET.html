@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مرجع سريع</title>
+<style>
+  :root { --bg:#f3efe6; --paper:#fffdf8; --ink:#1c2430; --muted:#5c6570; --line:#e4dccf; --teal:#0e6b66; --soft:#e5f3f1; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; }
+  main { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:28px 0 64px; }
+  header.bar { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:16px 0 0; color:var(--muted); font-size:14px; }
+  header.bar a { color:var(--teal); }
+  article { background:var(--paper); border:1px solid var(--line); padding:22px 26px 32px; }
+  h1 { font-size:28px; line-height:1.35; margin:0 0 12px; }
+  h2 { font-size:22px; margin:28px 0 8px; }
+  h3 { font-size:18px; margin:22px 0 8px; }
+  a { color:var(--teal); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; background:var(--soft); padding:0 4px; }
+  pre { background:#1c2430; color:#f4f1ea; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+  pre code { background:transparent; color:inherit; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th, td { border-bottom:1px solid var(--line); text-align:right; padding:8px; vertical-align:top; }
+  th { color:var(--muted); }
+  blockquote { margin:12px 0; padding:8px 14px; border-right:3px solid var(--teal); background:var(--soft); }
+  img { max-width:100%; }
+  ul, ol { padding-right:1.2em; }
+  details { background:var(--soft); padding:8px 12px; margin:10px 0; }
+  summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<header class="bar"><span>nestjs-arabic-course/CHEATSHEET.md</span> · <a href="CHEATSHEET.md">ملف Markdown الأصلي</a></header>
+<main>
+<article>
+<h1>مرجع سريع</h1>
+<p>ينمو مع الفصول. هذا الإصدار يغطي المقدمة فقط. التفاصيل والسبب في الدروس، لا في هذا الملف.</p>
+<h2>HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>Method</th>
+<th>استخدام شائع</th>
+<th>تكرار مكافئ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td>قراءة</td>
+<td>لا يغيّر الحالة</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td>إنشاء أو تشغيل عملية</td>
+<td>قد يكرر الأثر</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td>استبدال التمثيل كاملًا</td>
+<td>يوصل إلى الحالة نفسها</td>
+</tr>
+<tr>
+<td><code>PATCH</code></td>
+<td>تعديل جزء</td>
+<td>يعتمد على شكل التعديل</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td>حذف</td>
+<td>الحذف المتكرر يترك المورد غائبًا</td>
+</tr>
+</tbody></table>
+<table>
+<thead>
+<tr>
+<th>الرمز</th>
+<th>معنى عملي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>200</code></td>
+<td>نجاح عام</td>
+</tr>
+<tr>
+<td><code>201</code></td>
+<td>أُنشئ مورد</td>
+</tr>
+<tr>
+<td><code>204</code></td>
+<td>نجاح بلا جسم</td>
+</tr>
+<tr>
+<td><code>400</code></td>
+<td>الطلب غير صالح</td>
+</tr>
+<tr>
+<td><code>401</code></td>
+<td>فشل Authentication</td>
+</tr>
+<tr>
+<td><code>403</code></td>
+<td>ممنوع بعد معرفة الهوية</td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td>لا مورد بهذا العنوان</td>
+</tr>
+<tr>
+<td><code>409</code></td>
+<td>يتعارض مع حالة حالية</td>
+</tr>
+<tr>
+<td><code>500</code></td>
+<td>فشل الخادم</td>
+</tr>
+</tbody></table>
+<p>JSON: مفاتيح بنص مزدوج الاقتباس، <code>true</code> و <code>false</code> و <code>null</code>، ومن غير تعليقات ومن غير فاصلة أخيرة.</p>
+<h2>Express</h2>
+<pre><code class="language-ts">import express from &#39;express&#39;;
+
+const app = express();
+app.use(express.json());
+app.get(&#39;/books/:id&#39;, (req, res) =&gt; {
+  res.json({ id: req.params.id });
+});
+app.listen(3000);
+</code></pre>
+<ul>
+<li><code>next()</code> يمرر إلى الطبقة التالية.</li>
+<li>إنهاء <code>res</code> من غير <code>next</code> يوقف السلسلة.</li>
+<li>نسيان الاثنين يعلّق العميل.</li>
+<li><code>req</code> و <code>res</code> هما كائنا Node.</li>
+</ul>
+<h2>معاينة Nest</h2>
+<p>لا تستخدم هذا المرجع بديلًا عن الفصول <code>02</code> وما بعدها.</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p>المنصة الافتراضية: Express، الحزمة <code>@nestjs/platform-express</code>.</p>
+<p>Fastify: محوّل <code>FastifyAdapter</code> من <code>@nestjs/platform-fastify</code>، عندما يصل درس الأداء.</p>
+<p>حزم مشروع من غير CLI: <code>@nestjs/core</code>، <code>@nestjs/common</code>، <code>rxjs</code>، <code>reflect-metadata</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Express</th>
+<th>Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.get(&#39;/books&#39;, handler)</code></td>
+<td><code>@Controller(&#39;books&#39;)</code> و <code>@Get()</code></td>
+</tr>
+<tr>
+<td><code>res.json(value)</code> داخل المعالج</td>
+<td><code>return value</code> في الحالة القياسية</td>
+</tr>
+<tr>
+<td><code>app.use(...)</code></td>
+<td>Middleware في أول مسار الطلب</td>
+</tr>
+<tr>
+<td>فحص يدوي للهوية</td>
+<td>Guard</td>
+</tr>
+<tr>
+<td>فحص يدوي للجسم</td>
+<td>Pipe</td>
+</tr>
+<tr>
+<td><code>try/catch</code> مختلف في كل مسار</td>
+<td>Exception Filter</td>
+</tr>
+</tbody></table>
+<p>رمز النجاح عند إرجاع قيمة من المتحكم: <code>200</code>، و <code>POST</code> افتراضيًا <code>201</code>. التغيير بـ <code>@HttpCode</code> في فصل Controllers.</p>
+<h2>Request Lifecycle</h2>
+<pre><code class="language-text">Middleware
+  -&gt; Guards          (Global ثم Controller ثم Route)
+  -&gt; Interceptors    (قبل المتحكم، بالاتجاه نفسه)
+  -&gt; Pipes           (Global ثم Controller ثم Route ثم معاملات المسار)
+  -&gt; Controller
+  -&gt; Service
+  -&gt; Interceptors    (بعد المتحكم: Route ثم Controller ثم Global)
+  -&gt; Exception Filter عند استثناء غير ممسوك (Route ثم Controller ثم Global)
+  -&gt; Response
+</code></pre>
+<p>استثناء Middleware: الفلاتر العامة فقط.</p>
+<h2>أوامر</h2>
+<pre><code class="language-bash">node -v
+npm i -g @nestjs/cli
+nest new bookstore
+npm run start:dev
+npm run build
+npm run start:prod
+npm run lint
+npm run format
+nest g module books
+nest g controller books
+nest g service books
+</code></pre>
+<p>Node لتشغيل Nest 12: 20.19+ أو 22.12+. مولّد CLI: 22.22.3+ أو 24.15+ أو 26+.</p>
+<h2>زينة تتكرر</h2>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>الدور</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Module</code></td>
+<td>حدود الوحدة</td>
+</tr>
+<tr>
+<td><code>@Controller</code></td>
+<td>بادئة المسار</td>
+</tr>
+<tr>
+<td><code>@Get</code> <code>@Post</code> <code>@Put</code> <code>@Patch</code> <code>@Delete</code></td>
+<td>الطريقة</td>
+</tr>
+<tr>
+<td><code>@Body</code> <code>@Param</code> <code>@Query</code></td>
+<td>استخراج</td>
+</tr>
+<tr>
+<td><code>@Injectable</code></td>
+<td>مزوّد</td>
+</tr>
+<tr>
+<td><code>@UseGuards</code></td>
+<td>بوابة</td>
+</tr>
+<tr>
+<td><code>@UseInterceptors</code></td>
+<td>لف التنفيذ</td>
+</tr>
+<tr>
+<td><code>@UsePipes</code></td>
+<td>فحص أو تحويل</td>
+</tr>
+<tr>
+<td><code>@Catch</code></td>
+<td>فلتر استثناء</td>
+</tr>
+<tr>
+<td><code>@HttpCode</code></td>
+<td>تغيير الرمز الافتراضي</td>
+</tr>
+</tbody></table>
+<p><code>POST</code> الافتراضي <code>201</code>، وغيره <code>200</code>.</p>
+<h2>حزم تُفتح عند فصلها</h2>
+<p><code>@nestjs/config</code>، <code>@nestjs/swagger</code>، <code>@nestjs/throttler</code>، <code>@nestjs/bullmq</code>، <code>@nestjs/schedule</code>، <code>@nestjs/event-emitter</code>، <code>@nestjs/terminus</code>، <code>@nestjs/graphql</code>، <code>@nestjs/passport</code> أو <code>@nestjs/authentication</code> حسب المسار الذي تختاره، و Prisma للبيانات.</p>
+
+</article>
+</main>
+</body>
+</html>

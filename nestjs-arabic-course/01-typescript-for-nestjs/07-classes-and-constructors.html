@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Classes و Constructor</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-classes-and-constructors.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Classes و Constructor</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة صنف Nest كقالب كائنات: حقول، وconstructor يهيئها، ودوال تعمل على <code>this</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الدوال المتفرقة التي تشارك متغيرًا عامًا <code>let books = []</code> تخفي من يملك البيانات. الصنف يجمع الحالة والسلوك في قالب واحد، والإطار يصنع منه كائنًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>class</code> قالب. <code>new</code> يصنع كائنًا ويستدعي <code>constructor</code>. داخل الدوال، <code>this</code> هو ذلك الكائن.</p>
+<p>في Nest لن تكتب <code>new UsersService()</code> في المتحكم. الحاوية تفعل ما يفعله <code>new</code> مع حقن الاعتماديات. افهم <code>new</code> أولًا حتى ترى ماذا أُخذ منك عمدًا.</p>
+<h2>التعريف التقني</h2>
+<p>الصنف في JavaScript دالة بناء مع prototype. TypeScript يضيف الأنواع ومعدّلات الوصول. <code>constructor</code> دالة التهيئة، وتُستدعى مرة لكل <code>new</code>. لا تُرجع الكائن يدويًا في الاستخدام العادي؛ <code>new</code> يعيد الكائن.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">class BooksService     القالب
+new BooksService()     كائن واحد
+this.books             حالة هذا الكائن
+container.create       لاحقًا بدل new في المتحكم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">class BooksService {
+  private readonly books: string[] = [];
+
+  add(title: string): void {
+    this.books.push(title);
+  }
+
+  count(): number {
+    return this.books.length;
+  }
+}
+
+const service = new BooksService();
+service.add(&#39;Refactoring&#39;);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>books</code> حقل على كل كائن، ومصفوفة جديدة لكل <code>new</code> لأن التهيئة على الحقل.</li>
+<li><code>private</code> فحص TypeScript: من خارج الصنف لا نكتب <code>service.books</code>. وقت التشغيل الاسم ما زال موجودًا على الكائن ما لم تستخدم حقول <code>#</code> الخاصة في JavaScript.</li>
+<li><code>readonly</code> يمنع استبدال المصفوفة، لا <code>push</code>.</li>
+<li><code>add</code> و <code>count</code> دوال على prototype، و <code>this</code> داخلها هو الكائن الذي نُوديت عليه.</li>
+<li><code>new BooksService()</code> يشغّل التهيئة. لا يوجد constructor مكتوب، فهناك واحد افتراضي فارغ.</li>
+</ul>
+<p>constructor صريح:</p>
+<pre><code class="language-ts">class Clock {
+  constructor(private readonly startedAt: Date) {}
+}
+</code></pre>
+<p>هذا الاختصار درس 09. شكله المطول:</p>
+<pre><code class="language-ts">class Clock {
+  private readonly startedAt: Date;
+
+  constructor(startedAt: Date) {
+    this.startedAt = startedAt;
+  }
+}
+</code></pre>
+<p>المعامل يُمرَّر إلى <code>new Clock(new Date())</code> ويُنسخ إلى الحقل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>new</code> ينشئ كائنًا، يربطه بـ prototype الصنف، ويستدعي constructor مع الوسائط. إن رمى constructor، لا يُسلَّم إليك كائن نصف مهيأ في الاستخدام العادي.</p>
+<p>نسختان من <code>BooksService</code> تعنيان مصفوفتين. في Nest، التسجيل الافتراضي ينشئ نسخة واحدة للتطبيق كله. لذلك حالة على الحقل مثل هذه المصفوفة تصبح حالة مشتركة بين كل الطلبات. مقبولة لتجربة في الذاكرة، وخطرة إذا حسبتها &quot;بيانات هذا المستخدم&quot;.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">class Price {
+  constructor(private readonly amount: number) {}
+
+  withDiscount(rate: number): number {
+    return this.amount * (1 - rate);
+  }
+}
+
+const price = new Price(40);
+price.withDiscount(0.25);
+</code></pre>
+<p><code>amount</code> لا يتغير. الدالة تحسب ناتجًا. هذا نمط يناسب خدمات بلا حالة مشتركة قابلة للتغيير: المعطيات تدخل، والناتج يخرج، والمخزن الحقيقي قاعدة البيانات لا حقل على الخدمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>this.</code> وقراءة متغير حر بالاسم نفسه.</li>
+<li>وضع طلب HTTP كامل على الحقل في خدمة singleton. الطلب التالي يرى بقايا السابق.</li>
+<li><code>new</code> للخدمة داخل كل دالة متحكم. تفقد المشاركة والاختبار. الحقن سيحل محله، لا تبنِ العادة.</li>
+</ul>
+<h2>متى نستخدم صنفًا؟</h2>
+<p>لمتحكمي Nest وخدماتها ووحداتها. الإطار يطلب أصنافًا ليلصق عليها Decorators.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لدالة تحويل نقية بلا حالة. دالة عادية أوضح. Nest تسمح بمزوّدات غير صنفية لاحقًا، بعد أن تفهم الصنف.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>دالة + متغير عام</th>
+<th>صنف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يملك الحالة</td>
+<td>الملف</td>
+<td>الكائن</td>
+</tr>
+<tr>
+<td>من ينشئ في Nest</td>
+<td>الاستيراد</td>
+<td>الحاوية غالبًا</td>
+</tr>
+<tr>
+<td>الاختبار</td>
+<td>يستبدل العام</td>
+<td>يبني الكائن بمعطيات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يطبع <code>count()</code> بعد <code>add</code> مرتين على الكائن نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>2</code>. المصفوفة على الكائن تتراكم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اكتب الصنف المطول المكافئ لـ <code>constructor(private readonly amount: number)</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">class Price {
+  private readonly amount: number;
+  constructor(amount: number) {
+    this.amount = amount;
+  }
+}
+</code></pre>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا نسختان من <code>BooksService</code> في المثال لا تريان كتب بعضهما، بينما نسخة Nest الافتراضية الواحدة يراها كل طلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل <code>new</code> يهيئ حقل <code>books</code> من جديد. الحاوية الافتراضية لا تنادي <code>new</code> لكل طلب، بل تحتفظ بكائن واحد. الحقل القابل للتغيير على ذلك الكائن مشترك. لذلك الحالة الخاصة بالطلب لا تُخزَّن على خدمة singleton.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى يشتغل constructor؟</li>
+<li>ماذا يشير إليه <code>this</code> داخل دالة الصنف؟</li>
+<li>لماذا نسخة الخدمة الافتراضية في Nest تجعل الحقل المشترك خطرًا لبيانات طلب واحد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الصنف قالب، والconstructor يهيئ الكائن، و <code>this</code> حالته. Nest تنشئ هذه الكائنات في الحاوية. افصل حالة الطلب عن حقول الخدمة المشتركة.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>private</code> ظهر بسرعة. الدرس التالي يفرقه عن <code>public</code> و <code>protected</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Classes: <a href="https://www.typescriptlang.org/docs/handbook/2/classes.html">https://www.typescriptlang.org/docs/handbook/2/classes.html</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

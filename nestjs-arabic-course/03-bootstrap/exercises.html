@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل</h2>
+<p>رتّب: <code>listen</code>، تحميل Decorators، <code>NestFactory.create</code>.</p>
+<details><summary>الحل</summary>
+
+<p>تحميل الملف يشغّل Decorators، ثم <code>create</code>، ثم <code>listen</code>.</p>
+</details>
+
+<h2>تمرين متوسط</h2>
+<p><code>PORT=4000 npm run start:dev</code>. أي عنوان تفتح؟</p>
+<details><summary>الحل</summary>
+
+<p><code>http://localhost:4000/</code> لأن القالب يمرر <code>process.env.PORT</code>.</p>
+</details>
+
+<h2>تمرين متقدم</h2>
+<p>اختبار يحتاج التطبيق من غير حجز منفذ على الجهاز. أي خطوة من <code>bootstrap</code> يحذف، وما الذي يبقى جاهزًا بعد <code>create</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>يحذف <code>listen</code>. بعد <code>create</code> الوحدات والمسارات مسجّلة على خادم المنصة الداخلي ويمكن ضربها من داخل الاختبار.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

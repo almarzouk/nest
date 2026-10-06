@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متطلبات Node.js</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-nodejs-requirements.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متطلبات Node.js</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت نسخة Node يستطيع تشغيل NestJS 12 وتشغيل مولّدات CLI.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حزم Nest 12 تُنشر كـ ESM، و Node الأقدم لا يوفّر <code>require(esm)</code> الذي يبقي مشاريع CommonJS قادرة على تحميلها. مولّد الأوامر يطلب نسخة أحدّث من مجرد تشغيل التطبيق.</p>
+<h2>الفكرة ببساطة</h2>
+<p>لتشغيل التطبيق: Node 20.19 أو أحدث، أو 22.12 أو أحدث على خط 22. لمولّدات <code>nest new</code> و <code>nest generate</code>: 22.22.3 أو أحدث، أو 24.15 أو أحدث، أو 26. خط 21 غير مدعوم. الأفضل أحدث LTS نشط يغطي الشرطين.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة First steps في التوثيق الرسمي هي مصدر هذه الأرقام. <code>nest upgrade</code> من الإصدار 11 يرفض العمل على نسخ أقدم ومنها خط 21.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تشغيل التطبيق     &gt;= 20.19  أو  &gt;= 22.12
+أوامر nest g/new   &gt;= 22.22.3 أو &gt;= 24.15 أو &gt;= 26
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">node -v
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الأمر يطبع نسخة Node الحالية. قارنها بالحد الأدنى قبل تثبيت CLI. إن كانت أقدم، ثبّت LTS من nodejs.org أو بمدير نسخ مثل nvm. لا تعتمد على نسخة تأتي مع أداة غير رسمية.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>حزم <code>@nestjs/*</code> في الإصدار 12 ESM. Node الحديث يستطيع تحميل ESM من مشروع CommonJS عبر <code>require(esm)</code>. النسخ الأقدم تفشل عند الإقلاع أو عند الترقية. المولّد نفسه يعمل على Node لأنه سكربت CLI، وحدّه أعلى لأن أدواته تعتمد على واجهات أحدث.</p>
+<h2>مثال عملي</h2>
+<p>على جهاز التطوير اختر LTS يحقق شرط المولّد حتى لا تصطدم عند <code>nest g module</code>. في Docker لاحقًا استخدم صورة Node من الخط نفسه، لا صورة قديمة موروثة من درس قديم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تثبيت Node 18 لأن مقالًا قديمًا ذكره. Nest 12 لا يعمل عليه.</li>
+<li>استخدام خط 21. التوثيق يستبعده.</li>
+<li>الاكتفاء بنسخة تشغّل <code>node server.js</code> البسيط بينما <code>nest new</code> يرفضها.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قبل أي <code>npm i -g @nestjs/cli</code> في هذه الدورة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تغيّر نسخة الإنتاج إلى current غير LTS فقط لأن الرقم أعلى، إذا كان LTS يغطي الحدود.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الغرض</th>
+<th>الحد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>node dist/main.js</code></td>
+<td>20.19+ أو 22.12+</td>
+</tr>
+<tr>
+<td><code>nest new</code> و <code>nest generate</code></td>
+<td>22.22.3+ أو 24.15+ أو 26+</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الأمر الذي يطبع نسخة Node؟</p>
+<details><summary>الحل</summary>
+
+<p><code>node -v</code></p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الجهاز على Node 20.10. هل يكفي لتشغيل تطبيق Nest 12؟ هل يكفي لـ <code>nest new</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا لكليهما. 20.10 أقل من 20.19، والمولّد يطلب خطًا أعلى أصلًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا قد يعمل <code>require</code> لحزمة Nest داخل مشروع CommonJS على Node 22 ويفشل على Node 18؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن الحزم ESM، والتحميل من CommonJS يعتمد على دعم <code>require(esm)</code> الموجود في النسخ التي يحددها توثيق Nest 12، لا في 18.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما حد تشغيل التطبيق على خط 20؟</li>
+<li>لماذا خط 21 غير مناسب؟</li>
+<li>لماذا حد CLI أعلى من حد التشغيل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ثبّت LTS حديثًا يغطي مولّد Nest، لا مجرد نسخة تشغّل JavaScript.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعد النسخة نختار أداة تثبيت الحزم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NestJS Observe و @nestjs/observe</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-nestjs-observe.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>NestJS Observe و @nestjs/observe</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل المراقبة الرسمية لرف بحزمة <code>@nestjs/observe</code>: خطاف على دورة Nest لا عميل OpenTelemetry تجمّعونه أنتم، مع معرفة أنه اختياري عند <code>nest new</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تريدون p95 لكل مسار وأسماء <code>BooksController.publish</code> في اللوحة، بلا أسبوع مجمع وexporter. في الوقت نفسه لا تريدون أن يُفرض ذلك على كل مشروع تعليمي. أمر <code>nest new</code> يسأل أو يقبل علمًا صريحًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>createObserveModule()</code> يعيد <code>ObserveModule</code> و <code>ObserveInstrument</code>. تستوردون <code>ObserveModule.forRoot</code> في الجذر وتمررون <code>instrument: ObserveInstrument</code> إلى <code>NestFactory.create</code> حتى يلحق SDK قبل الطلبات. الحزمة ترسل إلى NestJS Observe. هي ليست بديل OpenTelemetry لمن يجمع عدة لغات. عند إنشاء المشروع، <code>--observe</code> يفعّلها و <code>--no-observe</code> يتخطاها.</p>
+<h2>التعريف التقني</h2>
+<p>من ملاحظات Nest 12: <code>nest new</code> و <code>nest upgrade</code> يستطيعان توصيل الحزمة بـ <code>--observe</code>. العلم <code>--no-observe</code> يجاوب السؤال بالنفي عندما لا تريدون أن يُضاف SDK. التوثيق: الحزمة تُعلّق على دورة الطلب عبر خيار <code>instrument</code> لا عبر لف خادم HTTP كعميل عام. <code>ObserveModule.forRoot</code> يحتاج على الأقل معرّف خدمة (ومفاتيح التطبيق حسب الصفحة الحالية). مع Fastify، المحول الوسيط الثاني والخيار <code>instrument</code> في الثالث، مثل <code>rawBody</code>. الإصدار المطلوب من النواة يتضمن خيار <code>instrument</code> (الوثائق تذكر 11.1.4 كحد أدنى، ورف على Nest 12 فوق ذلك). GraphQL يحتاج نسخة graphql متوافقة إن وُجد. لا تحذفوا <code>/health</code>؛ الموازن ما زال يحتاجه وصفحة المراقبة تقول ذلك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">nest new --observe     → ملفات جاهزة
+أو --no-observe        → بلا SDK
+createObserveModule → forRoot + instrument في create
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule, ObserveInstrument } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule, { instrument: ObserveInstrument });
+  await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>ObserveInstrument</code> من نفس <code>createObserveModule()</code> الذي صدّر الوحدة، لا من استدعاء ثانٍ.</li>
+<li>Express: الخيار ثاني وسيط. لا تضعوا المحول هنا.</li>
+<li>من غير <code>instrument</code> قد تُستورد الوحدة ولا تُلقَّن الدورة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>createObserveModule()</code> يبني الزوج المرتبط بإعداد واحد.</li>
+<li><code>forRoot</code> يسجّل الإرسال بمعرّف الخدمة.</li>
+<li><code>instrument</code> يلتقط المتحكمات والمهام قبل الاستماع.</li>
+<li>الطلبات تُرسل بأسماء أصنافكم. استعلامات SQL تظهر بشكل الجملة لا بالقيم حسب وصف المنتج.</li>
+<li>بيئة متعددة اللغات تبقى على OpenTelemetry إن كان المجمع المشترك قرار المنظمة. يمكن فهم الاثنين، لكن لا تتوقعوا أن لوحة Observe تستبدل <code>traceparent</code> لكل Python تلقائيًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { createObserveModule } from &#39;@nestjs/observe&#39;;
+
+export const { ObserveModule, ObserveInstrument } = createObserveModule();
+
+@Module({
+  imports: [
+    ObserveModule.forRoot({
+      serviceId: &#39;raf-api&#39;,
+      appKey: process.env.OBSERVE_APP_KEY!,
+      appSecret: process.env.OBSERVE_APP_SECRET!,
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>أسماء <code>appKey</code> و <code>appSecret</code> اتبعوا صفحة SDK إن تغيّر التوقيع؛ الفكرة أن السر في البيئة لا في المستودع. <code>serviceId</code> يفرّق API عن العامل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>instrument</code> والاكتفاء بالوحدة.</li>
+<li>وضع <code>instrument</code> مكان <code>FastifyAdapter</code>.</li>
+<li>ادّعاء أن الحزمة تلغي OpenTelemetry في شركة متعددة اللغات.</li>
+<li>إيقاف health لأن اللوحة تراقب. الموازن لا يفتح لوحة Observe.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تريدون مراقبة Nest بأسماء الإطار بسرعة، وتقبلون خدمة NestJS Observe.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يكون مجمع OpenTelemetry معيار المنظمة لكل اللغات. وعندها <code>--no-observe</code> على <code>nest new</code> يبقي المشروع بلا SDK.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>OpenTelemetry مجمعكم</th>
+<th><code>@nestjs/observe</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الأسماء</td>
+<td>حسب التلقين</td>
+<td>متحكمات ومزوّدات Nest</td>
+</tr>
+<tr>
+<td>التشغيل</td>
+<td>تصدير ومجمّع</td>
+<td>مفاتيح وخيار <code>instrument</code></td>
+</tr>
+<tr>
+<td>إنشاء المشروع</td>
+<td>لا يُضاف تلقائيًا إلا بقرار</td>
+<td><code>--observe</code> / <code>--no-observe</code></td>
+</tr>
+<tr>
+<td>متعدد اللغات</td>
+<td>مناسب</td>
+<td>ليس بديل المعيار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي علم يمنع إضافة الحزمة عند <code>nest new</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>--no-observe</code>. التفعيل الصريح <code>--observe</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الوحدة مستوردة ولا تظهر طلبات. ماذا ينقص <code>bootstrap</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تمرير <code>instrument: ObserveInstrument</code> إلى <code>NestFactory.create</code>. على Fastify يكون ذلك الوسيط الثالث بعد المحول.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تبقون Terminus مع Observe؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الموازن يضرب مسار صحة ولا يقرأ لوحة المراقبة. Observe يفسّر البطء والأخطاء. الغياب عن اللوحة لا يعني أن الحاوية يجب أن تُسحب من الخدمة فورًا إن كان الفحص المحلي أخضر، والعكس صحيح أيضًا: الفحص الأخضر لا يشرح p95.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>createObserveModule</code>؟</li>
+<li>أين يُمرَّر <code>ObserveInstrument</code>؟</li>
+<li>كيف تتجاوزون السؤال عند إنشاء المشروع؟</li>
+<li>لماذا ليست الحزمة بديلًا إلزاميًا عن OpenTelemetry؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/observe</code> اختياري عبر <code>--observe</code> و <code>--no-observe</code>، ويُربط بـ <code>forRoot</code> وخيار <code>instrument</code> قبل الطلبات. الأسماء من Nest. المعيار متعدد اللغات يبقى OpenTelemetry. مسار الصحة يبقى.</p>
+<h2>ماذا بعد؟</h2>
+<p>سطر السجل بلا مفتاح لا يُجمع مع الأثر. الدرس التالي معرّف يربط سجلات الطلب الواحد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Observability SDK: <a href="https://docs.nestjs.com/observability/sdk">https://docs.nestjs.com/observability/sdk</a></li>
+<li>NestJS — CLI: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

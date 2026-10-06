@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hybrid Applications</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-hybrid-apps.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Hybrid Applications</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل HTTP رف مع مستمع رسائل في نفس العملية عبر <code>connectMicroservice</code>، وضبط ترتيب الإقلاع ووراثة الإعداد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>createMicroservice()</code> يبني تطبيقًا واحدًا بلا HTTP بجانبه. أو الرسائل تُستهلك قبل <code>onModuleInit</code>. أو حارس المنظمة العام على HTTP لا يصل إلى معالج الرسالة فتُقرأ حمولة بلا نفس السياسة، أو يصل فجأة لأن أحدهم افترض الوراثة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التطبيق الهجين يسمع من أكثر من مصدر: HTTP مع TCP مثلًا، أو أكثر من ناقل. <code>NestFactory.create</code> ثم <code>connectMicroservice</code> لكل ناقل، ثم إما <code>listen</code> أو <code>init</code> إن لم يوجد HTTP، و <code>startAllMicroservices</code>. الترتيب قرار: بدء الخدمات المصغرة أولًا يستهلك رسائل قبل اكتمال خطافات الحياة. الوراثة <code>inheritAppConfig</code> ليست افتراضية. المعالجات تُسجَّل عند <code>connectMicroservice</code>، لذا <code>useGlobal*</code> قبل الربط إن أردتم الوراثة. الصفحة: <a href="https://docs.nestjs.com/faq/hybrid-application">https://docs.nestjs.com/faq/hybrid-application</a></p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+app.connectMicroservice&lt;MicroserviceOptions&gt;({
+  transport: Transport.TCP,
+});
+await app.startAllMicroservices();
+await app.listen(3001);
+</code></pre>
+<p><code>listen</code> يفتح HTTP. بلا مسارات HTTP استدعوا <code>app.init()</code> بدلًا منه. لربط الناقل بعد اكتمال الوحدات:</p>
+<pre><code class="language-ts">await app.listen(3001);
+await app.startAllMicroservices();
+</code></pre>
+<p>أكثر من مستمع يعني أكثر من <code>connectMicroservice</code> (TCP و Redis في مثال الصفحة). <code>@MessagePattern</code> يأخذ ناقلًا ثانيًا مثل <code>Transport.NATS</code> حين تتعدد النواقل. <code>inheritAppConfig: true</code> كوسيط ثانٍ ينسخ الأنابيب والاعتراضات والحراس والمرشحات العامة، سواء سُجّلت بـ <code>useGlobal*</code> أو برموز <code>APP_GUARD</code> وأخواتها. افتراضيًا الخدمات المتصلة لا ترث ذلك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">create → connectMicroservice (تسجيل المعالجات)
+→ init أو listen
+→ startAllMicroservices
+الحارس العام لا يُورَّث إلا بعلم صريح
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { MicroserviceOptions, Transport } from &#39;@nestjs/microservices&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.connectMicroservice&lt;MicroserviceOptions&gt;({
+    transport: Transport.TCP,
+    options: { port: 3002 },
+  });
+  await app.listen(3001);
+  await app.startAllMicroservices();
+}
+await bootstrap();
+</code></pre>
+<p><code>listen</code> هنا يفتح HTTP ويكمل خطافات الإقلاع قبل الاستهلاك. بلا مسارات HTTP استبدلوه بـ <code>app.init()</code> ثم <code>startAllMicroservices</code>. بدء الخدمات المصغرة أولًا يوصل الرسائل قبل تلك الخطافات.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>منفذ 3001 للمتصفح و 3002 لرسائل TCP. لا تشاركوهما بلا قصد.</li>
+<li>Fastify أو Express يبقى اختيار منصة HTTP كما في بقية رف. Express هو الافتراضي إن لم تقيسوا غيره.</li>
+<li>الرسالة ليست طلبًا فيه ترويسة منظمة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>create</code> يبني تطبيق HTTP ويهيئ الوحدات عند <code>init</code> أو <code>listen</code>.</li>
+<li><code>connectMicroservice</code> يربط <code>INestMicroservice</code> ويسجّل <code>@MessagePattern</code> فورًا.</li>
+<li><code>startAllMicroservices</code> يبدأ الاستهلاك.</li>
+<li>إن سبق الاستهلاكُ الخطافات، قد يصل أمر «انشر» قبل جاهزية Prisma.</li>
+<li>مع <code>inheritAppConfig</code> تُنسخ المحسّنات المسجّلة قبل <code>connect</code>. نداء <code>useGlobalGuards</code> بعده لا يصل إلى معالجات ذلك المستمع.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>رف تبقي <code>POST /projects</code> على HTTP مع حارس المنظمة. عامل داخلي على TCP يستقبل <code>project.published</code> الذي وضعه الصندوق. المعالج يحمّل <code>organizationId</code> من الحمولة ولا يعتمد على حارس HTTP. إن احتجتم نفس الأنبوب على الرسالة فمرّروا <code>{ inheritAppConfig: true }</code> بعد تسجيل الأنابيب العامة. لا تفعّلوا الخطة من رسالة داخلية بلا توقيع المصدر. رسالة التكامل داخل شبكتكم غير حدث Stripe.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>createMicroservice</code> مع توقع أن <code>listen</code> ما زال متاحًا على نفس الكائن.</li>
+<li>افتراض وراثة <code>TenantGuard</code> على كل <code>@MessagePattern</code>.</li>
+<li><code>startAllMicroservices</code> قبل <code>init</code> ومعالج يلمس قاعدة لم تُفتح.</li>
+<li>منفذ TCP على واجهة عامة بلا حاجة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عملية واحدة تخدم المتصفح وتستهلك طابورًا أو TCPًا قريبًا، مع ترتيب إقلاع واضح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حين يجب أن يتوسع مستهلك الرسائل مستقلًا عن HTTP. افصلوا تطبيق العامل في مساحة العمل. ولا كبديل عن صندوق الصادر: الهجين ينقل الرسالة بعد ما كُتبت.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستدعاء</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>listen</code></td>
+<td>HTTP</td>
+</tr>
+<tr>
+<td><code>init</code></td>
+<td>خطافات بلا HTTP</td>
+</tr>
+<tr>
+<td><code>startAllMicroservices</code></td>
+<td>بدء الاستهلاك</td>
+</tr>
+<tr>
+<td><code>inheritAppConfig: true</code></td>
+<td>نسخ المحسّنات العامة المسجّلة قبل الربط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تستدعون إن لم يوجد HTTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.init()</code> بدل <code>listen</code>. ثم <code>startAllMicroservices</code> بالترتيب الذي يناسب جاهزية الوحدات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الحارس العام غائب عن معالج TCP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الوراثة ليست افتراضية. <code>inheritAppConfig: true</code> ينسخها، بشرط تسجيل <code>useGlobalGuards</code> قبل <code>connectMicroservice</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رسالة وصلت قبل اتصال Prisma. أي ترتيب يمنعه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>init</code> أو <code>listen</code> أولًا حتى تكتمل <code>onModuleInit</code> و <code>onApplicationBootstrap</code>، ثم <code>startAllMicroservices</code>. بدء الخدمات المصغرة أولًا يستهلك قبل تلك الخطافات، كما تلاحظ الصفحة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا يكفي <code>createMicroservice</code>؟</li>
+<li>ما الوسيط الذي يفتح الوراثة؟</li>
+<li>متى تُسجَّل معالجات الرسائل؟</li>
+<li>أي حقل في الحمولة يحدد المنظمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التطبيق الهجين في رف هو HTTP زائد <code>connectMicroservice</code>. <code>init</code> أو <code>listen</code> قبل الاستهلاك يحمي الإقلاع. حارس المنظمة لا يعبر إلى الرسالة إلا بـ <code>inheritAppConfig</code>، والحمولة ما زالت تحمل معرف المنظمة صراحة.</p>
+<h2>ماذا بعد؟</h2>
+<p>هذا آخر درس في المسار. الميزات هنا اختيارية. العقد والأمان والاعتمادية التي سبقت تبقى أساس النشر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Hybrid application: <a href="https://docs.nestjs.com/faq/hybrid-application">https://docs.nestjs.com/faq/hybrid-application</a></li>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

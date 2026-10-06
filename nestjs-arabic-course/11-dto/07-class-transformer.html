@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>class-transformer</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-class-transformer.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>class-transformer</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحويل كائن JSON العادي إلى نسخة من صنف العقد، وتحويل الأنواع المتداخلة بـ <code>@Type</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد <code>express.json()</code> الجسم <code>{ desk: &quot;3&quot; }</code> كائن عادي. <code>instanceof OpenDeskDto</code> خاطئ. زينة الفحص المتداخل لا تعمل على كائن داخلي بقي عاديًا. المكتبة تصنع النسخة التي تنتظرها الزينة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>plainToInstance(Cls, plain)</code> ترجع نسخة <code>Cls</code>. <code>@Type(() =&gt; Nested)</code> يخبر المكتبة بأي صنف تبني الحقل المتداخل. <code>@Expose()</code> و <code>@Exclude()</code> يسميان ما يدخل التحويل حين تطلب استراتيجية تعرض الحقول المكشوفة فقط.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة <code>class-transformer</code>، والدالة التي يستخدمها توثيق Nest هي <code>plainToInstance</code>. الاسم الأقدم <code>plainToClass</code> ما زال معروفًا. التوثيق الحالي يكتب <code>plainToInstance</code>.</p>
+<p><code>ValidationPipe</code> يستدعيها داخليًا قبل <code>validate</code>. خيار <code>transform: true</code> على الأنبوب يعيد النسخة إلى المعالج بدل الكائن الأصلي. خيار <code>transformOptions</code> يُمرَّر إلى هذه المكتبة، ومنه <code>enableImplicitConversion</code>. تفاصيل الخيارين فصل التحقق. هنا سلوك المكتبة وحدها.</p>
+<p><code>@Type(() =&gt; AddressDto)</code> من <code>class-transformer</code> لازمة للحقل المتداخل حتى لو وُجد <code>@ValidateNested()</code> من <code>class-validator</code>. الفحص المتداخل درس في الفصل التالي. هذا الدرس يعلّم الزينة التي تبني النوع.</p>
+<p><code>@Expose()</code> يُظهر الحقل عند <code>excludeExtraneousValues: true</code>. <code>@Exclude()</code> يخفي الحقل. هذا مفيد لعقد خرج لاحقًا مع المعترض. لا تعتمد عليه اليوم بدل <code>MemberResponseDto</code> الذي يبني كائنًا صريحًا، لكن اعرف أين تعيش الزينتان.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">plain { desk: &quot;3&quot;, address: { city: &quot;تونس&quot; } }
+        │  plainToInstance + @Type
+        ▼
+OpenDeskDto { desk: &quot;3&quot;, address: AddressDto }
+</code></pre>
+<p>من غير <code>@Type</code>، <code>address</code> تبقى كائنًا عاديًا داخل النسخة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Type } from &#39;class-transformer&#39;;
+import { IsInt, IsString, ValidateNested } from &#39;class-validator&#39;;
+
+export class AddressDto {
+  @IsString()
+  city: string;
+}
+
+export class OpenDeskDto {
+  @IsInt()
+  desk: number;
+
+  @ValidateNested()
+  @Type(() =&gt; AddressDto)
+  address: AddressDto;
+}
+</code></pre>
+<pre><code class="language-ts">import { plainToInstance } from &#39;class-transformer&#39;;
+import { OpenDeskDto } from &#39;./open-desk.dto.js&#39;;
+
+const dto = plainToInstance(OpenDeskDto, {
+  desk: 4,
+  address: { city: &#39;تونس&#39; },
+});
+</code></pre>
+<p><code>dto instanceof OpenDeskDto</code> صحيح، و <code>dto.address instanceof AddressDto</code> صحيح بسبب <code>@Type</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>plainToInstance</code> لا يتحقق من القواعد. يبني النسخة. <code>validate</code> تأتي بعده.</li>
+<li><code>@Type(() =&gt; AddressDto)</code> دالة حتى لا تدور الاعتماديات عند التحميل.</li>
+<li><code>desk</code> وصل عددًا في المثال. النص <code>&quot;4&quot;</code> لا يصبح عددًا إلا بتحويل ضمني لاحقًا. لا تفترض أن المكتبة تبدّل كل النصوص.</li>
+<li><code>@ValidateNested()</code> مذكورة حتى لا تُنسى بجانب <code>@Type</code> حين تفحص. معناها في فصل التحقق.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المكتبة تقرأ بيانات الزينة وتبني <code>new OpenDeskDto()</code> ثم تنسخ القيم. للحقل الذي عليه <code>@Type</code> تعيد الكرة بصنف <code>AddressDto</code>. الحقول التي لا تعرفها تُنسخ أو تُسقط حسب الخيارات. <code>excludeExtraneousValues: true</code> يسقط ما ليس <code>@Expose()</code>.</p>
+<p>الأنبوب عند <code>transform: false</code> قد يستخدم النسخة للفحص فقط ويعيد الأصلي إلى الدالة. عند <code>transform: true</code> تصل النسخة إلى المعالج، فيعمل <code>instanceof</code>. الاختبار الذي يعتمد على النسخة يجب أن يمر من <code>plainToInstance</code> أو من أنبوب بالخيار نفسه.</p>
+<p><code>enableImplicitConversion</code> يحوّل حسب <code>design:type</code>، مثل نص إلى عدد على حقل <code>number</code>. هو واسع وقد يخفي خطأ نموذج. ستُفتح مخاطره في درس <code>transformOptions</code>. هنا لا تفعّله في كل عقد.</p>
+<h2>مثال عملي</h2>
+<p>طلب فتح مكتب:</p>
+<pre><code class="language-json">{ &quot;desk&quot;: 4, &quot;address&quot;: { &quot;city&quot;: &quot;تونس&quot; } }
+</code></pre>
+<p>بعد <code>plainToInstance</code> تستطيع خدمة خفيفة أن تقرأ <code>dto.address.city</code> وهي تعلم أن <code>address</code> نسخة معروفة. طلب فيه <code>&quot;address&quot;: { &quot;city&quot;: 1 }</code> يُبنى كـ <code>AddressDto</code> ثم يفشل <code>@IsString()</code> عند <code>validate</code>. من غير <code>@Type</code> قد يتخطى الفحص المتداخل المدينة لأن الداخل ليس نسخة الصنف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Type(() =&gt; AddressDto)</code> من <code>class-validator</code>. هي من <code>class-transformer</code>.</li>
+<li>نسيان <code>@Type</code> والإبقاء على <code>@ValidateNested</code> فقط.</li>
+<li>تفعيل التحويل الضمني لكل الحقول ثم قبول <code>&quot;desk&quot;: &quot;4&quot;</code> من حيث لا تريد.</li>
+<li>استخدام <code>@Exclude()</code> على الدخل وانتظار أن <code>whitelist</code> قد تم. الإخفاء هنا استراتيجية تحويل، و <code>whitelist</code> خيار أنبوب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تبني نسخة عقد في اختبار، وحين يكون الحقل كائنًا متداخلًا يحتاج صنفًا، وحين تريد أن المعالج يستلم <code>instanceof</code> عبر <code>transform: true</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتحويل <code>&quot;4&quot;</code> في مسار URL. <code>ParseIntPipe</code> أصرح. ولحذف أسرار الرد إن كان بناء <code>MemberResponseDto</code> أوضح من زينة إخفاء على الكيان.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>plainToInstance</code></th>
+<th><code>validate</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المكتبة</td>
+<td><code>class-transformer</code></td>
+<td><code>class-validator</code></td>
+</tr>
+<tr>
+<td>الناتج</td>
+<td>نسخة صنف</td>
+<td>قائمة أخطاء</td>
+</tr>
+<tr>
+<td>الحقل المتداخل</td>
+<td><code>@Type</code></td>
+<td><code>@ValidateNested</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تحوّل الكائن العادي إلى نسخة <code>OpenDeskDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>plainToInstance(OpenDeskDto, plain)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>@Type(() =&gt; AddressDto)</code> دالة لا إشارة مباشرة إلى الصنف في بعض الملفات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الدالة تؤخر قراءة الصنف حتى وقت التحويل، فتتفادى دورة استيراد حين يشير ملفان كل منهما إلى الآخر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>dto.address instanceof AddressDto</code> يساوي <code>false</code> بعد التحويل. ما الزينة الناقصة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Type(() =&gt; AddressDto)</code> على الحقل <code>address</code> في <code>OpenDeskDto</code>. من غيرها تبقى <code>address</code> كائنًا عاديًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين بناء النسخة وفحصها؟</li>
+<li>من أي حزمة <code>@Type</code>؟</li>
+<li>ماذا يغيّر <code>excludeExtraneousValues</code>؟</li>
+<li>متى يستلم المعالج النسخة لا الكائن الأصلي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>class-transformer</code> تصنع نسخة الصنف من JSON. <code>@Type</code> تبني المتداخل. الفحص مكتبة أخرى تأتي بعد النسخة. تحويل المسار النصي يبقى لأنابيب <code>Parse*</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي لمحة عن كائن مخطط، مثل Zod، قبل أن يفحصه <code>StandardSchemaValidationPipe</code> في فصل التحقق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://github.com/typestack/class-transformer">class-transformer</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

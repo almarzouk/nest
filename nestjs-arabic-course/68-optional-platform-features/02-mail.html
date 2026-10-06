@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mail</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-mail.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Mail</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرسال تأكيد نشر كتاب في رف عبر <code>@nestjs/mail</code> بعد التزام الصف، مع نقل يُستبدل في الاختبار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>HTML يُلصق اسم الكتاب بلا تهريب فيكسر الرسالة أو يحقن وسمًا. أو فشل SMTP يلغي طلبًا التُزم أصلًا. أو الاختبار يتأكد أن دالةً وهمية استُدعيت ولا يرى الرابط في المتن.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>MailModule</code> عام ويوفّر <code>Mailer</code>. صنف الرسالة يطبّق <code>Mailable</code> ويعيد الموضوع واسم القالب والسياق. المحرك المدمج يهرّب القيم. التطوير يكتب <code>.eml</code> بـ <code>FileMailTransport</code>. الاختبار يستبدل <code>MailTransport</code> بـ <code>InMemoryMailTransport</code>. الإنتاج SMTP أو Resend أو غيره عبر متغير بيئة. الإرسال بعد الالتزام يمر بصندوق الصادر حتى تُعاد المحاولة؛ فشل البريد لا يعيد المشروع إلى <code>draft</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/mail</code>. الحزمة بلا اعتماديات خارج Nest. <code>MailModule.forRoot({ transport, templates, from })</code>. <code>FileTemplateEngine</code> يقرأ HTML من مجلد، ويلفّه في <code>layout</code>، و <code>cache</code> يعمل في الإنتاج فقط حتى يظهر تعديل القالب في التطوير بلا إعادة بناء للمنطق. أضيفوا <code>mail/templates/**/*</code> إلى <code>assets</code> لأن <code>tsc</code> لا ينسخ HTML. <code>{{ }}</code> قيمة مُهرَّبة و <code>{{{ body }}}</code> في التخطيط لمكان المتن المُصيَّر. <code>#each</code> يكرر صفوفًا. <code>Mailable&lt;T&gt;.render</code> يعيد <code>subject</code> و <code>template</code> و <code>context</code>. <code>Mailer</code> يرسل. نقل ناقص أو <code>from</code> غير صالح يوقف الإقلاع. <code>MailEvents</code> يبلّغ ما نُجح وما فشل. في الاختبار <code>overrideProvider(MailTransport)</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">التزام نشر المشروع
+→ رسالة outbox
+→ Mailer يصيّر القالب
+→ نقل SMTP أو ذاكرة الاختبار
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import type { Mailable } from &#39;@nestjs/mail&#39;;
+
+@Injectable()
+export class ProjectPublishedMail implements Mailable&lt;{ title: string; url: string }&gt; {
+  render(data: { title: string; url: string }) {
+    return {
+      subject: `نُشر ${data.title}`,
+      template: &#39;project-published&#39;,
+      context: { title: data.title, url: data.url },
+    };
+  }
+}
+</code></pre>
+<p>التسجيل في التطوير: <code>transport: new FileMailTransport({ directory: &#39;var/mail&#39; })</code> و <code>from: &#39;Raf &lt;books@example.com&gt;&#39;</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>العنوان يُمرَّر جاهزًا أو يُترجم في <code>render</code> حسب <code>locale</code> العضو، كما تفصل صفحة البريد عن كتالوج i18n: نص الرسالة ملفًا كاملًا لا مفتاحًا مبعثرًا.</li>
+<li>الرابط يُبنى في السياق. القالب لا يلصق عنوانًا من جسم الطلب.</li>
+<li><code>FileMailTransport</code> لا يغادر الجهاز.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>render</code> ينتج الموضوع والقالب والسياق.</li>
+<li>المحرك يدرج القيم مهزّبة إلا موضع المتن في التخطيط.</li>
+<li>النقل يسلّم البايتات: ملف، SMTP على <code>node:net</code> و <code>node:tls</code>، أو HTTP لمزوّد مثل Resend و Postmark و SendGrid و SES.</li>
+<li>معالج <code>@OnOutboxMessage</code> يستدعي <code>Mailer</code> بعد الالتزام. فشل قابل لإعادة المحاولة يبقى للمرحّل. خطأ غير قابل للإعادة يُعلَّم حتى لا يُعاد بلا نهاية، بنمط <code>NonRetryableMessageError</code> الذي تذكره صفحة البريد مع الصندوق.</li>
+<li>اختبار يقرأ الرسائل من النقل الذاكري ويفحص الرابط والنص.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>نشر «موسم الهجرة» يلتزم <code>published</code> وصف الصندوق في معاملة واحدة كما في فصل الاعتمادية. المعالج يحمّل المشروع بـ <code>organizationId</code> من الحمولة ويرسل إلى بريد المالك. معاينة محلية تقرأ ملف <code>var/mail</code> أو مسار معاينة توثّقه الصفحة لعرض HTML في المتصفح بلا إرسال. لا ترسلوا من مسار <code>success_url</code> في المتصفح. ذلك المسار للعرض. التفعيل والاشتراك من حدث موقّع، والبريد تبعًا له.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استدعاء SMTP داخل نفس طلب <code>POST</code> ثم إرجاع 500 بعد ما نُشر الصف.</li>
+<li>الوثوق بـ <code>{{ }}</code> مع لصق HTML خام في السياق.</li>
+<li>اختبار بـ <code>jest.fn()</code> على <code>Mailer</code> فلا يُفحص التهريب ولا الرابط.</li>
+<li>قالب غير مذكور في <code>assets</code> فيُفقد داخل الصورة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بريد عضوية ودعوة ونشر، بنقل يمكن استبداله، وبعد الالتزام.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحملوا المرفق السري على قرص عام. الفاتورة الخاصة تبقى في تخزين موقّع من الدرس التالي. ولا تضعوا سر SMTP في المستودع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النقل</th>
+<th>أين</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>FileMailTransport</code></td>
+<td>تطوير، ملفات <code>.eml</code></td>
+</tr>
+<tr>
+<td><code>InMemoryMailTransport</code></td>
+<td>Vitest</td>
+</tr>
+<tr>
+<td>SMTP أو Resend</td>
+<td>إنتاج حسب البيئة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا يُهرَّب اسم الكتاب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاسم يظهر في HTML. المحرك المدمج يهرّب القيم حتى لا يكسر <code>&lt;</code> أو <code>&amp;</code> المتن ولا يحقن وسمًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين يُستدعى <code>Mailer</code> بالنسبة لمعاملة النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعد الالتزام، من معالج صندوق الصادر. فشل الإرسال يعاد من المرحّل ولا يعيد <code>draft</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف يرى الاختبار رابط الطلب بلا شبكة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استبدلوا <code>MailTransport</code> بـ <code>InMemoryMailTransport</code> عبر <code>overrideProvider</code>، ثم اقرأوا الرسائل التي استلمها وافحصوا <code>url</code> في المتن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي واجهة يطبّقها صنف الرسالة؟</li>
+<li>ماذا يوفّر <code>MailModule</code>؟</li>
+<li>لماذا <code>assets</code>؟</li>
+<li>أي نقل في الاختبار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/mail</code> يصيّر قالبًا مهزّبًا ويرسله بنقل قابل للاستبدال. رف ترسل بعد التزام النشر عبر الصندوق. ملف التطوير وذاكرة الاختبار يغنيان عن SMTP على الجهاز.</p>
+<h2>ماذا بعد؟</h2>
+<p>غلاف الكتاب ملف لا رسالة. الدرس التالي أقراص <code>@nestjs/storage</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Mail: <a href="https://docs.nestjs.com/application/mail">https://docs.nestjs.com/application/mail</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

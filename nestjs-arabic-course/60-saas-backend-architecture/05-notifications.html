@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Notifications</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-notifications.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Notifications</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل إشعار رف عن الفعل الذي سببه: الدعوة والبريد رسالة تُسلَّم عبر قناة، وفشل القناة لا يعيد الكتاب إلى المسودة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>publish()</code> تستدعي مزود البريد ثم تحفظ الكتاب. بطء البريد أو تعطله يرمي 500 والكتاب غير منشور، أو ينشر ثم يرمي فيضيع الرد. نص الرسالة مبني داخل المتحكم فيتكرر في المهمة وفي الاختبار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الأثر التجاري يُلتزم أولًا. الإشعار سجل <code>Notification</code> بحالة <code>pending</code> ثم عامل يسلّمه. القناة (بريد الآن) قابلة للاستبدال. الرسالة قالب ومعرّف لغة لا سلسلة متناثرة. المستخدم الذي أغلق القناة لا يُستدعى المزود من أجله.</p>
+<h2>التعريف التقني</h2>
+<p>جدول: <code>organizationId</code>, <code>userId</code>, <code>kind</code> (<code>member.invited</code>), <code>payload</code> صغير, <code>status</code>. الخدمة تدرج الصف في معاملة الفعل عندما يجب ألا يضيع الطلب، أو بعده مباشرة عبر نمط صادر يُستكمل في فصول لاحقة. العامل يحدّث <code>sent</code> أو <code>failed</code>. لا أسرار في <code>payload</code>. قالب البريد في وحدة بريد اختيارية لاحقًا؛ هنا الحد: الكتالوج لا يستورد SDK البريد. التفضيلات صف <code>NotificationPreference</code> يمنع kind معيّنًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دعوة عضو → COMMIT العضوية + صف pending
+عامل → مزود البريد → sent | failed
+فشل البريد لا يحذف العضوية
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface Notice {
+  organizationId: string;
+  userId: string;
+  kind: &#39;member.invited&#39;;
+  payload: { organizationName: string };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الحمولة اسم للعرض لا رمز دعوة طويل العمر إن كان الرمز في جدول الدعوات أصلًا.</li>
+<li><code>kind</code> يختار القالب.</li>
+<li>المنظمة في الصف حتى يستطيع المدير لاحقًا رؤية إشعارات مكتبته فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>إنشاء العضوية يلتزم.</li>
+<li>يُدرج إشعار <code>pending</code> إن لم يرفض التفضيل هذا الـ kind.</li>
+<li>الرد 201 للدعوة لا ينتظر SMTP.</li>
+<li>العامل يقرأ الدفعة ويرسل.</li>
+<li>الفشل يزيد عدادًا ويبقى <code>failed</code> للفحص. الدعوة ما زالت قائمة برابطها المخزن.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Injectable()
+export class InviteNotifier {
+  async enqueue(tx: { notification: { create: Function } }, notice: Notice) {
+    await tx.notification.create({ data: { ...notice, status: &#39;pending&#39; } });
+  }
+}
+</code></pre>
+<p><code>BooksService</code> لا ترى هذه الدالة. <code>MembershipService</code> تراها داخل نفس <code>tx</code> حتى لا تُدعى عضوية بلا طلب إشعار عندما تكون السياسة «لا دعوة صامتة». إن كان المنتج يقبل الصمت عند تعطل الطابور، فالصف <code>pending</code> هو عقد التعويض لا الاستثناء للعميل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>انتظار SMTP داخل طلب النشر.</li>
+<li>وضع رابط فيه رمز تجديد داخل <code>payload</code> المسجّل في التدقيق.</li>
+<li>إشعار بلا <code>organizationId</code> فيظهر في مكتبة أخرى لنفس المستخدم.</li>
+<li>إعادة إرسال <code>failed</code> بلا حد فتصبح حلقة على مزود البريد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجب أن يعرف إنسان بحدث: دعوة، فاتورة، كتاب نُشر إن اشترك في ذلك.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخطروا عن كل <code>GET</code>. ولا تستخدموا الإشعار كسجل تدقيق. التدقيق إلحاق للمراجعة، والإشعار قابل للفشل وإعادة المحاولة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>التدقيق</th>
+<th>الإشعار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الجمهور</td>
+<td>مراجع</td>
+<td>شخص على قناة</td>
+</tr>
+<tr>
+<td>الفشل</td>
+<td>يتراجع مع الأثر إن كان في المعاملة</td>
+<td>يعيد المحاولة دون عكس العضوية</td>
+</tr>
+<tr>
+<td>المحتوى</td>
+<td>فعل ومعرّف</td>
+<td>قالب وحمولة عرض</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>تعطل البريد بعد إدراج العضوية. هل تُحذف العضوية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. تبقى العضوية ويبقى الإشعار <code>failed</code> أو <code>pending</code> لإعادة المحاولة. الرد على من أرسل الدعوة لا يصبح 500 بسبب SMTP إن التزمتم الصف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يحمل <code>payload</code> رمز الدعوة نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الصف يُنسخ إلى السجلات والعاملين. الرمز يعيش في جدول الدعوة ويُرسل في القناة ثم يُستهلك. الحمولة تشير إلى <code>inviteId</code> إن احتاج العامل أن يبني الرابط عند الإرسال لا أن يخزن السر مسبقًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المستخدم أغلق <code>member.invited</code> ثم دُعي. ماذا يُدرج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا صف بريد، أو صف بحالة <code>skipped</code> إن أردتم أثرًا للمراجعة. العضوية تُنشأ. التخطي قرار تفضيل لا فشل مزود، فلا يُعاد إرساله في حلقة <code>failed</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا الإشعار بعد الالتزام لا قبله كشرط للنشر؟</li>
+<li>ماذا في الحمولة وماذا يبقى خارجها؟</li>
+<li>كيف يختلف عن سجل التدقيق؟</li>
+<li>من يعيد المحاولة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإشعار صف حالة وقناة لاحقة. فشل البريد لا يلغي عضوية ولا نشرًا. الكتالوج لا يستورد مزود البريد، والتفضيل يوقف النوع قبل الإرسال.</p>
+<h2>ماذا بعد؟</h2>
+<p>التسليم نفسه عمل خلفية، وقد تخبر رف نظامًا خارجيًا. الدرس التالي يضع الطابور والويب هوك كحد معماري قبل فصليهما التفصيليين.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+<li>NestJS — Mail (القناة لاحقًا اختيارية): <a href="https://docs.nestjs.com/application/mail">https://docs.nestjs.com/application/mail</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

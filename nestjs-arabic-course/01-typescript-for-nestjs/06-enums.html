@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Enums</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-enums.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Enums</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة شكل Enum في TypeScript، ومتى يكون اتحاد نصوص أنسب في كود Nest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حالة الطلب ليست أي نص. لو كانت <code>string</code>، يُقبل <code>&#39;shiped&#39;</code> بغلط إملائي. نريد مجموعة مغلقة يعرفها المترجم.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>enum</code> يسمي مجموعة قيم. TypeScript يدعم enums رقمية ونصية. الاتحاد النصي <code>&#39;draft&#39; | &#39;published&#39;</code> يؤدي غالبًا الغرض نفسه لحالّات API، ويُمحى بطريقة أسهل.</p>
+<h2>التعريف التقني</h2>
+<p>Enum النصي ينتج كائن JavaScript حي: يمكن أن يُستورد كقيمة. Enum الرقمي له تعيين عكسي من العدد إلى الاسم. الاتحاد النصي نوع فقط ويُمحى، إلا إذا احتجت القيمة كشيء تمرره وقت التشغيل فتعرّفها ثابتًا.</p>
+<p>توثيق Nest يستخدم enums في أماكن مثل GraphQL (<code>registerEnumType</code>) عندما يجب أن تظهر القيمة في المخطط. للأنواع الداخلية، الاتحاد يكفي كثيرًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">اتحاد نصي     فحص كتابة فقط
+enum نصي      كائن وقت التشغيل + نوع
+enum في GraphQL  يجب أن يعيش ليبني المخطط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">enum OrderStatus {
+  Draft = &#39;draft&#39;,
+  Paid = &#39;paid&#39;,
+}
+
+function label(status: OrderStatus): string {
+  return status;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>OrderStatus.Draft</code> القيمة <code>&#39;draft&#39;</code>.</li>
+<li>المعامل يقبل أعضاء الـ enum.</li>
+<li>الناتج JavaScript كائن <code>OrderStatus</code> تقريبًا بالشكل <code>{ Draft: &#39;draft&#39;, Paid: &#39;paid&#39; }</code>.</li>
+<li>يمكن تمرير <code>label(OrderStatus.Paid)</code>.</li>
+</ul>
+<p>الاتحاد المقابل:</p>
+<pre><code class="language-ts">type OrderStatusName = &#39;draft&#39; | &#39;paid&#39;;
+</code></pre>
+<p>لا كائن وقت التشغيل. النداء <code>label(&#39;paid&#39;)</code> إن كانت الدالة تقبل الاتحاد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المترجم يولد الكائن للـ enum. هذا من المواضع القليلة التي ينتج فيها النوع أثرًا وقت التشغيل. لذلك استيراده يجب أن يكون استيراد قيمة لا <code>import type</code> إذا استخدمت <code>OrderStatus.Draft</code> في التعبيرات.</p>
+<p>Enum الرقمي من غير قيم صريحة يعطي 0 ثم 1. في JSON الـ API العدد أقل وضوحًا من النص <code>&#39;paid&#39;</code>. فضّل النصوص على حدود HTTP.</p>
+<h2>مثال عملي</h2>
+<p>في خدمة، قارن الحالة بالنص الثابت من الـ enum حتى لا تتفرق السلاسل:</p>
+<pre><code class="language-ts">function canCancel(status: OrderStatus): boolean {
+  return status === OrderStatus.Draft;
+}
+</code></pre>
+<p>لو كتب كل مطور <code>&#39;Draft&#39;</code> و <code>&#39;draft&#39;</code> و <code>&#39;DRAFT&#39;</code> فالتساوي ينكسر. مكان واحد للقيمة يغلق ذلك. الاتحاد مع ثابت كائن <code>as const</code> بديل حديث:</p>
+<pre><code class="language-ts">const OrderStatus = {
+  Draft: &#39;draft&#39;,
+  Paid: &#39;paid&#39;,
+} as const;
+
+type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
+</code></pre>
+<p>هذا النمط شائع لأن الكائن والنوع بالاسم نفسه، والقيم نصوص واضحة. استخدمه عندما لا تحتاج ميزة خاصة بالـ enum. عندما يفرض الدرس الرسمي enum، مثل تسجيل enum في GraphQL، استخدم enum كما في الصفحة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>Enum رقمي في JSON العام. العميل يرى <code>0</code> بلا معنى.</li>
+<li><code>import type { OrderStatus }</code> ثم استخدام <code>OrderStatus.Draft</code> كقيمة. الاستيراد النوعي يُحذف.</li>
+<li>إضافة عضو جديد ونسيان كل <code>switch</code>. فعّل فحص الاكتمال بإرجاع النوع <code>never</code> في الفرع الأخير عندما يكبر العدد.</li>
+</ul>
+<h2>متى نستخدم enum؟</h2>
+<p>عندما تحتاج الكائن والقيمة معًا، أو عندما تطلب صفحة Nest الرسمية enum (GraphQL مثلًا).</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمجموعة صغيرة على حدود TypeScript فقط. اتحاد النصوص أخف. ولقيم تأتي من قاعدة البيانات بلا فحص: الـ enum لا يرفض نصًا خامًا حتى تفحصه.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Union نصي</th>
+<th>Enum نصي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وقت التشغيل</td>
+<td>لا أثر</td>
+<td>كائن</td>
+</tr>
+<tr>
+<td>JSON واضح</td>
+<td>نعم</td>
+<td>نعم إذا كانت القيم نصوصًا</td>
+</tr>
+<tr>
+<td>استيراد</td>
+<td>نوع</td>
+<td>قيمة ونوع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تخزن <code>OrderStatus.Paid</code> في مثال الـ enum؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النص <code>&#39;paid&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>حوّل <code>type Role = &#39;customer&#39; | &#39;staff&#39;</code> إلى نداءات لا تتكرر فيها السلاسل يدويًا في أكثر من ملف. اذكر حلًا واحدًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p>كائن <code>as const</code> مشترك، أو enum نصي، يُستورد من ملف واحد. بقية الملفات تقارن بـ <code>Role.Staff</code> لا بكتابة <code>&#39;staff&#39;</code> في كل مكان.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا قد يفشل <code>switch</code> على enum رقمي إذا وصلت القيمة <code>99</code> من JSON؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الـ enum لا يغلّف JSON. <code>99</code> عدد لا يطابق الأعضاء، وفرع <code>default</code> إن غاب يترك السلوك ناقصًا. افحص القيم الداخلة إلى التطبيق قبل أن تعاملها كعضو enum.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي ينتجه enum النصي وقت التشغيل ولا ينتجه الاتحاد؟</li>
+<li>لماذا النصوص أوضح من الأرقام على حدود API؟</li>
+<li>متى يفرض GraphQL في Nest الحديث عن enum بشكل حي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Enum مجموعة قيم قد تعيش ككائن. للحدود الداخلية اتحاد النصوص يكفي غالبًا. على الشبكة افحص القيمة، ولا ترسل أرقامًا غامضة.</p>
+<h2>ماذا بعد؟</h2>
+<p>Nest مبنية على أصناف. الدرس التالي: الصنف والـ constructor من غير اختصارات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Enums: <a href="https://www.typescriptlang.org/docs/handbook/enums.html">https://www.typescriptlang.org/docs/handbook/enums.html</a></li>
+<li>NestJS — GraphQL enums (عندما نصل إليه): <a href="https://docs.nestjs.com/graphql/unions-and-enums">https://docs.nestjs.com/graphql/unions-and-enums</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

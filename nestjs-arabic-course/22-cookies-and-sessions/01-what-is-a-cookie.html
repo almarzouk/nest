@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Cookie</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-a-cookie.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Cookie</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم الكعكة كبيانات صغيرة يخزّنها المتصفح ويعيد إرسالها، قبل صفات الحماية والجلسة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>HTTP بلا ذاكرة بين الطلبات. بعد <code>POST /auth/sign-in</code> لا يعرف الطلب التالي من دخل إن لم يحمل شيئًا. وضع معرّف المستخدم في عنوان الصفحة يظهر في السجلات والمفضلة. خلط الكعكة مع «رمز في JSON يقرأه JavaScript» يضيع الفرق الذي بُنيت عليه كعكة الجلسة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الخادم يرسل رأس <code>Set-Cookie</code>. المتصفح يخزّن الاسم والقيمة ويعيد رأس <code>Cookie</code> في طلبات لاحقة حسب النطاق والمسار والعمر. التطبيق على Nest لا يفتح ملفًا على جهاز الزائر. القيمة نص. من يقدر أن يضع الكعكة يعيد إرسالها، لذلك المعرّف العشوائي الطويل أفضل من <code>userId=4</code> الواضح.</p>
+<h2>التعريف التقني</h2>
+<p>شكل مبسّط:</p>
+<pre><code class="language-http">HTTP/1.1 200 OK
+Set-Cookie: theme=dark; Path=/; Max-Age=31536000
+
+GET /posts HTTP/1.1
+Cookie: theme=dark
+</code></pre>
+<p><code>Path=/</code> يرسل الكعكة لكل مسارات المضيف. <code>Max-Age</code> بالثواني. من غير عمر تبقى الكعكة غالبًا حتى إغلاق الجلسة في المتصفح، وهذا معنى مختلف عن جلسة الخادم في الدرس <code>03</code>.</p>
+<p>Nest من الإصدار 12.1 يقرأ ويكتب الكعكات من غير حزمة إضافية عبر <code>@Cookies()</code> و <code>setCookie</code> على المحوّل. درس <code>05</code> يكتب الواجهة. هنا القيمة والرأس فقط.</p>
+<p>كعكة حزمة المصادقة اسمها <code>__Host-sid</code> وتحمل رمزًا عشوائيًا لا معرّف المستخدم. الخادم يخزّن تجزئة الرمز. سرقة القيمة تنتحل الجلسة حتى الإبطال، لذلك الصفات في الدرس التالي.</p>
+<p>الجوال الذي يضع <code>Authorization</code> لا يعتمد على هذا الرأس. الكعكة آلية متصفح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">استجابة: Set-Cookie: name=value; صفات
+طلب لاحق: Cookie: name=value
+الخادم يربط القيمة بسجل أو يقرأها كخيار واجهة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-http">HTTP/1.1 204 No Content
+Set-Cookie: library_theme=dark; Path=/; Max-Age=2592000
+</code></pre>
+<pre><code class="language-http">GET /posts HTTP/1.1
+Host: localhost:3000
+Cookie: library_theme=dark
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>library_theme</code> تفضيل واجهة لا هوية. فقدانه يعيد السمة الافتراضية ولا يفتح حساب Ada. لذلك مثال أول آمن. لا تضع بريد المستخدم ولا كلمة المرور في هذا الشكل. <code>2592000</code> ثلاثون يومًا بالثواني.</p>
+<p>المتصفح، لا صفحة JavaScript بالضرورة، هو من يخزّن الرأس ويعيده. سكربت الصفحة يستطيع قراءة الكعكة إن لم تكن <code>HttpOnly</code>، وهذا ما يمنعه الدرس التالي عن كعكة الهوية.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المتصفح يقرر الإرسال حسب المضيف والمسار و <code>Secure</code> و <code>SameSite</code> لاحقًا. طلب من <code>curl</code> لا يرسل الكعكة إلا إن كتبت الرأس. لذلك اختبار API الذي ينسخ <code>Cookie</code> يدويًا لا يثبت سلوك المتصفح كاملًا.</p>
+<p>عدة رؤوس <code>Set-Cookie</code> في الاستجابة نفسها مسموحة. كل اسم مستقل. <code>theme</code> لا يستبدل <code>__Host-sid</code>.</p>
+<h2>مثال عملي</h2>
+<p>زائر يختار السمة الداكنة. الاستجابة تضع <code>library_theme</code>. الطلب التالي لـ <code>GET /posts</code> يحمل الكعكة، والمسار يقرأها ليزين HTML إن وُجد، أو يتجاهلها في API JSON. تسجيل الدخول مسار آخر سيضع كعكة ثانية. احذف كعكة السمة بـ <code>Max-Age=0</code> من غير أن تمس كعكة الجلسة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تخزين <code>userId=4</code> كدليل هوية قابل للتزوير.</li>
+<li>افتراض أن كل عميل API متصفح.</li>
+<li>وضع أسرار طويلة في الكعكة حتى تكبر الرؤوس على كل طلب.</li>
+<li>خلط عمر الكعكة في المتصفح مع سجل الجلسة على الخادم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لتفضيل يرسله المتصفح تلقائيًا، ولمعرّف جلسة عشوائي حين تبني الهوية في الدروس التالية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لنقل مقال JSON. الجسم أنسب. ولا لتطبيق جوال يقدر على ترويسة <code>Bearer</code> من غير متصفح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>كعكة تفضيل</th>
+<th>كعكة هوية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>فقدانها مزعج فقط</td>
+<td>فقدانها انتحال</td>
+</tr>
+<tr>
+<td>القيمة قد تكون <code>dark</code></td>
+<td>القيمة سر عشوائي</td>
+</tr>
+<tr>
+<td>قراءة السكربت أقل خطرًا</td>
+<td>ستُخفى عن السكربت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي رأس يضبط الكعكة، وأي رأس يعيدها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Set-Cookie</code> في الاستجابة، و <code>Cookie</code> في الطلب التالي.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>userId=4</code> كعكة هوية ضعيفة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أي عميل يكتب الرقم ينتحل المستخدم. المعرّف العشوائي الذي لا يعرفه إلا الخادم، مع سجل على الخادم، لا يُزوَّر بمجرد تغيير الرقم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار <code>curl</code> بلا رأس <code>Cookie</code> نجح بعد تسجيل الدخول من المتصفح. ماذا ينقص الاختبار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>curl</code> لا يخزّن <code>Set-Cookie</code> إلا إذا فعّلت وعاء الكعكات. الاختبار لم يرسل الرأس الذي سيرسله المتصفح تلقائيًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يخزّن الكعكة؟</li>
+<li>لماذا القيمة العشوائية أفضل من معرّف واضح؟</li>
+<li>هل الجوال ملزم بهذه الآلية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الكعكة رأس يعيده المتصفح. التفضيل قيمة عادية. الهوية ستكون سرًا عشوائيًا لا رقم مستخدم. الصفات التالية تحد من سرقته وقراءته.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-httponly-secure-samesite.html">HttpOnly و Secure و SameSite</a> ثلاث صفات على كعكة الجلسة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Cookies: <a href="https://docs.nestjs.com/http/cookies">https://docs.nestjs.com/http/cookies</a></li>
+<li>MDN — HTTP cookies: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies">https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

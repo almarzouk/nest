@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NestJS فوق Express و Fastify</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="14-nestjs-on-express-and-fastify.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>NestJS فوق Express و Fastify</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم أن Nest طبقة معمارية، وأن HTTP الفعلي يمر عبر محوّل منصة: Express افتراضيًا، و Fastify عندما تختاره.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>لو كُتب كل Controller بنداءات خاصة بـ Express فقط، صار الانتقال إلى خادم أسرع، أو إضافة WebSockets، إعادة كتابة للمنطق. نريد كود قواعد ومسارات يتحدث إلى Nest، ونريد بابًا نصل منه إلى Express عندما نحتاج مكتبة لا تعرف Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nest لا تستمع إلى المنفذ ببروتوكول اخترعته. هي تبني تطبيقك ثم تسلّم HTTP إلى منصة. المنصة الافتراضية Express عبر <code>@nestjs/platform-express</code>. المنصة البديلة المدمجة Fastify عبر <code>@nestjs/platform-fastify</code>.</p>
+<p>بين كودك والمنصة يوجد <strong>HTTP Adapter</strong>: قطعة تترجم &quot;سجّل هذا المسار&quot; و &quot;مرر هذا الـ middleware&quot; إلى نداءات المكتبة التي تحتها.</p>
+<h2>التعريف التقني</h2>
+<p>من فصل Performance في التوثيق:</p>
+<p>افتراضيًا تستخدم Nest إطار Express. هي متوافقة مع مكتبات أخرى مثل Fastify. الاستقلال يتم عبر framework adapter عمله الأساسي تمرير middleware والمعالجات إلى التنفيذ الخاص بكل مكتبة.</p>
+<p>Fastify بديل مناسب لأنه يحل مسائل التصميم بطريقة قريبة من Express، وهو أسرع بشكل ملحوظ. التوثيق يقول إنه يحقق قرابة ضعف نتائج القياس. Nest تُبقي Express افتراضيًا لأن Express واسع الانتشار، ومعروف، ومجموعة الـ middleware المتوافقة معه ضخمة ومتاحة لمستخدمي Nest مباشرة.</p>
+<p>من First steps: Nest مصممة لتكون platform-agnostic. أجزاء منطقية قابلة لإعادة الاستخدام عبر أنواع تطبيقات مختلفة. أي إطار HTTP لـ Node يمكن أن يعمل إذا كُتب له محوّل. المدعومان جاهزين: Express و Fastify.</p>
+<p>كل منصة لها واجهة: <code>NestExpressApplication</code> و <code>NestFastifyApplication</code>. تمرير النوع إلى <code>NestFactory.create</code> اختياري، وتفعله عندما تريد دوال تلك المنصة على كائن <code>app</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Controller / Guard / Pipe / Service
+              |
+              |  كودك يتحدث إلى عقود Nest
+              v
+         Nest core
+              |
+              |  HTTP Adapter يترجم
+              v
+     Express   أو   Fastify
+              |
+              v
+           node:http وعائلة الخادم
+              |
+              v
+            المنفذ
+</code></pre>
+<p>من الأعلى إلى الأسفل: قرارك المعماري، ثم ترجمة الإطار، ثم مكتبة HTTP، ثم Node.</p>
+<h2>أبسط مثال</h2>
+<p>الافتراضي لا يذكر Express في <code>main.ts</code>:</p>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+</code></pre>
+<p>هنا النوع العام <code>INestApplication</code>. تحته Express لأن الحزمة الافتراضية هي <code>@nestjs/platform-express</code>. لا تستورد Express حتى تحتاجه.</p>
+<p>عندما تريد دوال Express على <code>app</code>، التوثيق يكتب:</p>
+<pre><code class="language-ts">const app = await NestFactory.create&lt;NestExpressApplication&gt;(AppModule);
+</code></pre>
+<p>القوس الزاوي نوع TypeScript فقط: يغيّر ما يقترحه المحرر على <code>app</code>. لا يبدّل المنصة وحده. تبديل المنصة إلى Fastify يتم بتمرير محوّل، في فصل Fastify، بالشكل الذي يوثّقه Nest:</p>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, new FastifyAdapter());
+</code></pre>
+<p><strong>لا تركّب Fastify في هذا الدرس.</strong> السطر هنا ليشرح فكرة المحوّل: المعامل الثاني يختار المنصة. <code>FastifyAdapter</code> صنف من <code>@nestjs/platform-fastify</code>. التفاصيل، بما فيها الاستماع على <code>0.0.0.0</code> لأن Fastify يقيّد الاستماع افتراضيًا، تعيش في فصل الأداء عندما يصبح القياس سؤالًا حقيقيًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>NestFactory.create(AppModule)</code> يبني التطبيق والمنصة الافتراضية معًا.</li>
+<li>غياب اسم Express من الملف مقصود: معظم الدروس لا تحتاج كائن Express.</li>
+<li><code>NestExpressApplication</code> بوابة هروب معلنة. التوثيق يقول: لست مضطرًا إلى تحديد النوع إلا إذا أردت API المنصة.</li>
+<li><code>new FastifyAdapter()</code> يخبر المصنع أي محوّل يستخدم. بقية التطبيق — Modules و Controllers — تبقى. هذا معنى &quot;طبقة فوق الإطار&quot;.</li>
+</ul>
+<p>حرية التوثيق المهمة: Nest تعرض APIs المنصة مباشرة، حتى تستخدم مكتبات Express أو Fastify الموجودة في المجتمع. الطبقة الإضافية ليست سجنًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند تسجيل مسار في Controller:</p>
+<ol>
+<li>Nest تحفظ Metadata: الطريقة، والمسار، والدالة.</li>
+<li>عند الإقلاع، المحوّل يمر على هذه البيانات ويسجّل على Express ما يعادل <code>app.get</code> أو <code>app.post</code>، أو على Fastify ما يعادله في تلك المكتبة.</li>
+<li>عند وصول طلب، المنصة تدخل مكدسها أولًا.</li>
+<li>Middleware المسجّل عالميًا عبر <code>app.use()</code> يعمل في هذه الطبقة المبكرة. توثيق Request Lifecycle يبدأ المسار من هنا ثم Middleware الخاص بالوحدات.</li>
+<li>بعدها Guards ثم Interceptors ثم Pipes ثم الدالة. هذا ترتيب Nest فوق المنصة، لا ترتيب Express وحده.</li>
+<li>الرد يرجع عبر المحوّل إلى كائن الرد الخاص بالمنصة.</li>
+</ol>
+<p>لذلك Middleware في Nest قريب جدًا من Middleware في Express على المنصة الافتراضية. Guard ليس Middleware باسم ألطف؛ هو محطة لاحقة لها عقد مختلف (<code>CanActivate</code>). ستُبنى هذه الجملة مرة أخرى عندما نكتب الكود.</p>
+<p>فروق عملية يذكرها توثيق Fastify حتى لا تفاجأ يوم التبديل:</p>
+<ul>
+<li>وصفات مكتوبة لـ Express قد لا تعمل. تستخدم مقابلًا لـ Fastify.</li>
+<li>التحويل (redirect) يُكتب بأسلوب Fastify: <code>status</code> ثم <code>redirect</code>.</li>
+<li>Middleware هناك تستقبل <code>req</code> و <code>res</code> الخام، لأن Nest تستخدم <code>@fastify/middie</code> تحت الغطاء.</li>
+<li>Fastify يسمع على <code>localhost</code> فقط إلى أن تمرر <code>0.0.0.0</code> في <code>listen</code> إن أردت واجهات أخرى.</li>
+</ul>
+<p>هذه فروق منصة، لا فروق في قواعد عملك داخل Service.</p>
+<p>فصل Platform agnosticism يوسع الصورة: الأجزاء المنطقية نفسها يمكن أن تخدم HTTP، أو Microservices، أو WebSockets، ويوجد GraphQL كطبقة API أخرى. &quot;ابنِ مرة واستخدم في أكثر من مكان&quot; هدف، ويتحقق للقطع التي لا تستورد <code>Request</code> الخاص بـ Express داخل قاعدة العمل. لهذا سنبقي <code>req</code> على حافة Controller.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة تقيس الطلبات وتعرف Express فقط. على المنصة الافتراضية تستطيع وصلها من مكان الإقلاع عبر واجهة Express، لأن Nest تعطيك الوصول إلى المنصة. الشكل المفهوم الآن:</p>
+<pre><code class="language-text">إقلاع Nest
+   -&gt; الوصول إلى تطبيق Express التحتي
+   -&gt; تسجيل middleware تلك المكتبة
+   -&gt; طلبات HTTP تمر عليها قبل مساراتك
+</code></pre>
+<p>لن نكتب نداء <code>getHttpAdapter()</code> هنا حتى لا يصبح تعويذة. اسم الفكرة: الهروب إلى المنصة قرار واعٍ على الحافة، لا استيراد <code>express</code> داخل كل Service.</p>
+<p>إذا كان القياس لاحقًا يقول إن وقت الإطار HTTP هو عنق الزجاجة، Fastify مرشح يوثّقه Nest. إذا كانت مكتبات الفريق كلها middleware لـ Express، البقاء على الافتراضي هو القرار المتسق مع سبب اختيار Nest لـ Express كافتراضي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استيراد <code>express</code> وإنشاء <code>express()</code> بجانب <code>NestFactory.create</code> للحصول على &quot;الاثنين&quot;. ينتج خادمان وصيانة مزدوجة. الوصول يكون عبر تطبيق Nest لا عبر تطبيق ثانٍ.</li>
+<li>كتابة <code>req.cookies</code> و <code>req.session</code> داخل Service. الخدمة صارت تعرف Express، واختبارها صار يحتاج طلبًا مزيفًا. المنصة تبقى عند الحافة.</li>
+<li>تبديل Fastify في أول أسبوع بحثًا عن &quot;الضعف في القياس&quot; قبل وجود قياس. التوثيق نفسه يبرر البقاء على Express بالمنظومة لا بالسرعة.</li>
+<li>افتراض أن كل <code>app.use</code> من مدونة Express يعمل حرفيًا على Fastify. المحوّل يترجم ما تستطيع Nest ترجمته، والوصفات الخاصة بالمنصة تُراجع.</li>
+</ul>
+<h2>متى نبقى على Express؟</h2>
+<p>الافتراضي في هذه الدورة كلها إلى أن يظهر سبب. السبب النموذجي للبقاء: مكتبات middleware، وأمثلة المجتمع، وغياب قياس يقول إن الخادم HTTP هو العائق.</p>
+<h2>متى نختار Fastify؟</h2>
+<p>عندما تكون سرعة طبقة HTTP مطلبًا مثبتًا، وتقبل مراجعة الوصفات المرتبطة بـ Express. الفصل <code>53</code> يعود إلى ذلك مع بقية الأداء. الاختيار يتم في <code>NestFactory.create</code>، لا بإعادة كتابة الـ Controllers.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Express عبر Nest</th>
+<th>Fastify عبر Nest</th>
+<th>استدعاء Express وحدك</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الحزمة</td>
+<td><code>@nestjs/platform-express</code> وهي الافتراضية</td>
+<td><code>@nestjs/platform-fastify</code></td>
+<td><code>express</code></td>
+</tr>
+<tr>
+<td>من يسجّل مسارات Controllers</td>
+<td>المحوّل</td>
+<td>المحوّل</td>
+<td>أنت بـ <code>app.get</code></td>
+</tr>
+<tr>
+<td>Middleware المجتمعية</td>
+<td>الأوسع</td>
+<td>تحتاج مقابلًا غالبًا</td>
+<td>واسعة، بلا DI</td>
+</tr>
+<tr>
+<td>سرعة الطبقة كما يصفها توثيق Nest</td>
+<td>الأساس</td>
+<td>أعلى في قياساتهم، قرابة الضعف</td>
+<td>لا علاقة لـ Nest</td>
+</tr>
+<tr>
+<td>كود Service</td>
+<td>لا يعرف المنصة</td>
+<td>لا يعرف المنصة</td>
+<td>غالبًا يعرف <code>req</code> إن أهملت الفصل</td>
+</tr>
+</tbody></table>
+<p>Express المباشر:</p>
+<pre><code class="language-ts">app.get(&#39;/users&#39;, handler)
+</code></pre>
+<p>Nest على أي من المنصتين:</p>
+<pre><code class="language-ts">@Get()
+findAll() {}
+</code></pre>
+<p>الفرق ليس اسم الدالة. الفرق أن Nest تملك التسجيل، والمنصة تنفذه.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما المنصة التي يعمل عليها <code>NestFactory.create(AppModule)</code> إذا لم تمرر محوّلًا، وما اسم الحزمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Express، عبر <code>@nestjs/platform-express</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تمرير <code>&lt;NestExpressApplication&gt;</code> لا يكفي وحده ليحوّل مشروعًا إلى Fastify؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القوس الزاوي معلومة نوع للمحرر والمترجم. المحوّل الفعلي هو ما يمر في <code>create</code>، مثل <code>new FastifyAdapter()</code>. من غير محوّل Fastify تبقى المنصة Express، والنوع لو كذب سيصف دوالًا غير الموجودة على التطبيق الحقيقي.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>Service تستورد <code>Request</code> من Express لتقرأ ترويسة. ماذا تخسر بالنسبة لوعد platform-agnostic، وما المكان الأقرب لقراءة الترويسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تخسر تشغيل القاعدة نفسها على Fastify أو في سياق غير HTTP من غير تعديل الخدمة، ويصبح الاختبار محتاجًا كائن طلب Express. المكان الأقرب هو حافة Controller أو Decorator مخصص للمعامل يمرر القيمة الجاهزة إلى الخدمة. الخدمة تستقبل نصًا أو كائنًا بسيطًا. بناء الـ Decorator درس في فصل Custom Decorators، والفكرة المعمارية تكفي الآن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وظيفة HTTP Adapter؟</li>
+<li>لماذا Express هو الافتراضي إذا كان التوثيق يصف Fastify بأنه أسرع؟</li>
+<li>متى تستورد نوع <code>NestExpressApplication</code>؟</li>
+<li>أي جزء من تطبيقك يجب ألا يعرف اسم المنصة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Nest طبقة فوق خادم HTTP. Express الافتراضي، و Fastify محوّل بديل. كود الوحدات والخدمات يبقى، والهروب إلى API المنصة يتم عند الحافة عندما تحتاج مكتبة مجتمع تلك المنصة.</p>
+<h2>ماذا بعد؟</h2>
+<p>التوثيق يقول إن المعمارية مستوحاة من Angular. الدرس التالي يحدد ما الذي يشبه Angular فعلًا، حتى لا تظن أن الدورة ستمر على المتصفح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps (Platform): <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Performance (Fastify): <a href="https://docs.nestjs.com/http/performance">https://docs.nestjs.com/http/performance</a></li>
+<li>NestJS — Platform agnosticism: <a href="https://docs.nestjs.com/fundamentals/platform-agnosticism">https://docs.nestjs.com/fundamentals/platform-agnosticism</a></li>
+<li>NestJS — HTTP adapter: <a href="https://docs.nestjs.com/faq/http-adapter">https://docs.nestjs.com/faq/http-adapter</a></li>
+<li>Express — Hello world: <a href="https://expressjs.com/en/starter/hello-world.html">https://expressjs.com/en/starter/hello-world.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

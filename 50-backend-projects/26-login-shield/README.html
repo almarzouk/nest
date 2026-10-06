@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>26 — درع الدخول</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>26 — درع الدخول</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new login-shield</code></p>
+<h2>ماذا تبني</h2>
+<p>مسار الدخول يقبل محاولات قليلة في الدقيقة. الصحة والكتالوج العام لا يُحسبان مع الدخول.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>التجزئة البطيئة لا تكفي إن سُمح بألف محاولة. الحد يحمي الحساب والمزود.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>@nestjs/throttler</li>
+<li>429</li>
+<li>استثناء مسار الصحة</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>قائمة حظر دائمة</li>
+<li>CAPTCHA</li>
+<li>WAF</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الحسابات. ركّب الحد على تسجيل الدخول لا على كل التطبيق بعماء.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/23-cors-and-security/README.html">23-cors-and-security</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>خمس محاولات في الدقيقة لمسار الدخول حسب عنوان أو مفتاح تتبع.</li>
+<li>السادسة 429.</li>
+<li>GET /health لا يُحد بهذا السقف.</li>
+<li>رسالة 429 لا تكشف إن كانت الكلمة صحيحة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/auth/login</code></td>
+<td>200</td>
+<td>أو 401، ثم 429 بعد السقف</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/health</code></td>
+<td>200</td>
+<td>خارج الحد</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new login-shield</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ثبّت الحزمة وسجّل ThrottlerModule.</li>
+<li>ضع @Throttle على الدخول وسقفه أضيق من العام.</li>
+<li>جرّب ست مرات curl وتوقع الأخيرة 429.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/auth/auth.controller.ts
+src/health.controller.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">@Throttle({ default: { limit: 5, ttl: 60_000 } })
+@Post(&quot;login&quot;)
+login(@Body() body: LoginDto) {
+  return this.auth.login(body.email, body.password);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>حد واحد على التطبيق فيُقفل الكتالوج مع الدخول.</li>
+<li>إرجاع 401 للمحاولة السادسة فيضيع الفرق.</li>
+<li>تخزين كلمة المحاولة في العداد.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>السادسة 429.</li>
+<li>الصحة تبقى 200 أثناء قفل الدخول.</li>
+<li>النجاح ضمن السقف ما زال يتحقق من التجزئة.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>اجعل المفتاح البريد لا العنوان فقط، حتى لا يعاقب مكتب مشترك كل موظفيه بنفس القسوة. وثّق الخيار.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 26» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../25-partner-api-keys/README.html">25. مفاتيح الشركاء</a></li>
+<li>التالي: <a href="../27-catalog-cache/README.html">27. كتالوج مخزّن مؤقتًا</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

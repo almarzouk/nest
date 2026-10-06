@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ماذا بعد TypeScript؟</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ماذا بعد TypeScript؟</h1>
+<p>تستطيع الآن قراءة السطر الذي يتكرر في الإطار، وتعرف أن النوع وحده لا يفحص JSON، وأن الزينة تخزن وصفًا، وأن <code>reflect-metadata</code> مع <code>emitDecoratorMetadata</code> يبقيان نوع الصنف للمعامل.</p>
+<p>الخطوة التالية تشغيل هذا على مشروع حقيقي. قالب Nest يولد <code>tsconfig</code> وفيه <code>strict</code> والزينة، وملف <code>main.ts</code> فيه:</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p>الفصل التالي يشرح متطلبات Node، و <code>nest new</code>، و ESM، ووظيفة كل ملف في <code>src/</code>، من غير الغوص بعد في معنى كل خاصية داخل <code>@Module</code>.</p>
+<p><a href="../02-project-setup/README.html">التثبيت وهيكل المشروع</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Checkout</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-checkout.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Checkout</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بدء دفع اشتراك رف بجلسة Stripe Checkout على الخادم، وإعادة رابط للمتصفح، من غير تفعيل الخطة عند فتح رابط النجاح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الواجهة تجمع رقم البطاقة وترسله إلى Nest. أو الخادم يعيد <code>url</code> ثم يكتب <code>status: active</code> لأن الطلب بدأ. الموظف يغلق التبويب قبل الدفع فيصبح الكتالوج على خطة مدفوعة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>BillingService</code> ينشئ Customer إن غاب، ثم Checkout Session بنمط <code>subscription</code> وسعر الخطة. الرد للمتصفح <code>{ url }</code> فقط. <code>success_url</code> صفحة شكر تعيد قراءة الحالة من رف. <code>cancel_url</code> لا يغيّر الصف. التفعيل حدث لاحق.</p>
+<h2>التعريف التقني</h2>
+<p>SDK على الخادم: <code>checkout.sessions.create</code> مع <code>mode: &#39;subscription&#39;</code> و <code>line_items</code> فيها <code>price</code> من لوحة Stripe لا مبلغ يكتبه المتصفح، و <code>success_url</code> و <code>cancel_url</code>، و <code>client_reference_id</code> أو <code>metadata.organizationId</code> من السياق لا من جسم غير موثوق. <code>customer</code> المعرّف المخزن. لا تبنوا عناصر البطاقة في رف. المفتاح السري لا يصل إلى الواجهة؛ المفتاح القابل للنشر إن احتجتم منصة أخرى غير Checkout ليس هذا الدرس. Idempotency-Key لإنشاء الجلسة في درس لاحق حتى إعادة ضغط الزر لا تفتح جلسات متنافسة بلا داعٍ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">زر → POST /billing/checkout → session.url
+متصفح → Stripe
+success_url → الواجهة تسأل GET /billing
+الحالة تتغير فقط بالحدث
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface CheckoutStart {
+  organizationId: string;
+  priceId: string;
+  successUrl: string;
+  cancelUrl: string;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>priceId</code> من إعداد الخادم (<code>STRIPE_PRICE_PRO</code>) لا من قائمة يختارها العميل بمبلغ حر.</li>
+<li><code>organizationId</code> من سياق المستأجر بعد صلاحية <code>billing.manage</code>.</li>
+<li>العناوين من إعدادكم حتى لا يرسل العميل <code>success_url</code> إلى نطاقه.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحارس يثبت المالك أو <code>billing.manage</code>.</li>
+<li>تُجلب أو تُنشأ <code>providerCustomerId</code>.</li>
+<li>Stripe يعيد <code>session.url</code>.</li>
+<li>تُحفظ <code>checkoutSessionId</code> إن أردتم تتبعًا، والحالة تبقى <code>trial</code> أو <code>incomplete</code>.</li>
+<li>فتح success لا يستدعي <code>subscriptions.update</code> محليًا إلى <code>active</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Post(&#39;checkout&#39;)
+start(@CurrentUser(&#39;id&#39;) userId: string) {
+  return this.billing.startCheckout(currentTenantId(), userId);
+}
+</code></pre>
+<pre><code class="language-ts">async startCheckout(organizationId: string) {
+  const session = await this.stripe.checkout.sessions.create({
+    mode: &#39;subscription&#39;,
+    customer: await this.customerFor(organizationId),
+    line_items: [{ price: this.priceId, quantity: 1 }],
+    success_url: this.successUrl,
+    cancel_url: this.cancelUrl,
+    metadata: { organizationId },
+  });
+  if (!session.url) throw new Error(&#39;checkout url missing&#39;);
+  return { url: session.url };
+}
+</code></pre>
+<p><code>this.stripe</code> عميل الوحدة لا مكتبة الكتب. <code>metadata</code> تساعد الحدث على إيجاد المنظمة بالإضافة إلى <code>customer</code> المخزن.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة <code>active</code> في نهاية <code>startCheckout</code>.</li>
+<li><code>success_url</code> من جسم الطلب (توجيه مفتوح).</li>
+<li>سعر يرسله المتصفح.</li>
+<li>انتظار webhook داخل نفس طلب الزر حتى تنتهي المهلة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تدفع المكتبة لأول خطة أو تغيّر خطة عبر صفحة Stripe المستضافة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستعراض الفواتير داخل رف إن وفرتم بوابة العميل (Customer Portal) كأمر منفصل. ولا لتفعيل تجريبي بلا بطاقة؛ ذلك صف <code>trial</code> محلي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطوة</th>
+<th>تغيّر الحالة المحلية؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء الجلسة</td>
+<td>لا إلى <code>active</code></td>
+</tr>
+<tr>
+<td>فتح success</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>فتح cancel</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>حدث موقّع لاحقًا</td>
+<td>نعم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعيد <code>POST /billing/checkout</code> إلى الواجهة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ url }</code> لجلسة Stripe. لا يعيد حالة <code>active</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الموظف وصل إلى success وأغلق الدفع من تبويب آخر قبل الإتمام. ما حالة النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحالة السابقة. success ليست دليل دفع. إن لم يصل حدث نجاح تبقى الخطة كما كانت.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>metadata.organizationId</code> من السياق لا من <code>body</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا تبدأ مكتبة <code>lib_a</code> جلسة تُوسَم بـ <code>lib_b</code>. الحدث لاحقًا يحدّث من يرتبط بالعميل المخزن، والوسم الكاذب يفتح خطة لجارة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تُنشأ الجلسة: متصفح أم خادم؟</li>
+<li>ماذا لا يُكتب عند إنشاء الجلسة؟</li>
+<li>من يحدد <code>price</code>؟</li>
+<li>ماذا تفعل صفحة success؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Checkout جلسة على الخادم ورابط للمتصفح. الخطة لا تصبح <code>active</code> لأن الرابط رجع. السعر والعميل وعنوان العودة من رف لا من جسم حر.</p>
+<h2>ماذا بعد؟</h2>
+<p>الجلسة بدأت اشتراكًا عند Stripe. الدرس التالي ماذا تنسخون محليًا من كائن الاشتراك.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Stripe — Checkout: <a href="https://docs.stripe.com/payments/checkout">https://docs.stripe.com/payments/checkout</a></li>
+<li>NestJS — Authentication (<code>CurrentUser</code>): <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

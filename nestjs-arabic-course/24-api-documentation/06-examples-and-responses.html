@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Examples و Response Types</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-examples-and-responses.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Examples و Response Types</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط كل عملية بنموذج الاستجابة وبأمثلة يملؤها Swagger، بما فيها قائمة المقالات المغلفة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@ApiOkResponse()</code> بلا <code>type</code> يقول «نجاح» ولا يقول إن الجسم <code>{ id, title, published }</code> بلا <code>passwordHash</code>. مولد العميل يعيد <code>any</code>. قائمة المقالات تعيد <code>{ items, page, pageSize, total }</code> بينما الوثيقة تذكر مصفوفة عارية، فيكسر الربط في الواجهة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنف الاستجابة يحمل <code>@ApiProperty</code> على ما يخرج فقط. المزخرف <code>type</code> على <code>@ApiOkResponse</code> أو <code>@ApiCreatedResponse</code> يربط العملية بالصنف. الأمثلة في <code>example</code> أو <code>examples</code> تملأ النموذج. التغليف العام للصفحة يُركب بـ <code>allOf</code> و <code>getSchemaPath</code> لأن TypeScript لا يحتفظ بمعامل النوع.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export class PostResponseDto {
+  @ApiProperty()
+  id: number;
+
+  @ApiProperty({ example: &quot;Sunday shelves&quot; })
+  title: string;
+
+  @ApiProperty()
+  published: boolean;
+}
+</code></pre>
+<pre><code class="language-ts">@ApiCreatedResponse({ type: PostResponseDto })
+@Post()
+create(@Body() dto: CreatePostDto): Promise&lt;PostResponseDto&gt; {
+  return this.posts.create(dto);
+}
+</code></pre>
+<p>هذا يوثّق الشكل. إخفاء <code>passwordHash</code> وقت التشغيل يبقى في <code>select</code> أو في التسلسل، لا في المزخرف وحده. إن أعاد المعالج كيانًا فيه التجزئة فالعميل يراها مهما قالت الوثيقة.</p>
+<p>صفحة العمليات تعرض غلافًا عامًا: صنف فيه <code>total</code> و <code>limit</code> و <code>offset</code> و <code>results</code> بلا مزخرف على <code>results</code>، ثم <code>@ApiOkResponse</code> بمخطط <code>allOf</code> يضم <code>getSchemaPath(PaginatedDto)</code> ومصفوفة <code>getSchemaPath(CatDto)</code>. <code>@ApiExtraModels(PaginatedDto)</code> يلزم لأن لا معاملًا يشير إلى الغلاف مباشرة.</p>
+<p>مزخرف قابل لإعادة الاستخدام من الصفحة، بصورة المكتبة:</p>
+<pre><code class="language-ts">export const ApiPaginatedResponse = &lt;TModel extends Type&lt;any&gt;&gt;(model: TModel) =&gt;
+  applyDecorators(
+    ApiExtraModels(PageDto, model),
+    ApiOkResponse({
+      schema: {
+        title: `PaginatedResponseOf${model.name}`,
+        allOf: [
+          { $ref: getSchemaPath(PageDto) },
+          {
+            properties: {
+              items: { type: &quot;array&quot;, items: { $ref: getSchemaPath(model) } },
+            },
+          },
+        ],
+      },
+    }),
+  );
+</code></pre>
+<p><code>title</code> يسمي النوع <code>PaginatedResponseOfPostResponseDto</code>. الصفحة تذكر هذا مع مولّدات العميل. <code>Type</code> و <code>applyDecorators</code> من <code>@nestjs/common</code>، و <code>getSchemaPath</code> من <code>@nestjs/swagger</code>. حقول الغلاف هنا <code>items</code> و <code>page</code> و <code>pageSize</code> و <code>total</code>. <code>examples</code> على الخاصية كائن مفاتيحه أسماء وقيمه <code>{ value }</code>. <code>addGlobalResponse</code> لـ <code>500</code> يبقى في الباني.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">صنف يخرج للعميل
+  type على مزخرف الحالة
+غلاف صفحة
+  allOf + getSchemaPath + title
+المثال يملأ الواجهة ولا يغيّر JSON الحقيقي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Get(&quot;:id&quot;)
+@ApiOkResponse({ type: PostResponseDto })
+@ApiNotFoundResponse({ description: &quot;Unknown id&quot; })
+findOne(@Param(&quot;id&quot;) id: string) {
+  return this.posts.findOne(id);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>النجاح <code>200</code> بصنف المقال. الغياب وصف بلا صنف ثقيل، أو بصنف خطأ مشترك إن وحّدت شكل <code>HttpException</code>. لا تضع <code>PostResponseDto</code> على <code>404</code>. القارئ عندها يجهّز <code>title</code> في الخطأ.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>createDocument</code> يضيف <code>PostResponseDto</code> إلى <code>components.schemas</code> لأنه مذكور في <code>type</code>. الاستجابة في المسار تشير إليه بـ <code>$ref</code>. <code>allOf</code> يدمج الغلاف مع مصفوفة العناصر. الواجهة تعرض مثال <code>Sunday shelves</code> من <code>example</code> إن لم يملأ المجرب الحقل. الاستجابة الحية تأتي من Prisma لا من المثال.</p>
+<p>إن اختلف اسم الحقل في الصنف عن JSON بعد التسلسل، وثّق الناتج النهائي لا صف القاعدة.</p>
+<h2>مثال عملي</h2>
+<p><code>GET /posts</code> يستخدم <code>@ApiPaginatedResponse(PostResponseDto)</code>. افتح <code>api-json</code> وابحث عن <code>PaginatedResponseOfPostResponseDto</code> وعن <code>$ref</code> إلى <code>PostResponseDto</code>. تأكد أن <code>passwordHash</code> غير موجود في المخطط. <code>POST /posts</code> يبقى <code>@ApiCreatedResponse</code> لا <code>@ApiOkResponse</code>. تعليق منشأ يعيد <code>CommentResponseDto</code> بـ <code>id</code> و <code>body</code> و <code>postId</code> من غير بريد المؤلف إن لم يكن جزءًا من العقد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>type: Post</code> حيث الصنف كيان القاعدة وفيه التجزئة.</li>
+<li>غلاف صفحة بلا <code>title</code> ثم عميل مولَّد بنوع مسطح غير مسمّى.</li>
+<li>نسيان <code>@ApiExtraModels</code> فيختفي <code>$ref</code>.</li>
+<li>مثال يحتوي بريدًا حقيقيًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل نجاح يرجع جسمًا، وعلى القوائم المغلفة حتى يتفق المولد مع الواجهة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاختيار الحقول في وقت التشغيل. صنف الوثيقة الذي يشمل سرًا لا يحذفه من الاستجابة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>type: PostResponseDto</code></th>
+<th><code>schema</code> مع <code>allOf</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كائن واحد</td>
+<td>دمج غلاف مع مصفوفة</td>
+</tr>
+<tr>
+<td>يكفي للقراءة والإنشاء</td>
+<td>لازم للتعميم على الصفحة</td>
+</tr>
+<tr>
+<td>الصنف يُكتشف من المزخرف</td>
+<td>الغلاف يحتاج <code>ApiExtraModels</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيار يربط <code>201</code> بصنف المقال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ApiCreatedResponse({ type: PostResponseDto })</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>getSchemaPath</code> في غلاف الصفحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ليشير المخطط إلى نموذج مسجّل في <code>components</code> عبر <code>$ref</code> بدل تكرار الخصائص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا يغيّر <code>title</code> داخل مخطط <code>ApiPaginatedResponse</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يعطي المولد اسم نوع مثل <code>PaginatedResponseOfPostResponseDto</code> بدل كائنًا مجهول الحقول.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين تأتي قيمة المثال في الطلب الحي؟</li>
+<li>لماذا لا يُوثَّق كيان فيه <code>passwordHash</code> كاستجابة؟</li>
+<li>ماذا يلزم صنف الغلاف غير المذكور في <code>@Body</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>type</code> يسمي جسم النجاح. القوائم المغلفة تُركَّب بـ <code>allOf</code> و <code>getSchemaPath</code> وعنوان للمولد. الأمثلة للواجهة، والحقول الحساسة تبقى خارج صنف الاستجابة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./07-cli-plugin.html">CLI Plugin</a> يملأ <code>@ApiProperty</code> من الأنواع والتعليقات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Operations: <a href="https://docs.nestjs.com/openapi/operations">https://docs.nestjs.com/openapi/operations</a></li>
+<li>NestJS — Types and parameters: <a href="https://docs.nestjs.com/openapi/types-and-parameters">https://docs.nestjs.com/openapi/types-and-parameters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

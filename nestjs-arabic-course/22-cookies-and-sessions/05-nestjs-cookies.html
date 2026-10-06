@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cookies في NestJS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-nestjs-cookies.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Cookies في NestJS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الكعكة وكتابتها بواجهة Nest 12.1 التي تعمل على Express و Fastify: <code>@Cookies()</code> و <code>setCookie</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>req.cookies</code> بعد <code>cookie-parser</code> يربط المتحكم بـ Express. <code>reply.setCookie</code> يربطه بـ Fastify. نقل المشروع بين المنصتين يكسر الدخول. مقال قديم ينسخ <code>maxAge</code> بالمللي ثانية فيطوّل العمر.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Cookies(&quot;name&quot;)</code> يقرأ قيمة من رأس <code>Cookie</code>. الكتابة عبر <code>HttpAdapterHost.httpAdapter.setCookie</code> و <code>clearCookie</code>، مع <code>@Res({ passthrough: true })</code> حتى تبقى الاستجابة من قيمة الدالة لا من <code>res</code> اليدوي. التوقيع خيار على <code>NestFactory.create</code> ثم <code>@SignedCookies()</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Cookies. المزخرف من <code>@nestjs/common</code>. كعكة غائبة ترجع <code>undefined</code>. أول تكرار للاسم يفوز. القيمة تُفك ترميزها. الأنابيب على المعامل نوعها <code>custom</code>، فـ <code>ValidationPipe</code> العام يتخطاها ما لم تُفعَّل <code>validateCustomDecorators</code>.</p>
+<pre><code class="language-ts">@Get(&quot;theme&quot;)
+findTheme(@Cookies(&quot;library_theme&quot;) theme?: string) {
+  return { theme: theme ?? &quot;light&quot; };
+}
+</code></pre>
+<p>الكتابة:</p>
+<pre><code class="language-ts">constructor(private readonly adapterHost: HttpAdapterHost) {}
+
+@Put(&quot;theme&quot;)
+setTheme(
+  @Body(&quot;theme&quot;) theme: string,
+  @Res({ passthrough: true }) res: unknown,
+) {
+  this.adapterHost.httpAdapter.setCookie(res, &quot;library_theme&quot;, theme, {
+    sameSite: &quot;lax&quot;,
+    maxAge: 60 * 60 * 24 * 30,
+  });
+  return { theme };
+}
+</code></pre>
+<p><code>passthrough: true</code> يترك إرسال الجسم للإطار. <code>maxAge</code> ثوانٍ. <code>httpOnly</code> افتراضيًا <code>false</code> في هذه الواجهة. لكعكة السمة قد تبقيها مقروءة للسكربت. لا تستخدم هذا المثال لكعكة الجلسة: تلك تكتبها <code>SignInService</code>.</p>
+<p>التوقيع:</p>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule, {
+  cookies: { secret: process.env.COOKIE_SECRET },
+});
+</code></pre>
+<p>ثم <code>signed: true</code> عند الكتابة و <code>@SignedCookies(&quot;uid&quot;)</code> عند القراءة. توقيع تالف أو سر خاطئ يرجع <code>undefined</code>. سر <code>undefined</code> لا يفشل الإقلاع، والفشل يظهر عند أول كعكة موقّعة، لذلك تحققه في مخطط البيئة. التوقيع يمنع العبث بالقيمة ولا يخفي النص. لا توقّع كلمة مرور داخل الكعكة.</p>
+<p><code>clearCookie</code> يصفّر العمر. مرّر <code>path</code> و <code>domain</code> نفسيهما المستخدمين عند الضبط، والافتراضي <code>path: &quot;/&quot;</code>.</p>
+<p><code>cookie-parser</code> و <code>@fastify/cookie</code> ما زالا يعملان إن كان المشروع عليهما. الواجهة المدمجة لا تلغيها، والصفحة تشرح من يفوز عند اجتماع الاثنين. مشروع جديد يكتفي بالمدمج.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Cookies(&quot;library_theme&quot;)     قراءة
+setCookie(..., maxAge ثوانٍ)  كتابة
+@SignedCookies                قراءة بعد HMAC
+SignInService                 كعكة الهوية، لا هذا المثال
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Cookies, Get } from &quot;@nestjs/common&quot;;
+
+@Controller(&quot;preferences&quot;)
+export class PreferencesController {
+  @Get()
+  all(@Cookies() cookies: Record&lt;string, string&gt;) {
+    return { theme: cookies.library_theme ?? &quot;light&quot; };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>إرجاع كل <code>cookies</code> إلى العميل قد يسرّب أسماء كعكات لا تخص العقد، ومنها إن وُجدت قيمة لا يجب أن تعود في JSON. المثال الأسلم يختار <code>library_theme</code> فقط. لا تسرد الكعكات في استجابة الإنتاج.</p>
+<p><code>@Cookies()</code> بلا اسم يعيد الكائن. مع اسم يعيد النص أو <code>undefined</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest يحلّل رأس <code>Cookie</code> حين يطلب معامل ذلك، مرة لكل طلب. <code>setCookie</code> يضيف <code>Set-Cookie</code> عبر <code>appendHeader</code> على المحوّل، فيعمل المسار على Express و Fastify. الاسم غير الصالح أو <code>sameSite: &quot;none&quot;</code> بلا <code>secure: true</code> يرمي <code>TypeError</code> فيصبح <code>500</code>. تحقق من الاسم قبل الكتابة إن جاء من مستخدم.</p>
+<p>التوقيع بصيغة <code>cookie-signature</code>: بادئة <code>s:</code> ثم القيمة ثم HMAC. كعكات Express الموقّعة بالسر نفسه تبقى مقروءة. القيمة ليست مشفّرة.</p>
+<h2>مثال عملي</h2>
+<p><code>PUT /preferences/theme</code> بجسم <code>{ &quot;theme&quot;: &quot;dark&quot; }</code> يضبط الكعكة لثلاثين يومًا ويرجع <code>{ &quot;theme&quot;: &quot;dark&quot; }</code>. <code>GET /preferences/theme</code> من غير كعكة يرجع <code>light</code>. <code>DELETE</code> يستدعي <code>clearCookie(res, &quot;library_theme&quot;)</code>. جلسة Ada لا تُمس لأن الاسم مختلف. سر التوقيع إن استخدمته لاحقًا لكعكة غير هوية يأتي من <code>ConfigService</code> لا من <code>&quot;my-secret&quot;</code> في المقال.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Res()</code> بلا <code>passthrough</code> ثم صمت الاستجابة لأن الإطار لم يرسل قيمة الدالة.</li>
+<li><code>maxAge</code> بالمللي ثانية.</li>
+<li>إرجاع خريطة كل الكعكات.</li>
+<li>كتابة <code>__Host-sid</code> يدويًا بجانب <code>SignInService</code>.</li>
+<li>سر توقيع فارغ لا يوقفه مخطط البيئة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكعكة تفضيل أو قيمة غير دليل دخول، بصفات تناسب حساسيتها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإعادة بناء جلسة الدخول. الحزمة تملك تلك الكعكة. ولا لتخزين <code>password</code> حتى لو وُقّعت.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>@Cookies</code></th>
+<th><code>req.cookies</code> بعد cookie-parser</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من <code>@nestjs/common</code></td>
+<td>Express غالبًا</td>
+</tr>
+<tr>
+<td>يعمل على المحوّلات</td>
+<td>يربط المنصة</td>
+</tr>
+<tr>
+<td>التوقيع عبر خيار <code>cookies</code></td>
+<td>عبر سر الوسيط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرجع <code>@Cookies(&quot;library_theme&quot;)</code> إن لم تُرسل الكعكة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>undefined</code>. المسار يقدر أن يعيد الافتراضي <code>light</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>passthrough: true</code> مع <code>setCookie</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يضبط الرأس ويبقى إرسال جسم الدالة على الإطار. من غير الخيار قد تتولى <code>res</code> الاستجابة وتسكت القيمة الراجعة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>وقّعت كعكة <code>uid</code> والسر غير موجود في البيئة. متى يفشل التطبيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قد يقلع، ثم يرمي عند أول <code>setCookie</code> موقّع أو عند <code>@SignedCookies</code> فيصبح <code>500</code>. افحص السر في <code>validationSchema</code> عند الإقلاع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يُستورد <code>@Cookies()</code>؟</li>
+<li>ما وحدة <code>maxAge</code>؟</li>
+<li>لماذا لا نكتب كعكة الجلسة هنا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>واجهة Nest تقرأ وتكتب الكعكة على المنصتين. التفضيل مثال مناسب. الهوية تبقى على <code>SignInService</code>. التوقيع سلامة لا سرية، والسر من الإعداد.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-nestjs-session.html">Session في NestJS</a> وسيط الجلسة في التوثيق مقابل جلسة الحزمة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Cookies: <a href="https://docs.nestjs.com/http/cookies">https://docs.nestjs.com/http/cookies</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

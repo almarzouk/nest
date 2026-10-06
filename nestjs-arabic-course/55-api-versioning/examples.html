@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>نسختا سعر رف على نفس الخدمة. الفرق في المتحكم والتفعيل فقط.</p>
+<h2>المثال 1 — تمثيلان</h2>
+<pre><code class="language-ts">export interface ShelfBook {
+  id: string;
+  title: string;
+  priceCents: number;
+}
+
+export const toV1 = (book: ShelfBook) =&gt; ({
+  id: book.id,
+  title: book.title,
+  price: book.priceCents,
+});
+
+export const toV2 = (book: ShelfBook) =&gt; ({
+  id: book.id,
+  title: book.title,
+  price: { amount: book.priceCents, currency: &#39;SAR&#39; },
+});
+</code></pre>
+<h2>المثال 2 — URI بعد بادئة <code>api</code></h2>
+<pre><code class="language-ts">import { VersioningType } from &#39;@nestjs/common&#39;;
+import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.setGlobalPrefix(&#39;api&#39;);
+app.enableVersioning({ type: VersioningType.URI });
+await app.listen(process.env.PORT ?? 3000);
+</code></pre>
+<p><code>GET /api/v1/books/b1</code> و <code>GET /api/v2/books/b1</code>. الصحة على متحكم <code>VERSION_NEUTRAL</code> تبقى <code>GET /api/health</code> لأن الحياد في URI لا يدرج مقطع النسخة، والبادئة العامة ما زالت تُطبَّق.</p>
+<h2>المثال 3 — نفس الكتب بترويسة ثم بـ Accept</h2>
+<p>لا تفعّل النوعين معًا. اختر واحدًا في <code>main.ts</code>.</p>
+<p>ترويسة:</p>
+<pre><code class="language-ts">app.enableVersioning({ type: VersioningType.HEADER, header: &#39;X-Api-Version&#39; });
+</code></pre>
+<p><code>GET /api/books/b1</code> مع <code>X-Api-Version: 2</code>.</p>
+<p>وسائط:</p>
+<pre><code class="language-ts">app.enableVersioning({ type: VersioningType.MEDIA_TYPE, key: &#39;v=&#39; });
+</code></pre>
+<p><code>Accept: application/json;v=2</code> على نفس المسار. اختبار يرسل <code>v=9</code> ويتوقع 404. اختبار يرسل النسخة المطابقة ويتوقع <code>price.amount</code> في v2 و <code>price</code> العدد في v1.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

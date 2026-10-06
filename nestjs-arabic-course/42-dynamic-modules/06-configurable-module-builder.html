@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ConfigurableModuleBuilder</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-configurable-module-builder.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ConfigurableModuleBuilder</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>توليد <code>register</code> و <code>registerAsync</code> (أو <code>forRoot</code> و <code>forRootAsync</code>) ورمز الخيارات من <code>ConfigurableModuleBuilder</code> بدل كتابة المزودات في كل مكتبة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>forRootAsync</code> يدويًا يخطئ في <code>inject</code> أو ينسى الدمج مع <code>global</code>. البنّاء في <code>@nestjs/common</code> ينتج صنفًا أساسيًا ودوالًا ورمز <code>MODULE_OPTIONS_TOKEN</code>. وحدتك تمتد الصنف وتضيف الخدمة. المستورد يستدعي الدالة كما في الدروس السابقة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>في ملف تعريف تنشئ البنّاء على نوع الخيارات وتستدعي <code>build()</code>. تصدر <code>ConfigurableModuleClass</code> و <code>MODULE_OPTIONS_TOKEN</code>. صنف الوحدة يمتد الصنف المولَّد. الخدمة تحقن الرمز. <code>setClassMethodName(&#39;forRoot&#39;)</code> يبدل الاسم الاصطلاحي. <code>setExtras</code> يفصل علم <code>isGlobal</code> عن الخيارات التي تراها الخدمة. <code>setFactoryMethodName</code> يبدل <code>create</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { ConfigurableModuleBuilder } from &#39;@nestjs/common&#39;;
+
+export interface IdGeneratorModuleOptions {
+  prefix: string;
+}
+
+export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
+  new ConfigurableModuleBuilder&lt;IdGeneratorModuleOptions&gt;().build();
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { IdGenerator } from &#39;./id-generator.js&#39;;
+import { ConfigurableModuleClass } from &#39;./id-generator.module-definition.js&#39;;
+
+@Module({
+  providers: [IdGenerator],
+  exports: [IdGenerator],
+})
+export class IdGeneratorModule extends ConfigurableModuleClass {}
+</code></pre>
+<p>المستورد: <code>IdGeneratorModule.register({ prefix: &#39;usr&#39; })</code> أو <code>registerAsync</code>. الاسم الافتراضي <code>register</code>.</p>
+<p>لتوليد <code>forRoot</code>:</p>
+<pre><code class="language-ts">export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
+  new ConfigurableModuleBuilder&lt;IdGeneratorModuleOptions&gt;()
+    .setClassMethodName(&#39;forRoot&#39;)
+    .build();
+</code></pre>
+<p><code>setExtras</code> لعلم لا يخص الخدمة:</p>
+<pre><code class="language-ts">export const { ConfigurableModuleClass, MODULE_OPTIONS_TOKEN } =
+  new ConfigurableModuleBuilder&lt;IdGeneratorModuleOptions&gt;()
+    .setExtras({ isGlobal: false }, (definition, extras) =&gt; ({
+      ...definition,
+      global: extras.isGlobal,
+    }))
+    .build();
+</code></pre>
+<p><code>isGlobal</code> يصل إلى <code>global</code> على الوحدة ولا يظهر داخل كائن <code>MODULE_OPTIONS_TOKEN</code>. الخدمة تحقن الرمز وترى <code>prefix</code> فقط.</p>
+<p><code>OPTIONS_TYPE</code> و <code>ASYNC_OPTIONS_TYPE</code> من ناتج <code>build()</code> لأنواع توسيع الدوال إن أعدت كتابة <code>register</code> وناديت <code>super.register(options)</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">module-definition.ts  -&gt; build() -&gt; دوال + رمز
+IdGeneratorModule     -&gt; extends + providers
+الخدمة                -&gt; @Inject(MODULE_OPTIONS_TOKEN)
+المستورد              -&gt; register أو forRoot حسب الاسم الذي ضبطته
+</code></pre>
+<p><code>setExtras</code> بوابة خصائص الوحدة. الرمز بوابة خصائص الخدمة.</p>
+<h2>أبسط مثال</h2>
+<p>الملفان أعلاه ثم:</p>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { MODULE_OPTIONS_TOKEN } from &#39;./id-generator.module-definition.js&#39;;
+import type { IdGeneratorModuleOptions } from &#39;./id-generator.module-definition.js&#39;;
+
+@Injectable()
+export class IdGenerator {
+  constructor(
+    @Inject(MODULE_OPTIONS_TOKEN)
+    private readonly options: IdGeneratorModuleOptions,
+  ) {}
+
+  next(): string {
+    return `${this.options.prefix}_id`;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الرمز مولَّد مع الدوال، فلن تخطئ في سلسلة <code>&#39;ID_OPTIONS&#39;</code> بين الملفَين. <code>@Module</code> على الصنف الابن يدمج المزودات مع ما ترجعه الدالة المولَّدة. المستورد لا يرى البنّاء، يرى <code>register</code> فقط.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>build()</code> يجهز دوالًا ثابتة على الصنف الأساسي.</li>
+<li>الابن يرثها، فـ <code>IdGeneratorModule.register</code> يعمل.</li>
+<li>النداء يسجل <code>MODULE_OPTIONS_TOKEN</code> بقيمة الخيار.</li>
+<li><code>IdGenerator</code> يُحقن من الزخرفة الثابتة ويرى الرمز.</li>
+<li><code>setExtras</code> يعدّل تعريف الوحدة قبل التسجيل، مثل وضع <code>global</code>.</li>
+<li>إعادة التصدير تبقى على الصنف من غير نداء ثانٍ، كما في أي وحدة ديناميكية.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مكتبة كاش داخل الشركة: <code>setClassMethodName(&#39;forRoot&#39;)</code> لأن المهلة واحدة للتطبيق، و <code>setExtras</code> حتى يكتب الجذر <code>forRoot({ isGlobal: true, ttlSeconds: 30 })</code>. الخدمة تقرأ <code>ttlSeconds</code> من الرمز ولا تعرف إن كانت الوحدة عامة. ميزة تريد تسجيلًا متعددًا تترك الاسم <code>register</code> ولا تضع <code>isGlobal</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حقن <code>&#39;MODULE_OPTIONS_TOKEN&#39;</code> كنص. الرمز هو الثابت المصدَّر.</li>
+<li>توقع ظهور <code>isGlobal</code> داخل الخدمة بعد <code>setExtras</code>. التوثيق يخرجه من كائن الرمز.</li>
+<li>نسيان <code>extends ConfigurableModuleClass</code> فتختفي <code>register</code>.</li>
+<li>كتابة <code>forRoot</code> يدويًا فوق البنّاء الذي ما زال يولد <code>register</code> من غير <code>setClassMethodName</code>.</li>
+<li>وضع الخيار السري داخل <code>setExtras</code> حيث لا تراه الخدمة التي تحتاجه.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>وحدة ستعيش كواجهة استيراد ويهمها <code>register</code> و <code>registerAsync</code> بلا نسخ لصق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>نداء واحد داخلي لن يتكرر. دالة <code>forRoot</code> مكتوبة يدويًا في عشرين سطرًا أوضح من ملف تعريف إضافي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الضبط</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>build()</code> الافتراضي</td>
+<td><code>register</code> و <code>registerAsync</code></td>
+</tr>
+<tr>
+<td><code>setClassMethodName(&#39;forRoot&#39;)</code></td>
+<td><code>forRoot</code> و <code>forRootAsync</code></td>
+</tr>
+<tr>
+<td><code>setFactoryMethodName</code></td>
+<td>اسم بدل <code>create</code> في <code>useClass</code></td>
+</tr>
+<tr>
+<td><code>setExtras</code></td>
+<td>خصائص تعريف الوحدة خارج رمز الخدمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تحقن الخدمة لقراءة <code>prefix</code> بعد <code>build()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>MODULE_OPTIONS_TOKEN</code> المصدَّر من ملف التعريف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تحصل على <code>forRoot</code> بدل <code>register</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>.setClassMethodName(&#39;forRoot&#39;)</code> قبل <code>build()</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>isGlobal</code> في <code>setExtras</code> لا يُحقن مع <code>prefix</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الدالة الثانية في <code>setExtras</code> تضعه على تعريف الوحدة (<code>global</code>) وتبقيه خارج كائن <code>MODULE_OPTIONS_TOKEN</code> الذي تراه الخدمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يرث صنف الوحدة؟</li>
+<li>أين يُضبط اسم الدالة؟</li>
+<li>ماذا تفعل عند إعادة التصدير؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>البنّاء يولد دوال التكوين ورمز الخيارات. اضبط الاسم والإضافات في ملف التعريف، وحقن الرمز في الخدمة، واستدعِ الدالة مرة بالطريقة التي يناسبها <code>forRoot</code> أو <code>register</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>ModuleRef</code>: جلب مزود بالرمز بعد الإقلاع، بما في ذلك ما استخدمته لفك طرف دورة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

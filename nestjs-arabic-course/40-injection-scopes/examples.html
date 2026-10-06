@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>تمرير المستخدم من غير نطاق طلب</h2>
+<pre><code class="language-ts">import { createParamDecorator, type ExecutionContext } from &#39;@nestjs/common&#39;;
+
+export const CurrentUserId = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext): string =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ user: { id: string } }&gt;();
+    return request.user.id;
+  },
+);
+</code></pre>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+import { CurrentUserId } from &#39;./current-user-id.decorator.js&#39;;
+
+@Controller(&#39;books&#39;)
+export class BooksController {
+  constructor(private readonly books: BooksService) {}
+
+  @Get()
+  list(@CurrentUserId() userId: string) {
+    return this.books.list(userId);
+  }
+}
+</code></pre>
+<p><code>BooksService</code> بلا <code>scope</code>. Guard سبق وملأ <code>request.user</code>. الخدمة Singleton تستقبل <code>string</code> وتضيفه إلى <code>where</code>.</p>
+<h2>عميل قاعدة يبقى DEFAULT</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise&lt;void&gt; {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<p>تعليم هذا الصنف <code>REQUEST</code> يلغي الخطافين ويعيد مجمعًا لكل طلب. الإبقاء على الافتراضي هو المثال الذي يُنسخ.</p>
+<h2>مسجّل عابر يعرف أباه</h2>
+<pre><code class="language-ts">import { Inject, Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { INQUIRER } from &#39;@nestjs/core&#39;;
+
+@Injectable({ scope: Scope.TRANSIENT })
+export class HelloService {
+  constructor(@Inject(INQUIRER) private readonly parentClass: object) {}
+
+  sayHello(message: string): string {
+    const name = this.parentClass?.constructor?.name ?? &#39;unknown&#39;;
+    return `${name}: ${message}`;
+  }
+}
+</code></pre>
+<p><code>BooksService</code> و <code>OrdersService</code> Singleton تحقنانه فتحصل كل واحدة على نسخة. لا تصعدان إلى نطاق طلب.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>طلبان يشاركان مرجع <code>PrismaService</code>.</li>
+<li><code>GET /books</code> لا يعلّم المتحكم <code>REQUEST</code> طالما الخدمة لا تحقن مزود طلب.</li>
+<li>حقن <code>TenantDb</code> داخل <code>BooksService</code> يجعل المتحكم يُبنى لكل طلب. راقب ذلك قبل الدمج.</li>
+<li><code>HelloService</code> العابرة تطبع اسم الخدمة التي حقنتها، لا اسمًا واحدًا مشتركًا.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

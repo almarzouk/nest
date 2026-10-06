@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما لا تحتاج حفظه الآن</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-what-you-can-skip.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما لا تحتاج حفظه الآن</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حصر RxJS في ما مرّ، وتسمية عائلات لن تُحفظ في هذا الفصل حتى لا يتحول المسار إلى دليل المكتبة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>صفحة المعاملات طويلة: نوافذ زمنية، دمج، مواضيع، جداول. نسخها في معترض الكتالوج يزيد مسارات صامتة. عندما يتعطل الطلب لن تعرف أي معامل ابتلع القيمة. الحد يحمي المراجعة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>احفظ من هذا الفصل: تيار بارد، اشتراك واحد، <code>pipe</code>، <code>map</code>، <code>tap</code>، <code>catchError</code>، <code>timeout</code>، و <code>firstValueFrom</code> عند حافة <code>await</code>. ما عدا ذلك ابحث عنه عندما تظهر مشكلة لا يحلها هذا الصف، لا قبلها.</p>
+<h2>التعريف التقني</h2>
+<p>يكفي أن تتعرف على الأسماء حتى لا تخلطها، بلا بناء أمثلة إنتاج:</p>
+<table>
+<thead>
+<tr>
+<th>العائلة</th>
+<th>مثال اسم</th>
+<th>لماذا تُؤجل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء متقدم</td>
+<td><code>interval</code> و <code>fromEvent</code></td>
+<td>لا مسار كتالوج يحتاج مؤقتًا داخل الطلب</td>
+</tr>
+<tr>
+<td>دمج</td>
+<td><code>mergeMap</code> و <code>switchMap</code> و <code>concatMap</code></td>
+<td>تلزم عندما يولّد كل عنصر تيارًا جديدًا. طلب HTTP واحد لا يحتاجها بعد</td>
+</tr>
+<tr>
+<td>تجميع</td>
+<td><code>scan</code> و <code>reduce</code></td>
+<td>الرد قيمة واحدة لا جدولًا تراكميًا</td>
+</tr>
+<tr>
+<td>مواضيع</td>
+<td><code>Subject</code> و <code>BehaviorSubject</code></td>
+<td>حالة مشتركة بين طلبات، ونادرًا مكانها المعترض</td>
+</tr>
+<tr>
+<td>إعادة محاولة</td>
+<td><code>retry</code></td>
+<td>قد تكرر <code>POST</code> غير الآمن. القرار لاحقًا مع الطوابير لا بمعامل عام</td>
+</tr>
+</tbody></table>
+<p><code>switchMap</code> يلغي السابق عند وصول عنصر جديد. مفيد لواجهة بحث. داخل طلب خادم واحد القيمة لا تتجدد. لا تضفه «للمرونة».</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">هذا الفصل: قيمة واحدة في طلب واحد
+المكتبة: تيارات طويلة وأحداث واجهة وحالة مشتركة
+</code></pre>
+<p>إن صار وصفك للمسار «تيار طويل»، أعد قراءة إن كان HTTP أصلًا.</p>
+<h2>أبسط مثال</h2>
+<p>سلسلة مقبولة على وكيل ISBN:</p>
+<pre><code class="language-ts">return next.handle().pipe(
+  timeout(800),
+  map((book) =&gt; ({ data: book })),
+  catchError((error: unknown) =&gt; {
+    if (error instanceof TimeoutError) {
+      return throwError(() =&gt; new GatewayTimeoutException());
+    }
+    return throwError(() =&gt; error);
+  }),
+);
+</code></pre>
+<p>أربع أفكار من الفصل على مسار واحد. لا <code>retry(3)</code> على عملية قد تنشئ صفًا.</p>
+<h2>شرح المثال</h2>
+<p><code>timeout</code> أولًا على انتظار المنبع، ثم <code>map</code> على النجاح فقط، ثم <code>catchError</code> للمهلة ولغيرها. <code>retry</code> غير موجود. إن أضفته قبل <code>catchError</code> قد يعيد الطلب مرتين قبل أن يرى المستخدم الخطأ. ذلك قرار منتج بعد أن تعرف إن كانت العملية آمنة للتكرار.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>معامل الدمج يشترك في تيار داخلي لكل قيمة. على رد واحد، الاشتراك الداخلي اشتراك زائد يصعب تتبعه. <code>Subject</code> الساخن يشارك التنفيذ بين المشتركين. إن وضعته على مزوّد ودفعت فيه أجسام الطلبات، اختلطت ردود المستخدمين. هذا أسوأ من تيار بارد تُخطئ في الاشتراك فيه مرتين، لأنه يسرب بيانات بين الطلبات.</p>
+<h2>مثال عملي</h2>
+<p>قاعدة مراجعة للمعترض:</p>
+<ul>
+<li>إن كانت الدالة تشرح في سطرين <code>map</code> أو <code>tap</code> أو مهلة، اقبلها.</li>
+<li>إن ظهر <code>mergeMap</code>، اسأل أي تيار داخلي يُنشأ ولماذا لا تكفي الخدمة <code>async</code>.</li>
+<li>إن ظهر <code>Subject</code> في <code>@Injectable()</code> بلا سبب حالة حية، أعد التصميم إلى استدعاء دالة لكل طلب.</li>
+</ul>
+<p>الفصل التالي يستعمل <code>pipe</code> على <code>HttpService</code> نفسه. لن نضيف عائلة جديدة هناك إلا <code>catchError</code> و <code>timeout</code> و <code>firstValueFrom</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>بدء التعلم من <code>mergeMap</code> قبل <code>map</code>.</li>
+<li><code>retry</code> على مسار إنشاء كتاب.</li>
+<li><code>Subject</code> لتمرير الرد بين معترض ومتحكم.</li>
+<li>حفظ جدول المعاملات في الملاحظات ثم استعماله عشوائيًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>هذا الحصر أثناء قراءة أي مثال خارجي. انسخ المعامل فقط إن استطعت تسمية القيمة التي يصدرها على طلب واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كحظر دائم. عندما تبني بحثًا يتبدل النص قبل اكتمال الطلب السابق، ارجع واقرأ <code>switchMap</code> وقتها. عندما تبني حدثًا داخليًا بين وحدات، فصل الأحداث في هذه الدورة أبسط من <code>Subject</code> عام.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>يكفي الآن</th>
+<th>يُؤجل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>map</code> <code>tap</code> <code>catchError</code> <code>timeout</code></td>
+<td><code>mergeMap</code> <code>switchMap</code></td>
+</tr>
+<tr>
+<td><code>firstValueFrom</code></td>
+<td><code>Subject</code> مشترك بين الطلبات</td>
+</tr>
+<tr>
+<td>تيار قيمة واحدة</td>
+<td><code>interval</code> داخل الطلب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اذكر المعاملات الأربعة التي يُسمح بوضعها في معترض الكتالوج من هذا الفصل.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>map</code> و <code>tap</code> و <code>catchError</code> و <code>timeout</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>retry</code> خطر على <code>POST /books</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه قد يعيد إنشاء الكتاب عند فشل غامض بعد أن نجح الحفظ أصلًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>Subject</code> على مزوّد قد يخلط ردود مستخدمين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه تيار ساخن واحد يشترك فيه الجميع. دفع جسم الطلب فيه يجعل المشترك يرى بيانات طلب آخر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما شكل التيار الذي صمم له هذا الفصل؟</li>
+<li>أي معامل واجهة لا يُنسخ إلى الخادم بلا قصة إلغاء؟</li>
+<li>ماذا ستعيد استعماله في عميل HTTP؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>القيمة الواحدة تُخدم بـ <code>pipe</code> ومعاملات أربعة وجسر وعد. اترك الدمج والمواضيع حتى تسمي مشكلة لا يحلها هذا الصف.</p>
+<h2>ماذا بعد؟</h2>
+<p>عميل HTTP يخرج من Nest إلى API أخرى، وتياره من <code>HttpService</code> إن بقيت على Axios.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>RxJS — Operators: <a href="https://rxjs.dev/guide/operators">https://rxjs.dev/guide/operators</a></li>
+<li>NestJS — Interceptors: <a href="https://docs.nestjs.com/interceptors">https://docs.nestjs.com/interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

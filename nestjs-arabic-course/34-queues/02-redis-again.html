@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>دور Redis</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-redis-again.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>دور Redis</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية Redis كمخزن مهام يبقى بعد إعادة تشغيل Node، لا كنسخة ثانية من مخبأ ISBN.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>add</code> داخل مصفوفة في العملية يضيع عند النشر. الزائر أخذ <code>201</code> والمهمة اختفت. Redis الذي خزّن <code>isbn:</code> يستطيع أيضًا أن يحفظ قوائم BullMQ، لكن المفتاح والغرض مختلفان. خلط قاعدة بيانات Redis نفسها بلا تسمية يجعل مسح المخبأ يمسح الطوابير أو العكس.</p>
+<h2>الفكرة ببساطة</h2>
+<p>BullMQ يكتب حالة المهمة في Redis: انتظار، تنفيذ، نجاح، فشل. عدة عمليات Nest تتصل بالعنوان نفسه فتستهلك من القائمة نفسها. مخبأ cache-manager يكتب مفاتيح <code>isbn:*</code> بمدة. الطابور يكتب مفاتيح المكتبة الخاصة به. افصلهما بقاعدة Redis منطقية (<code>db</code>) أو بمثيل آخر عندما يسهل عليك مسح أحدهما.</p>
+<h2>التعريف التقني</h2>
+<p>اتصال BullMQ في التوثيق:</p>
+<pre><code class="language-ts">connection: {
+  host: &#39;localhost&#39;,
+  port: 6379,
+}
+</code></pre>
+<p>هذا ليس <code>stores: [createKeyv(...)]</code> من فصل المخبأ. مكتبتان تتحدثان إلى Redis. عنوان <code>REDIS_URL</code> للتخزين المؤقت و <code>QUEUE_REDIS_URL</code> للطابور يجعلان الفرق ظاهرًا في الإعداد حتى لو وقعا على المنفذ نفسه في التطوير.</p>
+<p>ما تخزنه المهمة: <code>{ bookId: string }</code> واسم المهمة. لا ملف الغلاف. الملف على القرص أو في مخزن كائنات، والمهمة تحمل المفتاح النصي إن احتاجته: <code>{ bookId, coverKey }</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Redis A أو db 0    isbn:*     TTL     cache-manager
+Redis B أو db 1    مفاتيح BullMQ     حالات المهام
+</code></pre>
+<p>مسح «كل المفاتيح» على المثيل المشترك يحذف العمل غير المنجز.</p>
+<h2>أبسط مثال</h2>
+<p>تطوير محلي بمثيل واحد وقاعدتين منطقيتين، إن اخترت ذلك:</p>
+<pre><code class="language-text">QUEUE_REDIS_URL=redis://localhost:6379/1
+REDIS_URL=redis://localhost:6379/0
+</code></pre>
+<p><code>/1</code> في العنوان يختار قاعدة Redis رقم 1 لعميل يدعم ذلك. <code>@keyv/redis</code> و BullMQ يجب أن يُضبط كل منهما على قاعدته صراحة. لا تفترض أن المكتبتين تتفقان على الافتراضي.</p>
+<h2>شرح المثال</h2>
+<p>القاعدة 0 للمخبأ يمكن مسحها في تجربة TTL. القاعدة 1 تبقى فيها مهمة القص أثناء التجربة. في الإنتاج قد يكون المثيلان منفصلين لأسباب نسخ احتياطي مختلفة: فقدان المخبأ يعيد الحساب، وفقدان الطابور يفقد نية إرسال بريد إن لم تكن مسجّلة أيضًا في Postgres.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند <code>add</code> تُسلسَل الحمولة إلى Redis وتعود الدالة بعد تأكيد الكتابة، لا بعد تنفيذ القص. العامل على أي نسخة تتصل بالعنوان نفسه يأخذ المهمة بحيث لا ينفذها عاملان معًا في الحالة الطبيعية للمكتبة. إن فقدت الاتصال بـ Redis، <code>add</code> يرمي قبل الرد على الزائر إن ناديتها قبل <code>return</code>. ترتيب المتجر: احفظ الكتاب، ثم <code>add</code>، وإن فشل <code>add</code> سجّل ذلك وأعد محاولة إدراج المهمة، ولا تُرجع نجاحًا صامتًا بلا قص ولا علم.</p>
+<p>إعادة تشغيل Node لا تحذف Redis. إعادة تشغيل Redis بلا تخزين دائم تحذف المهام. اعرف إن كان مثيل التطوير بلا <code>appendonly</code>. لا تبنِ توقع الإنتاج على ذاكرة متطايرة.</p>
+<h2>مثال عملي</h2>
+<p>مفتاح غلاف في الحمولة لا البايتات:</p>
+<pre><code class="language-text">{ &quot;bookId&quot;: &quot;42&quot;, &quot;coverKey&quot;: &quot;8f0c...png&quot; }
+</code></pre>
+<p><code>coverKey</code> هو اسم الملف من فصل الرفع. العامل يقرأ الملف من القرص. وضع <code>Buffer</code> في Redis يضخ الصور في ذاكرة المخزن ويكرر ما تجنبتَه عند رفض <code>file.buffer</code> للملفات الكبيرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>FLUSHALL</code> على Redis المشترك أثناء تجربة المخبأ.</li>
+<li>عنوان واحد بلا توثيق أي مكتبة تملك المفاتيح.</li>
+<li>تخزين ملف الغلاف داخل الحمولة.</li>
+<li>افتراض أن لقطة Redis بديل عن جدول الكتب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجب أن تعيش المهمة بعد العملية التي خدمت <code>POST</code>، وأن يراها مستهلك على نسخة أخرى.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمشاركة غرف Socket.IO. ذلك ليس أثر هذا الطابور. ولا كمخزن وحيد لحقيقة الطلب إن كان فقدان Redis غير مقبول لبريد الدفع. عندها سجّل النية في القاعدة أيضًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>مخبأ ISBN</th>
+<th>طابور القص</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المكتبة</td>
+<td>cache-manager / Keyv</td>
+<td>BullMQ</td>
+</tr>
+<tr>
+<td>المفتاح</td>
+<td><code>isbn:</code></td>
+<td>مفاتيح الطابور واسم <code>registerQueue</code></td>
+</tr>
+<tr>
+<td>عند الفقد</td>
+<td>إعادة <code>lookup</code></td>
+<td>قد تُفقد المهمة إن لم تُسجَّل في مكان آخر</td>
+</tr>
+<tr>
+<td>المدة</td>
+<td>TTL</td>
+<td>حتى النجاح أو الفشل النهائي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>add</code> ينتظر انتهاء القص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. ينتظر تأكيد تخزين المهمة في Redis ثم تعود الدالة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تضع بايتات الغلاف في الحمولة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها كبيرة وتكرر مشكلة الذاكرة. الحمولة مفاتيح نصية والملف يبقى على القرص أو مخزن الكائنات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما خطر <code>FLUSHALL</code> إن كان المخبأ والطابور على قاعدة Redis واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يمسح مهام القص والبريد غير المنجزة مع مفاتيح ISBN. افصل القاعدة المنطقية أو المثيل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يبقى بعد إعادة تشغيل Node؟</li>
+<li>أي حقلين يكفيان لمهمة غلاف؟</li>
+<li>لماذا عنوانان في الإعداد أوضح من عنوان واحد صامت؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Redis هنا يحفظ حالة المهام بين العمليات. افصله عن مخبأ ISBN، وخزّن مفاتيح لا ملفات ولا كائنات Prisma.</p>
+<h2>ماذا بعد؟</h2>
+<p>تسجيل <code>@nestjs/bullmq</code>: <code>forRoot</code> للاتصال و <code>registerQueue</code> للاسم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

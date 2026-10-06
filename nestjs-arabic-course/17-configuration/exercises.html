@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أغلق الدروس ثم أجب. المكتبة هي السيناريو. لا ترفع ملفًا فيه سر حقيقي.</p>
+<h2>سهل</h2>
+<ol>
+<li>صنّف: <code>PORT</code>، الحد الأقصى لحروف عنوان الكتاب، <code>DATABASE_URL</code>، شعار نصي ثابت في الواجهة.</li>
+<li>ماذا يحتوي <code>.env.example</code> لمفتاح <code>DATABASE_URL</code>؟</li>
+<li>أين يُستدعى <code>ConfigModule.forRoot</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>PORT</code> و <code>DATABASE_URL</code> إعداد. طول العنوان قاعدة مجال. الشعار الثابت كود أو أصل واجهة، لا سر.</li>
+<li>الاسم وقيمة فارغة أو وصفًا. العنوان الحقيقي في <code>.env</code> المحلي أو في المنصة.</li>
+<li>مرة في <code>AppModule</code>. مع <code>isGlobal: true</code> لا تعاده في كل ميزة.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>مخطط Zod الحالي:</p>
+<pre><code class="language-ts">z.object({
+  PORT: z.string().default(&quot;3000&quot;),
+  DATABASE_URL: z.string().optional(),
+});
+</code></pre>
+<ol>
+<li>لماذا قد يقلع التطبيق ويتصل لاحقًا بعنوان <code>undefined</code>؟</li>
+<li>أعد صياغة الحقلين حتى يُجبر المنفذ ويُرفض عنوان فارغ.</li>
+<li>أين تقرأ <code>PORT</code> لـ <code>listen</code> حتى ترى النوع بعد الإكراه؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>optional()</code> يجعل الغياب مقبولًا، و <code>z.string()</code> يترك المنفذ نصًا. الاتصال يتأجل إلى أول استعلام.</li>
+<li><code>PORT: z.coerce.number().int().min(1).max(65535).default(3000)</code> و <code>DATABASE_URL: z.string().min(1)</code>.</li>
+<li><code>app.get(ConfigService)</code> بعد <code>create</code>، أو خدمة تُحقن وتستدعي <code>get(&quot;PORT&quot;, { infer: true })</code> على نوع <code>z.infer</code>.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p><code>app.module.ts</code> فيه:</p>
+<pre><code class="language-ts">const databaseUrl = process.env.DATABASE_URL;
+
+TypeOrmModule.forRoot({
+  type: &quot;postgres&quot;,
+  url: databaseUrl,
+  synchronize: true,
+});
+</code></pre>
+<p><code>.env</code> صحيح، ومع ذلك <code>url</code> فارغ في التطوير، والمثال يفتح <code>synchronize: true</code>.</p>
+<ol>
+<li>لماذا العنوان فارغ رغم الملف؟</li>
+<li>ما شكل <code>forRootAsync</code> الذي يحقن <code>ConfigService</code>؟</li>
+<li>لماذا تُطفأ <code>synchronize</code> قبل أي فصل ترحيل؟</li>
+<li>ما علاقة ذلك بمسار Prisma في الفصل التالي؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>السطر أعلى الملف يُقيَّم عند الاستيراد، غالبًا قبل دمج dotenv داخل <code>forRoot</code>.</li>
+<li><code>TypeOrmModule.forRootAsync({ inject: [ConfigService], useFactory: (config) =&gt; ({ type: &quot;postgres&quot;, url: config.getOrThrow(&quot;DATABASE_URL&quot;), autoLoadEntities: true, synchronize: false }) })</code>.</li>
+<li>توثيق TypeORM يحذّر أن <code>synchronize: true</code> قد يمسح بيانات الإنتاج. تغيير المخطط يتم بترحيل.</li>
+<li>Prisma مسار الدورة التطبيقي. سيقرأ العنوان من <code>ConfigService</code> داخل <code>PrismaService</code> بعد التحقق. <code>forRootAsync</code> هنا توقيت التركيب، لا إلزام باختيار TypeORM.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

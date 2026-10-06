@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lifecycle Hooks</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-lifecycle-hooks.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Lifecycle Hooks</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تنفيذ <code>afterInit</code> و <code>handleConnection</code> و <code>handleDisconnect</code> لتنظيف الغرف ومعرفة متى يصبح <code>server</code> جاهزًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العميل يغلق اللابتوب بلا حدث <code>leave</code>. الغرفة ما زالت تحتفظ بمعرّف مقبس لن يسمع. والبث من <code>announce</code> في أول ميلي ثانية من الإقلاع قد يرى <code>server</code> غير مهيأ. الخطافات هي أماكن هذه اللحظات، لا منطق التعليق نفسه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ثلاث واجهات: <code>OnGatewayInit</code> بعد بناء الخادم، <code>OnGatewayConnection</code> لكل اتصال، <code>OnGatewayDisconnect</code> عند القطع. الأخيرة أنسب مكان لتسجيل أن المقبس خرج. Socket.IO يزيله من الغرف عند القطع أصلًا، لكن أي <code>Map</code> بنيتها أنت تُحدَّث هنا.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تسمي الخطافات:</p>
+<table>
+<thead>
+<tr>
+<th>الواجهة</th>
+<th>الدالة</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>OnGatewayInit</code></td>
+<td><code>afterInit(server)</code></td>
+<td>بعد إنشاء خادم المقبس</td>
+</tr>
+<tr>
+<td><code>OnGatewayConnection</code></td>
+<td><code>handleConnection(client, ...args)</code></td>
+<td>عند اتصال عميل</td>
+</tr>
+<tr>
+<td><code>OnGatewayDisconnect</code></td>
+<td><code>handleDisconnect(client)</code></td>
+<td>عند انقطاعه</td>
+</tr>
+</tbody></table>
+<p><code>server</code> في <code>afterInit</code> هو نفسه الذي يربطه <code>@WebSocketServer</code>. المعامل <code>client</code> من نوع مقبس المكتبة، هنا <code>Socket</code>.</p>
+<pre><code class="language-ts">import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  OnGatewayInit,
+  WebSocketGateway,
+} from &#39;@nestjs/websockets&#39;;
+import type { Server, Socket } from &#39;socket.io&#39;;
+
+@WebSocketGateway({ namespace: &#39;comments&#39; })
+export class CommentsGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
+  afterInit(server: Server) {
+    server.emit(&#39;ready&#39;);
+  }
+
+  handleConnection(client: Socket) {
+    client.data.connectedAt = Date.now();
+  }
+
+  handleDisconnect(client: Socket) {
+    client.data.connectedAt = undefined;
+  }
+}
+</code></pre>
+<p><code>client.data</code> كيس على هذا المقبس فقط. لا تخزن فيه صف Prisma.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إقلاع -&gt; afterInit
+كل تبويب -&gt; handleConnection
+إغلاق التبويب أو انقطاع الشبكة -&gt; handleDisconnect
+</code></pre>
+<p>الرسائل <code>@SubscribeMessage</code> تقع بين الاتصال والقطع.</p>
+<h2>أبسط مثال</h2>
+<p>عدّاد <code>live</code> يزيد في <code>handleConnection</code> وينقص في <code>handleDisconnect</code>. الرقم التجميعي على البوابة مقبول. مصفوفة نصوص تعليقات بجانبه ليست كذلك.</p>
+<h2>شرح المثال</h2>
+<p><code>afterInit</code> الذي ينادي <code>server.emit(&#39;ready&#39;)</code> يصل فقط إلى من اتصل قبل ذلك، أي لا أحد غالبًا. لا تستخدمه للبث المنتج. استخدمه لتسجيل أن الفضاء جاهز أو لضبط وسيط مكتبة. العدّاد يوضح أن الخطاف يرى كل المقابس بلا <code>@SubscribeMessage</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المحرك ينادي <code>afterInit</code> مرة ويمرر الخادم. كل مصافحة ناجحة تنادي <code>handleConnection</code> قبل أن تعتمد على رسائل تطبيقك. القطع، سواء أغلق العميل أو انقطع المهلة، ينادي <code>handleDisconnect</code>. غرف Socket.IO تُحدَّث مع القطع من المكتبة. إن نسخت الأعضاء في <code>Map&lt;bookId, Set&lt;socketId&gt;&gt;</code> فاحذف <code>socket.id</code> هنا وإلا كبر السجل. لا تستدعِ قاعدة بيانات بطيئة في <code>handleConnection</code> قبل أن تقرر إن كان الاتصال مقبولًا. الفحص الثقيل يؤخر المصافحة.</p>
+<h2>مثال عملي</h2>
+<p>سجّل <code>client.id</code> عند الاتصال والقطع. هو معرف مكتبة لا معرف مستخدم. اربط <code>userId</code> بعد فحص الرمز في درس المصادقة، واحذف الربط في <code>handleDisconnect</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>بث منتج داخل <code>afterInit</code>.</li>
+<li>الاعتماد على رسالة <code>leave</code> وحدها لتنظيف <code>Map</code> محلية.</li>
+<li>عمل قاعدة متسلسل في <code>handleConnection</code> لكل تبويب.</li>
+<li>حفظ <code>client</code> في مصفوفة عامة وعدم حذفه عند القطع.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>afterInit</code> لضبط الخادم مرة. الاتصال والقطع للمحاسبة والتنظيف ورفض مبكر ستكمله المصادقة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتنفيذ <code>join</code>. ذلك رسالة يرسلها العميل عندما يعرف <code>bookId</code>. الخطاف لا يعرف أي كتاب فُتحت صفحته إلا إذا وضعته في المصافحة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>اللحظة</th>
+<th>الخطاف</th>
+<th>ليس مكانه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الخادم جاهز</td>
+<td><code>afterInit</code></td>
+<td>بث تعليق</td>
+</tr>
+<tr>
+<td>تبويب فُتح</td>
+<td><code>handleConnection</code></td>
+<td>معرفة الكتاب تلقائيًا</td>
+</tr>
+<tr>
+<td>التبويب مات</td>
+<td><code>handleDisconnect</code></td>
+<td>حفظ تعليق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تُستدعى مرة بعد بناء الخادم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>afterInit</code> عبر <code>OnGatewayInit</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي حدث <code>leave</code> لتنظيف بنية تملكها أنت؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الإغلاق المفاجئ لا يرسل <code>leave</code>. <code>handleDisconnect</code> يعمل عند انقطاع المقبس.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ماذا يجوز أن يبقى على البوابة بين الاتصالات، وماذا لا يجوز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عدّاد أو بنية تُحذف مفاتيحها عند القطع. لا نص مستخدم ولا كائن طلب HTTP ولا عميل بلا حذف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الواجهات الثلاث؟</li>
+<li>متى تُملأ خاصية <code>@WebSocketServer</code> نسبة إلى الباني؟</li>
+<li>ماذا يفعل Socket.IO بالغرف عند القطع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>afterInit</code> مرة، والاتصال والقطع لكل مقبس. نظّف ما بنيته يدويًا في <code>handleDisconnect</code>. الانضمام إلى كتاب يبقى رسالة.</p>
+<h2>ماذا بعد؟</h2>
+<p>رفض المقبس الذي بلا رمز، في <code>handleConnection</code> قبل أي <code>join</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

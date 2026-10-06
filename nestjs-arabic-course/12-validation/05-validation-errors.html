@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>شكل أخطاء التحقق</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-validation-errors.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>شكل أخطاء التحقق</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة جسم <code>400</code> الذي يرجعه <code>ValidationPipe</code>، وإخفاء التفاصيل أو تغيير تجميع الرسائل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العميل يحتاج أن يعرف أن <code>seat</code> أقل من 1. الإنتاج قد لا يريد قائمة القيود علنية. فريق الواجهة يحتاج الرسائل إما قائمة مسطحة أو مجمّعة حسب الحقل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الافتراض <code>errorFormat: &#39;list&#39;</code>: <code>message</code> مصفوفة نصوص. <code>grouped</code> كائن مفاتيحه مسارات الخصائص وقيمه رسائل القيد كما هي. <code>disableErrorMessages: true</code> يفرغ التفاصيل من الرد.</p>
+<h2>التعريف التقني</h2>
+<p>واجهة الأنبوب تتضمن <code>errorFormat?: &#39;list&#39; | &#39;grouped&#39;</code> و <code>disableErrorMessages?: boolean</code> و <code>exceptionFactory</code>.</p>
+<p>الصفحة تصف <code>errorFormat</code> هكذا:</p>
+<ul>
+<li><code>list</code> هو الافتراض: مصفوفة نصوص رسائل.</li>
+<li><code>grouped</code>: كائن مفاتيحه مسارات الخصائص، وقيمه مصفوفات من رسائل الخطأ غير المعدّلة، من غير لصق مسار الأب أمام الرسالة المخصصة.</li>
+</ul>
+<p>مثال القائمة من الصفحة لبريد غير صالح:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 400,
+  &quot;error&quot;: &quot;Bad Request&quot;,
+  &quot;message&quot;: [&quot;email must be an email&quot;]
+}
+</code></pre>
+<p><code>disableErrorMessages: true</code> يجعل الجسم بلا هذه التفاصيل. الصفحة تقول إن رسائل الخطأ لا تُعاد إلى العميل.</p>
+<p><code>exceptionFactory: (errors: ValidationError[]) =&gt; any</code> تستبدل الاستثناء كله إن احتجت شكلًا غير الشكلين. أبقِ الرمز <code>400</code> أو رمز عميل آخر تتعمده. لا ترجع <code>500</code> لشكل تالف.</p>
+<p><code>ValidationError</code> من المكتبة فيه <code>property</code> و <code>constraints</code> و <code>children</code> للمتداخل. التنسيق المدمج يسطّح ذلك حسب <code>errorFormat</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ValidationError[]
+  list     → message: string[]
+  grouped  → message: { &quot;seat&quot;: [&quot;...&quot;] }
+  disableErrorMessages → رد بلا قائمة القيود
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  errorFormat: &#39;list&#39;,
+})
+</code></pre>
+<p>فشل <code>seat</code> الأصغر من 1 يضع في <code>message</code> نص القيد الافتراضي. الواجهة تعرض العناصر تحت النموذج.</p>
+<p>للتجميع:</p>
+<pre><code class="language-ts">new ValidationPipe({
+  errorFormat: &#39;grouped&#39;,
+})
+</code></pre>
+<p>الرد يجمع رسائل الخاصية في مفتاح واحد حتى لو تعددت القيود على <code>seat</code>، مثل <code>@IsInt()</code> و <code>@Min(1)</code> معًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>list</code> أسهل لسجل واحد وللاختبار الذي يبحث عن جملة.</li>
+<li><code>grouped</code> أسهل لنموذج يلوّن حقلًا. المفتاح مسار الخاصية، والرسالة لا تُسبق بمسار الأب حين تكون مخصصة، كما تقول الصفحة عن هذا الوضع.</li>
+<li>الافتراض إن حذفت الخيار هو <code>list</code>.</li>
+<li>الإخفاء للإنتاج خيار منفصل لا يغيّر التجميع، بل يمنع إرسال التفاصيل أصلًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد <code>validate</code> يملك الأنبوب <code>ValidationError[]</code>. المنسّق يبني جسم <code>BadRequestException</code> حسب <code>errorFormat</code>. المعالج لا يعمل. الفلتر الافتراضي يكتب JSON الحالة.</p>
+<p><code>disableErrorMessages</code> يقطع النصوص قبل أن تصل الجسم. الفحص نفسه لا يتوقف: الطلب ما زال <code>400</code>، والعميل لا يرى أي حقل فشل. السجل عندك يمكن أن يسجّل <code>ValidationError</code> في <code>exceptionFactory</code> قبل رمي استثناء فقير التفاصيل، إن احتجت التشخيص من غير كشفه.</p>
+<p>لا تضع الأسرار في رسالة قيد مخصصة. الرسالة تذهب إلى العميل في وضع <code>list</code> و <code>grouped</code>.</p>
+<p>المتداخل ينتج مسارًا مثل حقل داخل حقل. درس الفحص المتداخل يولّد تلك الأخطاء. هنا تعرف أين تظهر في الجسم.</p>
+<h2>مثال عملي</h2>
+<p>بيئة التطوير على الصالة: <code>errorFormat: &#39;grouped&#39;</code> حتى يلوّن نموذج الحجز <code>seat</code> و <code>showId</code>. بيئة الإنتاج: <code>disableErrorMessages: true</code> حتى لا تشرح القيود لعميل مجهول، مع الإبقاء على <code>400</code>. اختبار التطوير يتوقع مفتاح <code>seat</code> في الجسم المجمّع. اختبار الإنتاج يتوقع غياب مصفوفة الرسائل وبقاء رمز <code>400</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تحويل كل فشل شكل إلى <code>500</code> داخل <code>exceptionFactory</code>. العميل يظن أن الخادم انكسر.</li>
+<li>إخفاء الرسائل في التطوير ثم عجز الواجهة عن عرض الحقل.</li>
+<li>افتراض أن <code>grouped</code> يلغي <code>whitelist</code>. التنسيق لا يغيّر ما يُرفض.</li>
+<li>كتابة كلمة المرور داخل رسالة <code>@MinLength</code> المخصصة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>list</code> للاختبارات والسجلات البسيطة. <code>grouped</code> لنماذج الحقول. <code>disableErrorMessages</code> في إنتاج لا يريد شرح القيود. <code>exceptionFactory</code> حين يكون عقد الخطأ عندكم شكلًا ثابتًا غير شكل Nest.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخفِ الرسائل عن فريق الواجهة في البيئة التي يبنون عليها. لا تستخدم مصنع الاستثناء لإخفاء أن الخطأ كان <code>400</code>. رمز العميل يبقى رمز عميل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوضع</th>
+<th>جسم <code>message</code> تقريبي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>list</code></td>
+<td><code>[&quot;seat must not be less than 1&quot;]</code></td>
+</tr>
+<tr>
+<td><code>grouped</code></td>
+<td><code>{ &quot;seat&quot;: [&quot;must not be less than 1&quot;] }</code> بالشكل الذي تحافظ فيه الرسالة على نصها</td>
+</tr>
+<tr>
+<td><code>disableErrorMessages</code></td>
+<td>التفاصيل غير معادة</td>
+</tr>
+<tr>
+<td><code>exceptionFactory</code></td>
+<td>ما ترجعه أنت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما القيمة الافتراضية لـ <code>errorFormat</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>&#39;list&#39;</code>، ومصفوفة نصوص داخل <code>message</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يبقى للعميل حين تفشل الزينة مع <code>disableErrorMessages: true</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الطلب مرفوض، والرمز ما زال خطأ فحص، لكن تفاصيل القيود لا تُرسل في الجسم كما تصف الصفحة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الواجهة تريد مفتاح كل حقل، والأمن يريد عدم شرح القيود في الإنتاج. كيف تفرّق الإعداد من غير مصنع يعيد <code>500</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التطوير: <code>errorFormat: &#39;grouped&#39;</code>. الإنتاج: <code>disableErrorMessages: true</code> مع الإبقاء على استثناء <code>400</code>. لا تحوّل <code>ValidationError</code> إلى خطأ خادم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تحتوي <code>message</code> في وضع <code>list</code>؟</li>
+<li>ماذا يغيّر <code>grouped</code> في المفاتيح؟</li>
+<li>متى تُخفى التفاصيل؟</li>
+<li>لماذا لا يُرجع مصنع الاستثناء <code>500</code> لشكل تالف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>errorFormat</code> يبدّل بين قائمة ومجمّع حسب الحقل. <code>disableErrorMessages</code> يمنع نشر القيود. الفشل يبقى رفض عميل. مصنع الاستثناء للشكل الخاص بكم، لا لرفع الرمز إلى خطأ خادم.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفحص كائنًا داخل الحقل: <code>@ValidateNested</code> مع <code>@Type</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

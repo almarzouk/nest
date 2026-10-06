@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nest-commander</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-nest-commander.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>nest-commander</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة أمر <code>export-invoices</code> لرف بزخارف <code>nest-commander</code> فوق حاوية Nest، مع معرفة أن الحزمة من طرف ثالث.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تحليل <code>process.argv</code> يدويًا يتفرع مع كل علم. أو الأمر ينشئ الخدمات بـ <code>new</code> فينقطع الحقن. أو نسيان أن <code>CommandFactory</code> يعطّل مسجّل Nest ما لم تطلبوه، فيختفي خطأ الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الصنف يمتد <code>CommandRunner</code> ويحمل <code>@Command</code>. <code>@Option</code> يحوّل علمًا إلى قيمة. الصنف <code>@Injectable</code> عبر معاملة الإطار له كمزود. <code>CommandFactory.run(AppModule)</code> من <code>nest-commander</code> يبني السياق ويشغّل الأمر ثم <code>close</code>. الوثائق تصف الحزمة كطرف ثالث غير مدار من فريق Nest الأساسي. الاختبار عبر <code>CommandTestFactory</code> في حزمة <code>nest-commander-testing</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i nest-commander</code>. <code>run(passedParams: string[], options?: Record&lt;string, unknown&gt;): Promise&lt;void&gt;</code>. الاسم في كائن الخيارات يطابق <code>name</code> في <code>@Option</code>، والقيمة هي ما يعيده المحلّل. <code>CommandFactory.run(AppModule)</code> يعطّل المسجّل افتراضيًا. الوسيط الثاني مسجّل مخصص أو مستويات مثل <code>[&#39;warn&#39;, &#39;error&#39;]</code>. المصنع ينادي <code>NestFactory</code> ثم <code>app.close</code> عند الانتهاء. الأمر يُدرَج في <code>providers</code>. التشغيل من <code>main.ts</code> بدل <code>listen</code>. <code>--help</code> يأتي من commander. أخطاء الإقلاع تُلتقط حول <code>run</code> بـ <code>try/catch</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">nest-commander → CommandFactory.run
+صنف أمر → run(المواضع، الخيارات)
+المنظمة علم محلول لا جسم طلب
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Command, CommandFactory, CommandRunner, Option } from &#39;nest-commander&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+import { InvoiceExportJob } from &#39;./billing/invoice-export.job.js&#39;;
+
+@Command({ name: &#39;export-invoices&#39;, description: &#39;Export one library invoices&#39; })
+export class ExportInvoicesCommand extends CommandRunner {
+  constructor(private readonly job: InvoiceExportJob) {
+    super();
+  }
+
+  async run(_params: string[], options?: { organizationId?: string }): Promise&lt;void&gt; {
+    if (!options?.organizationId) return;
+    await this.job.exportOrganization(options.organizationId);
+  }
+
+  @Option({ flags: &#39;-o, --organization-id &lt;id&gt;&#39;, description: &#39;Library id&#39; })
+  parseOrganizationId(value: string): string {
+    return value;
+  }
+}
+
+await CommandFactory.run(AppModule, [&#39;error&#39;]);
+</code></pre>
+<p>سجّلوا <code>ExportInvoicesCommand</code> و <code>InvoiceExportJob</code> في الوحدة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>parseOrganizationId</code> يعيد النص الذي يصبح <code>options.organizationId</code>.</li>
+<li>المعرف وسيط تشغيل تتحققون منه مقابل سجل منصة، لا حقل يرسله متصفح.</li>
+<li><code>[&#39;error&#39;]</code> يبقي أخطاء Nest ظاهرة. بلا الوسيط الثاني تصمت السجلات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>commander يطابق الاسم والخيارات.</li>
+<li>كل <code>@Option</code> يحوّل النص قبل <code>run</code>.</li>
+<li><code>CommandFactory</code> يبني سياق تطبيق مستقل فيحقن <code>InvoiceExportJob</code>.</li>
+<li>بعد <code>run</code> يُغلق التطبيق حتى لا تبقى المقابض.</li>
+<li>فشل بناء الوحدة يُرمى من <code>run</code>؛ التقطوه وحدّدوا رمز خروج غير صفر حتى لا تبدو المهمة ناجحة في Cron.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختبار الأمر يستبدل المهمة:</p>
+<pre><code class="language-ts">import { CommandTestFactory } from &#39;nest-commander-testing&#39;;
+
+const moduleRef = await CommandTestFactory.createTestingCommand({
+  imports: [BillingModule],
+})
+  .overrideProvider(InvoiceExportJob)
+  .useValue({ exportOrganization: async () =&gt; &#39;ok&#39; })
+  .compile();
+</code></pre>
+<p>الشكل يطابق <code>Test.createTestingModule</code>: <code>overrideProvider</code> ثم <code>compile</code>. لا يشغّل SMTP ولا Stripe. المعرف في الاختبار مكتبة وهمية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان تسجيل الصنف في <code>providers</code> فيُبنى التطبيق بلا أمر.</li>
+<li>اعتبار الحزمة جزءًا من <code>@nestjs/core</code>. مسائلها تُفتح على مستودع nest-commander.</li>
+<li>طباعة كل السجلات الحساسة بتمكين المسجّل كاملًا على آلة مشتركة.</li>
+<li>الأمر يقرأ <code>tenantId</code> من ملف يرفعه المستخدم بلا تحقق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>أوامر تشغيل يكررها الفريق: تصدير، إعادة محاولة صندوق، فحص تهجير، ولها خيارات وأسماء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستدعاء واحد أثناء التطوير؛ REPL أخف. ولواجهة HTTP. إن كفى <code>createApplicationContext</code> بلا أعلام فلا تضيفوا حزمة طرف ثالث.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>التحليل</th>
+<th>الإغلاق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>process.argv</code></td>
+<td>يدوي</td>
+<td>عليكم</td>
+</tr>
+<tr>
+<td>سياق مستقل</td>
+<td>بلا أوامر</td>
+<td><code>app.close()</code></td>
+</tr>
+<tr>
+<td><code>CommandFactory.run</code></td>
+<td><code>@Command</code> و <code>@Option</code></td>
+<td>المصنع يغلق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يملك الحزمة حسب الوثائق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طرف ثالث. الصفحة تطلب الإبلاغ في مستودع nest-commander لا في قضايا Nest الأساسية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا السجلات صامتة في أول تشغيل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CommandFactory</code> يعطّل المسجّل ما لم تمرروا مسجّلًا أو قائمة مستويات كوسيط ثانٍ.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تختبرون الأمر بلا قاعدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CommandTestFactory.createTestingCommand</code> ثم <code>overrideProvider(InvoiceExportJob)</code> ثم <code>compile</code>. الحزمة تستخدم <code>@nestjs/testing</code> تحت الغطاء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي صنف يُمتد وأي زخرفة على الصف؟</li>
+<li>ماذا يعيد <code>@Option</code>؟</li>
+<li>متى يُستدعى <code>close</code>؟</li>
+<li>أين تُسجَّل الأعطال؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>nest-commander</code> يحوّل مزودات رف إلى أوامر قابلة للحقن. <code>CommandFactory.run</code> يبني السياق ويغلقه. الحزمة خارج نواة Nest. معرف المنظمة خيار محلول لا جسم طلب.</p>
+<h2>ماذا بعد؟</h2>
+<p>ميزات المنصة التي لا يحتاجها المسار الأساسي: الترجمة والبريد والملفات و SSE و serverless والتطبيق الهجين.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — nest-commander: <a href="https://docs.nestjs.com/recipes/nest-commander">https://docs.nestjs.com/recipes/nest-commander</a></li>
+<li>NestJS — Standalone applications: <a href="https://docs.nestjs.com/standalone-applications">https://docs.nestjs.com/standalone-applications</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

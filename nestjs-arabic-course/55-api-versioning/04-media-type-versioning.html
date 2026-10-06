@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Media Type Versioning</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-media-type-versioning.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Media Type Versioning</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار عقد كتاب رف من ترويسة <code>Accept</code>، بالنمط الذي توثقه Nest: نوع الوسائط ثم فاصلة منقوطة ثم مفتاح النسخة، مثل <code>application/json;v=2</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الشريك يعتبر النسخة جزءًا من شكل التمثيل لا جزءًا من اسم المورد ولا ترويسة خاصة برف. يرسل <code>Accept</code> أصلًا لطلب JSON. تريد أن تحمل نفس الترويسة رقم العقد، وأن يفشل الطلب غير المفهومة نسخته بـ 404.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>VersioningType.MEDIA_TYPE</code> يقرأ النسخة من <code>Accept</code>. الخيار <code>key</code> هو المفتاح مع الفاصل. للمثال الرسمي <code>Accept: application/json;v=2</code> تكون <code>key: &#39;v=&#39;</code>. المتحكم ما زال يعلن <code>version: &#39;2&#39;</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">app.enableVersioning({
+  type: VersioningType.MEDIA_TYPE,
+  key: &#39;v=&#39;,
+});
+</code></pre>
+<p>الصفحة تقول إن النسخة تُفصل عن نوع الوسائط بفاصلة منقوطة، والمفتاح يُعامل كبادئة للنسخة ولذلك يجب أن يتضمن المفتاح والفاصل. <code>v=</code> تعني أن القيمة بعد علامة يساوي هي النسخة. مسار بلا نسخة في <code>Accept</code>، أو <code>Accept</code> غائب، يعيد 404 إن لم تضع <code>defaultVersion</code>. هذا ما تغطيه اختبارات Media Type في الإطار: <code>application/json;v=1</code> يطابق، و <code>application/json</code> بلا معلمة يعيد 404 من غير افتراضي. <code>@Version</code> والحياد و <code>defaultVersion</code> يعملون كما في بقية الأنواع. الوسيط يستطيع تقييد <code>version</code> أيضًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Accept: application/json;v=2
+key = &quot;v=&quot;
+النسخة المستخرجة = 2
+→ متحكم version: &#39;2&#39;
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+
+@Controller({ path: &#39;books&#39;, version: &#39;2&#39; })
+export class BooksMediaV2Controller {
+  @Get()
+  list() {
+    return [{ id: &#39;b1&#39;, price: { amount: 2500, currency: &#39;SAR&#39; } }];
+  }
+}
+</code></pre>
+<pre><code class="language-http">GET /books HTTP/1.1
+Accept: application/json;v=2
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>key: &#39;v=&#39;</code> ليس رقم النسخة. الرقم في الترويسة وفي <code>version</code> على المتحكم.</li>
+<li>نسيان الفاصلة في <code>key</code> (<code>v</code> بدل <code>v=</code>) لا يطابق المثال الموثق.</li>
+<li>الجسم ما زال JSON. الذي تغيّر هو معلمة النوع التي يختار بها Nest الدالة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المحول يمرر <code>Accept</code> إلى مستخرج Media Type.</li>
+<li>Nest يبحث عن المفتاح <code>v=</code> ويأخذ ما بعده كنسخة.</li>
+<li>يطابقها مع metadata المسار.</li>
+<li>إن وُجدت نسختان في التصميم، فكل واحدة متحكم أو <code>@Version</code> على دالتين تشتركان في المسار.</li>
+<li>عدم وجود المعلمة يعيد 404 بلا <code>defaultVersion</code>، فلا تسقط النسخة الجديدة فوق عميل طلب <code>application/json</code> فقط.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>الإبقاء على الجوال الذي يرسل <code>Accept: application/json</code> بلا معلمة خلال الانتقال:</p>
+<pre><code class="language-ts">import { VersioningType } from &#39;@nestjs/common&#39;;
+
+app.enableVersioning({
+  type: VersioningType.MEDIA_TYPE,
+  key: &#39;v=&#39;,
+  defaultVersion: &#39;1&#39;,
+});
+</code></pre>
+<p>بعد تحديث الشريك، احذف الافتراضي. اختبار القبول: <code>Accept: application/json;v=2</code> يعيد كائن السعر، و <code>Accept: application/json;v=9</code> يعيد 404، و <code>Accept: application/json</code> يعيد 404 بعد حذف الافتراضي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع النسخة في <code>Content-Type</code> الخاص بالطلب وانتظار أن يقرأها هذا النوع. التوثيق يتحدث عن <code>Accept</code>.</li>
+<li><code>key: &#39;v&#39;</code> بلا <code>=</code> بينما الأمثلة كلها <code>v=</code>.</li>
+<li>كاش أو متصفح يعيد استجابة v1 لطلب <code>Accept</code> مختلف لأن <code>Vary: Accept</code> غائب.</li>
+<li>اعتبار Media Type بديلًا عن <code>Content-Type: application/json</code> على الجسم. ما زلت تعلن نوع الجسم الذي ترسله.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يكون عقد التمثيل جزءًا من تفاوض المحتوى مع شريك معتاد على <code>Accept</code>، والمسار يجب أن يبقى <code>/books</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعملاء لا يضبطون <code>Accept</code> بدقة (بعض أدوات التجربة تضع <code>*/*</code> فقط). URI أظهر لهم. ولا تخلط الأنواع الثلاثة في تطبيق واحد من غير نوع Custom موثّق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطلب <code>Accept</code></th>
+<th>بلا <code>defaultVersion</code></th>
+<th>مع <code>defaultVersion: &#39;1&#39;</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>application/json;v=2</code></td>
+<td>v2 إن وُجدت</td>
+<td>v2</td>
+</tr>
+<tr>
+<td><code>application/json;v=9</code></td>
+<td>404</td>
+<td>404</td>
+</tr>
+<tr>
+<td><code>application/json</code></td>
+<td>404</td>
+<td>v1</td>
+</tr>
+<tr>
+<td>بلا ترويسة</td>
+<td>404</td>
+<td>v1</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما قيمة <code>key</code> لمثال التوثيق <code>application/json;v=2</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>&#39;v=&#39;</code>. المفتاح يشمل علامة يساوي لأن الصفحة تعامل المفتاح كبادئة تفصل النسخة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>شريك يصر أن <code>Accept: application/json</code> يجب أن يبقى على العقد القديم شهرًا، ثم يصبح خطأً. ما الخيار الذي تضيفه ثم تحذفه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>defaultVersion: &#39;1&#39;</code> خلال الشهر. بعده احذفه ليصبح الطلب بلا <code>v=</code> استجابة 404 كما في اختبارات الصفحة عند غياب النسخة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>Vary</code> جزء من هذا النوع أكثر مما هو في URI؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن URI يغيّر العنوان فمفتاح الكاش يختلف وحده. هنا العنوان واحد ويختلف <code>Accept</code>. من غير <code>Vary: Accept</code> قد تُخزَّن نسخة عقد وتُعاد لعقد آخر على نفس المسار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي ترويسة يقرأ هذا النوع؟</li>
+<li>ماذا يتضمن <code>key</code> غير اسم الحرف؟</li>
+<li>ما وضع <code>application/json</code> بلا معلمة إن لم يوجد افتراضي؟</li>
+<li>هل <code>@Version</code> يعمل هنا كما في URI؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Media Type Versioning يستخرج النسخة من <code>Accept</code> بمفتاح مثل <code>v=</code>. المسار ثابت، والعقد في معلمة النوع. الغياب وعدم التطابق 404 ما لم تضع <code>defaultVersion</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>الآلية جاهزة. فصل تصميم الـ API يقرر الإصدار كجزء من العقد المكتوب للعميل، لا كخيار إطار فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Versioning: <a href="https://docs.nestjs.com/techniques/versioning">https://docs.nestjs.com/techniques/versioning</a></li>
+<li>MDN — Accept: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Accept">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Accept</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

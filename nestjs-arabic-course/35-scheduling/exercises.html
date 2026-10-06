@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي وحدة تفعّل الزينة؟</li>
+<li>ما وحدة الرقم في <code>@Interval</code> و <code>@Timeout</code>؟</li>
+<li>أي زينة تربط الساعة 01:00 لا التباعد من الإقلاع؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>ScheduleModule.forRoot()</code>.</li>
+<li>الميلي ثانية.</li>
+<li><code>@Cron</code> مع نمط أو <code>CronExpression</code>، و <code>timeZone</code> إن كان يوم المتجر.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم تنظيف <code>var/tmp</code> وتقرير مبيعات. أين يقف الطابور؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التنظيف <code>@Cron(&#39;0 15 * * * *&#39;)</code> ويستدعي خدمة ملفات تُختبر مباشرة. التقرير <code>@Cron</code> عند 01:00 مع <code>timeZone</code> يدرج <code>{ day }</code> و <code>jobId: sales:${day}</code>. العامل يبني الملف. القص اليومي للأغلفة لا يُنقل إلى هذه الدوال.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>نشرت نسختين، و <code>@Cron</code> يرسل بريد المسودات داخل الدالة، و <code>@Timeout</code> من <code>@nestjs/schedule</code> ضُبط على 800 لقطع ناشر ISBN. ماذا يتكسر، وما التعديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البريد يتكرر لكل نسخة ولكل إقلاع إن وُضع في <code>@Timeout</code> أيضًا. انقل الإرسال إلى طابور بـ <code>jobId</code> لكل مسودة وكل يوم، واترك <code>@Cron</code> للإدراج. مهلة ISBN تبقى <code>timeout</code> في <code>HttpModule.register</code> بالميلي ثانية على الطلب، لا <code>@Timeout(800)</code> الذي يعمل مرة بعد الإقلاع. <code>@Interval</code> للقياس فقط إن احتجته.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ملفات src</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-project-files.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ملفات src</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة وظيفة كل ملف يولّده القالب قبل تغييره.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حذف ملف لأن اسمه غير مفهوم يكسر الإقلاع أو الاختبار. كل ملف في الجدول الرسمي له دور واحد.</p>
+<h2>الفكرة ببساطة</h2>
+<p>خمسة ملفات: مدخل، وحدة جذر، متحكم، خدمة، واختبار المتحكم.</p>
+<h2>التعريف التقني</h2>
+<p>من First steps: <code>main.ts</code> نقطة الدخول وينشئ التطبيق بـ <code>NestFactory</code>. <code>app.module.ts</code> الوحدة الجذر. <code>app.controller.ts</code> متحكم بمسار واحد. <code>app.service.ts</code> خدمة بدالة واحدة. <code>app.controller.spec.ts</code> اختبار وحدة للمتحكم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">main.ts -&gt; AppModule -&gt; AppController -&gt; AppService
+app.controller.spec.ts يختبر المتحكم بمعزل جزئي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">src/
+  main.ts
+  app.module.ts
+  app.controller.ts
+  app.service.ts
+  app.controller.spec.ts
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>main.ts</code> يستدعي <code>bootstrap</code> ثم <code>listen</code>. <code>app.module.ts</code> يسرد المتحكم والخدمة في كائن <code>@Module</code>. المتحكم يحقن الخدمة ويعيد نص <code>getHello</code>. الخدمة ترجع <code>Hello World!</code>. ملف الاختبار يستورد المتحكم ويبنى حزمة اختبار. لا تغيّر الأسماء قبل أن تشغّل المشروع مرة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>تحميل <code>main.ts</code> يحمّل الوحدة، والزينة تسجل Metadata، ثم <code>NestFactory.create</code> يبني الرسم والحاوية ويربط <code>GET /</code> على Express. الاختبار لا يمر بالضرورة عبر <code>listen</code>. هو يستدعي الدالة أو يبني <code>TestingModule</code>. تفاصيل الاختبار فصل لاحق، لكن وجود الملف يذكر أن القالب وُلد قابلًا للاختبار.</p>
+<h2>مثال عملي</h2>
+<p>شغّل التطبيق وافتح <code>http://localhost:3000/</code>. النص المتوقع <code>Hello World!</code>. ثم افتح المتحكم وتتبّع النداء إلى الخدمة. هذا أصغر مسار طلب ناجح.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع منطق جديد داخل <code>main.ts</code>. المدخل للإقلاع فقط.</li>
+<li>إنشاء <code>users.controller.ts</code> من غير وحدة تسجّله.</li>
+<li>حذف ملف spec لأن الاختبار يفشل لأول مرة. أصلح الاختبار أو افهمه في فصل Testing.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>أبقِ هذه الملفات حتى نفصل أول ميزة في وحدة خاصة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تتكاثر <code>AppController</code> بكل مسارات المنتج. الميزة الجديدة وحدة جديدة عندما نصل إلى Modules.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>ملف</th>
+<th>لو حذفته</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>main.ts</td>
+<td>لا إقلاع</td>
+</tr>
+<tr>
+<td>app.module.ts</td>
+<td>المصنع بلا جذر</td>
+</tr>
+<tr>
+<td>app.controller.ts</td>
+<td>لا مسار إن بقي مسجّلًا بالاسم</td>
+</tr>
+<tr>
+<td>app.service.ts</td>
+<td>فشل الحقن</td>
+</tr>
+<tr>
+<td>spec</td>
+<td>لا يفشل التشغيل، ويختفي اختبار القالب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ملف يستدعي <code>listen</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>main.ts</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين تُسجَّل <code>AppService</code> حتى يستطيع المتحكم حقنها؟</p>
+<details><summary>الحل</summary>
+
+<p>في <code>providers</code> داخل <code>app.module.ts</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا وجود الخدمة في مجلد <code>src</code> لا يكفي وحدَه؟</p>
+<details><summary>الحل</summary>
+
+<p>الحاوية ترى ما تسجّله الوحدة. الملف على القرص مجرد مصدر. من غير <code>providers</code> لا تُنشأ الخدمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد مسار القالب الجذري؟</li>
+<li>ما دور <code>app.module.ts</code>؟</li>
+<li>أي ملف اختبار يولَّد مع القالب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>خمسة ملفات تغطي الإقلاع والوحدة والمسار والعمل واختبارًا واحدًا. اقرأها قبل إضافة ميزة.</p>
+<h2>ماذا بعد؟</h2>
+<p>نشغّل الملف في وضع التطوير والمراقبة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

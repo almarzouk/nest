@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>اختبار Controllers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-testing-controllers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>اختبار Controllers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختبار أن المتحكم يمرر المعرف والجسم إلى الخدمة ويعيد ناتجها، مع خدمة وهم، بلا إثبات SQL.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المتحكم الرقيق سهل الكسر بصمت: يقرأ <code>body.title</code> بينما الخدمة تنتظر <code>input</code>، أو ينادي <code>publish</code> بلا <code>@Param</code>. اختبار الخدمة لا يرى ذلك. اختبار المتحكم يستبدل الخدمة ويتفقد الوسائط. هو لا يستبدل رحلة Supertest عندما يكون الأنبوب والحارس جزءًا من العقد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>TestingModule</code> فيها المتحكم و <code>overrideProvider(BooksService)</code> أو <code>useValue</code> من البداية. <code>get(BooksController)</code> ثم استدعاء الدالة مباشرة. التوقع على الوهم وعلى القيمة المعادة. الزينة <code>@Post</code> لا تُنفَّذ بهذا الاستدعاء. لذلك هذا الملف للتمرير لا لرمز HTTP.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Test } from &#39;@nestjs/testing&#39;;
+import { BooksController } from &#39;./books.controller.js&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+const books = {
+  publish: vi.fn(async () =&gt; ({ id: &#39;42&#39;, status: &#39;PUBLISHED&#39; })),
+};
+
+const moduleRef = await Test.createTestingModule({
+  controllers: [BooksController],
+  providers: [{ provide: BooksService, useValue: books }],
+}).compile();
+
+const controller = moduleRef.get(BooksController);
+const result = await controller.publish(&#39;42&#39;);
+expect(books.publish).toHaveBeenCalledWith(&#39;42&#39;);
+expect(result.status).toBe(&#39;PUBLISHED&#39;);
+</code></pre>
+<p><code>controller.publish(&#39;42&#39;)</code> يمرر الوسيط كما ستمرره الزينة إن كان المعامل الأول هو <code>@Param(&#39;id&#39;)</code>. إن كان ترتيب المعاملات في الدالة <code>(body, id)</code> والاختبار ينادي <code>(id)</code> فأنت تختبر نداءً لا يشبه الإطار. عندها فضّل رحلة HTTP. استدعاء الدالة مناسب عندما يكون التوقيع <code>(id: string)</code> واضحًا.</p>
+<p>لا تضع Prisma في <code>providers</code> هنا. إن طُلبت من المتحكم فالتصميم يعيد منطق القاعدة إلى الطبقة الخطأ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وهم BooksService
+  BooksController.publish(id)
+    توقع publish(id)
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>إنشاء:</p>
+<pre><code class="language-ts">await controller.create({ title: &#39;NestJS&#39; });
+expect(books.create).toHaveBeenCalledWith({ title: &#39;NestJS&#39; });
+</code></pre>
+<p>المتحكم لا يضيف <code>userId</code> من الجسم. إن كان المعرف من الطلب، الاختبار الذي ينادي الدالة مباشرة لا يرى الحارس. اختبر استخراج المستخدم في رحلة أو بتمرير كائن طلب إن كان المعامل <code>@Req()</code> ظاهرًا، والأوضح إبقاء المتحكم على <code>@CurrentUser()</code> واختبار الزينة في e2e.</p>
+<h2>شرح المثال</h2>
+<p>الخدمة الوهم تعيد كائنًا والاختبار يتحقق أن المتحكم لم يبدّل <code>status</code>. إن كان المتحكم يغلّف الرد في <code>{ data }</code> فهذا مكان التوقع. لا تتوقع <code>logger</code> ولا شكل Prisma.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحاوية تنشئ المتحكم وتحقن الوهم. نداء الدالة نداء TypeScript عادي. <code>ValidationPipe</code> لا يعمل. <code>ParseUUIDPipe</code> لا يعمل. لذلك لا تختبر هنا «سلسلة فارغة تصبح 400». ضع ذلك في الرحلة حيث السلسلة موجودة. ما تثبته هنا: لا حساب ISBN داخل المتحكم، بل نداء واحد للخدمة.</p>
+<h2>مثال عملي</h2>
+<p>متحكم الغلاف بعد الرفع لا يصل إلى هذا الملف بملف حقيقي. مرر كائنًا يشبه الجزء الذي تقرأه الدالة:</p>
+<pre><code class="language-ts">await controller.replace(&#39;42&#39;, { filename: &#39;a.png&#39; } as Express.Multer.File);
+expect(books.setCoverKey).toHaveBeenCalledWith(&#39;42&#39;, &#39;a.png&#39;);
+</code></pre>
+<p>إن استدعت الدالة <code>file.buffer</code> فالاختبار يذكرك أن المتحكم يلمس البايتات. انقل ذلك إلى الخدمة أو إلى المنتج.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع <code>400</code> من نداء الدالة بلا أنبوب.</li>
+<li>بناء Prisma حقيقي خلف المتحكم.</li>
+<li>اختبار كل فروع <code>publish</code> هنا بدل الخدمة.</li>
+<li>نسيان أن ترتيب المعاملات ليس ترتيب الزينة إلا بالانضباط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>للمتحكم الرقيق: المعامل الصحيح يصل إلى الخدمة والناتج يُعاد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يكون السؤال عن الرمز أو الأنبوب أو الحارس. انتقل إلى Supertest. وإن صار المتحكم سمينًا، لا تختبر السمنة. انقلها.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>الأداة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>هل نُودي <code>publish</code> بالمعرف؟</td>
+<td>هذا الدرس</td>
+</tr>
+<tr>
+<td>هل الجسم الباطل <code>400</code>؟</td>
+<td>رحلة HTTP</td>
+</tr>
+<tr>
+<td>هل الصف تغيّر؟</td>
+<td>تكامل الخدمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تضع مكان <code>BooksService</code> في الحاوية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>useValue</code> بكائن فيه الدوال التي يناديها المتحكم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يُختبر <code>ValidationPipe</code> بنداء <code>controller.create</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن النداء المباشر لا يمر على أنابيب الإطار. الأنبوب يعمل على مسار HTTP.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار الغلاف يمرر <code>buffer</code>. ماذا يعني ذلك للتصميم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أن المتحكم صار يتعامل مع البايتات. مرر المفتاح فقط إلى الخدمة حتى يبقى الاختبار على <code>filename</code> أو مفتاح مولَّد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا لا يشغّله <code>get(Controller)</code> ثم النداء؟</li>
+<li>أي صنف لا يُسجَّل حقيقيًا هنا؟</li>
+<li>متى تترك هذا الملف إلى Supertest؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>اختبار المتحكم وهم خدمة ونداء مباشر يثبت التمرير والإرجاع. الرمز والأنبوب والحارس رحلة لاحقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>Supertest على <code>getHttpServer()</code> لقراءة <code>201</code> و <code>400</code> فعلًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

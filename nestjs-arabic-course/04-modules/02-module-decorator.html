@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Module</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-module-decorator.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Module</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الزينة كتخزين Metadata لا كتنفيذ طلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وصف الوحدة في ملف JSON بعيد عن الصنف يفترق عن الكود. الزينة تضع الوصف فوق الصنف الذي يمثّل الحد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Module({ ... })</code> مصنع Decorator. الكائن وسيطه. عند تحميل الملف يُخزَّن الكائن على الصنف. الإقلاع يقرأه.</p>
+<h2>التعريف التقني</h2>
+<p>من التوثيق: Module صنف معلّم بهذه الزينة، والزينة تأخذ كائنًا واحدًا بخصائص <code>providers</code> و <code>controllers</code> و <code>imports</code> و <code>exports</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تحميل الملف -&gt; @Module يخزن الكائن
+create      -&gt; يقرأ الكائن ويبني الرسم
+طلب HTTP    -&gt; لا يعيد تشغيل الزينة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  controllers: [BooksController],
+  providers: [BooksService],
+  exports: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المصفوفات فارغة مقبولة إن لم يوجد شيء من ذلك النوع. احذف المفتاح أو اترك مصفوفة فارغة باتساق الفريق.</li>
+<li>العناصر أصناف، أو لمزوّدات مخصصة كائنات <code>{ provide, useClass }</code> لاحقًا.</li>
+<li><code>exports</code> قد يذكر الصنف أو رمز <code>provide</code>. التوثيق يسمح بالاثنين.</li>
+<li>جسم الصنف فارغ هنا. يمكن حقن مزوّد في constructor الوحدة للتهيئة، لكن الصنف لا يُحقن في مكان آخر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الزينة من <code>@nestjs/common</code> تستدعي <code>Reflect.defineMetadata</code> بمفتاح تعرفه Nest. <code>emitDecoratorMetadata</code> ليس بديلًا عن هذا الكائن: كائن <code>@Module</code> وصف كتبته أنت. Metadata التصميم تخص أنواع constructor. الاثنان يُقرآن عند الإقلاع لأغراض مختلفة.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-bash">nest g module books
+</code></pre>
+<p>اقرأ الناتج وقارنه بالمثال. إن أضاف المولّد الوحدة إلى <code>imports</code> في <code>AppModule</code> فهذا هو ربطها بالرسم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان الأقواس: <code>@Module</code> بدل <code>@Module({})</code> عندما تتوقع خيارات. المصنع يحتاج الاستدعاء.</li>
+<li>وضع خدمة في <code>controllers</code> أو العكس.</li>
+<li>تعديل الكائن بعد الإقلاع وتوقع أن الرسم يتغير. الوصف قُرئ عند البناء.</li>
+</ul>
+<h2>متى نكتب الزينة بأنفسنا؟</h2>
+<p>عندما نفهم التسجيل. المولّد يبدأ الملف وأنت تراجع المصفوفات.</p>
+<h2>متى لا نضيف مفاتيح &quot;للمستقبل&quot;؟</h2>
+<p>مصفوفة <code>exports</code> لكل المزوّدات من غير مستهلك تضعف التغليف. صدّر عندما توجد وحدة مستورِدة تحتاج الرمز.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>زينة</th>
+<th>ماذا تخزن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Module</code></td>
+<td>حدود الوحدة</td>
+</tr>
+<tr>
+<td><code>@Controller</code></td>
+<td>مسارات الصنف</td>
+</tr>
+<tr>
+<td><code>@Injectable</code></td>
+<td>قابلية الحقن</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل تعمل الزينة عند كل <code>GET</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. عند تحميل الصنف. الإقلاع يقرأ الناتج.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أين يوضع صنف المتحكم داخل الكائن؟</p>
+<details><summary>الحل</summary>
+
+<p>في <code>controllers</code> لا في <code>providers</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يكفي <code>design:paramtypes</code> بديلًا عن كائن <code>@Module</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>أنواع constructor تقول ماذا يحتاج صنف واحد. كائن الوحدة يقول أي الأصناف تُنشأ أصلًا وما الذي يُصدَّر عبر الحد. من غير التسجيل لا توجد عقدة في الرسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يستقبل <code>@Module</code>؟</li>
+<li>متى تُقرأ Metadata؟</li>
+<li>هل جسم الصنف الفارغ خطأ؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Module</code> يخزن حدود الوحدة على الصنف مرة عند التحميل. الإقلاع يبني منها الرسم.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>AppModule</code> كجذر يستخدم هذه الزينة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

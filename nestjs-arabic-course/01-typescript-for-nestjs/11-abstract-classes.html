@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Abstract Classes</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-abstract-classes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Abstract Classes</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة <code>abstract</code> كعقد على أصناف وسيطة: دوال يجب أن يملأها الابن، وأساس لا يُنشأ بـ <code>new</code> مباشرة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>واجهة Interface تفرض دوالًا وتُمحى. أحيانًا تريد أساسًا فيه كود مشترك حي، وفيه فجوة يملأها كل ابن بكود مختلف. إن سمحنا بـ <code>new</code> على الأساس، الفجوة تُستدعى فارغة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>abstract class</code> صنف ناقص. <code>abstract</code> على دالة تعني: الابن يكتب الجسم. <code>new</code> يكون على الابن المكتمل.</p>
+<h2>التعريف التقني</h2>
+<p>الصنف المجرد يعيش وقت التشغيل كدالة بناء مثل أي صنف، لكن TypeScript يمنع <code>new</code> عليه مباشرة. الدالة المجردة بلا جسم في الأب. الابن غير المجرد يجب أن ينفذ كل الدوال المجردة وإلا يبقى مجردًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">abstract Repository
+   abstract save()
+   protected log() { ... كود حي }
+
+SqlRepository extends Repository
+   save() { ... SQL }
+
+new SqlRepository()      مسموح
+new Repository()         مرفوض في الفحص
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">abstract class Repository&lt;T&gt; {
+  abstract save(entity: T): Promise&lt;T&gt;;
+
+  protected label(): string {
+    return this.constructor.name;
+  }
+}
+
+class MemoryBooks extends Repository&lt;{ title: string }&gt; {
+  async save(entity: { title: string }): Promise&lt;{ title: string }&gt; {
+    return entity;
+  }
+}
+</code></pre>
+<p><code>Repository&lt;T&gt;</code> يستخدم Generic، والدرس التالي يفك الرمز <code>&lt;T&gt;</code>. هنا يكفي أن <code>T</code> عنصر نائب للنوع.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا جسم لـ <code>save</code> في الأب. لا يوجد سلوك افتراضي صادق.</li>
+<li><code>label</code> كود مشترك حي يستخدم اسم الصنف الابن وقت التشغيل.</li>
+<li><code>MemoryBooks</code> ينفّذ <code>save</code> فيصبح قابلًا للإنشاء.</li>
+<li><code>protected</code> تبقي <code>label</code> للأبناء.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>JavaScript الناتج فيه الصنفان. المنع على <code>new Repository</code> فحص مترجم. الاختبار والحاوية يتعاملان مع الابن أو مع رمز حقن يشير إلى عقد. في Nest، حقن صنف مجرد مباشرة لا ينشئ الابن الصحيح من غير تسجيل يربط الرمز بالتنفيذ (<code>useClass</code>). هذا موضوع Custom Providers. الآن: المجرد عقد + كود مشترك، والتنفيذ صنف ملموس.</p>
+<p>فصل Repository لاحقًا قد يستخدم هذا الشكل. لا تبدأ به في أول خدمة كتب. صنف ملموس واحد يكفي حتى تظهر حاجة لاستبدال المخزن في الاختبار بهذا الأسلوب.</p>
+<h2>مثال عملي</h2>
+<p>سياسة سعر يشاركها أكثر من نوع، والحساب يختلف:</p>
+<pre><code class="language-ts">abstract class Pricing {
+  abstract unit(price: number): number;
+
+  total(price: number, quantity: number): number {
+    return this.unit(price) * quantity;
+  }
+}
+
+class FullPrice extends Pricing {
+  unit(price: number): number {
+    return price;
+  }
+}
+</code></pre>
+<p><code>total</code> مكتوب مرة. <code>unit</code> قرار الابن. بديل بالتركيب: دالة <code>unit</code> تُمرَّر في constructor. إذا كان الاختلاف دالة واحدة، التركيب أو حتى معامل دالة أبسط من صنف مجرد. المجرد يستحق عندما تتعدد الدوال المشتركة والكود الحي معًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>صنف مجرد لكل خدمة من اليوم الأول.</li>
+<li>نسيان تنفيذ دالة مجردة في الابن.</li>
+<li>حقن الرمز المجرد في Nest من غير ربطه بصنف ملموس، ثم استغراب فشل الإقلاع لاحقًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند أساس فيه تنفيذ مشترك وفجوات حقيقية، أو عند قراءة مكتبة تستخدم هذا الأسلوب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعقد بلا كود حي. Interface أو type أخف. وللاختلاف البسيط الذي يغطيه حقن مزوّد آخر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Interface</th>
+<th>Abstract class</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كود حي مشترك</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>وقت التشغيل</td>
+<td>تُمحى</td>
+<td>صنف</td>
+</tr>
+<tr>
+<td><code>new</code></td>
+<td>لا</td>
+<td>على الابن فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا نكتب <code>new Pricing()</code> في المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>unit</code> بلا جسم. الصنف ناقص، والمترجم يمنع إنشاءه.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أضف ابنًا <code>HalfPrice</code> يجعل <code>unit</code> يعيد نصف السعر.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">class HalfPrice extends Pricing {
+  unit(price: number): number {
+    return price / 2;
+  }
+}
+</code></pre>
+<p><code>total(40, 2)</code> على كائن منه يعيد <code>40</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حوّل المثال إلى تركيب من غير <code>abstract</code>: صنف يأخذ دالة <code>unit</code> في constructor. متى يصبح هذا أوضح؟</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">class Pricing {
+  constructor(private readonly unit: (price: number) =&gt; number) {}
+  total(price: number, quantity: number): number {
+    return this.unit(price) * quantity;
+  }
+}
+</code></pre>
+<p>أوضح عندما الاختلاف دالة واحدة ويمكن تمريرها في الاختبار من غير أصناف أبناء. المجرد أوضح عندما الأبناء أنواع مجال بأسماء ثابتة وعدة دوال.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يلزم الابن غير المجرد؟</li>
+<li>ما الفرق بين Interface وصنف مجرد فيه دالة فيها جسم؟</li>
+<li>لماذا لا نحقن المجرد في Nest من غير ربط تنفيذ؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الصنف المجرد أساس حي ناقص. الابن يملأ الفجوات. استخدمه بقلة، وفكّر أولًا في صنف ملموس أو حقن.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>Repository&lt;T&gt;</code> ظهر كرمز. Generics تشرح العنصر النائب.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Abstract classes: <a href="https://www.typescriptlang.org/docs/handbook/2/classes.html#abstract-classes">https://www.typescriptlang.org/docs/handbook/2/classes.html#abstract-classes</a></li>
+<li>NestJS — Custom providers (ربط تنفيذ بعقد، لاحقًا): <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>الأخطاء والمهل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-errors-and-timeouts.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>الأخطاء والمهل</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحويل فشل Axios إلى استثناء Nest أو إلى <code>null</code> مقصود، مع مهلة تقطع الطلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>firstValueFrom</code> يرفض بـ <code>AxiosError</code> يحمل عنوان الناشر وجسمه. المرشح الافتراضي قد يحوّله إلى <code>500</code> ويسرب <code>error.response.data</code>. وانتهاء <code>timeout</code> في Axios رمزه الشائع <code>ECONNABORTED</code>، بينما <code>timeout</code> في RxJS يعطي <code>TimeoutError</code>. من غير ترجمة يرى الزائر مكتبة لا قصة ISBN.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ضع <code>timeout</code> في <code>HttpModule.register</code> ليُقطع Axios. حول <code>await</code> أو داخل <code>pipe</code> قبل <code>firstValueFrom</code>، صنّف الخطأ: مهلة، غياب عند الناشر، عقد مكسور، ثم عطل. لا تعِد جسم الخطأ الخام.</p>
+<h2>التعريف التقني</h2>
+<p><code>AxiosError</code> من <code>axios</code> فيه <code>code</code> و <code>response?.status</code> و <code>response?.data</code>. مهلة Axios تضبط <code>code</code> إلى <code>ECONNABORTED</code> غالبًا. لا يوجد رد HTTP في هذه الحالة.</p>
+<p>خريطة المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>حالة الصادر</th>
+<th>ماذا تعيد <code>lookup</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>200</code> وعنوان نصي</td>
+<td><code>{ title }</code></td>
+</tr>
+<tr>
+<td><code>404</code></td>
+<td><code>null</code> إن كان الغياب معروفًا</td>
+</tr>
+<tr>
+<td>مهلة أو بلا رد</td>
+<td>ترمي <code>GatewayTimeoutException</code></td>
+</tr>
+<tr>
+<td><code>5xx</code> أو JSON بلا <code>title</code></td>
+<td>ترمي <code>BadGatewayException</code></td>
+</tr>
+<tr>
+<td><code>401</code> من الناشر</td>
+<td>ترمي <code>BadGatewayException</code> أيضًا. مفتاحك خاطئ، والزائر لا يصلح ذلك</td>
+</tr>
+</tbody></table>
+<p>لا تترجم <code>401</code> الخارجي إلى <code>401</code> وارد. الزائر سيظن أن جلسته انتهت.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AxiosError
+  ECONNABORTED أو بلا response -&gt; 504
+  status 404                   -&gt; null
+  غير ذلك                      -&gt; 502
+HttpException معروف            -&gt; يُمرَّر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { BadGatewayException, GatewayTimeoutException, Injectable } from &#39;@nestjs/common&#39;;
+import { HttpService } from &#39;@nestjs/axios&#39;;
+import { AxiosError } from &#39;axios&#39;;
+import { firstValueFrom } from &#39;rxjs&#39;;
+
+@Injectable()
+export class IsbnService {
+  constructor(private readonly http: HttpService) {}
+
+  async lookup(isbn: string): Promise&lt;{ title: string } | null&gt; {
+    try {
+      const response = await firstValueFrom(
+        this.http.get&lt;{ title?: string }&gt;(`/isbns/${encodeURIComponent(isbn)}`),
+      );
+      if (typeof response.data?.title !== &#39;string&#39;) {
+        throw new BadGatewayException(&#39;isbn payload missing title&#39;);
+      }
+      return { title: response.data.title };
+    } catch (error) {
+      if (error instanceof BadGatewayException || error instanceof GatewayTimeoutException) {
+        throw error;
+      }
+      return this.mapAxios(error);
+    }
+  }
+
+  private mapAxios(error: unknown): { title: string } | null {
+    const axiosError = error as AxiosError;
+    if (axiosError.code === &#39;ECONNABORTED&#39; || !axiosError.response) {
+      throw new GatewayTimeoutException(&#39;isbn timed out&#39;);
+    }
+    if (axiosError.response.status === 404) {
+      return null;
+    }
+    throw new BadGatewayException(&#39;isbn upstream failed&#39;);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>catch</code> يمرر استثناءاتك بعد فحص الحمولة حتى لا يعيد <code>mapAxios</code> تغليفها. <code>404</code> يرجع <code>null</code> فتكمل <code>BooksService</code> بعنوان المستخدم. المهلة استثناء لأن الصمت ليس «ISBN غير موجود». الرسالة للزائر ثابتة. تفاصيل <code>axiosError.response.data</code> تذهب إلى السجل في فصل التسجيل لا إلى JSON.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Axios يشغّل مؤقت <code>timeout</code> من <code>register</code>. عند النار يُلغى الطلب ويرفض الاشتراك. <code>firstValueFrom</code> يرفض الوعد. <code>mapAxios</code> لا يرى <code>TimeoutError</code> إلا إذا أضفت <code>timeout()</code> من RxJS على التيار أيضًا. مهلة واحدة على Axios تكفي هنا حتى لا يتسابق مؤقتان. أضف مؤقت RxJS فقط إن كان هناك تأخير قبل Axios. <code>404</code> لا يمر من <code>try</code> الناجح لأن Axios يرفض الرموز خارج 2xx افتراضيًا، لذلك يصل عبر <code>catch</code>.</p>
+<h2>مثال عملي</h2>
+<p>في <code>BooksService.create</code>:</p>
+<pre><code class="language-ts">const fromIsbn = input.isbn ? await this.isbn.lookup(input.isbn) : null;
+</code></pre>
+<p>إن رمت <code>lookup</code> بسبب المهلة، الإنشاء يتوقف ويصل الزائر <code>504</code>. إن أعادت <code>null</code>، العنوان من المستخدم. إن أردت عدم إيقاف الإنشاء عند المهلة، التقط <code>GatewayTimeoutException</code> في <code>create</code> وسجّل ثم أكمل. لا تغيّر <code>lookup</code> لتعيد <code>null</code> للمهلة، وإلا ضاع الفرق بين «غير موجود» و«لم نعرف».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>catch { return null }</code> لكل الأخطاء.</li>
+<li>إرجاع <code>error.response.data</code> في <code>HttpException</code>.</li>
+<li>ترجمة <code>401</code> الناشر إلى <code>UnauthorizedException</code> للزائر.</li>
+<li>مهلة RxJS ومهلة Axios بقيمتين مختلفتين على المسار نفسه بلا سبب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل دالة <code>HttpService</code> تخرج من العملية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل مرشح عام يبتلع <code>AxiosError</code> من أي وحدة. الترجمة معرفة المنبع، ومكانها <code>IsbnService</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الرمز عند الناشر</th>
+<th>ليس</th>
+<th>هو في هذا العقد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>404</code></td>
+<td><code>NotFoundException</code> لكتابك</td>
+<td><code>null</code></td>
+</tr>
+<tr>
+<td>مهلة</td>
+<td><code>null</code></td>
+<td><code>504</code></td>
+</tr>
+<tr>
+<td><code>401</code> خارجي</td>
+<td>جلسة الزائر</td>
+<td><code>502</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي <code>code</code> يميز مهلة Axios غالبًا؟</p>
+<details>
+<summary>الحل</summary>
+`ECONNABORTED`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>401</code> من الناشر ليس <code>401</code> لزائرك؟</p>
+<details>
+<summary>الحل</summary>
+لأن الرمز يخص مفتاح الخادم نحو الناشر. الزائر لا يملك إصلاحه، و `401` الوارد يعني جلسته.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الذي يضيع إن أعادت المهلة <code>null</code> مثل <code>404</code>؟</p>
+<details>
+<summary>الحل</summary>
+لن تستطيع الخدمة أن تقرر إيقاف البيع أو إكمال العنوان اليدوي. الغياب والصمت يصيران الشكل نفسه.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تُضبط مهلة المقبس؟</li>
+<li>ماذا يُسجَّل وماذا يُرمى للعميل؟</li>
+<li>متى يمر <code>BadGatewayException</code> من <code>catch</code> بلا إعادة تغليف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>صنّف <code>AxiosError</code> إلى <code>null</code> و <code>504</code> و <code>502</code>. لا تسرّب جسم الناشر، ولا تخلط مهلة الغياب.</p>
+<h2>ماذا بعد؟</h2>
+<p>تجميع العنوان والمهلة والمفتاح في إعداد غير مثبّت في الكود.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — HTTP module (Axios): <a href="https://docs.nestjs.com/techniques/http-module">https://docs.nestjs.com/techniques/http-module</a></li>
+<li>Axios — Handling errors: <a href="https://axios-http.com/docs/handling_errors">https://axios-http.com/docs/handling_errors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

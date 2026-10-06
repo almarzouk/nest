@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — سمِّ الخانة</h2>
+<p>لكل حالة، اكتب: تحقق، غياب، تعارض، أو غير متوقع.</p>
+<ol>
+<li><code>title</code> ليس نصًا.</li>
+<li><code>DELETE /books/nope</code> لا يجد صفًا داخل المستأجر.</li>
+<li>نشر كتاب حالته <code>published</code>.</li>
+<li>انتهت مهلة الاتصال بـ Postgres.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 تحقق (Pipe). 2 غياب (<code>BookNotFound</code> → 404). 3 تعارض حالة. 4 غير متوقع → 500 في السجل فقط.</p>
+</details>
+
+<h2>تمرين متوسط — راجع الالتقاط</h2>
+<pre><code class="language-ts">try {
+  return await this.books.publish(id);
+} catch (error) {
+  if (error instanceof HttpException) throw new InternalServerErrorException();
+  throw error;
+}
+</code></pre>
+<p>ماذا يفعل هذا المقطع بفشل الحارس الذي وصل كـ <code>HttpException</code>، وما التعديل الذي يوافق الاستراتيجية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يحوّل 401 أو 403 أو 404 الآتية كـ <code>HttpException</code> إلى 500. هذا ممنوع. احذف <code>try/catch</code> كله ودع <code>publish</code> يرمي صنف مجال، والفلتر يترجم، و <code>HttpException</code> تمر بوضعها.</p>
+</details>
+
+<h2>تمرين متقدم — صف جديد</h2>
+<p>رف تريد منع سحب كتاب ما زال في طلب شراء مفتوح. صمّم الصنف والرمز ومكان الاختبار من غير كتابة فلتر ثانٍ.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>BookInOpenOrder extends Error</code> يرميه <code>BooksService.withdraw</code>. سطر في جدول الفلتر الحالي إلى 409. اختبار وحدة يتوقع الصنف. اختبار e2e يتوقع 409 ورسالة بلا تفاصيل الطلب الداخلية. لا متحكم فيه <code>catch</code>. إن نسي أحد السطر، ظهور الصنف في سجل 500 يفشل مراجعة المراقبة إلى أن يُضاف.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Prisma: Schema</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-prisma-schema.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Prisma: Schema</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة نماذج الكتب والأعضاء في <code>schema.prisma</code> بحيث يولَّد منها عميل ذو أنواع، من غير خلط عنوان الاتصال بالمخطط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>أنواع TypeScript المكتوبة يدويًا تنحرف عن الجدول. حقل <code>published</code> في الكود وعمود <code>is_published</code> في القاعدة يعيشان حياتين. فريق ثانٍ لا يعرف أي الأعمدة إلزامية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ملف <code>schema.prisma</code> يصف المولّد ومزوّد القاعدة والنماذج. أمر التوليد يبني <code>PrismaClient</code> ودوالًا تطابق النماذج. عنوان الاتصال ليس داخل كتلة <code>datasource</code> في Prisma 7 كما تعرضه صفحة Nest: المزوّد يُذكر في المخطط، والعنوان في <code>DATABASE_URL</code> عبر ملف تهيئة Prisma.</p>
+<h2>التعريف التقني</h2>
+<p>تهيئة البداية لـ PostgreSQL:</p>
+<pre><code class="language-bash">npx prisma init --datasource-provider postgresql --output ../src/generated/prisma
+</code></pre>
+<p>المولّد في مشروع ESM:</p>
+<pre><code class="language-prisma">generator client {
+  provider = &quot;prisma-client&quot;
+  output   = &quot;../src/generated/prisma&quot;
+}
+</code></pre>
+<pre><code class="language-prisma">datasource db {
+  provider = &quot;postgresql&quot;
+}
+</code></pre>
+<p><code>output</code> نسبة إلى ملف المخطط يضع العميل داخل <code>src</code> ليُترجم مع التطبيق. من غير الخيار قد يخرج المجلد خارج <code>src</code>. العميل المولَّد يُستثنى من Git، لذلك <code>npx prisma generate</code> يعمل في CI قبل البناء.</p>
+<p>Prisma يستنتج صيغة الوحدات من <code>tsconfig.json</code>. مشروع Nest الحديث ESM يحصل على عميل ESM. استيراد نسبي بلاحقة <code>.js</code>.</p>
+<p>حقول النموذج تقابل أعمدة. <code>@id</code> مفتاح أساسي. <code>@default(autoincrement())</code> يولّد العدد في PostgreSQL عبر التسلسل الذي ينشئه الترحيل. <code>@unique</code> قيد فرادة. <code>String?</code> عمود قابل لـ NULL. العلاقة حقل يشير إلى نموذج آخر، وتُفصَّل في درس العلاقات.</p>
+<p>أنواع العميل مثل <code>Prisma.BookCreateInput</code> توجد وقت الترجمة. <code>ValidationPipe</code> لا يراها وقت التشغيل، لذلك جسم HTTP يبقى DTO.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">schema.prisma
+  Book { id, title, published }
+  Member { id, email }
+        |
+ npx prisma generate
+        |
+ PrismaClient.book / .member
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model Book {
+  id        Int     @id @default(autoincrement())
+  title     String
+  published Boolean @default(false)
+}
+
+model Member {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  name  String?
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>title</code> إلزامي في القاعدة وفي نوع الإنشاء. <code>name</code> اختياري. <code>published</code> يبدأ <code>false</code> إن لم يُرسل. <code>email</code> لا يتكرر. هذه النماذج بلا علاقة بعد، حتى يركز هذا الدرس على شكل الصف.</p>
+<p>لا تضع كلمة مرور العضو في هذا النموذج ضمن الحقول التي تُرجَع للعميل لاحقًا. إن أضفت <code>passwordHash</code> فالاستجابة تحتاج إخفاءه في فصل التسلسل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>prisma generate</code> يقرأ المخطط ويكتب عميلًا فيه نوع لكل نموذج ودوال <code>findMany</code> و <code>create</code> وغيرها. تغيير المخطط من غير توليد يترك TypeScript على الشكل القديم، فتكتب حقلًا لا يعرفه العميل أو العكس.</p>
+<p>الملف لا يحدّث PostgreSQL وحده. تطبيق الشكل على القاعدة هو الترحيل. يمكن أن يتقدم المخطط على القاعدة إن نسيت الأمر، فيفشل أول استعلام لأن العمود غير موجود.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة الحي تبدأ بهذين النموذجين. خدمة الكتالوج ستستدعي <code>prisma.book</code> بعد التوليد. اختبار الترجمة يفشل إن كتبت <code>prisma.book.create({ data: { titel: &quot;x&quot; } })</code> لأن الحقل ليس في المخطط. هذا أرخص من اكتشاف العمود الناقص على الخادم، بشرط أن يكون التوليد قد تم بعد آخر تعديل.</p>
+<p>أضف <code>.env</code> والمجلد المولَّد إلى <code>.gitignore</code> كما يفعل <code>prisma init</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تعديل المخطط ونسيان <code>prisma generate</code>.</li>
+<li>وضع <code>DATABASE_URL</code> السري داخل <code>schema.prisma</code> المرفوع.</li>
+<li>اعتبار نوع Prisma بديلًا عن DTO على <code>@Body</code>.</li>
+<li>نموذج بعشرين حقلًا تُعاد كلها في JSON.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل جدول ستقرأه الدورة عبر Prisma: كتب، أعضاء، ثم مستخدمون ومنشورات حين يبنى مشروع REST.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لوصف جسم HTTP أو شكل الاستجابة. تلك أصناف DTO ولاحقًا تسلسل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>schema.prisma</code></th>
+<th>DTO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>شكل الجدول والعميل</td>
+<td>شكل طلب HTTP</td>
+</tr>
+<tr>
+<td>يولّد أنواع استعلام</td>
+<td>يفحصه <code>ValidationPipe</code></td>
+</tr>
+<tr>
+<td>يتغير مع الترحيل</td>
+<td>يتغير مع العقد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حقل في <code>Member</code> يقبل الغياب، وأي حقل يرفض التكرار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>name</code> اختياري بسبب <code>String?</code>. <code>email</code> فريد بسبب <code>@unique</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُشغَّل <code>prisma generate</code> في CI؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المجلد المولَّد غير مرفوع. البناء يحتاج العميل وأنواعه قبل <code>tsc</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الحقل موجود في <code>schema.prisma</code> وبعد التوليد، والاستعلام يفشل لأن العمود غير موجود في PostgreSQL. ماذا لم يُشغَّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الترحيل الذي ينفّذ SQL على القاعدة. التوليد يحدّث العميل فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُذكر <code>postgresql</code>، وأين يُذكر العنوان؟</li>
+<li>ماذا ينتج <code>prisma generate</code>؟</li>
+<li>لماذا لا يصلح <code>BookCreateInput</code> جسمًا يفحصه الأنبوب وحده؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المخطط مصدر شكل الجداول للعميل. التوليد يحدّث TypeScript. القاعدة نفسها تنتظر ترحيلًا يطبّق SQL.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-prisma-migrations.html">Prisma: Migrations</a> يحفظ SQL الذي ينشئ هذه الجداول.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>Prisma — Schema: <a href="https://www.prisma.io/docs/orm/prisma-schema">https://www.prisma.io/docs/orm/prisma-schema</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

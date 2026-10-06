@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pagination و Filtering و Sorting كعقد</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-pagination-filtering-sorting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Pagination و Filtering و Sorting كعقد</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت شكل قائمة كتب رف: أي معاملات تُقبل، ماذا تعني الصفحة، كيف يُرتَّب، وماذا يعود عندما لا توجد نتائج — 200 ومصفوفة فارغة لا 404.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عميل يرسل <code>page=1</code> وآخر يرسل <code>offset=0</code> وثالث <code>sort=published</code> بلا اتجاه. كل خدمة تفسر الغياب بشكل. واجهة الرف تحسب «الصفحة التالية» من طول المصفوفة فتتوقف مبكرًا أو تدور. التصفية <code>author</code> أحيانًا تُطابق جزئيًا وأحيانًا حرفيًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>القائمة عقد مكتوب: أسماء المعاملات، البداية، الحد الأقصى، الترتيب الافتراضي، وشكل الغلاف حول المصفوفة. التصفية مساواة على حقول معلنة لا SQL حر. الترتيب حقل واتجاه من قائمة مغلقة. صفر نتائج نجاح.</p>
+<h2>التعريف التقني</h2>
+<p>معاملات الاستعلام عبر <code>@Query()</code>. تحقق منها بـ Pipe حتى يُرفض <code>limit=10000</code> بـ 400. في رف: <code>limit</code> افتراضي 20 وأقصى 50، و <code>cursor</code> معرّف آخر كتاب في الصفحة السابقة (أنسب من <code>page</code> العددي عندما تُدرج كتب جديدة أثناء التصفح). <code>sort</code> قيم مغلقة مثل <code>publishedAt</code> و <code>direction</code> إما <code>asc</code> أو <code>desc</code>. الغلاف:</p>
+<pre><code class="language-json">{ &quot;data&quot;: [], &quot;nextCursor&quot;: null }
+</code></pre>
+<p><code>data</code> فارغة مع 200 عندما لا تطابق التصفية. 404 لا تُستخدم هنا. <code>nextCursor: null</code> يعني لا صفحة تالية، حتى لو كان <code>data.length === limit</code> في حالات الحافة؛ لا تستنتج النهاية من الطول وحده إن كان العقد يعد بالمؤشر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /books?author=نجيب&amp;limit=20&amp;cursor=b20&amp;sort=publishedAt&amp;direction=desc
+→ 200 { data, nextCursor }
+لا صفوف → 200 { data: [], nextCursor: null }
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Query } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;books&#39;)
+export class BooksListController {
+  @Get()
+  list(@Query(&#39;limit&#39;) limit = &#39;20&#39;) {
+    const take = Math.min(Number(limit) || 20, 50);
+    return { data: [], nextCursor: null, limit: take };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الغلاف كائن لا مصفوفة عارية، حتى تستطيع إضافة <code>nextCursor</code> بلا كسر لاحقًا إن بدأتم به من أول العقد.</li>
+<li>القيمة العارية <code>[]</code> أيضًا 200، لكن إضافة مؤشر لاحقًا تكسر العميل. ابدأ بالغلاف.</li>
+<li><code>Math.min</code> يحمي القاعدة؛ الرفض بـ 400 أوضح من القص الصامت إن كان العقد يقول «فوق 50 خطأ».</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الـ Pipe يتحقق من الأرقام والقيم المغلقة.</li>
+<li>الخدمة تبني <code>where</code> من حقول مسموحة فقط: <code>author</code> مساواة، لا سلسلة <code>filter</code> يلصقها العميل.</li>
+<li><code>orderBy</code> من <code>sort</code> المعلن. فهرس الفصل السابق يطابق هذا الترتيب.</li>
+<li><code>take: limit + 1</code> حيلة شائعة لمعرفة وجود تالية، ثم تُقص الزيادة ويُملأ <code>nextCursor</code>. إن لم تزد، <code>nextCursor</code> يكون <code>null</code>.</li>
+<li>النتيجة تُغلَّف. لا استثناء «فارغ».</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { BadRequestException, Injectable } from &#39;@nestjs/common&#39;;
+
+const sorts = new Set([&#39;publishedAt&#39;, &#39;title&#39;]);
+
+@Injectable()
+export class BooksQuery {
+  normalize(input: { limit?: string; sort?: string; direction?: string; author?: string }) {
+    const limit = Number(input.limit ?? 20);
+    if (!Number.isInteger(limit) || limit &lt; 1 || limit &gt; 50) {
+      throw new BadRequestException(&#39;limit must be 1..50&#39;);
+    }
+    const sort = input.sort ?? &#39;publishedAt&#39;;
+    if (!sorts.has(sort)) throw new BadRequestException(&#39;unsupported sort&#39;);
+    const direction = input.direction ?? &#39;desc&#39;;
+    if (direction !== &#39;asc&#39; &amp;&amp; direction !== &#39;desc&#39;) {
+      throw new BadRequestException(&#39;unsupported direction&#39;);
+    }
+    return { limit, sort, direction, author: input.author };
+  }
+}
+</code></pre>
+<p><code>author</code> غائب يعني بلا تصفية لا خطأ. <code>author</code> حاضر بلا نتائج يبقى 200. المؤشر التالف 400 لأنه طلب غير مفهوم، لا 404.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>404 عند <code>data: []</code>.</li>
+<li><code>sort</code> يقبل أي اسم عمود فيصل العميل إلى حقل داخلي أو يطيح بالاستعلام.</li>
+<li>صفحة رقمية بلا ترتيب ثابت فيتكرر كتاب بين الصفحتين عند إدراج جديد.</li>
+<li>تغيير اسم <code>limit</code> إلى <code>pageSize</code> في نسخة صامتة. هذا كسر عقد، لا تحسين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل مجموعة قد تكبر: <code>/books</code> و <code>/books/b1/reviews</code>. اكتب المعاملات في وصف OpenAPI مع المسار.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على <code>GET /books/:id</code>. الفرد ليس صفحة. ولا تمرر <code>order by</code> كنص خام.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النتيجة</th>
+<th>الرمز</th>
+<th>الجسم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>عشرون كتابًا وثمة مزيد</td>
+<td>200</td>
+<td><code>data.length</code> حتى الحد و <code>nextCursor</code></td>
+</tr>
+<tr>
+<td>لا كتب للمؤلف</td>
+<td>200</td>
+<td><code>data: []</code> و <code>nextCursor: null</code></td>
+</tr>
+<tr>
+<td><code>limit=999</code></td>
+<td>400</td>
+<td>لا قائمة</td>
+</tr>
+<tr>
+<td><code>sort=password</code></td>
+<td>400</td>
+<td>الحقل غير معلن</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>مؤلف بلا كتب. ما الوضع وما <code>data</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>200 و <code>data: []</code> و <code>nextCursor: null</code>. المسار موجود والتصفية صحيحة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المؤشر أثبت من <code>page=3</code> في كتالوج تُنشر فيه كتب أثناء تصفح العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصفحة العددية تنزلق عندما يُدرج صف في الترتيب قبلها، فيتكرر عنصر أو يختفي. المؤشر يقول «بعد هذا الكتاب في هذا الترتيب»، فيكمل من مكانه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>العميل يحسب وجود صفحة تالية من <code>data.length === limit</code>. متى يخطئ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما يكون عدد النتائج مطابقًا للحد تمامًا ولا توجد زيادة. سيطلب صفحة أخرى فارغة أو يظن أن ثمة مزيدًا. العقد الذي يعد بـ <code>nextCursor</code> يجعل <code>null</code> هو النهاية، والخدمة تعرف ذلك بطلب عنصر إضافي لا يُعاد في <code>data</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رمز القائمة الفارغة؟</li>
+<li>أي حقول يُسمح بترتيبها؟</li>
+<li>لماذا الغلاف أفضل من مصفوفة عارية من أول يوم؟</li>
+<li>متى 400 على معاملات القائمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Pagination عقد: حد، ترتيب مغلق، تصفية معلنة، غلاف فيه <code>nextCursor</code>. لا نتائج تعني 200 و <code>data: []</code>. 404 ليست نتيجة بحث فاضية.</p>
+<h2>ماذا بعد؟</h2>
+<p>الـ 400 والـ 404 والـ 409 تحتاج جسمًا واحدًا تتفق عليه الواجهة. الدرس التالي شكل الخطأ.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>MDN — 200 OK: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/200">https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status/200</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

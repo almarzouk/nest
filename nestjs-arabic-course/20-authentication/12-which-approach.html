@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متى الحزمة الرسمية ومتى Passport</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-which-approach.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متى الحزمة الرسمية ومتى Passport</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار سلسلة مصادقة واحدة لمشروع المنشورات، مع الإبقاء على فهم الوصفة الثانية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وجود <code>@Public()</code> و <code>AuthGuard(&#39;jwt&#39;)</code> معًا يجعل <code>401</code> بلا مصدر واضح. فريق ينسخ مقال Passport ثم يعيد كتابة نصف المسارات على <code>TokenService</code> فيصبح للتطبيق عمران للرمز ووحدتان للسر. تأجيل القرار حتى فصل التفويض يصطدم بأن <code>@nestjs/authorization</code> في التوثيق الحالي يُسجَّل مع <code>AuthenticationModule</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>مشروع الدورة الجديد يتبع قسم Security: <code>@nestjs/authentication</code> للجلسة و <code>PasswordHasher</code> و <code>TokenService</code> عند الحاجة، ثم <code>@nestjs/authorization</code> في الفصل التالي. Passport يبقى وصفة رسمية تقرأها لمشروع قائم أو لفريق يبني على استراتيجيات المجتمع. لا تشغّل السلسلتين على الموارد نفسها.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>اختر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مشروع المنشورات في هذه الدورة من هنا فصاعدًا</td>
+<td><code>@nestjs/authentication</code></td>
+</tr>
+<tr>
+<td>جلسة متصفح وكعكة تكتبها الحزمة</td>
+<td><code>SessionCookieProvider</code> و <code>SignInService</code></td>
+</tr>
+<tr>
+<td>جوال مع تحديث دوار</td>
+<td><code>JwtBearerProvider</code> و <code>TokenService</code></td>
+</tr>
+<tr>
+<td>تطبيق إنتاج قائم على <code>passport-local</code> و <code>passport-jwt</code></td>
+<td>أبقِ الوصفة حتى هجرة مخططة</td>
+</tr>
+<tr>
+<td>تريد استراتيجيات المجتمع كما هي</td>
+<td>Passport، وافهم أنها ليست ملغاة</td>
+</tr>
+<tr>
+<td>ستستخدم <code>@Can</code> وسياسات الفصل التالي كما في التوثيق الحالي</td>
+<td>الحزمة الرسمية، لأن صفحة التفويض تسجّل <code>AuthorizationModule</code> بعد <code>AuthenticationModule</code></td>
+</tr>
+</tbody></table>
+<p>الهجرة من Passport إلى الحزمة ليست بحثًا واستبدالًا لأسماء الحارس. هي توحيد: من يكتب المستخدم على الطلب، أين السر، هل يوجد تحديث دوار، وأين <code>@Public()</code>. اعملها في فرع حين تتوقف الميزات الجديدة، لا في منتصف إصلاح مقال.</p>
+<p>اختبار القرار: ارسم مسار <code>POST /posts</code> وسَمِّ الحارس الواحد الذي يسبقه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دورة جديدة -------- @nestjs/authentication
+                         |
+                    @nestjs/authorization
+مشروع Passport قائم -- أبقِه حتى خطة هجرة
+لا الاثنان على /posts
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">مكتبة الدورة
+  AuthModule: SessionAuth (+ JwtAuth إن وُجد جوال)
+  AuthenticationModule.forRootAsync من ConfigService
+  POST /posts يقرأ @CurrentUser()
+  لا AuthGuard في AppModule
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الجوال يضاف بمزوّد ثانٍ وترتيب <code>1</code>، لا بحزمة Passport بجانب الحارس. السر واحد في <code>accessToken.key</code>. الدخول من المتصفح يظل جلسة. هكذا يبقى <code>@CurrentUser()</code> شكلًا واحدًا سواء جاء الشخص من كعكة أو من حامل، لأن كليهما مزوّد في السجل نفسه.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>حارس الحزمة يمر على المزوّدات بالترتيب ويثبت أول مستخدم. حارس Passport يشغّل استراتيجية بالاسم. إن وُجد الاثنان، قد يرجع الأول <code>401</code> قبل أن يرى الثاني الرأس، أو يكتب كل منهما حقلًا مختلفًا. إزالة أحدهما تعيد مسارًا يمكن تتبعه كما في درس الطلب الكامل.</p>
+<p><code>@nestjs/authorization</code> يفحص ترتيب حارسه بعد حارس المصادقة ويرفض الإقلاع إن انعكس الترتيب. هذه إشارة عملية: التفويض الرسمي في التوثيق مبني على تلك السلسلة.</p>
+<h2>مثال عملي</h2>
+<p>وظيفة تعرض codebase بـ <code>LocalStrategy</code>. لا تعِد كتابة الدخول في أول أسبوع. اقرأ الدروس <code>08</code> إلى <code>11</code> وطابقها بالملفات. في مستودع الدورة، الإقلاع يستورد <code>AuthenticationModule</code> فقط. إن أردت واجب Passport، فمستودع مثال ثانٍ أو مجلد <code>examples</code> لا يُستورد مع الحارس العام.</p>
+<p>اكتب في ملاحظة الوحدة جملة: «الهوية من <code>@nestjs/authentication</code>. Passport مرجع قراءة.» حتى لا يضيف زميلك <code>JwtAuthGuard</code> غدًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وصف Passport بأنه deprecated.</li>
+<li>وصف الحزمة الجديدة بأنها اختيارية زينة فوق Passport في مشروع الدورة.</li>
+<li>سران مختلفان للتوقيع.</li>
+<li>هجرة صامتة تترك <code>req.user</code> في نصف المتحكمات و <code>@CurrentUser()</code> في النصف الآخر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الحزمة لمسار الدورة وأي API جديد تريد أن يكمل إلى سياسات <code>@nestjs/authorization</code>. Passport لمشروع ولد على الوصفة أو لحاجة استراتيجية جاهزة لن تعيد بناءها الآن.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتشغيل الاثنين «مؤقتًا» على <code>UsersController</code>. المؤقت يصبح عقدًا غامضًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>الحزمة</th>
+<th>Passport</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مكان التوثيق</td>
+<td>Security</td>
+<td>Recipes</td>
+</tr>
+<tr>
+<td>فتح مسار</td>
+<td><code>@Public()</code></td>
+<td>حارس حيث تضعه أو استثناء <code>Reflector</code></td>
+</tr>
+<tr>
+<td>قراءة الشخص</td>
+<td><code>@CurrentUser()</code></td>
+<td><code>req.user</code></td>
+</tr>
+<tr>
+<td>تحديث دوار</td>
+<td><code>TokenService</code></td>
+<td>ليس المثال الأساسي</td>
+</tr>
+<tr>
+<td>التفويض التالي في التوثيق</td>
+<td>متوافق مع الصفحة الحالية</td>
+<td>تدمجه أنت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تستورد <code>AppModule</code> في مكتبة الدورة بعد هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>AuthenticationModule</code> مع مزودات وحدتك مثل <code>SessionAuth</code>. لا <code>JwtAuthGuard</code> كحارس عام.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا ترتبط صفحة التفويض الحالية بهذا الاختيار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>AuthorizationModule</code> في التوثيق يُسجَّل مع <code>AuthenticationModule</code> ويرفض إقلاعًا يكون فيه حارس التفويض قبل حارس المصادقة. السلسلة مفترضة هناك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اكتب ثلاثة شروط تجعلك تبقي Passport في مشروع وظيفة بدل الهجرة هذا الشهر.</p>
+<details>
+<summary>الحل</summary>
+
+<p>استراتيجيات عاملة في الإنتاج، وفريق يعرف <code>req.user</code>، ولا ميزة هذا الشهر تحتاج <code>TokenService</code> أو <code>@Can</code>. الهجرة تُجدول وحدها. العكس: مشروع جديد بلا مستخدمين في الإنتاج يتبع الحزمة من البداية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي سلسلة لمشروع الدورة؟</li>
+<li>هل الثانية ملغاة؟</li>
+<li>ماذا تمنع على مسار واحد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الدورة تكمل على <code>@nestjs/authentication</code>. Passport وصفة رسمية تفهمها ولا تضعها فوق الحارس نفسه. قرار واحد لكل مسار أوضح من طبقتين.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> لمسار جلسة على المنشورات، مع إشارة لمكان Passport.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

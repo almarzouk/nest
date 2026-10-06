@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>تمارين الدروس اختبرت أداة واحدة. هذه الصفحة تفرض ترتيب التشخيص على متجر رف. اكتب الفرضية قبل القياس.</p>
+<h2>تمرين سهل — ترتيب الأدوات</h2>
+<p>p95 لمسار <code>GET /books</code> صار 700ms بعد حملة. <code>/health</code> بقي تحت 15ms. المعالج على نواة واحدة نسبته 20٪. من أين تبدأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من الاستعلام لا من Fastify ولا من cluster. الصحة السريعة تنفي سد الحلقة، وانخفاض CPU ينفي الحاجة إلى نوى إضافية. اطلب <code>EXPLAIN ANALYZE</code> لقائمة المستأجر مع <code>orderBy</code> و <code>take</code>، ثم راجع الفهرس المركب.</p>
+</details>
+
+<h2>تمرين متوسط — كاش بعد الفهرس</h2>
+<p>الفهرس أنزل p95 إلى 40ms، والحملة جعلت نفس القائمة 90٪ من القراءة. النشر يجب أن يظهر خلال ثوانٍ لا دقائق. ارسم المفتاح والإبطال.</p>
+<details>
+<summary>الحل</summary>
+
+<p>مفتاح <code>books:${tenantId}:published</code> و TTL قصير احتياطًا، مع <code>cache.del</code> في مسار النشر لنفس المفتاح. لا تستخدم <code>CacheInterceptor</code> على المسار إن كان المعترض يتجاهل ترويسة المستأجر. إن وُجد أكثر من عملية، المخزن Redis لا ذاكرة العامل.</p>
+</details>
+
+<h2>تمرين متقدم — قرار المحول</h2>
+<p>بعد الكاش، مسار «المميزات» يُخدم من الذاكرة في 4ms p95 على Express، وCPU العملية 85٪ عند 200 اتصالًا متزامنًا، وPostgres خامل. ماذا تفعل وبأي ترتيب؟</p>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>تأكد أن الـ 4ms ليست فيها <code>Scope.REQUEST</code> يعيد بناء الشجرة.</li>
+<li>أوقف ضغط الجسم داخل العملية إن كان الوكيل يضغط.</li>
+<li>زِد العمليات حتى ينزل CPU كل عملية وتبقى القاعدة مريحة، وراقب عدد الاتصالات.</li>
+<li>قس Fastify على هذا المسار فقط. إن اقترب التحسن مما تذكره صفحة Performance (نحو الضعف في معيارهم) وظهرت فائدة تحت حملك، خطط لاستبدال وسطاء Express. انشر مع <code>listen(port, &#39;0.0.0.0&#39;)</code>. إن كان المكسب ضئيلًا، أبقِ Express.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

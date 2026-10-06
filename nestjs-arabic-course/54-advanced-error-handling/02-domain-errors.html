@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أخطاء النطاق</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-domain-errors.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أخطاء النطاق</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة فشل قواعد متجر رف كأصناف يرميها الـ Service، وتبقى مفهومة لو استُدعيت من مهمة أو من اختبار بلا HTTP.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>BooksService.publish</code> تستورد <code>ConflictException</code> من <code>@nestjs/common</code>. اختبار الوحدة يحتاج سياق Nest ليفهم الخطأ. مهمة CLI التي تنشر كتابًا مجدولًا تلتقط استثناء HTTP لا معنى له في الطرفية. القاعدة دُفنت داخل البروتوكول.</p>
+<h2>الفكرة ببساطة</h2>
+<p>خطأ النطاق جملة عن الكتب: غير موجود، منشور سلفًا، ISBN مكرر، السعر سالب بعد خصم المجال. الصنف يحمل معرّفات تساعد السجل. لا يحمل <code>getStatus()</code>.</p>
+<h2>التعريف التقني</h2>
+<p>صنف يمتد من <code>Error</code> حتى تبقى سلسلة الاستدعاء. ميّز الأنواع بـ <code>instanceof</code> لا بمقارنة <code>message</code>. ضع الأصناف في ملف مثل <code>books.errors.ts</code> يستورده الـ Service ولا يستورد هو من <code>@nestjs/common</code>. إن كان التطبيق HTTP فقط بوعي، بعض الفرق ترمي <code>HttpException</code> من الخدمة. هذا الدرس يختار الفصل لأن رف ستُستدعى لاحقًا من مهام و webhooks. التحقق من شكل DTO يبقى في الـ Pipe؛ لا تعد كتابته كخطأ نطاق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">BooksService
+  يرمي BookNotFound | InvalidShelfPrice | IsbnTaken
+المتحكم لا يترجم
+الفلتر لاحقًا يترجم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class InvalidShelfPrice extends Error {
+  constructor(readonly priceCents: number) {
+    super(&#39;Shelf price must be zero or greater&#39;);
+  }
+}
+
+export function assertPrice(priceCents: number) {
+  if (priceCents &lt; 0) throw new InvalidShelfPrice(priceCents);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>القاعدة «السعر لا يكون سالبًا» تعيش مع الكتالوج حتى لو تغيّر شكل JSON.</li>
+<li>الحقل <code>priceCents</code> يُسجَّل. الرسالة للسجل الداخلي، لا عقد للعميل بعد.</li>
+<li>الدالة نقية: اختبارها يستدعي <code>assertPrice(-1)</code> ويتوقع الصنف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المتحكم يمرر أرقامًا بعد أن قبل الـ Pipe شكلها.</li>
+<li>الخدمة تحمّل الكتاب وتطبق القاعدة.</li>
+<li><code>throw</code> يوقف بقية العملية: لا <code>update</code> بعد سعر مرفوض.</li>
+<li>الاستثناء يصعد ككائن <code>Error</code> عادي. Nest لا يعرف اسم <code>InvalidShelfPrice</code> حتى يسجّل فلتر لذلك.</li>
+<li>من غير فلتر، الاستثناء غير المتوقع وسيصبح 500. هذا متوقع إلى أن يكتمل الدرس التالي، وليس سببًا لإرجاع <code>HttpException</code> إلى الخدمة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+import { BookNotFound, IsbnTaken } from &#39;./books.errors.js&#39;;
+
+@Injectable()
+export class BooksService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async assignIsbn(tenantId: string, bookId: string, isbn: string) {
+    const book = await this.prisma.book.findFirst({ where: { id: bookId, tenantId } });
+    if (!book) throw new BookNotFound(bookId);
+    const owner = await this.prisma.book.findFirst({ where: { tenantId, isbn } });
+    if (owner &amp;&amp; owner.id !== bookId) throw new IsbnTaken(isbn);
+    return this.prisma.book.update({ where: { id: bookId }, data: { isbn } });
+  }
+}
+</code></pre>
+<p><code>findFirst</code> يقيّد المستأجر حتى لا يرمي الخدمة <code>BookNotFound</code> لكتاب مكتبة أخرى وكأنه غاب عن العالم. <code>IsbnTaken</code> قاعدة كتالوج. قيد القاعدة يظل شبكة أمان تحت السباق، ويُلتقط في طبقة واحدة لا داخل كل سطر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سلسلة <code>if (!book) return null</code> ثم نسيان أن المتحكم يعيد 200.</li>
+<li>وضع رسالة عربية موجهة للواجهة داخل <code>super()</code>. الترجمة للعميل قرار الحد.</li>
+<li>صنف واحد <code>DomainError</code> بحقل <code>code: string</code> يتراكم فيه خمسون رمزًا بلا أنواع، فيتعطل <code>instanceof</code>.</li>
+<li>التحقق من <code>@IsISBN()</code> داخل الخدمة مرة أخرى بعد الـ Pipe.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما منعت قاعدة عمل أثرًا: نشر، سعر، تفرّد ISBN، انتقال حالة. ضع الاختبار على الصنف.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفشل شكل JSON، ولفقدان الاتصال، ولرسالة «غير مصرح» التي يملكها الحارس أصلًا. الحارس قرار أمن على الحد، لا قاعدة سعر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>خطأ نطاق</th>
+<th><code>ConflictException</code> داخل الخدمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الاختبار</td>
+<td><code>instanceof</code> بلا Nest</td>
+<td>يحتاج سلوك HTTP أو محاكاة</td>
+</tr>
+<tr>
+<td>المهمة بلا HTTP</td>
+<td>مفهومة</td>
+<td>تبدو كاستجابة ويب</td>
+</tr>
+<tr>
+<td>تغيير الرمز من 409 إلى 422</td>
+<td>يمس الفلتر</td>
+<td>يمس كل خدمة رمت الاستثناء</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يعيش <code>BookNotFound</code>: في <code>books.service.ts</code> كـ <code>throw</code>، أم في <code>books.controller.ts</code> كـ <code>NotFoundException</code> مباشرة من غير خدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخدمة ترمي <code>BookNotFound</code> بعد ما تملك قاعدة «لا كتاب بهذا المعرّف داخل المستأجر». المتحكم لا يعيد اختراع البحث ليرمي استثناء HTTP.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اختبار يستدعي <code>assignIsbn</code> برقم موجود لكتاب آخر. ماذا يتوقع أن يُرمى، وماذا لا يتوقع على <code>response</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يتوقع <code>IsbnTaken</code>. لا يوجد <code>response</code> في اختبار الخدمة. الرمز 409 سيُثبت لاحقًا على الفلتر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>سباق طلبين يعينان نفس ISBN بعد ما اجتاز كلاهما <code>findFirst</code>. أين تبقى القاعدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قيد فريد في Postgres على <code>(tenantId, isbn)</code>. الخدمة ترمي <code>IsbnTaken</code> للمسار السعيد المقروء. انتهاك القيد يُترجم إلى نفس النوع أو إلى نفس خانة التعارض في الفلتر، حتى لا يعتمد الكتالوج على الترتيب فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا تستورد <code>books.errors.ts</code> من <code>@nestjs/common</code>؟</li>
+<li>بماذا تميّز الأنواع في <code>catch</code>؟</li>
+<li>ماذا يحدث اليوم لخطأ النطاق إذا لم يوجد فلتر بعد؟</li>
+<li>أي فشل يبقى في الـ Pipe؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>خطأ النطاق صنف <code>Error</code> بلغة الكتب. الخدمة ترميه وتتوقف عن الأثر. HTTP ليس جزءًا من تعريفه.</p>
+<h2>ماذا بعد؟</h2>
+<p>الأصناف جاهزة ولا يراها العميل. الدرس التالي يترجم كل صنف إلى وضع واستجابة عند الحد فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

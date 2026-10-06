@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HttpService</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-http-service.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>HttpService</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استدعاء الناشر عبر <code>HttpService</code> وتحويل أول قيمة في التيار إلى شكل المجال.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد التسجيل، الحقن بلا استعمال يترك ISBN فارغًا. استدعاء <code>this.http.get()</code> بلا اشتراك لا يرسل شيئًا، لأن التيار بارد كما في الفصل السابق. وإرجاع <code>Observable</code> من <code>IsbnService</code> ينشر RxJS في <code>BooksService</code> التي تعمل بـ <code>async</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>HttpService</code> من <code>@nestjs/axios</code> يعرض <code>get</code> و <code>post</code> وغيرهما. كل تابع يعيد <code>Observable</code> لاستجابة Axios. خذ أول قيمة بـ <code>firstValueFrom</code> داخل خدمة الغلاف، وأعد <code>Promise</code> بالعنوان فقط. <code>pipe</code> قبل <code>firstValueFrom</code> مكان الترجمة والخطأ، وتفصيل الخطأ في الدرس التالي.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { HttpService } from &#39;@nestjs/axios&#39;;
+import { firstValueFrom } from &#39;rxjs&#39;;
+
+interface IsbnPayload {
+  title: string;
+}
+
+@Injectable()
+export class IsbnService {
+  constructor(private readonly http: HttpService) {}
+
+  async lookup(isbn: string): Promise&lt;{ title: string }&gt; {
+    const response = await firstValueFrom(
+      this.http.get&lt;IsbnPayload&gt;(`/isbns/${encodeURIComponent(isbn)}`),
+    );
+    return { title: response.data.title };
+  }
+}
+</code></pre>
+<p><code>get&lt;IsbnPayload&gt;</code> يصف <code>data</code> لا يضمنها وقت التشغيل. إن غاب <code>title</code> ارمِ خطأ ترجمة بدل إرجاع <code>{ title: undefined }</code>. المسار نسبي لأن <code>baseURL</code> على الوحدة. <code>encodeURIComponent</code> يمنع حقن شرطة مائلة في المسار.</p>
+<p><code>response.data</code> جسم المنبع. <code>status</code> و <code>headers</code> على الكائن نفسه. لا تمرر <code>response</code> إلى المتحكم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">lookup(isbn)
+  http.get تيار بارد
+    firstValueFrom يشترك مرة
+      Axios يرسل
+        data.title -&gt; { title }
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>استعمال من خدمة الكتب:</p>
+<pre><code class="language-ts">async create(input: { title?: string; isbn?: string }) {
+  const enriched = input.isbn ? await this.isbn.lookup(input.isbn) : null;
+  return this.books.insert({
+    title: input.title ?? enriched?.title ?? &#39;Untitled&#39;,
+  });
+}
+</code></pre>
+<p>هذا الشكل ينتظر نجاح <code>lookup</code>. إن كان الإثراء اختياريًا عند العطل، فالتقاط الخطأ هنا أو داخل <code>lookup</code> قرار الدرس التالي. المهم أن <code>create</code> لا ترى <code>Observable</code>.</p>
+<h2>شرح المثال</h2>
+<p>اشتراك واحد عبر <code>firstValueFrom</code>. لا <code>subscribe</code> يدوي قبل <code>await</code>. التابع <code>get</code> لا يفتح الشبكة عند استدعائه حتى يشترك <code>firstValueFrom</code>. إن نسخت التيار إلى متغير واشتركت للاختبار ثم استدعيت <code>firstValueFrom</code> على تيار بارد جديد، فهما طلبان. ابنِ التيار داخل الدالة مرة واحدة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Axios ينفّذ الطلب عند الاشتراك ويعيد الاستجابة ثم يكتمل التيار. <code>firstValueFrom</code> يأخذ <code>data</code> المغلفة في الاستجابة ويلغي الاشتراك بعدها. جسم JSON يُحلَّل في Axios حسب <code>Content-Type</code>. خطأ شبكة أو رمز حالة يرفضه Axios افتراضيًا (رموز خارج 2xx) فيرفض الوعد. لذلك <code>lookup</code> كما هو مكتوب يرمي عند <code>404</code> الناشر. ترجمته في <code>pipe</code> قبل <code>firstValueFrom</code> أو في <code>catch</code> حول <code>await</code>. الدرس التالي يختار شكلًا واحدًا.</p>
+<h2>مثال عملي</h2>
+<p>حقل ناقص من الناشر:</p>
+<pre><code class="language-ts">if (typeof response.data?.title !== &#39;string&#39; || response.data.title.length === 0) {
+  throw new BadGatewayException(&#39;isbn payload missing title&#39;);
+}
+</code></pre>
+<p>هذا فشل عقد لا غياب ISBN. الغياب <code>404</code> سيُترجم إلى <code>null</code> لاحقًا إن قررت ذلك. الحمولة الناقصة مع <code>200</code> تعني أن الناشر غيّر الوثيقة، و <code>502</code> أصدق من عنوان فارغ في الجدول.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>firstValueFrom</code> وإرجاع التيار إلى متحكم يعامل كأنه كائن كتاب.</li>
+<li>قراءة <code>response.title</code> بدل <code>response.data.title</code>.</li>
+<li>بناء المسار بتركيب <code>isbn</code> بلا ترميز.</li>
+<li>اشتراك إضافي للتسجيل يطلق طلبًا ثانيًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>داخل خدمة المنبع بعد <code>HttpModule.register</code>. واجهة الدالة العامة <code>Promise</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في المعترض العام لكل الطلبات الواردة. <code>HttpService</code> للصادر. الوارد يبقى متحكمًا وخدمة مجال.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستدعاء</th>
+<th>الشبكة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>this.http.get(url)</code> بلا اشتراك</td>
+<td>لا تُرسل</td>
+</tr>
+<tr>
+<td><code>firstValueFrom(this.http.get(url))</code></td>
+<td>مرة واحدة</td>
+</tr>
+<tr>
+<td><code>subscribe</code> ثم <code>firstValueFrom</code> على التيار البارد نفسه بشكل منفصل</td>
+<td>مرتان إن أعدت بناء الوصفة أو إن كان الأثر في المصنع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يقع عنوان الكتاب في استجابة <code>HttpService.get</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>response.data.title</code> لا على جذر الاستجابة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>lookup</code> تُعلن <code>Promise</code> لا <code>Observable</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تبقى <code>BooksService</code> على <code>async</code> ولا تنتشر معاملات RxJS في المجال.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>200</code> بلا خاصية <code>title</code>. أي استثناء وارد، ولماذا ليس <code>null</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>BadGatewayException</code> لأن العقد كُسر. <code>null</code> محجوز لغياب ISBN إن اخترت ترجمة <code>404</code> الخارجي إلى «غير موجود عند الناشر».</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي دالة تشغّل التيار البارد هنا؟</li>
+<li>لماذا <code>encodeURIComponent</code>؟</li>
+<li>ماذا لا يُعاد إلى <code>BooksController</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>HttpService.get</code> تيار. <code>firstValueFrom</code> عند حافة <code>IsbnService</code> يعيد <code>{ title }</code>. شكل الناشر لا يتجاوز هذه الخدمة.</p>
+<h2>ماذا بعد؟</h2>
+<p>ترجمة <code>AxiosError</code> والمهلة إلى استثناءات Nest.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — HTTP module (Axios): <a href="https://docs.nestjs.com/techniques/http-module">https://docs.nestjs.com/techniques/http-module</a></li>
+<li>RxJS — <code>firstValueFrom</code>: <a href="https://rxjs.dev/api/index/function/firstValueFrom">https://rxjs.dev/api/index/function/firstValueFrom</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@nestjs/authentication</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-nestjs-authentication.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@nestjs/authentication</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل حزمة المصادقة الحالية: حارس عام، مزوّد جلسة، وتسجيل دخول يضع الكعكة من غير <code>@Req()</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس منزلي على كل متحكم يُنسى على مسار جديد. قراءة الكعكة داخل المتحكم تربط الخدمة بإطار Express أو Fastify. تخزين الجلسات في الذاكرة ينهار عند نسختين من التطبيق، والحزمة ترفض ذلك أصلًا حين <code>NODE_ENV=production</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>AuthenticationModule.forRoot</code> خيارات بيانات: أعمار الجلسة والأسرار لاحقًا. مزوّد تكتبه، مثل <code>SessionAuth</code>، يسجّل نفسه في <code>AuthenticationRegistry</code> ويعرف كيف يحوّل الدليل إلى مستخدم. الحارس العام يمر على المزوّدات. المسار المفتوح يُعلَّم <code>@Public()</code>. <code>SignInService.signIn</code> ينشئ الجلسة ويكتب الكعكة.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة Authentication. المستخدم الذي تراه بقية التطبيق بلا تجزئة:</p>
+<pre><code class="language-ts">export interface User {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  roles: Array&lt;&quot;customer&quot; | &quot;staff&quot; | &quot;admin&quot;&gt;;
+}
+</code></pre>
+<p>مثال الدورة كان <code>id</code> عددًا. الحزمة تعرض <code>id</code> نصيًا. طابق نوع مشروعك. الفكرة أن <code>passwordHash</code> لا يغادر المستودع.</p>
+<p><code>SessionAuth</code> يمتد <code>SessionCookieProvider&lt;User&gt;</code> ويسجّل <code>registry.registerProvider(this)</code> ويستدعي <code>validate(session)</code> التي تجلب المستخدم بـ <code>session.userId</code>. رجوع <code>null</code> ينهي الجلسة إن حُذف المستخدم.</p>
+<pre><code class="language-ts">AuthenticationModule.forRoot({
+  session: {
+    absoluteTtl: &quot;14d&quot;,
+    idleTtl: &quot;3d&quot;,
+  },
+});
+</code></pre>
+<p>الأعمار مللي ثانية أو نصوص مثل <code>14d</code>، بحد أعلى مئة سنة. رقم صغير مثل <code>3600</code> هنا ثوانٍ قليلة لا ساعة، بعكس <code>@nestjs/jwt</code>.</p>
+<p>الحارس بعد الإقلاع يرفض المجهول بـ <code>401</code>. <code>@Public()</code> على متحكم التسجيل والدخول. <code>PasswordHasher</code> و <code>SignInService</code> مزوّدان جاهزان. <code>signIn(user.id, { method: &quot;password&quot; })</code> يضع كعكة <code>__Host-sid</code>، ويحذف جلسة الكعكة السابقة، ويرفض تزييف الدخول من موقع آخر.</p>
+<p>في الإنتاج يلزم مخزن <code>SessionStore</code> تكتبه أنت، و Drizzle أو TypeORM في الصفحة أمثلة للمخزن لا مسار دورة Prisma. طبّق الواجهة على <code>PrismaService</code> إن أكملت الإنتاج. حتى ذلك، الذاكرة للتطوير فقط، والحزمة ترفض الإقلاع بها في الإنتاج.</p>
+<p><code>forRootAsync</code> حين تُقرأ الأسرار من <code>ConfigService</code>.</p>
+<p>ترتيب هذا الفصل: الحزمة أولًا. Passport لاحقًا كوصفة ما زالت قائمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">forRoot(options)
+SessionAuth.validate -&gt; User | null
+حارس عام
+  @Public -&gt; مرور
+  بلا مستخدم -&gt; 401
+SignInService.signIn -&gt; كعكة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { AuthenticationRegistry, SessionCookieProvider, type SessionRecord } from &quot;@nestjs/authentication&quot;;
+import { UsersService } from &quot;../users/users.service.js&quot;;
+import type { PublicUser } from &quot;../users/public-user.js&quot;;
+
+@Injectable()
+export class SessionAuth extends SessionCookieProvider&lt;PublicUser&gt; {
+  constructor(
+    private readonly users: UsersService,
+    registry: AuthenticationRegistry,
+  ) {
+    super();
+    registry.registerProvider(this);
+  }
+
+  validate(session: SessionRecord) {
+    return this.users.findById(session.userId);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>findById</code> ترجع الشخص العام أو <code>null</code>، بلا تجزئة. <code>super()</code> بلا وسائط لأن المزوّد الأساسي يأخذ <code>SessionService</code> بحقن خاصية، لذلك البنّاء يذكر اعتماداتك أنت. التسجيل في <code>AuthenticationRegistry</code> هو ما يضع المزوّد في السلسلة. نسيان <code>registerProvider</code> يعني حارسًا بلا طريقة إثبات.</p>
+<p>ضع الصنف في <code>providers</code> لوحدة <code>AuthModule</code> التي تستورد <code>UsersModule</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع، بعد البنّاءات، السجل يُقفل ويسجّل أسماء المزوّدات. لكل طلب يشغّل الحارس السلسلة. مزوّد الجلسة يقرأ الكعكة، يحمّل السجل، ويستدعي <code>validate</code>. أول مزوّد يرجع مستخدمًا يفوز. بلا كعكة صالحة فالنتيجة <code>401</code> على المسار غير العام.</p>
+<p>الكعكة <code>HttpOnly</code> و <code>Secure</code> و <code>SameSite=Lax</code>. على <code>localhost</code> تقبل المتصفحات الحديثة <code>Secure</code>. على HTTP خارج ذلك اضبط <code>cookie.secure</code> كما تشرح الصفحة، فيصبح الاسم <code>sid</code>.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /auth/sign-up</code> و <code>POST /auth/sign-in</code> عليهما <code>@Public()</code>. بعد الدخول، <code>GET /posts</code> من غير كعكة <code>401</code>. مع الكعكة يصل إلى <code>PostsService</code>. <code>POST /posts</code> يأخذ المؤلف من المستخدم الذي ثبّته المزوّد، لا من الجسم. أبقِ قائمة المنشورات العامة <code>@Public()</code> أو <code>@Authenticate({ optional: true })</code> إن كان الكتالوج مفتوحًا، وهذا يُضبط حين تلمس التفويض. الآن يكفي أن تميّز المسار المفتوح من المغلق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حماية مسار التسجيل بالحارس العام من غير <code>@Public()</code>.</li>
+<li>اعتبار <code>3600</code> ساعة في خيارات هذه الحزمة.</li>
+<li>نشر الإنتاج بمخزن الذاكرة. الإقلاع يفشل عمدًا.</li>
+<li>قراءة <code>req.cookies</code> في الخدمة بدل <code>validate</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمسار الدورة الحالي على Nest 12 حين تريد جلسات وتجزئة ورموزًا من قسم Security.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لنسخ وصفة Passport قائمة تعمل وتريد فقط فهمها. ذلك الدروس التالية، لا حذفها من المشروع القديم في اليوم نفسه.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>حارس على متحكم واحد</th>
+<th>الحزمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يُنسى على مسار جديد</td>
+<td>عام مع <code>@Public()</code></td>
+</tr>
+<tr>
+<td>الكعكة في المتحكم</td>
+<td><code>SignInService</code> يكتبها</td>
+</tr>
+<tr>
+<td>بلا مخزن موحّد</td>
+<td>واجهات مخازن تكتبها أنت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرجع <code>validate</code> إن حُذف المستخدم وما زالت الكعكة حية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>null</code>. الصفحة تقول إن ذلك ينهي الجلسة، ولا يبقى الطلب موثّقًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>forRoot</code> لا يستقبل صنف المزوّد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخيارات بيانات. المزوّد مزوّد في وحدتك يسجّل نفسه حتى يستطيع حقن <code>UsersService</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>NODE_ENV=production</code> والإقلاع يرفض الجلسات. ماذا ينقص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مخزن <code>SessionStore</code> في القاعدة عبر الواجهة التي توثّقها الحزمة، لا الذاكرة الافتراضية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يسجّل مزوّد الجلسة في السلسلة؟</li>
+<li>أي مسارات تُعلَّم <code>@Public()</code>؟</li>
+<li>ما اسم خدمة إصدار الجلسة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/authentication</code> حارس عام ومزوّد تكتبه وتسجيل دخول يضع الكعكة. الإنتاج يحتاج مخزنًا. المستخدم الحالي هو ما تقرأه المسارات بعد ذلك.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-current-user.html">قراءة المستخدم الحالي</a> من المعامل أو من السياق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Authentication مقابل Authorization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-authentication-vs-authorization.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Authentication مقابل Authorization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل سؤال «من هذا؟» عن سؤال «ماذا يُسمح له؟» قبل أي حزمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسار يفحص <code>role === &quot;admin&quot;</code> داخل شرط كلمة المرور يخلط إثبات الهوية بالسماح. حين تغيّر طريقة الدخول من كلمة مرور إلى رمز، تتكرر قواعد المقال. حين تغيّر قاعدة «من ينشر»، تعيد اختبار التجزئة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Authentication يثبت أن الطلب يحمل دليلًا نثق به: كلمة مرور صمدت أمام التجزئة، أو جلسة حيّة، أو رمزًا موقّعًا. الناتج هوية، مثل مستخدم <code>id=4</code>. Authorization، في الفصل التالي، يقرر إن كان هذا المستخدم ينشر أو يحذف. فشل الأول <code>401</code>. فشل الثاني، بعد أن نعرف الشخص، <code>403</code>.</p>
+<h2>التعريف التقني</h2>
+<p>في HTTP، <code>401 Unauthorized</code> يعني أن الدليل غائب أو مرفوض، و <code>WWW-Authenticate</code> قد يصف ما يُقبل. <code>403 Forbidden</code> يعني أن الخادم عرف الطرف ورفض الفعل. التسمية الإنجليزية لـ <code>401</code> تاريخية ومربكة. في هذه الدورة: <code>401</code> قبل الهوية، <code>403</code> بعد الهوية حين يمنع التفويض.</p>
+<p>مشروع المنشورات الحالي يقبل <code>authorId</code> من الجسم. هذا ليس إثباتًا. أي عميل يختار الرقم. المصادقة تستبدل ذلك بدليل لا يخترعه العميل من غير سر.</p>
+<p><code>@nestjs/authentication</code> مسار قسم Security الحالي: جلسات، تجزئة، رموز، OIDC، مفاتيح API، وواجهات مخازن. Passport عبر <code>@nestjs/passport</code> ما زال وصفة رسمية في Recipes، وليس مسارًا ملغى. هذا الفصل يعلّم الاثنين. القرار في آخر درس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب
+  -&gt; هل الدليل يثبت شخصًا؟  لا -&gt; 401
+  -&gt; من هو؟                    مستخدم 4
+  -&gt; هل يُسمح له بهذا الفعل؟   فصل التفويض -&gt; 403 أو مرور
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">type Principal = { id: number; email: string };
+
+function authenticate(passwordOk: boolean, user: Principal | null): Principal {
+  if (!passwordOk || !user) {
+    throw new Error(&quot;401&quot;);
+  }
+  return user;
+}
+</code></pre>
+<p>الدالة لا تقرأ <code>published</code> ولا دور المشرف. ترجع الشخص أو ترفض.</p>
+<h2>شرح المثال</h2>
+<p><code>passwordOk</code> نتيجة مقارنة سر لا تُكتب هنا. <code>user</code> صف بلا <code>passwordHash</code>. الخلط يبدأ حين تضيف <code>if (user.role !== &quot;admin&quot;)</code> داخل الدالة نفسها. انقل ذلك إلى سياسة لاحقًا.</p>
+<p>على <code>POST /posts</code>، بعد المصادقة، <code>authorId</code> يأتي من <code>principal.id</code> لا من الجسم. حتى ذلك الدرس، الجسم ما زال مصدرًا تعليميًا غير آمن.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحارس الذي ستضيفه الحزمة يعمل قبل معالج المسار. إن رفض، الخدمة لا تُستدعى ولا يُكتب مقال. هذا يختلف عن فحص المؤلف داخل الخدمة: ذاك يسأل «هل الصف موجود؟» لا «هل مقدم الطلب هو صاحبه؟».</p>
+<p>جلسة أو رمز طريقتان لحمل الدليل بعد أول إثبات. الدرس <code>03</code> يقارنهما. كلاهما مصادقة. الصلاحية شيء آخر.</p>
+<h2>مثال عملي</h2>
+<p>ثلاثة طلبات على نشر مقال:</p>
+<ul>
+<li>بلا رأس إثبات: <code>401</code> حين يُغلق المسار.</li>
+<li>بدليل صحيح ومستخدم عادي، والحذف للمشرف فقط: المصادقة تنجح، والتفويض لاحقًا يعيد <code>403</code>.</li>
+<li>بدليل صحيح وصاحب المقال يعدّل عنوانه: المصادقة تنجح، والسياسة تسمح.</li>
+</ul>
+<p>إن أعاد تعديل العنوان <code>401</code> للمستخدم المعروف، فالحارس يخلط السؤالين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية كل رفض <code>401</code> بما فيه نقص الدور.</li>
+<li>اعتبار <code>authorId</code> في JSON دليلًا.</li>
+<li>بناء جداول صلاحيات قبل أن ينجح تسجيل الدخول.</li>
+<li>معاملة Passport كأنه المسار الوحيد لأن مقالًا قديمًا بدأ به.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند إغلاق <code>POST /users</code> العام و <code>POST /posts</code> بحيث نعرف الشخص.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتقرير «هل يُحذف التعليق». ذلك تفويض بعد أن تصبح الهوية موجودة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Authentication</th>
+<th>Authorization</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من صاحب الطلب؟</td>
+<td>ماذا يجوز له؟</td>
+</tr>
+<tr>
+<td><code>401</code> عند الفشل</td>
+<td><code>403</code> عند الفشل بعد المعرفة</td>
+</tr>
+<tr>
+<td>كلمة مرور، جلسة، رمز</td>
+<td>أدوار وسياسات في الفصل التالي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>طلب فيه رمز صحيح ومستخدم ممنوع من الحذف. أي سؤال فشل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التفويض. الهوية نجحت. الرمز المناسب بعد بنائها <code>403</code> لا <code>401</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي أن يرسل العميل <code>authorId</code> مساويًا لمعرّفه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العميل يكتب الجسم. من غير دليل تملكه الخادم، أي شخص يضع أي رقم. المصادقة تربط الطلب بسر أو بجلسة أو بتوقيع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حارس يتحقق من كلمة المرور ومن دور المشرف معًا ثم يرمي <code>401</code> في الحالتين. ماذا تكسر عند تغيير الدخول إلى رمز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قاعدة الدور مدفونة داخل فحص السر. تبديل الدليل يعيد كتابة قاعدة الحذف. افصل إثبات الشخص عن السماح بالفعل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يثبت هذا الفصل، وماذا يؤجل؟</li>
+<li>أي رمز قبل الهوية؟</li>
+<li>هل Passport ملغى في التوثيق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المصادقة تسمي الشخص بدليل. التفويض يقرر الفعل. الحزمة الرسمية الحالية <code>@nestjs/authentication</code>، و Passport وصفة ما زالت موثّقة. الاثنان سيُشرحان بعد المفاهيم.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-password-hashing.html">Password Hashing</a> لماذا لا تُخزَّن كلمة المرور كما كُتبت.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

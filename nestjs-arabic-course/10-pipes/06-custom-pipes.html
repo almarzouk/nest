@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Custom Pipes</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-custom-pipes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Custom Pipes</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء أنبوب نطاق يطبّق <code>PipeTransform</code> حين لا تغطي الأسماء المدمجة القاعدة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>رمز قيد المكتبة <code>HLD-240</code> ليس عددًا ولا UUID ولا منطقًا. أنبوب عام للتحقق من أصناف لا يعبّر عن مسار <code>@Param(&#39;hold&#39;)</code> بنص واحد. القاعدة تستحق صنفًا باسمها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنف <code>@Injectable()</code> فيه <code>transform</code>. يقرأ القيمة و <code>metadata</code> إن لزم. يرجع نصًا مطبّعًا أو يرمي <code>BadRequestException</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">export interface PipeTransform&lt;T = any, R = any&gt; {
+  transform(value: T, metadata: ArgumentMetadata): R | Promise&lt;R&gt;;
+}
+</code></pre>
+<p><code>T</code> نوع الداخل و <code>R</code> نوع الخارج. <code>ArgumentMetadata</code> فيها <code>type</code> و <code>metatype</code> و <code>data</code> و <code>schema</code>.</p>
+<p>استخدم <code>metadata.data</code> لتعرف اسم المعامل حين يخدم الأنبوب أكثر من زينة، و <code>metadata.type</code> لترفض استخدامه على <code>body</code> إن كان مكتوبًا لمسار.</p>
+<p>الربط على المعامل:</p>
+<pre><code class="language-ts">@Param(&#39;hold&#39;, HoldCodePipe) hold: string
+</code></pre>
+<p>تمرير الصنف يتيح الحقن. <code>new HoldCodePipe(&#39;HLD&#39;)</code> إن أردت بادئة من البناء وبلا حاوية.</p>
+<p>لا تعِد كتابة <code>ParseIntPipe</code>. الصفحة تبني نسخة تعليمية ثم تقول إن المدمج أغنى. الأنبوب المخصص لما يخص النطاق فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">&quot; hld-240 &quot; → trim → حالة موحّدة → اختبار النمط → &quot;HLD-240&quot;
+&quot;240&quot;       → BadRequestException
+</code></pre>
+<p>المعالج لا يرى المسافات ولا الحالة الصغيرة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  BadRequestException,
+  Injectable,
+  type PipeTransform,
+} from &#39;@nestjs/common&#39;;
+
+const HOLD = /^HLD-\d{3,}$/;
+
+@Injectable()
+export class HoldCodePipe implements PipeTransform&lt;string, string&gt; {
+  transform(value: string): string {
+    const code = value.trim().toUpperCase();
+    if (!HOLD.test(code)) {
+      throw new BadRequestException(&#39;hold must look like HLD-240&#39;);
+    }
+    return code;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">@Get(&#39;:hold&#39;)
+find(@Param(&#39;hold&#39;, HoldCodePipe) hold: string): { hold: string } {
+  return { hold };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>trim</code> و <code>toUpperCase</code> تحويل. اختبار <code>HOLD</code> تحقق. الأثر الذي يراه المعالج نص مطبّع، والرمي عند الكسر.</li>
+<li>النمط ثابت في الملف لا داخل المتحكم.</li>
+<li>الصنف بلا <code>constructor</code> ما زال <code>@Injectable()</code> حتى يبقى الربط بالصنف متسقًا مع بقية الأنابيب.</li>
+<li>لا قراءة لقاعدة البيانات. <code>HLD-240</code> قد يكون غير موجود، وهذا <code>404</code> من الخدمة لا <code>400</code> من شكل الرمز.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest يستدعي <code>transform</code> بالقيمة الخام للوسيط <code>hold</code>. النص الراجع يُحقن في المعامل <code>hold</code>. الاستثناء يمنع الدالة ويمر بفلاتر السياق.</p>
+<p>إن حقنت <code>HoldPrefix</code> من الوحدة، مرّر الصنف لا <code>new HoldCodePipe()</code>. النسخة التي تبنيها أنت لا تسأل الحاوية، مثل الحارس والأنبوب العام المبني خارج الوحدة.</p>
+<p><code>metadata.schema</code> يبقى فارغًا هنا. لا تعلّق مخطط Zod على هذا الصنف. ذلك مسار <code>StandardSchemaValidationPipe</code>.</p>
+<p>الاختبار يستدعي <code>new HoldCodePipe().transform(&#39; hld-240 &#39;)</code> ويتوقع <code>HLD-240</code>، ويستدعي <code>&#39;nope&#39;</code> ويتوقع الرمي. لا حاجة إلى تشغيل HTTP لقاعدة النمط.</p>
+<h2>مثال عملي</h2>
+<p>مكتب الحجوزات يقبل <code>GET /holds/hld-240</code> من نماذج قديمة وحالة أحرف مختلطة. الأنبوب يوحّد الشكل قبل <code>HoldsService</code>. الخدمة تبحث عن <code>HLD-240</code> فقط. نموذج يرسل <code>HOLD-240</code> بلا أرقام كافية يُرفض بـ <code>400</code> ورسالة تذكر الشكل. السجل لا يمتلئ باستعلامات فاشلة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ <code>ParseIntPipe</code> المدمج في ملف جديد وتغيير الرسالة فقط. استخدم المدمج وخيار <code>exceptionFactory</code> إن كانت الرسالة هي الفرق.</li>
+<li>رمي <code>Error</code> عادي فيصبح <code>500</code>. ارمِ <code>HttpException</code> أو <code>BadRequestException</code> حتى يبقى الفشل خطأ عميل.</li>
+<li>الاعتماد على <code>metadata.metatype</code> لواجهة. لن تصلك.</li>
+<li>جعل الأنبوب عامًا عبر <code>useGlobalPipes</code> وهو يفترض نص قيد. سيعمل على كل المعاملات ويكسر الأجسام.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لقاعدة نطاق على قيمة واحدة أو على كائن صغير لا تعبّر عنه الأنابيب المدمجة، مع اختبار مباشر على <code>transform</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حين يوجد اسم مدمج يطابق القاعدة، أو حين تكون القواعد زينة على عدة حقول. الثاني <code>ValidationPipe</code>. وحين يكون العمل جلب سجل. ذلك خدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>مدمج</th>
+<th><code>HoldCodePipe</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>القاعدة</td>
+<td>عامة: عدد، UUID، منطق</td>
+<td>نمط المكتب <code>HLD-</code></td>
+</tr>
+<tr>
+<td>من يختبرها</td>
+<td>اختبار الإطار</td>
+<td>اختبار <code>transform</code> عندك</td>
+</tr>
+<tr>
+<td>الربط</td>
+<td>صنف أو نسخة بخيارات</td>
+<td>صنف على <code>@Param</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الدالة الوحيدة التي يجب أن يوفّرها الصنف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>transform</code>. الواجهة <code>PipeTransform</code> تثبّتها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف ترفض استخدام <code>HoldCodePipe</code> إن رُبط على <code>body</code> بالخطأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اقرأ <code>metadata.type</code>. إن لم تكن <code>param</code> ارمِ <code>BadRequestException</code> برسالة أن الأنبوب لمسار القيد فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>البادئة <code>HLD</code> صارت تأتي من إعداد. كيف تحقنها من غير <code>new</code> في المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>constructor(private readonly prefix: HoldPrefix)</code> و <code>HoldPrefix</code> مزوّد في الوحدة. في المعامل مرّر الصنف <code>HoldCodePipe</code> لا نسخة، حتى تبنيه الحاوية. الربط العام خارج الوحدة بـ <code>new</code> لا يحقن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تكتب أنبوبًا مخصصًا؟</li>
+<li>ماذا تغيّر قيمة الرجوع في المعالج؟</li>
+<li>لماذا <code>BadRequestException</code> بدل <code>Error</code>؟</li>
+<li>كيف تختبر النمط بلا HTTP؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأنبوب المخصص صنف <code>transform</code> لقاعدة نطاق. يرجع قيمة مطبّعة أو يرمي خطأ عميل. ما يغطيه اسم مدمج يبقى على ذلك الاسم.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي أماكن الربط الأربعة وترتيب تشغيلها، بما فيه معاملات المسار من الأخير إلى الأول.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

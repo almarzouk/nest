@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>اخترت عمر النسخة: واحدة للتطبيق، أو واحدة للطلب مع عدوى صاعدة، أو واحدة لكل مكان حقن من غير عدوى. المستخدم الحالي بقي على الطلب عبر Guard وديكور. عميل القاعدة بقي <code>DEFAULT</code> حتى تعمل خطافات الإقلاع والإيقاف.</p>
+<p>الحد التالي يظهر عندما تحتاج خدمتان بعضهما في الـ <code>constructor</code>. الحاوية لا تكمل الرسم لأن كل طرف ينتظر الآخر، وقد يأتي الدور أيضًا من ملف <code>index.ts</code> يجمع المستوردات. ذلك ليس نطاقًا جديدًا. ذلك اعتماد دائري، وغالبا عيب في حدود الـ Modules.</p>
+<p>الفصل التالي يريك كيف تتكون الدورة بين Providers وبين Modules، ولماذا <code>forwardRef</code> على الطرفين مسكن، ولماذا إعادة رسم الحدود أو طرف ثالث أو حدث أوضح من الإبقاء على الدورة. انتبه هناك إلى تحذير يتصل بهذا الفصل: دورة مع <code>Scope.REQUEST</code> قد تترك اعتمادًا <code>undefined</code>.</p>
+<p>جملة قبل الانتقال: لا أعلّم الخدمة <code>REQUEST</code> لأجل <code>user</code>، ولا أحل غموض الحدود بتوسيع النطاق.</p>
+<h2>ما لا تحمله إلى الدورة</h2>
+<p><code>Scope.DEFAULT</code> يبقى لـ Prisma وللحراس ولـ Passport ولـ cron ولبوابات WebSocket. <code>REQUEST</code> يعدي صعودًا: متحكم يحقن خدمة طلب يصبح طلبًا. حقن الرمز <code>REQUEST</code> من <code>@nestjs/core</code> طلب بطبيعته. GraphQL يستعمل <code>CONTEXT</code> لا نفس الرمز. <code>TRANSIENT</code> لا يعدي. <code>durable</code> يُقرأ فقط على <code>Scope.REQUEST</code> الصريح مع <code>ContextIdFactory.apply</code>، والفائدة مجموعة مستأجرين صغيرة لا تمرير <code>user</code>.</p>
+<p>إن اجتمعت دورة مع مزود طلب، قد يصلك الطرف الآخر <code>undefined</code> لأن ترتيب البناء غير محدد. هذا سبب إضافي لفك الرسم قبل توسيع النطاق.</p>
+<h2>سيناريو</h2>
+<p><code>OrdersService</code> تستدعي <code>BillingService.quote</code> و <code>BillingService</code> تستدعي <code>OrdersService.findTotal</code> من الـ <code>constructor</code>. الإقلاع يفشل برسالة دورة. توسيع أحد الطرفين إلى <code>REQUEST</code> لا يفك الانتظار وقد يزيد <code>undefined</code>.</p>
+<pre><code class="language-ts">import { forwardRef, Inject, Injectable } from &#39;@nestjs/common&#39;;
+</code></pre>
+<p>الغلاف على الطرفين مسكن. الرسم الأفضل: <code>CheckoutModule</code> يستورد الاثنين وينسق، أو حدث بعد الحفظ، أو <code>ModuleRef.get</code> في <code>onModuleInit</code> مع <code>{ strict: false }</code> للنادر. <code>get</code> لا يجلب نطاق طلب أو عابر. تلك تحتاج <code>resolve</code>.</p>
+<p>تجنب <code>index.ts</code> يُستورد من داخل مجلده. البرميل يصنع دورة تحميل تشبه دورة الحاوية.</p>
+<h2>ماذا تقرأ هناك</h2>
+<p>كيف تتكون الدورة بين مزودين وبين <code>imports</code>. لماذا هي رائحة تصميم. شكل <code>forwardRef(() =&gt; Other)</code> على <code>@Inject</code> وعلى <code>imports</code>. إعادة رسم الوحدات بورقة ثالثة.</p>
+<h2>تمرين عبور</h2>
+<p>دورة بين وحدتين بلا حقن متبادل بين الخدمتين. أين الغلاف، وما الذي تحذفه بعد أسبوع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>forwardRef</code> على <code>imports</code> في الطرفين فقط. بعد الرسم الجديد تُحذف الأغلفة وتصبح الأسهم نحو ورقة مشتركة أو منسق أعلى.</p>
+</details>
+
+<p><a href="../41-circular-dependencies/README.html">Circular dependencies</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

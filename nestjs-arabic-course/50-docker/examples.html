@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>تشغيل إنتاجي داخل الصورة</h2>
+<pre><code class="language-dockerfile">FROM node:22.14-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:22.14-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+USER node
+CMD [&quot;node&quot;, &quot;dist/main.js&quot;]
+</code></pre>
+<h2>شبكة الأسماء</h2>
+<pre><code class="language-yaml">services:
+  api:
+    build: .
+    ports:
+      - &quot;3000:3000&quot;
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    healthcheck:
+      test: [&quot;CMD-SHELL&quot;, &quot;pg_isready -U app -d app&quot;]
+      interval: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+volumes:
+  pgdata:
+</code></pre>
+<h2>الإقلاع الذي يرى الإشارة</h2>
+<pre><code class="language-ts">app.enableShutdownHooks();
+await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+</code></pre>
+<p><code>$disconnect</code> و <code>quit</code> في <code>onModuleDestroy</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li><code>DATABASE_URL</code> من داخل الحاوية يحتوي <code>postgres</code> لا <code>localhost</code>.</li>
+<li><code>docker image</code> لا تُبنى بـ <code>start:dev</code>.</li>
+<li><code>compose down</code> لا يحذف <code>pgdata</code> إلا مع <code>-v</code>.</li>
+<li>وسم Node يحقق 22.12+ أو 20.19+.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

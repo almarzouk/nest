@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس، ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>من يختار <code>RegionalTax</code> عندما تطلب <code>DraftService</code> الصنف المجرد <code>TaxPolicy</code>؟</li>
+<li>متى تُنشأ نسخة Singleton بالنسبة إلى <code>listen</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>التسجيل في Module، مثل <code>{ provide: TaxPolicy, useClass: RegionalTax }</code>. الخدمة لا تنادي <code>new</code>.</li>
+<li>أثناء حل الرسم في <code>NestFactory.create</code>، قبل قبول الاتصالات.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>الإقلاع يقول إن الاعتمادية عند الفهرس 0 في <code>DraftService</code> لا تُحل. المُنشئ <code>(private readonly tax: TaxPolicy)</code>. اذكر ثلاثة أسباب مختلفة وأين تظهر في خطوات الحل.</p>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>import type { TaxPolicy }</code> أو كون <code>TaxPolicy</code> واجهة: لا مفتاح في <code>design:paramtypes</code>.</li>
+<li>الصنف مفتاح صحيح لكنه غير موجود في <code>providers</code> ولا وصل عبر <code>imports</code> و <code>exports</code>.</li>
+<li>دورة تجعل الحل لا يجد ورقة يبدأ منها، والرسالة تذكر الرموز المتبقية.</li>
+</ol>
+<p><code>@Optional()</code> ليس إصلاحًا لسياسة إلزامية؛ هو يمرر <code>undefined</code>. <code>NEST_DEBUG=true</code> يطبع مسار الحل أثناء التشخيص.</p>
+</details>
+
+<h2>متقدم</h2>
+<p><code>SequenceService</code> افتراضية فيها <code>next()</code> يزيد حقلًا. <code>ReportsService</code> و <code>DraftsController</code> يحقنانها من Module صدّرتها مرة واحدة. طلبان متتاليان على <code>next</code>، ثم اختبار ثانٍ ينشئ تطبيقًا جديدًا. ماذا يرى كل طرف؟ وأين يوضع معرف العضو الحالي بدل الحقل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الطلبان يريان التزايد لأن الخانة واحدة في الحاوية. Controller والتقرير يأخذان المرجع نفسه. الاختبار الثاني <code>NestFactory.create</code> جديد فيبدأ العدّاد من الصفر. معرف العضو وسيط دالة أو مزود <code>REQUEST</code>، لا حقل Singleton. <code>await</code> بين قراءة الحقل وكتابته يسمح لطلب آخر بالمرور على النسخة رغم أن الخيط واحد.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

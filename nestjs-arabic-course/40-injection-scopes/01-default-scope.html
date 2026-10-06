@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DEFAULT</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-default-scope.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>DEFAULT</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت معنى <code>Scope.DEFAULT</code>: نسخة واحدة من الـ Provider لكل التطبيق، عمرها عمر العملية، وهي النطاق الذي تبقى عليه حتى يثبت أن الطلب يحتاج سواه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>من يأتي من نموذج خيط لكل طلب يظن أن مشاركة <code>PrismaService</code> بين الطلبات خطر. في Node الطلبات تتشارك عملية واحدة وحلقة أحداث. النسخة الواحدة آمنة للحالة التي لا تخص طلبًا بعينه، وأرخص، وهي الوحيدة التي ترى خطافات دورة الحياة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>DEFAULT</code> يعني Singleton. الحاوية تبني المزود مرة، تخبئه، وتعيد المرجع نفسه لكل من يحقنه. التوثيق يوصي بهذا النطاق لمعظم الحالات لأن التهيئة تحدث أثناء الإقلاع والنسخة تُستعمل من الجميع.</p>
+<h2>التعريف التقني</h2>
+<p><code>Scope</code> يُستورد من <code>@nestjs/common</code>. عدم كتابة <code>scope</code> يعني <code>Scope.DEFAULT</code>. التصريح الصريح:</p>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+
+@Injectable({ scope: Scope.DEFAULT })
+export class BooksService {}
+</code></pre>
+<p>هذا مكافئ لحذف الخاصية. في المزود المخصص تُكتب <code>scope</code> على الكائن الطويل. التوثيق: عمر النسخة مربوط بدورة حياة التطبيق. بعد الإقلاع تكون مزودات Singleton قد أُنشئت.</p>
+<p>المشاركة آمنة لأن Node لا يعالج كل طلب في خيط معزول. حالة داخل الخدمة تبقى بين الطلبات، لذلك لا تخزن <code>userId</code> الطلب الحالي على حقل في Singleton.</p>
+<p>خطافات <code>OnModuleInit</code> وما بعدها تعمل على هذا النطاق. بوابات WebSocket واستراتيجيات Passport ومتحكمات Cron يجب أن تبقى Singleton، والتوثيق يمنع عليها نطاق الطلب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الإقلاع -&gt; نسخة واحدة في الحاوية
+كل الطلبات -&gt; المرجع نفسه
+app.close -&gt; الخطافات ثم يمكن جمع النسخة مع العملية
+</code></pre>
+<p>النسخة رخيصة لأنها لا تُبنى ألف مرة. الحقل الذي يخص طلبًا واحدًا يفسد الطلب الذي يليه.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class SequenceService {
+  private n = 0;
+
+  next(): number {
+    this.n += 1;
+    return this.n;
+  }
+}
+</code></pre>
+<p>طلبان متتاليان يريان <code>1</code> ثم <code>2</code> لأن الحقل على النسخة الوحيدة. هذا صحيح لعداد عملية، وخطأ إن ظننت أن <code>n</code> هو رقم طلب المستخدم.</p>
+<h2>شرح المثال</h2>
+<p><code>@Injectable()</code> بلا خيارات يسجّل <code>DEFAULT</code>. <code>BooksModule</code> يضع الصنف في <code>providers</code>. أي متحكم يحقن <code>SequenceService</code> يأخذ الكائن نفسه الذي حقنته خدمة الفواتير. اختبار يعيد بناء التطبيق عبر <code>Test.createTestingModule</code> يحصل على حاوية جديدة، لا على نسخة عملية التطوير.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>أثناء الإقلاع تحلل الحاوية الرسم وتبني Singleton.</li>
+<li>أول حقن يخزن المرجع، والحقن التالي يعيد المخزون.</li>
+<li>لا يُنشأ context id لكل طلب من أجل هذا المزود.</li>
+<li>خطاف <code>onModuleInit</code> يعمل مرة، فـ <code>$connect</code> مرة واحدة منطقي.</li>
+<li>إن حقن Singleton مزود <code>REQUEST</code>، يعدي النطاق إلى الأعلى ويخسر هذا المزود بقاءه Singleton. العدوى موضوع الدرس التالي. هنا يكفي أن تبقي سلسلة القاعدة كلها على الافتراضي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عميل القاعدة الذي فتحته في فصل دورة الحياة:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise&lt;void&gt; {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<p>مجمع الاتصالات داخل العميل مصمم ليُشارك. نسخه لكل طلب يفتح مجمعات بلا داعٍ ويسقط خطاف الإغلاق. مرر <code>userId</code> وسيطًا إلى <code>findForUser(userId)</code> بدل تخزينه على الخدمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حقل <code>currentUser</code> على Singleton يسبقه طلب لاحق.</li>
+<li>كتابة <code>Scope.DEFAULT</code> ثم حقن <code>REQUEST</code> وتوقع بقاء النسخة واحدة.</li>
+<li>إنشاء <code>new PrismaClient()</code> داخل الدالة رغم أن الخدمة Singleton، فيتعدد العملاء.</li>
+<li>افتراض عزل بين الاختبارات إن أعادت استعمال التطبيق نفسه من غير <code>close</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>خدمات بلا حالة طلب، عملاء قواعد وطوابير، قراءات إعداد، وسجلات. هذا الافتراض في كل مزود جديد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يجب أن تختلف النسخة نفسها بين الطلبات، كما في مصدر بيانات لكل مستأجر يُبنى من ترويسة. ذلك <code>REQUEST</code> مع كلفته، أو شجرة durable لاحقًا. تمييز المستخدم الحالي يتم في Guard وديكور، ويبقى المزود Singleton.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النطاق</th>
+<th>كم نسخة</th>
+<th>خطاف التطبيق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DEFAULT</code></td>
+<td>واحدة للعملية</td>
+<td>يعمل</td>
+</tr>
+<tr>
+<td><code>REQUEST</code></td>
+<td>واحدة لكل طلب ولمن يحقنها</td>
+<td>لا يعمل</td>
+</tr>
+<tr>
+<td><code>TRANSIENT</code></td>
+<td>واحدة لكل مكان حقن</td>
+<td>لا يعدي المستهلك</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعني حذف <code>scope</code> من <code>@Injectable()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Scope.DEFAULT</code>: نسخة واحدة مشتركة عمرها عمر التطبيق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مشاركة <code>PrismaService</code> بين الطلبات متوافقة مع نموذج Node؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الطلبات تتشارك العملية وحلقة الأحداث، والمجمع مصمم للطلبات المتزامنة على عميل واحد. العزل المطلوب هو عزل بيانات الاستعلام، لا عزل كائن العميل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>عداد <code>next()</code> على Singleton أعطى أرقامًا متداخلة تحت طلبين متزامنين. أين الخلل إن كان المطلوب رقمًا فريدًا لكل عملية لا لكل طلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>this.n += 1</code> ليس عملية ذرية منطقيًا إن تخللتها <code>await</code> بين القراءة والكتابة. لعداد عملية استخدم زيادة متزامنة بلا فاصل، أو مصدرًا خارجيًا. النطاق الافتراضي ما زال صحيحًا؛ الخلل في تعليق الدالة في منتصف التحديث.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تُبنى مزودات Singleton نسبة إلى الإقلاع؟</li>
+<li>لماذا لا يُخزن المستخدم الحالي على حقل فيها؟</li>
+<li>أي أنواع مزودات يوثّق Nest أنها تبقى Singleton؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>DEFAULT</code> نسخة عملية واحدة، رخيصة، وترى خطافات العمر. ابدأ منه، وحافظ على حقوله خالية من بيانات الطلب.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>REQUEST</code>: متى تُبنى نسخة لكل طلب، وكيف يعدي ذلك من يحقنه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

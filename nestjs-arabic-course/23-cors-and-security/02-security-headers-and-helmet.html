@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Security Headers و Helmet</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-security-headers-and-helmet.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Security Headers و Helmet</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفعيل رؤوس الأمان التي يوفّرها Nest منذ <code>12.1</code> عبر <code>useSecurityHeaders</code>، وربطها بسلوك Helmet.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>صفحة HTML أو Swagger تُحمَّل في إطار موقع آخر، أو يخمّن المتصفح نوع ملف فيُنفّذ محتوى، أو تسريب <code>Referer</code> فيه مسار حساس. الاعتماد على مقال <code>helmet()</code> القديم بأسماء خيارات مثل <code>hsts</code> ينكسر مع الواجهة الحالية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>app.useSecurityHeaders()</code> يضع مجموعة رؤوس افتراضية تماثل Helmet 8، على Express و Fastify، بلا حزمة إضافية. منها <code>Content-Security-Policy</code> و <code>X-Frame-Options</code> و <code>Strict-Transport-Security</code>، ويحذف <code>X-Powered-By</code>. من يملك Helmet أصلًا يقدر أن يبقيه. الأسماء الحالية في Nest هي الأسماء الجديدة لا الأسماء القديمة مثل <code>frameguard</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+app.useSecurityHeaders();
+await app.listen(3000);
+</code></pre>
+<p>استدعِها بعد <code>create</code> وقبل <code>listen</code> أو <code>init</code>. نداء متأخر أو مكرر يرمي. الرؤوس على استجابات المسارات و <code>404</code> والأخطاء ورفض CSRF.</p>
+<p>تعطيل رأس: مرّر <code>false</code>. تخصيص: كائن، مثل <code>xFrameOptions: { action: &quot;deny&quot; }</code> أو <code>strictTransportSecurity: { maxAge: 63072000, preload: true }</code>. اسم قديم مثل <code>hsts</code> يُرفض مع تلميح إلى <code>strictTransportSecurity</code>.</p>
+<p><code>Content-Security-Policy</code> الافتراضي يقصر السكربت على <code>&#39;self&#39;</code> مع تفاصيل الصفحة. <code>&#39;unsafe-inline&#39;</code> في <code>script-src</code> يضعف الحماية من XSS. Swagger الذي تقدّمه <code>@nestjs/swagger</code> يعمل مع الافتراضي لأن أصوله من تطبيقك. GraphiQL في التطوير قد يحتاج استثناء <code>unpkg</code> كما في الصفحة، لا في الإنتاج.</p>
+<p><code>X-XSS-Protection: 0</code> في الجدول الافتراضي يطفئ مرشّحًا قديمًا كان مصدر ثغرات، وليس تفعيل حماية XSS حديثة. الحماية الحديثة CSP وتهريب المخرجات.</p>
+<p>Helmet المباشر ما زال موثّقًا: <code>app.use(helmet())</code> على Express و <code>@fastify/helmet</code> على Fastify. إن انتقلت إلى <code>useSecurityHeaders</code> فالأسماء متوافقة مع Helmet الحديث باستثناء دوال CSP لكل طلب، فهي غير مدعومة في الواجهة المدمجة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">useSecurityHeaders()
+  CSP تحد السكربت
+  X-Frame-Options تحد الإطار
+  HSTS تطلب HTTPS لاحقًا
+  X-Powered-By يُحذف
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">app.useSecurityHeaders({
+  referrerPolicy: { policy: &quot;strict-origin-when-cross-origin&quot; },
+  xFrameOptions: { action: &quot;sameorigin&quot; },
+});
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>sameorigin</code> يسمح بإطار من نفس الأصل فقط، وهو قريب من الافتراضي <code>SAMEORIGIN</code>. سياسة الإحالة تمنع إرسال مسار كامل إلى أصل آخر. لا تطفئ CSP في الإنتاج لتسريع Swagger على HTTP البعيد. الصفحة تقترح HTTPS أو إزالة <code>upgrade-insecure-requests</code> في ذلك الظرف فقط.</p>
+<p>رأس مسار واحد يمكن تجاوزه بـ <code>@Header(&quot;Cross-Origin-Resource-Policy&quot;, &quot;cross-origin&quot;)</code> لصورة يجب أن تُحمَّل في موقع آخر.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الوسيط أو خطاف <code>onRequest</code> يكتب الرؤوس مبكرًا. <code>enableCsrfProtection</code> يشارك الخطاف، والرؤوس تُكتب حتى على الطلب المرفوض. متصفح زار الموقع مرة على HTTPS يتذكر HSTS حسب <code>max-age</code> فيرفض HTTP لاحقًا. على HTTP المحلي قد يتجاهل المتصفح HSTS، وهذا متوقع.</p>
+<p>CSP لا يوقف حقن SQL. يوقف تحميل سكربت من أصل لم تسمح به حين تُعرض صفحة.</p>
+<h2>مثال عملي</h2>
+<p>بعد التفعيل، افحص استجابة <code>GET /posts</code> في الشبكة: <code>X-Content-Type-Options: nosniff</code> و <code>X-Frame-Options</code>. افتح Swagger على <code>/api</code> محليًا وتأكد أن الواجهة تظهر. إن كسرتها CSP بعد تخصيص خاطئ، راجع <code>scriptSrc</code> قبل تعطيل السياسة كلها. لا تضع <code>contentSecurityPolicy: false</code> في الإنتاج كحل دائم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>خيار <code>hsts</code> أو <code>frameguard</code> على <code>useSecurityHeaders</code>.</li>
+<li><code>&#39;unsafe-inline&#39;</code> في سكربت الإنتاج.</li>
+<li>نداء الدالة بعد <code>listen</code>.</li>
+<li>ظن أن الرؤوس تحمي <code>curl</code> من سرقة JWT. هي تعليمات متصفح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل تطبيق يخدم متصفحًا أو Swagger أو HTML، منذ بداية الإنتاج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن تصديق المدخلات. الرأس لا يفحص <code>title</code> في JSON.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>useSecurityHeaders</code></th>
+<th><code>helmet()</code> مباشرة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مدمج منذ 12.1</td>
+<td>حزمة على المنصة</td>
+</tr>
+<tr>
+<td>أسماء حديثة</td>
+<td>المقالات القديمة قد تستخدم أسماءً مرفوضة هنا</td>
+</tr>
+<tr>
+<td>بلا دالة nonce لكل طلب</td>
+<td>Helmet يقبل دوالًا في CSP</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استدعاء يفعّل الرؤوس المدمجة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.useSecurityHeaders()</code> قبل <code>listen</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُرفض خيار اسمه <code>hsts</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اسم قديم في Helmet. الواجهة الحالية تتوقع <code>strictTransportSecurity</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>Swagger يعمل محليًا ويتكسر بعد تشديد <code>script-src</code> بحذف <code>&#39;self&#39;</code>. ماذا تعيد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>&#39;self&#39;</code> لأن واجهة Swagger تُحمَّل من تطبيقك. لا تفتح <code>&#39;unsafe-inline&#39;</code> للإنتاج إن كان الافتراضي يكفي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُحذف من الرؤوس افتراضيًا؟</li>
+<li>هل <code>X-XSS-Protection: 0</code> يعني إهمال XSS؟</li>
+<li>متى تُستدعى الدالة نسبة إلى <code>listen</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useSecurityHeaders</code> يضع رؤوس Helmet 8 على المنصتين. خصّص بالأسماء الحالية، وأبقِ CSP ضيقة، ولا تعتبر الرؤوس فحصًا للمدخلات.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-rate-limiting.html">Rate Limiting و @nestjs/throttler</a> يبطئ التخمين والضغط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Security headers: <a href="https://docs.nestjs.com/security/helmet">https://docs.nestjs.com/security/helmet</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

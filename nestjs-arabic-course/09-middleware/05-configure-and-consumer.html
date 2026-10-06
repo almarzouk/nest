@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>configure و MiddlewareConsumer</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-configure-and-consumer.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>configure و MiddlewareConsumer</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط Middleware من داخل الوحدة عبر <code>configure(consumer)</code>، وفهم أن <code>MiddlewareConsumer</code> أداة سلسلة لا مسار HTTP.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الصنف أو الدالة بلا تسجيل لا تعمل على أي طلب. وضعها في <code>providers</code> يسجّل مزوّدًا ولا يضعها في سلسلة الطلب. المكان الذي يقوله التوثيق هو <code>configure</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الوحدة تطبّق <code>NestModule</code> وتعرّف <code>configure(consumer)</code>. داخلها <code>consumer.apply(...).forRoutes(...)</code>. السلسلة تُقرأ عند الإقلاع.</p>
+<h2>التعريف التقني</h2>
+<p><code>NestModule</code> واجهة فيها <code>configure(consumer: MiddlewareConsumer): void</code>، ويمكن أن تكون <code>async</code> إن احتجت <code>await</code> قبل إتمام الربط.</p>
+<p><code>MiddlewareConsumer</code> يوفّر دوالًا تُسلسَل:</p>
+<ul>
+<li><code>apply(...middleware)</code> تقبل صنفًا أو دالة أو عدة وسطاء في استدعاء واحد.</li>
+<li><code>forRoutes(...)</code> تحدد أين تُطبَّق. تفاصيل الأنواع في الدرس التالي.</li>
+<li><code>exclude(...)</code> تستثني. الدرس التالي أيضًا.</li>
+</ul>
+<p>Middleware لا يُذكر داخل مفاتيح <code>@Module()</code>. غيابه من <code>controllers</code> و <code>providers</code> مقصود.</p>
+<p>عدة استدعاءات <code>apply</code> في الدالة نفسها تُسجَّل بالترتيب الذي كتبته. هذا ترتيب داخل الوحدة، قبل أن يُدمج مع ترتيب الوحدات في دورة الطلب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Module({ controllers, providers })   من يملك المسارات والخدمات
+implements NestModule                 يعد بأن فيه configure
+configure(consumer)                   يبني سلسلة هذه الوحدة
+apply ثم forRoutes                    يربط سلسلة بمسارات
+</code></pre>
+<p><code>consumer</code> ليس <code>req</code>. هو مسجّل يعمل مرة عند الإقلاع.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  Module,
+  type MiddlewareConsumer,
+  type NestModule,
+} from &#39;@nestjs/common&#39;;
+import { LoansController } from &#39;./loans.controller.js&#39;;
+import { ShelfClock } from &#39;./shelf-clock.js&#39;;
+import { ShelfClockMiddleware } from &#39;./shelf-clock.middleware.js&#39;;
+import { traceLoan } from &#39;./trace-loan.middleware.js&#39;;
+
+@Module({
+  controllers: [LoansController],
+  providers: [ShelfClock],
+})
+export class LoansModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(traceLoan).forRoutes(LoansController);
+    consumer.apply(ShelfClockMiddleware).forRoutes(LoansController);
+  }
+}
+</code></pre>
+<p>على طلب يطابق المتحكم تعمل <code>traceLoan</code> ثم <code>ShelfClockMiddleware</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>implements NestModule</code> يجبر TypeScript على وجود <code>configure</code>.</li>
+<li>الاستدعاء الأول يربط الدالة. الثاني يربط الصنف. Nest يبني الصنف ويحقن <code>ShelfClock</code> لأن الساعة في <code>providers</code>.</li>
+<li>فصل الاستدعاءين أوضح من دمجهما حين تريد قراءة الترتيب. الدمج <code>apply(traceLoan, ShelfClockMiddleware)</code> يعطي الترتيب نفسه.</li>
+<li>لا سطر <code>providers: [ShelfClockMiddleware]</code>. التطبيق عبر <code>apply</code> هو التسجيل الذي يخص الطلب.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإقلاع يمشي على الوحدات.</li>
+<li>كل وحدة تطبّق <code>NestModule</code> تُستدعى <code>configure</code> الخاصة بها.</li>
+<li><code>MiddlewareModule</code> يحتفظ بالسلاسل والمسارات.</li>
+<li>عند الطلب تُختار السلاسل المطابقة بعد Middleware العام القادم من <code>app.use</code>.</li>
+<li>إن كانت <code>configure</code> غير متزامنة، ينتظر الإطار الوعد قبل اعتبار الربط اكتمل.</li>
+</ol>
+<p>الوحدة التي لا تعرّف <code>configure</code> لا تساهم في هذه الطبقة. مساراتها تبقى بلا Middleware الوحدة حتى لو كان ملف الدالة موجودًا في المجلد.</p>
+<p>استيراد <code>LoansController</code> في ملف الوحدة طبيعي: <code>forRoutes</code> يحتاج الصنف. لاحقة <code>.js</code> تبقى على الاستيراد المحلي.</p>
+<h2>مثال عملي</h2>
+<p><code>CopiesModule</code> تملك <code>CopiesController</code> وتريد التتبع على النسخ فقط. <code>configure</code> فيها تستدعي <code>apply(traceLoan).forRoutes(CopiesController)</code>. وحدة الأعضاء لا تعرّف <code>configure</code>، فطلبات <code>GET /members</code> لا تمر على <code>traceLoan</code>. الحدود ظاهرة في ملف كل وحدة، لا في <code>main.ts</code> طويل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة <code>configure</code> من غير <code>implements NestModule</code>. طبّق الواجهة حتى يراك TypeScript والإطار معًا.</li>
+<li>وضع <code>consumer.apply</code> داخل <code>onModuleInit</code>. الربط المتأخر عن <code>configure</code> ليس المسار الموثّق.</li>
+<li>استدعاء <code>forRoutes</code> من غير <code>apply</code>. السلسلة تبدأ بما يُطبَّق.</li>
+<li>جعل <code>configure</code> في <code>AppModule</code> تضم كل وسطاء التطبيق. الوسط الذي يخص الإعارات يعيش في <code>LoansModule</code> حتى تبقى الوحدة مالكة لمسارها.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل وحدة تريد Middleware على مساراتها: سطر <code>configure</code> بجانب <code>@Module</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لدالة تعمل على كل طلب بلا حقن. <code>app.use</code> في <code>main.ts</code> أقصر، والتوثيق يبقيه لذلك. ما زلت تستطيع <code>forRoutes(&#39;*&#39;)</code> من الجذر إن أردت صنفًا عامًا يدخل الحاوية، وهذا تلميح الصفحة للبديل عن <code>app.use</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>configure</code></th>
+<th><code>app.use</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين</td>
+<td>صنف الوحدة</td>
+<td><code>main.ts</code> بعد <code>create</code></td>
+</tr>
+<tr>
+<td>ما يُمرَّر</td>
+<td><code>MiddlewareConsumer</code></td>
+<td>دالة إلى المنصة</td>
+</tr>
+<tr>
+<td>الحقن</td>
+<td>متاح لأصناف <code>apply(Class)</code></td>
+<td>غير متاح</td>
+</tr>
+<tr>
+<td>التقييد</td>
+<td><code>forRoutes</code> و <code>exclude</code></td>
+<td>مسار المنصة أو الكل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما اسم الدالة التي تستلم <code>MiddlewareConsumer</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>configure</code>. تعيش على صنف الوحدة الذي يطبّق <code>NestModule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا وُضعت <code>ShelfClock</code> في <code>providers</code> بينما <code>ShelfClockMiddleware</code> وُضع في <code>apply</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الساعة مزوّد يُحقن. الصنف Middleware يُسجَّل على سلسلة الطلب عبر <code>apply</code>. وضعه في <code>providers</code> وحده لا يجعل <code>use</code> تعمل على الطلب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>configure</code> تحتاج أن تقرأ قائمة مسارات من ملف قبل الربط. ما التعديل على توقيع الدالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>async configure(consumer: MiddlewareConsumer): Promise&lt;void&gt;</code> ثم <code>await</code> قبل <code>apply</code>. التوثيق يسمح بأن تكون <code>configure</code> غير متزامنة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي واجهة تطبّقها الوحدة التي تربط Middleware؟</li>
+<li>ماذا يفعل <code>apply</code> مقارنة بـ <code>forRoutes</code>؟</li>
+<li>هل يُذكر Middleware داخل كائن <code>@Module</code>؟</li>
+<li>ما ترتيب استدعاءين متتاليين لـ <code>apply</code> في الملف نفسه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>configure</code> هي لحظة ربط Middleware بالوحدة. <code>MiddlewareConsumer</code> يجمع <code>apply</code> مع تحديد المسار. الكود الذي لا يمر من هنا لا يقف في سلسلة طلبات تلك الوحدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفصّل وسيطَي التحديد: <code>forRoutes</code> و <code>exclude</code>، من النص إلى صنف المتحكم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

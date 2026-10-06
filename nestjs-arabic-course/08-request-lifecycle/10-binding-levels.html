@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Global و Controller و Route</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-binding-levels.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Global و Controller و Route</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف مستويات الربط الثلاثة، واتجاه كل عائلة عند التنفيذ.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@UseGuards</code> على الدالة و <code>APP_GUARD</code> و <code>useGlobalGuards</code> تبدو ثلاثة أساليب للأداة نفسها. هي مستويات في القائمة التي ثبتناها: العام خارج الصنف، و Controller على الصنف، والمسار على الدالة. Middleware لا تستخدم هذه الزينة الثلاث؛ ربطها <code>app.use</code> أو وحدة. خلط النموذجين يضع ختمًا عامًا في مكان مسار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Guard و Interceptor و Pipe و Exception Filter تُربَط عامًا أو على Controller أو على مسار. العام دالة تطبيق مثل <code>app.useGlobalGuards()</code> أو مزود <code>APP_GUARD</code> ومثيله <code>APP_PIPE</code> و <code>APP_INTERCEPTOR</code> و <code>APP_FILTER</code>.</p>
+<p>اتجاه التنفيذ ليس واحدًا لكل العائلات. Guards ودخول Interceptors و Pipes من العام إلى المسار. خروج Interceptors من المسار إلى العام. المرشحات من المسار إلى العام. داخل المستوى ترتيب الربط، ويُعكس في خروج Interceptor لأنه <code>Observable</code>.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>العائلة</th>
+<th>الرمز العام</th>
+<th>على الصنف</th>
+<th>على الدالة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Guard</td>
+<td><code>APP_GUARD</code> أو <code>useGlobalGuards</code></td>
+<td><code>@UseGuards</code></td>
+<td><code>@UseGuards</code></td>
+</tr>
+<tr>
+<td>Interceptor</td>
+<td><code>APP_INTERCEPTOR</code> أو <code>useGlobalInterceptors</code></td>
+<td><code>@UseInterceptors</code></td>
+<td><code>@UseInterceptors</code></td>
+</tr>
+<tr>
+<td>Pipe</td>
+<td><code>APP_PIPE</code> أو <code>useGlobalPipes</code></td>
+<td><code>@UsePipes</code></td>
+<td><code>@UsePipes</code> أو على المعامل</td>
+</tr>
+<tr>
+<td>Exception Filter</td>
+<td><code>APP_FILTER</code> أو <code>useGlobalFilters</code></td>
+<td><code>@UseFilters</code></td>
+<td><code>@UseFilters</code></td>
+</tr>
+</tbody></table>
+<p>المعامِل مستوى أخص من زينة الدالة لـ Pipes فقط، ويعمل بعد زينة المسار كما في درس Pipes.</p>
+<p>Middleware: <code>app.use</code> عام من غير <code>APP_*</code>. ربط الوحدة عبر مستهلك Middleware في فصل Middleware، ويُرتَّب <code>@Global()</code> ثم الجذر ثم البعد عن الجذر. لا <code>@UseMiddleware</code> على الدالة في هذا النموذج.</p>
+<p>عدة مزودات بالرمز نفسه، مثل <code>APP_GUARD</code> مرتين، مستوى عام واحد بترتيب التسجيل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عام: كل المسارات التي تدخل التطبيق
+Controller: دوال هذا الصنف
+Route: هذه الدالة
+معامل: هذا الوسيط، لـ Pipes
+</code></pre>
+<p>السهم عند التشغيل يعتمد على العائلة لا على عرض المستوى في الملف.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { APP_GUARD } from &#39;@nestjs/core&#39;;
+import { LibraryOpenGuard } from &#39;./library-open.guard.js&#39;;
+
+@Module({
+  providers: [{ provide: APP_GUARD, useClass: LibraryOpenGuard }],
+})
+export class AppModule {}
+</code></pre>
+<pre><code class="language-ts">@UseGuards(MemberGuard)
+@Controller(&#39;loans&#39;)
+export class LoansController {
+  @UseGuards(PatchGuard)
+  @Patch(&#39;:id&#39;)
+  update() {
+    return { ok: true };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>LibraryOpenGuard</code> عام لأنه <code>APP_GUARD</code>، فيسبق <code>MemberGuard</code> ثم <code>PatchGuard</code>.</li>
+<li><code>GET</code> على Controller آخر ما زال يمر على <code>LibraryOpenGuard</code> ولا يمر على <code>MemberGuard</code>.</li>
+<li><code>useClass</code> هنا وصفة Provider من الفصل السابق. الحارس يُحقن كأي صنف مسجّل.</li>
+<li><code>@Patch</code> بلا حارس دالة كان سيكتفي بالعام وحارس الصنف.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تسجل Nest الزينة على الصنف والدالة، وتجمع مزودات <code>APP_*</code> من الوحدات المستوردة في الرسم. الطلب بعد Middleware يبني قائمة تلك العائلة حسب الاتجاه الخاص بها.</p>
+<p>خروج Interceptor لا يعيد قراءة الزينة من الأعلى. الأغلفة التي دُخلت من العام إلى المسار تُحسم من المسار إلى العام.</p>
+<p>مرشح <code>APP_FILTER</code> يبقى آخر الفحص رغم أنه «عام» في ملف الجذر. كلمة عام تصف عرض الربط لا أنه أول من يعمل.</p>
+<p><code>useGlobalPipes</code> في <code>main</code> بعد <code>create</code> مستوى عام أيضًا، مثل المزود. لا تجمع الاثنين على المنطق نفسه من غير قصد فتعمل Pipe مرتين على الجولة العامة.</p>
+<h2>مثال عملي</h2>
+<p>خريطة إعارة واحدة:</p>
+<pre><code class="language-text">APP_GUARD LibraryOpenGuard
+APP_PIPE GeneralValidationPipe
+APP_FILTER FallbackFilter
+@UseInterceptors(TimingInterceptor) على LoansController
+@UsePipes(RouteSpecificPipe) على PATCH
+@UseFilters(LoanPatchFilter) على PATCH
+@Param(&#39;id&#39;, ParseIntPipe)
+</code></pre>
+<p>الدخول: <code>LibraryOpenGuard</code>، ثم دخول <code>TimingInterceptor</code>، ثم <code>GeneralValidationPipe</code> على المعاملات من الأخير إلى الأول، ثم <code>RouteSpecificPipe</code> بالجولة نفسها، ثم <code>ParseIntPipe</code>. بعد الخدمة خروج <code>TimingInterceptor</code>. عند الرمي: <code>LoanPatchFilter</code> قبل <code>FallbackFilter</code>.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>APP_FILTER</code> مع توقع أنه يسبق مرشح الدالة</td>
+<td>الفحص من المسار صعودًا</td>
+</tr>
+<tr>
+<td>Pipe عامة عبر المزود وعبر <code>useGlobalPipes</code> للقاعدة نفسها</td>
+<td>جولتان عامتان</td>
+</tr>
+<tr>
+<td>البحث عن <code>@UseGuards</code> لتأثير Middleware</td>
+<td>Middleware خارج المستويات الثلاثة</td>
+</tr>
+<tr>
+<td>ربط حارس مسار لأثر يراد به كل التطبيق</td>
+<td>المسارات الأخرى بلا الحارس</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>العام لقاعدة كل الطلبات بعد Middleware. Controller لمجموعة المورد. المسار لاستثناء دالة واحدة. المعامل لتحويل وسيط. اختر أضيق مستوى يكفي حتى لا تُفرَض القاعدة على مسار لا يحمل المعامل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا ترفع Pipe معامل إلى <code>APP_PIPE</code> حتى «تضمن الترتيب». الترتيب بين المستويات ثابت، والعام الذي يتوقع جسمًا على <code>GET</code> بلا جسم يفشل طلبات لا تخصه. ولا تربط منطقًا قبل اختيار المسار بـ <code>APP_GUARD</code>؛ ذلك <code>app.use</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العائلة</th>
+<th>من أين تبدأ التنفيذ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Guard</td>
+<td>العام ثم Controller ثم المسار</td>
+</tr>
+<tr>
+<td>Interceptor دخولًا</td>
+<td>العام ثم Controller ثم المسار</td>
+</tr>
+<tr>
+<td>Interceptor خروجًا</td>
+<td>المسار ثم Controller ثم العام</td>
+</tr>
+<tr>
+<td>Pipe</td>
+<td>العام ثم Controller ثم المسار ثم المعامل</td>
+</tr>
+<tr>
+<td>Exception Filter</td>
+<td>المسار ثم Controller ثم العام</td>
+</tr>
+<tr>
+<td>Middleware</td>
+<td><code>app.use</code> ثم الوحدات، لا زينة الدالة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يجعل <code>provide: APP_GUARD</code> الحارس عامًا؟</p>
+<details><summary>الحل</summary>
+
+<p>الرمز المحجوز يسجل الحارس على التطبيق، فيسبق <code>@UseGuards</code> على الصنف وعلى الدالة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>FallbackFilter</code> في المثال يعمل بعد <code>LoanPatchFilter</code> رغم أن الأول في الجذر؟</p>
+<details><summary>الحل</summary>
+
+<p>عرض الربط عام، واتجاه المرشحات من المسار إلى العام. مرشح <code>PATCH</code> يُسأل أولًا، والعام آخرًا إن لم يُمسك الاستثناء.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تفرض ختمًا قبل اختيار <code>LoansController</code> من غير <code>APP_GUARD</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>Middleware عبر <code>app.use</code> أو ربط وحدة يعمل قبل Guards. <code>APP_GUARD</code> بعد تلك المرحلة وبعد أن صار Controller معروفًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رموز المزود العامة الأربعة المذكورة؟</li>
+<li>أي عائلة تبدأ من المسار رغم أن ربطها قد يكون في الجذر؟</li>
+<li>أين يقع Pipe المعامل بين المستويات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المستويات الثلاثة عرض الربط: التطبيق، الصنف، الدالة، ومعامل Pipe أخص منها. اتجاه التشغيل ثابت لكل عائلة: المنع والدخول والتحويل من العام نزولًا، والخروج والمرشحات من الدالة صعودًا. Middleware تبقى <code>app.use</code> والوحدات.</p>
+<h2>ماذا بعد؟</h2>
+<p>متى تتوقف القائمة قبل الاستجابة الطبيعية: متى يُتخطى باقي المسار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

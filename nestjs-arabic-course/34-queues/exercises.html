@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>أي حزمة تبدأ بها طابور المتجر؟</li>
+<li>أي حقل يحمل المضيف في <code>forRoot</code>؟</li>
+<li>ماذا تضع في الحمولة بدل نموذج Prisma؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>@nestjs/bullmq</code>.</li>
+<li><code>connection</code>.</li>
+<li><code>{ bookId, coverKey }</code> ثم إعادة الجلب داخل <code>process</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>ارسم <code>POST /books</code> عندما يكون القص مؤجلًا. اذكر ترتيب القاعدة و <code>add</code> وحقل الحالة الذي يراه العميل.</p>
+<details>
+<summary>الحل</summary>
+
+<p>التحقق ثم <code>create</code> مع <code>coverStatus: &#39;pending&#39;</code> ثم <code>queue.add(&#39;resize&#39;, { bookId, coverKey })</code> ثم <code>201</code>. الزائر لا ينتظر القص. فشل <code>add</code> لا يحذف الكتاب. المستهلك <code>WorkerHost</code> يقص إن تطابق المفتاح ويضع <code>ready</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>المهمة ترسل بريد النشر ثم ترمي لأن تحديث <code>coverStatus</code> فشل. <code>attempts</code> يساوي 5. ماذا يصل المؤلف، وما الذي تغيّره في تصميم المهمتين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البريد قد يخرج في كل محاولة. افصل <code>resize</code> عن <code>sendPublished</code>. البريد يفحص علامة إرسال ويكتبها بعد نجاح المزوّد. القص يعيد المحاولة على القرص بلا أثر بريد. بعد المحاولة الأخيرة علّم الغلاف <code>failed</code> ثم أعد الرمي حتى لا تُحسب المهمة ناجحة. لا تستخدم <code>@Process</code> ولا تخزّن كائن Prisma في أي من الحمولتين.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

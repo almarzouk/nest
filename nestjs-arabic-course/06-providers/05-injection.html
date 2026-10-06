@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Injection</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-injection.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Injection</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة اعتمادية في <code>constructor</code> حتى تمرر الحاوية النسخة، مع خاصية المعامل <code>@Optional()</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>this.fees = new FeesService()</code> داخل Controller يخفي الاعتمادية عن التسجيل ويصنع نسخة خارج السجل. الحقن يعلن الاحتياج في التوقيع، وNest تملأ الوسيط قبل أن يعمل أي مسار.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">constructor(private readonly fees: FeesService) {}
+</code></pre>
+<p>السطر خاصية معامل: <code>private</code> ينشئ الحقل ويسند الوسيط، فلا تكتب <code>this.fees = fees</code>. نوع <code>FeesService</code> هو الرمز الذي تبحث عنه الحاوية، بشرط أن TypeScript أصدره في Metadata.</p>
+<h2>التعريف التقني</h2>
+<p>الحقن بالمُنشئ هو الأسلوب الافتراضي. Nest تقرأ أنواع المعاملات وتمرر النسخ. النطاق الافتراضي يمرر النسخة المشتركة.</p>
+<p><code>@Optional()</code> على معامل يجعل الغياب <code>undefined</code> بدل فشل الإقلاع. الصنف يوفّر البديل:</p>
+<pre><code class="language-ts">import { Injectable, Optional } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class FeesService {
+  constructor(@Optional() rates?: FeeRates) {
+    this.daily = rates?.daily ?? 2;
+  }
+
+  private readonly daily: number;
+}
+</code></pre>
+<p>من غير <code>@Optional()</code> غياب <code>FeeRates</code> من السجل يوقف الإقلاع. الـ Decorator لا يصنع تسجيلًا؛ هو يغيّر سلوك الرمز الناقص فقط.</p>
+<p>حقن الخاصية بـ <code>@Inject()</code> على حقل ممكن عندما ترث صنفًا وتمرير <code>super()</code> يصبح مزعجًا. إن كان الصنف لا يرث، المُنشئ أوضح لأن الاحتياج ظاهر في التوقيع. تفاصيل <code>@Inject</code> للرموز غير الصنفية في درس Injection Tokens.</p>
+<p>لا تستخدم <code>import type</code> لصنف تحقنه. ذلك يمسح الرمز و Metadata. الواجهة لا تصلح رمزًا. الفصل التالي يفتح السبب؛ هنا التزم بصنف مستورد استيراد قيمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إنشاء FeesController
+  اقرأ معامل constructor
+  جد رمز FeesService في السجل
+  مرر النسخة إلى الخاصية fees
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { FeesService } from &#39;./fees.service.js&#39;;
+
+@Controller(&#39;fees&#39;)
+export class FeesController {
+  constructor(private readonly fees: FeesService) {}
+
+  @Get(&#39;daily&#39;)
+  daily() {
+    return { amount: this.fees.quote(1) };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>readonly</code> يمنع استبدال الحقل بعد البناء. النسخة تبقى التي مرتها الحاوية.</li>
+<li><code>quote(1)</code> استدعاء عادي. الحقن تم قبل أول طلب.</li>
+<li><code>@Controller</code> يكفي لإصدار أنواع معاملات Controller. الخدمة نفسها عليها <code>@Injectable()</code> ومسجّلة.</li>
+<li><code>GET /fees/daily</code> يعيد كائنًا برمز 200.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحاوية لا تنادي <code>new FeesController()</code> من كودك. هي تجمع وسائط المُنشئ من السجل ثم تستدعيه. إن كانت <code>FeesService</code> تعتمد على <code>FeeRates</code>، تُحل <code>FeeRates</code> أولًا. هذا البناء من الأوراق نحو الجذر يُفصَّل في Dependency Graph.</p>
+<p>حقن نفس الرمز في Controller و Service ضمن التسجيل الواحد يعيد النسخة Singleton نفسها. مقارنة <code>===</code> بينهما ناجحة عند النطاق الافتراضي.</p>
+<h2>مثال عملي</h2>
+<p>خدمة الطلبات تطلب التسعير، والتسعير اختياري الجدول:</p>
+<pre><code class="language-ts">import { Injectable, Optional } from &#39;@nestjs/common&#39;;
+import { FeeRates } from &#39;./fee-rates.js&#39;;
+import { FeesService } from &#39;./fees.service.js&#39;;
+
+@Injectable()
+export class OrdersService {
+  constructor(
+    private readonly fees: FeesService,
+    @Optional() private readonly rates?: FeeRates,
+  ) {}
+
+  preview(days: number) {
+    return {
+      amount: this.fees.quote(days),
+      daily: this.rates?.daily ?? null,
+    };
+  }
+}
+</code></pre>
+<p><code>FeesService</code> إلزامية: غيابها فشل إقلاع. <code>FeeRates</code> اختيارية في هذا الصنف فقط. إن كانت الخدمة نفسها تطلب <code>FeeRates</code> من غير <code>@Optional()</code>، فالتسجيل ما زال مطلوبًا لتلك الخدمة. <code>@Optional()</code> قرار كل مستهلك على حدة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>constructor() { this.fees = new FeesService(); }</code></td>
+<td>نسخة خارج السجل، واعتماديات الخدمة لا تُحل</td>
+</tr>
+<tr>
+<td><code>import type { FeesService }</code> في ملف الحقن</td>
+<td>الرمز ممسوح ويفشل الحل</td>
+</tr>
+<tr>
+<td><code>@Optional()</code> بدل تسجيل مزوّد إلزامي</td>
+<td>الحقل <code>undefined</code> والبديل يعمل بصمت</td>
+</tr>
+<tr>
+<td>حقن صنف غير مصدَّر من Module أخرى</td>
+<td>الرمز غير مرئي في سياق المستهلك</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>كلما احتاج صنف تديره Nest إلى Provider مسجّل. المُنشئ هو المكان. <code>@Optional()</code> عندما للميزة سلوك واضح من غير ذلك الرمز.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإنشاء DTO أو كائن طلب داخل الدالة. تلك قيم تسجّل بـ <code>new</code> العادي لأنها ليست في السجل. ولاختيار تنفيذ مختلف حسب البيئة؛ ذلك <code>useClass</code> في التسجيل لا <code>if</code> داخل المُنشئ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>من ينشئ الاعتمادية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>معامل <code>constructor</code></td>
+<td>الحاوية، قبل أول استخدام</td>
+</tr>
+<tr>
+<td><code>new</code> داخل الدالة</td>
+<td>الدالة، في كل مسار كتبته</td>
+</tr>
+<tr>
+<td><code>@Optional()</code></td>
+<td>الحاوية تمرر النسخة أو <code>undefined</code></td>
+</tr>
+<tr>
+<td>حقن حقل بـ <code>@Inject()</code></td>
+<td>الحاوية، أنسب عند الوراثة المزعجة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يوفّر <code>private readonly fees</code> في معامل المُنشئ؟</p>
+<details><summary>الحل</summary>
+
+<p>حقلًا على الصنف مُسندًا له وسيط المُنشئ، من غير سطر <code>this.fees = fees</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>متى تنجح مقارنة <code>controller.fees === service.fees</code> للنطاق الافتراضي؟</p>
+<details><summary>الحل</summary>
+
+<p>عندما يحقن الطرفان رمز <code>FeesService</code> من التسجيل نفسه. Singleton يخزن نسخة واحدة ويمررها لكل المستهلكين في ذلك السياق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>OrdersService</code> تعلّم <code>FeeRates</code> بـ <code>@Optional()</code>، و <code>FeesService</code> تطلب <code>FeeRates</code> من غير ذلك. هل يكفي حذف <code>FeeRates</code> من <code>providers</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. <code>@Optional()</code> يؤثر في <code>OrdersService</code> فقط. <code>FeesService</code> ما زالت تطلب الرمز، وغيابه يوقف الإقلاع عند حلها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يمثل نوع معامل المُنشئ للحاوية؟</li>
+<li>ماذا يحقن <code>@Optional()</code> عند غياب التسجيل؟</li>
+<li>متى تفضّل المُنشئ على حقن الحقل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المُنشئ يعلن الرموز، وخاصية المعامل تنشئ الحقل، والحاوية تمرر النسخ. <code>@Optional()</code> يحوّل الغياب إلى <code>undefined</code> لذلك المعامل فقط.</p>
+<h2>ماذا بعد؟</h2>
+<p>عمر النسخة: Scope بنظرة أولى.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers (Dependency injection): <a href="https://docs.nestjs.com/providers#dependency-injection">https://docs.nestjs.com/providers#dependency-injection</a></li>
+<li>NestJS — Optional providers: <a href="https://docs.nestjs.com/providers#optional-providers">https://docs.nestjs.com/providers#optional-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

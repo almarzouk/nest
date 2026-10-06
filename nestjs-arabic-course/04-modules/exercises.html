@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس. ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>ما المفاتيح الأربعة التي ستستخدمها أغلب الوقت داخل <code>@Module</code>؟</li>
+<li>لماذا <code>AppModule</code> هي التي تُمرَّر إلى <code>NestFactory.create</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>imports</code> و <code>controllers</code> و <code>providers</code> و <code>exports</code>.</li>
+<li>لأن الإقلاع يحتاج وحدة جذرًا يبدأ منها الرسم. الميزات تُربط عبر <code>imports</code> انطلاقًا منها.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>ارسم شجرة لوحدات: كتب، طلبات، تدقيق. الطلبات تتحقق من وجود الكتاب وتكتب سطر تدقيق. جدول خصم الكتب يبقى داخل الكتب.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>AuditModule</code>: <code>providers</code> و <code>exports</code> فيها <code>AuditService</code>.</li>
+<li><code>BooksModule</code>: <code>BooksService</code> مصدَّر، <code>DiscountTable</code> في <code>providers</code> فقط، مع المتحكم.</li>
+<li><code>OrdersModule</code>: <code>imports: [BooksModule, AuditModule]</code>، و <code>OrdersService</code> تحقن الخدمتين المصدَّرتين.</li>
+<li><code>AppModule</code>: تستورد <code>BooksModule</code> و <code>OrdersModule</code>. استيراد <code>AuditModule</code> في الجذر غير لازم إن كانت الطلبات تستوردها.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>ظهرت رسالة أن <code>BooksService</code> غير متاحة في سياق <code>OrdersModule</code>. اذكر ثلاثة أسباب مختلفة، وكيف تميّز بينها.</p>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>OrdersModule</code> لا تستورد <code>BooksModule</code> ولا جسرًا يعيد تصديرها. العلاج <code>imports</code>.</li>
+<li><code>BooksModule</code> لم تضع الخدمة في <code>exports</code>. العلاج إضافة التصدير، لا <code>@Global()</code> كأول حركة.</li>
+<li>الخدمة ليست في <code>providers</code> أصلًا، أو سُجّلت في وحدة ثالثة لم تُستورد. العلاج التسجيل في المالك ثم التصدير.</li>
+</ol>
+<p>تمييز سريع: افتح ملف الوحدة المالكة وتأكد من <code>providers</code> ثم <code>exports</code>، ثم ملف المستهلك وتأكد من <code>imports</code>. إن كان الصنف مُستوردًا في TypeScript والحاوية ترفض، السبب في بيانات <code>@Module</code> لا في مسار الملف.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

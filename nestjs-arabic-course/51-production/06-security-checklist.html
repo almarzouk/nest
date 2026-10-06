@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>قائمة الأمن</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-security-checklist.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>قائمة الأمن</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>مراجعة قصيرة قبل النشر: ترويسات، CORS، تحقق المدخلات، أخطاء بلا مكدس، أسرار، وكوكيز، من غير ادّعاء أن القائمة شهادة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تطبيق يعمل وظيفيًا ويفتح <code>cors: true</code> مع <code>helmet</code> مطفأ ويرد بمكدس TypeError. القائمة تذكّر بقرارات التوثيق الشائعة حتى لا يُنشر القالب كما هو. التفاصيل في فصول CORS والتحقق السابقة. هنا تجميع إنتاج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>فعّل <code>helmet</code> لترويسات آمنة افتراضية. حدد أصول CORS التي تعرفها. <code>ValidationPipe</code> مع <code>whitelist</code>. لا تُرجع المكدس للعميل. لا ترفع <code>.env</code>. ضع أعلام الكوكي <code>httpOnly</code> و <code>secure</code> و <code>sameSite</code> عندما تستخدم كوكي جلسة. قيّد المعدل على تسجيل الدخول. إن كنت خلف وكيل ففعّل <code>trust proxy</code> بعدد قفزات تعرفه حتى لا يُزوَّر عنوان العميل.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import helmet from &#39;helmet&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.use(helmet());
+app.enableCors({ origin: [&#39;https://shop.example&#39;] });
+</code></pre>
+<pre><code class="language-ts">app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }),
+);
+</code></pre>
+<p>الفلتر العام في الإنتاج يسجل الخطأ ويرد <code>{ message: &#39;تعذر إكمال الطلب&#39; }</code> مع رمز مناسب، بلا <code>stack</code>.</p>
+<p>Swagger إن وُجد على مسار داخلي أو خلف صلاحية، لا على الإنترنت بلا حماية.</p>
+<p><code>trust proxy</code> على Express عندما TLS ينتهي عند Nginx:</p>
+<pre><code class="language-ts">const expressApp = app.getHttpAdapter().getInstance();
+expressApp.set(&#39;trust proxy&#39;, 1);
+</code></pre>
+<p>الرقم <code>1</code> يعني وكيلًا واحدًا. رقم أكبر من الواقع يثق بترويسة يزوّرها العميل.</p>
+<p>حد المعدل على <code>POST /auth/login</code> عبر الحارس أو الوكيل. لا تترك المحاولات بلا سقف.</p>
+<p>هذه القائمة لا تغطي عزل المستأجرين ولا مراجعة اعتماديات <code>npm audit</code> الدورية. أضفها إلى عملية النشر لا إلى هذا الملف فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">helmet + CORS محدد
+مدخلات مبيّضة
+خطأ عام للعميل وسجل عندك
+أسرار في البيئة
+وكيل موثوق بعدد قفزات صحيح
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>عطّل في مراجعة النشر أي <code>enableCors()</code> بلا خيارات إن كان المتصفح من أصل معروف. أصل واحد في المصفوفة يكفي للمتجر. التطبيقات المحلية تُضاف في التطوير لا في إنتاج عام.</p>
+<h2>شرح المثال</h2>
+<p><code>origin: true</code> أو انعكاس الأصل يطلبه المتصفح يعني أن أي موقع يستطيع استدعاء API ببيانات اعتماد إن جمعت ذلك مع <code>credentials</code>. حدد الأصل. <code>helmet</code> لا يستبدل التحقق من JWT. هو يغلق ترويسات المتصفح الشائعة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>helmet</code> يضع ترويسات على الاستجابة.</li>
+<li>CORS يقرر قبل أن يكمل المتصفح الطلب الفعلي.</li>
+<li>الأنبوب يحذف الحقول غير المزينة أو يرفضها.</li>
+<li>الفلتر يبتلع شكل الاستثناء الداخلي.</li>
+<li>الوكيل يمرر <code>X-Forwarded-*</code> و <code>trust proxy</code> يفسرها.</li>
+<li>الكوكي بلا <code>secure</code> تسير على HTTP إن أخطأ الوكيل.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>قائمة تحقق لسحب النشر: لا <code>.env</code> في Git، و <code>helmet</code>، وأصل الواجهة فقط، و <code>whitelist</code>، وفلتر بلا مكدس، وحد لمسار الدخول، و <code>trust proxy</code> إن وُجد Nginx، وSwagger مقيد. راجعها على البيئة لا على الذاكرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>cors: { origin: &#39;*&#39; }</code> مع كوكي اعتماد.</li>
+<li><code>trust proxy</code> بقيمة <code>true</code> غير محدودة.</li>
+<li>مكدس في JSON.</li>
+<li>سر في صورة Docker.</li>
+<li>اعتبار Helmet بديلًا للصلاحيات على المسارات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قبل كل نشر إنتاج وبعد إضافة مدخل جديد مثل رفع ملف أو كوكي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعطّل التحقق في الإنتاج لتمرير عميل قديم. أصلح العقد. ولا تفتح CORS للعالم لأن الواجهة على منفذ مختلف في التطوير. افصل إعداد التطوير.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>البند</th>
+<th>إنتاج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>CORS</td>
+<td>أصول معروفة</td>
+</tr>
+<tr>
+<td>المدخل</td>
+<td><code>whitelist</code></td>
+</tr>
+<tr>
+<td>الخطأ</td>
+<td>رسالة عامة</td>
+</tr>
+<tr>
+<td>الكوكي</td>
+<td><code>httpOnly</code> و <code>secure</code></td>
+</tr>
+<tr>
+<td>الوكيل</td>
+<td><code>trust proxy</code> بعدد صحيح</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يضيف <code>whitelist: true</code> على الأنبوب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يحذف الحقول التي ليست في DTO حتى لا تصل إلى الخدمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>origin: &#39;*&#39;</code> مع اعتماد الكوكي خطر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن أي موقع يستطيع استدعاء API من متصفح المستخدم ويمرر الاعتماد إن سمح الخادم بذلك الجمع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>trust proxy</code> أعلى من عدد الوكلاء الفعليين يزيف عنوان العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الإطار يثق بقفزات أكثر مما أرسل الوكيل، فيقرأ ترويسة يمكن للعميل أن يضعها بنفسه كأنها عنوانه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا لا يرجعه الفلتر للعميل؟</li>
+<li>أين تعيش الأسرار؟</li>
+<li>هل Helmet يغني عن Guard؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>أغلق الترويسات والأصول والمدخلات وأجسام الأخطاء والأسرار وقفزة الوكيل قبل النشر. القائمة بداية مراجعة لا نهاية التهديدات.</p>
+<h2>ماذا بعد؟</h2>
+<p>Reverse Proxy و Nginx: أين ينتهي TLS وأين يقف Node.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Helmet: <a href="https://docs.nestjs.com/security/helmet">https://docs.nestjs.com/security/helmet</a></li>
+<li>NestJS — CORS: <a href="https://docs.nestjs.com/security/cors">https://docs.nestjs.com/security/cors</a></li>
+<li>NestJS — Security: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

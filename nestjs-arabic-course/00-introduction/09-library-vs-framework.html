@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Library مقابل Framework</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-library-vs-framework.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Library مقابل Framework</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية الفرق الذي ستُبنى عليه NestJS: من يملك ترتيب الاستدعاء، أنت أم الأداة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>على Node الخام أنت تكتب كل شيء: فتح المنفذ، قراءة المسار، تمييز <code>GET</code> عن <code>POST</code>، تحليل JSON، ترتيب الدوال، التقاط الخطأ.</p>
+<p>مكتبة تساعدك في قطعة واحدة وأنت تبقى المايسترو. إطار يضع المايسترو عنده، ويعطيك أماكن محددة تملؤها.</p>
+<p>إذا لم يظهر هذا الفرق، ستعامل Nest كمجموعة دوال تناديها، وستحارب الأماكن التي يتوقع الإطار أن يمر منها الطلب.</p>
+<h2>الفكرة ببساطة</h2>
+<p><strong>Library</strong>: كود تستدعيه أنت عندما تحتاج.</p>
+<p><strong>Framework</strong>: هيكل يستدعي كودك في نقاط حددها هو.</p>
+<p>العبارة الشائعة: أنت تنادي المكتبة، والإطار يناديك. هذا شكل من Inversion of Control: قلب التحكم. الاسم سيعود مع Dependency Injection بمعنى أضيق. هنا المعنى: من يقرر ترتيب التشغيل.</p>
+<h2>التعريف التقني</h2>
+<ul>
+<li>المكتبة مجموعة دوال أو أصناف لها API، والتطبيق هو الذي يملك دالة <code>main</code> ومنطق الترتيب.</li>
+<li>الإطار تطبيق ناقص يملك دورة الحياة والترتيب، ويترك لك تمديد نقاط معلنة: معالج مسار، أو صنف بوسم معين، أو ملف إعداد.</li>
+</ul>
+<p>الحدود ليست جدارًا قانونيًا. Express يصف نفسه في توثيقه بأنه web framework، وهو في الوقت نفسه رقيق: أنت تنشئ <code>app</code>، وأنت تربط المسارات، وأنت تستدعي <code>listen</code>. NestJS إطار ذو رأي (opinionated): يفرض Modules و Decorators وحاوية اعتماديات، ثم هو الذي يبني التطبيق من <code>AppModule</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Library
+
+  كودك ----يستدعي----&gt; أداة تقرأ JSON
+  كودك ----يستدعي----&gt; أداة تتحقق من بريد
+  كودك يملك الترتيب
+
+
+Framework
+
+  الإطار يفتح الخادم
+      |
+      +----يستدعي----&gt; مسارك
+      |
+      +----يستدعي----&gt; فحص الصلاحية الذي سجّلته
+      |
+      +----يستدعي----&gt; دالتك
+</code></pre>
+<p>في Nest، الاستدعاء الثاني هو الشكل اليومي. نادرًا ما تنادي <code>new UsersController()</code>. الإطار يصنعه ويناديه.</p>
+<h2>أبسط مثال</h2>
+<p>مكتبة: تحويل JSON.</p>
+<pre><code class="language-ts">const book = JSON.parse(text);
+</code></pre>
+<p>أنت قررت اللحظة. <code>JSON</code> لا يعرف أن عندك خادمًا.</p>
+<p>إطار رقيق: Express، وسنفك المثال في الدرس التالي. أنت تسجّل:</p>
+<pre><code class="language-ts">app.get(&#39;/books&#39;, (req, res) =&gt; {
+  res.send([]);
+});
+</code></pre>
+<p>أنت لا تستدعي هذه الدالة عند وصول الطلب. <code>app.get</code> يسجّلها. Express يستدعيها عندما يطابق الطلب. هذا Inversion of Control على مستوى المسار.</p>
+<p>إطار ذو رأي: Nest، كمعاينة فقط.</p>
+<pre><code class="language-ts">@Controller(&#39;books&#39;)
+export class BooksController {}
+</code></pre>
+<p>أنت لا تستدعي <code>@Controller</code>. هو وسم يقرأه الإطار عند الإقلاع. لا تبنِ عليه شيئًا الآن. الدرس 15 و 16 يشرحان لماذا الوسوم، وفصل Controllers يشرح التنفيذ.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>JSON.parse</code>: تحكم مباشر. إن لم تكتب الاستدعاء فلن يعمل.</li>
+<li><code>app.get</code>: تسجيل. الاستدعاء الحقيقي لاحقًا، داخل Express، عند تطابق Method والمسار.</li>
+<li>الصنف ذو <code>@Controller</code>: تسجيل عبر Metadata. Nest أثناء الإقلاع تبحث عن الأصناف المسجّلة في Module وتقرأ الوسوم. آلية Reflection ستُشرح في فصل TypeScript قبل أن نستخدمها بثقة.</li>
+</ul>
+<p>الثلاثة مستويات من &quot;من ينادي من&quot;.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>سبب قبول المطورين بقلب التحكم: الترتيب المكرر يصبح مسؤولية الإطار.</p>
+<p>في كل طلب HTTP يوجد تتابع ثابت تقريبًا: طابق المسار، افهم المدخلات، قرر السماح، نفّذ العمل، شكّل الرد، والتقط ما رُمي. إذا كتب كل مطور هذا التتابع بأسلوبه، المشروع الكبير يصبح عدة أُطر خاصة.</p>
+<p>الإطار يعلن التتابع مرة، ويملأ الفريق النقاط. ثمن ذلك: عليك أن تتعلم أين تضع الكود. وضع فحص الصلاحية في المكان الذي لا يستدعيه الإطار يعني أنه لن يعمل، حتى لو كانت الدالة صحيحة.</p>
+<p>Nest تسمي نقاطًا كثيرة: Middleware، Guards، Pipes، Interceptors، Exception Filters. الخريطة في آخر هذا الفصل. كل اسم مكان يناديك فيه الإطار.</p>
+<h2>مثال عملي</h2>
+<p>التحقق من أن <code>price</code> عدد موجب.</p>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>من ينادي التحقق؟</th>
+<th>ماذا ترى في مشروع كبير؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>دالة <code>assertPrice</code> تستدعيها أنت</td>
+<td>أنت، في كل مسار</td>
+<td>مسار ينسى الاستدعاء</td>
+</tr>
+<tr>
+<td>Middleware عام في Express إذا تذكرت ربطه</td>
+<td>Express، على المسارات التي ربطتها</td>
+<td>الربط اليدوي يتفرق</td>
+</tr>
+<tr>
+<td><code>ValidationPipe</code> في Nest على حدود الـ API</td>
+<td>الإطار، قبل دالتك</td>
+<td>القاعدة في مكان واحد</td>
+</tr>
+</tbody></table>
+<p>الأداة الأقوى ليست &quot;أقل سطورًا&quot; دائمًا. هي التي تجعل نسيان القاعدة أصعب.</p>
+<p>Express يترك لك قرار أين تضع التحقق. Nest يقترح المكان: Pipe قبل الـ Handler. ستفهم الـ Pipe في فصله. الجملة المطلوبة الآن: الإطار ذو الرأي يختار مكانًا افتراضيًا للمسؤولية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وصف Express و Nest بالجملة نفسها &quot;Framework&quot; ثم توقع السلوك نفسه. Express رقيق وذو رأي ضعيف في هيكل المجلدات. Nest ذو رأي في الوحدات والحقن ومسار الطلب.</li>
+<li>محاربة الإطار بمناداة <code>new</code> لكل خدمة داخل المتحكم. أنت تعيد التحكم إليك وتتجاوز الحاوية. الاختبار والحدود سيدفعان الثمن، وهذا موضوع فصل Dependency Injection.</li>
+<li>بناء Framework خاص فوق Express من غير قصد: مجلد <code>core</code> فيه <code>registerRoute</code> و <code>inject</code> مكتوبان يدويًا. هذا غالبًا إعادة اختراع نصف Nest.</li>
+</ul>
+<h2>متى نختار مكتبة؟</h2>
+<p>لقطعة واضحة تستدعيها: تحليل تاريخ، حساب ضريبة، عميل HTTP صغير داخل دالتك. المكتبة لا ينبغي أن تملك إقلاع تطبيقك.</p>
+<h2>متى نختار إطارًا؟</h2>
+<p>عندما تتكرر دورة الحياة، ويحتاج الفريق إلى أماكن ثابتة: أين المسار، أين القاعدة، أين الصلاحية، أين الخطأ. NestJS اختيرت في هذه الدورة لهذا السبب، لا لأن <code>node:http</code> غير قادر على إرجاع JSON.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>node:http</code></th>
+<th>Express</th>
+<th>NestJS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يفتح المنفذ</td>
+<td>أنت عبر <code>listen</code></td>
+<td>أنت عبر <code>app.listen</code></td>
+<td>أنت تستدعي <code>app.listen</code> بعد أن يبني الإطار التطبيق</td>
+</tr>
+<tr>
+<td>من يطابق المسار</td>
+<td>أنت</td>
+<td>Express</td>
+<td>Nest فوق Express أو Fastify</td>
+</tr>
+<tr>
+<td>هيكل المجلدات</td>
+<td>قرارك كله</td>
+<td>قرارك كله</td>
+<td>Modules متوقعة</td>
+</tr>
+<tr>
+<td>حقن الاعتماديات</td>
+<td>غير موجود</td>
+<td>غير موجود كجزء من Express</td>
+<td>جزء من الإطار</td>
+</tr>
+<tr>
+<td>رأيه في المعمارية</td>
+<td>بلا رأي</td>
+<td>رأي ضعيف</td>
+<td>رأي قوي، مستوحى من Angular كما يقول التوثيق</td>
+</tr>
+</tbody></table>
+<p>توثيق Nest يصف Express بأنه minimalist web framework، واسع الانتشار. ويصف Nest بأنها توفر application architecture جاهزة. الاثنان Framework بالمعنى العام، والمسافة بينهما هي موضوع الدروس القادمة.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>صنف كل بند: Library تستدعيها، أو Framework ينادي كودك.</p>
+<ol>
+<li><code>JSON.stringify</code></li>
+<li>معالج سجّلته بـ <code>app.get</code></li>
+<li>دالة <code>sum(a, b)</code> كتبتها في ملف حساب</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Library.</li>
+<li>Framework ينادي المعالج عند التطابق. Express هنا يعمل كإطار توجيه.</li>
+<li>كودك. إن استدعيتها أنت فهي ليست إطارًا. إن سجّلتها ليناديها إطار فهي نقطة تمديد.</li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اكتب تتابعًا من أربعة أسطر يحدث في كل طلب API عندك اليوم لو كتبت الخادم بيديك. ثم ضع دائرة حول ما تفضل أن يملكه الإطار لا كل مسار.</p>
+<details>
+<summary>الحل</summary>
+
+<p>تتابع محتمل: قراءة JSON، التحقق من الحقول، تنفيذ القاعدة، كتابة رمز الخطأ إن رُمي استثناء. المرشح الأقوى لملكية الإطار: تحليل JSON، والتقاط الاستثناء وكتابة رمز. التحقق والقاعدة قد يملك الإطار مكانهما حتى لو بقيت القاعدة نفسها كودك. الهدف أن ترى التكرار، لا أن تطابق قائمة وحيدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فريق كتب <code>runIfAdmin(user, handler)</code> ويستدعيها في أول كل مسار Express. ما الذي ما زال يدويًا؟ ماذا سيغيّر إطار ينادي فحص الصلاحية بنفسه قبل الـ Handler؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاستدعاء ما زال يدويًا: مسار جديد بلا <code>runIfAdmin</code> يبقى مفتوحًا. إطار ينادي الفحص بنفسه يجعل الغياب قرارًا ظاهرًا (مسار معلّم كعام) لا نسيانًا صامتًا. في Nest هذا دور Guard. اسمه يكفي الآن.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يملك ترتيب الاستدعاء في المكتبة، ومن يملكه في الإطار؟</li>
+<li>لماذا يوصف Express و Nest كلاهما كـ Framework ومع ذلك لا يتصرفان السلوك نفسه؟</li>
+<li>ماذا يعني تسجيل معالج بدل استدعائه؟</li>
+<li>ما ثمن الإطار ذي الرأي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المكتبة أداة تناديها. الإطار دورة حياة تناديك في نقاط معلنة. Express يبدأ قلب التحكم عند المسار. Nest توسع ذلك إلى هيكل التطبيق كله: من يُنشأ، وبأي ترتيب يمر الطلب، وأين تعيش كل مسؤولية.</p>
+<h2>ماذا بعد؟</h2>
+<p>نحتاج أن نرى الإطار الرقيق يعمل بكود حقيقي قبل أن ننتقده أو نبني فوقه. الدرس التالي: ما هو Express، بأصغر تطبيق من توثيقه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Express — Hello world: <a href="https://expressjs.com/en/starter/hello-world.html">https://expressjs.com/en/starter/hello-world.html</a></li>
+<li>NestJS — Introduction (فقرة Philosophy عن معمارية التطبيق، وفقرة أن Nest طبقة فوق Express و Fastify): <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+<li>NestJS — First steps (Express الإطار الافتراضي، و Fastify بديل): <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

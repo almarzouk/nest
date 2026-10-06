@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>من أين يُستورد <code>CacheModule</code>؟</li>
+<li>ما وحدة TTL؟</li>
+<li>ماذا يعني <code>get</code> الذي يعيد <code>undefined</code> مقابل <code>null</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>من <code>@nestjs/cache-manager</code>.</li>
+<li>الميلي ثانية.</li>
+<li><code>undefined</code> إخفاق مخزن. <code>null</code> قيمة مخزّنة لغياب ISBN عند الناشر.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم مفتاحين ومدتين لـ <code>lookup</code>: عنوان ناجح، ورقم يعرفه الناشر بأنه غير موجود. ماذا تفعل عند <code>ECONNABORTED</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>isbn:${isbn}</code> مع <code>{ title }</code> لمدة <code>10 * 60 * 1000</code>.</li>
+<li>المفتاح نفسه مع <code>null</code> لمدة <code>60 * 1000</code>.</li>
+<li>المهلة ترمي <code>GatewayTimeoutException</code> بلا <code>set</code> ولا علم خطأ في Redis.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>نسختان من التطبيق ومفتاح <code>draft:${bookId}</code> فيه نص المسودة بعد أن فتحها المحرر. Redis يعمل. ما الذي يصل إلى قارئ آخر، وما المفتاح المقبول إن أصر القياس على تخزين قرار لا نص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القارئ الآخر على العقدة الثانية يصيب Redis ويرى المسودة لأن المفتاح بلا <code>userId</code>. النص لا يُخزَّن أصلًا. إن خُزّن قرار فشكل المفتاح <code>authz:${userId}:${bookId}</code> مع حذف عند تغيير العضوية ومدة قصيرة. سقوط Redis لا يُعالج بـ <code>catch</code> يبتلع أخطاء القاعدة أو الناشر.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

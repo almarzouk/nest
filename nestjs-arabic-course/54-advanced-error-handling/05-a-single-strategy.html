@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>استراتيجية واحدة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-a-single-strategy.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>استراتيجية واحدة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جمع التصنيف وأصناف المجال والترجمة والعطل في مسار واحد لمتجر رف، بحيث يضيف مبرمج ميزة جديدة صفًا في الجدول لا فلترًا خاصًا به.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسار ISBN يستخدم فلترًا، ومسار السعر يعيد <code>BadRequestException</code> من الخدمة، ومسار الحذف يلتقط الكل في المتحكم. المراجعة لا تستطيع الإجابة: «ماذا يرى العميل إن غاب الكتاب؟» من غير فتح كل ملف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>وثيقة قصيرة في الكود: هذه الأصناف، هذا الرمز، هذا الجسم، وهذا ما يُسجَّل. الخدمة ترمي صنفًا. فلتر مجال وفلتر ختامي يطبّقان الوثيقة. المتحكم لا يملك <code>try/catch</code>.</p>
+<h2>التعريف التقني</h2>
+<p>سجّل الفلاتر بحيث يُسأل الأخص أولًا. في Nest، الفلتر العام الأخير هو شبكة المجهول، والفلتر المسجّل لنوع محدد يعالج أصنافه. <code>APP_FILTER</code> مع <code>useClass</code> يربط الفلتر بالحقن إن احتاج <code>Logger</code> أو معرّف طلب. لا تكرر الجدول داخل <code>BooksController</code>. اختبار e2e واحد لكل صف في الجدول يثبت الاستراتيجية. الاستراتيجية لا تغيّر نجاح القائمة الفارغة: ذلك 200، ويُذكر هنا حتى لا «يوحّد» أحدهم الغياب بجعل كل فراغ 404.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Pipe → 400 جاهز
+Guard → 401/403 جاهز
+Service → صنف مجال
+ShelfFilter → 400/404/409
+UnknownFilter → HttpException كما هي، والباقي 500 + log
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">BookNotFound         404   لا SQL في الجسم
+IsbnTaken            409
+InvalidShelfPrice    400
+غير ذلك              500   stack في السجل فقط
+HttpException        لا تُغلَّف
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>أربعة صفوف تكفي بداية رف. صف جديد يعني صنفًا جديدًا وسطرًا في الفلتر واختبارًا.</li>
+<li>«لا تُغلَّف» سطر في الاستراتيجية لا تعليق في مراجعة واحدة.</li>
+<li>القائمة <code>GET /books</code> التي تعيد <code>[]</code> ليست في الجدول لأنها ليست فشلًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب يدخل الأنابيب والحراس. فشلهم <code>HttpException</code> يكتبها الإطار إن لم تلتقطها شبكتك خطأً.</li>
+<li>الخدمة إما تعيد كتابًا أو ترمي صنفًا من <code>books.errors.ts</code>.</li>
+<li><code>ShelfDomainFilter</code> يطابق <code>@Catch</code> ويكتب الرمز.</li>
+<li>ما لم يُطابق يصل إلى <code>UnknownErrorFilter</code>.</li>
+<li>إن أضاف أحد <code>try/catch</code> في المتحكم ورمى <code>InternalServerErrorException</code>، فقد كسر الخطوة 3 قبل أن ترى الفلتر الصنف. راجع المراجعات على هذا النمط.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { type ArgumentsHost, Catch, type ExceptionFilter, HttpStatus } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { BookNotFound, InvalidShelfPrice, IsbnTaken } from &#39;../books/books.errors.js&#39;;
+
+const table = new Map&lt;Function, number&gt;([
+  [BookNotFound, HttpStatus.NOT_FOUND],
+  [IsbnTaken, HttpStatus.CONFLICT],
+  [InvalidShelfPrice, HttpStatus.BAD_REQUEST],
+]);
+
+@Catch(BookNotFound, IsbnTaken, InvalidShelfPrice)
+export class ShelfStrategyFilter implements ExceptionFilter {
+  catch(exception: object, host: ArgumentsHost) {
+    const status = table.get(exception.constructor) ?? HttpStatus.INTERNAL_SERVER_ERROR;
+    host.switchToHttp().getResponse&lt;Response&gt;().status(status).json({
+      statusCode: status,
+      message: status === 404 ? &#39;Book not found&#39; : status === 409 ? &#39;Conflict&#39; : &#39;Invalid shelf rule&#39;,
+    });
+  }
+}
+</code></pre>
+<p>إضافة <code>BookWithdrawn</code> تعني سطرًا في <code>table</code> وإضافة النوع إلى <code>@Catch</code>. الفلتر الختامي من الدرس السابق يبقى مسجّلًا بعده ويحمي <code>HttpException</code>. جسم الرسائل هنا ثابت عن قصد؛ توحيد شكل الحقول (<code>code</code>, <code>message</code>) يُستكمل في درس شكل الخطأ دون أن يتعدد أسلوب الترجمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استراتيجيتان: خريطة في الفلتر و <code>if</code> في كل متحكم.</li>
+<li>اعتبار 500 مسارًا مقبولًا لخطأ مجال نسيت إضافته إلى <code>@Catch</code>. راقب السجل: ظهور اسم الصنف داخل 500 يعني صفًا ناقصًا.</li>
+<li>توحيد قاسٍ يجعل <code>GET /books</code> الفارغ 404 لأنه «لا بيانات».</li>
+<li>نسخ الفلتر لكل وحدة كتب ومؤلفين حتى يتباعد الجدولان.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>من أول مسار يغيّر حالة في رف، قبل أن تتعدد الميزات. كل ميزة تلحق بالجدول.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنِ لغة أخطاء عامة للمنتج كله في أسبوع فارغ. ابدأ بأصناف الكتب الحقيقية ووسّع الجدول حين يظهر نوع جديد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>إضافة قاعدة نشر جديدة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>try/catch</code> في المتحكم</td>
+<td>تعديل المتحكم واختراع رمز</td>
+</tr>
+<tr>
+<td><code>HttpException</code> من الخدمة</td>
+<td>الخدمة تعرف HTTP والاختبار أيضًا</td>
+</tr>
+<tr>
+<td>جدول في فلتر واحد</td>
+<td>صنف + سطر + اختبار e2e</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُلتقط فشل <code>ValidationPipe</code> ضمن الاستراتيجية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في سلوك <code>HttpException</code> المدمج، ويمر من الفلتر الختامي إن كان عامًا بشرط ألا يغيّر الوضع. ليس صفًا في <code>table</code> إلا إذا قررت شكلًا خاصًا للتحقق، وهذا استثناء يُكتب في الوثيقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>مطور أضاف <code>BookArchived extends Error</code> ونسي <code>@Catch</code>. ماذا يرى العميل، وماذا تفعل المراجعة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>500 من الفلتر الختامي، واسم الصنف في السجل. المراجعة ترفض الدمج حتى يدخل الصنف الجدول والاختبار الذي يتوقع 409 أو الرمز المتفق عليه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اكتب ثلاثة اختبارات e2e تثبت الاستراتيجية دفعة واحدة.</p>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>معرّف غائب → 404 والجسم بلا <code>stack</code>.</li>
+<li>ISBN مكرر → 409.</li>
+<li>مسار يرمي <code>NotFoundException</code> من حارس موارد → 404 لا 500، ليثبت أن الفلتر العام لا يغلّف <code>HttpException</code>.</li>
+</ol>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مدخل الاستراتيجية وما مخرجها؟</li>
+<li>لماذا المتحكم بلا <code>try/catch</code>؟</li>
+<li>كيف تكشف صنف مجال نسيه الجدول؟</li>
+<li>أي نجاح يُستثنى من جدول الفشل عمدًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>استراتيجية رف جدول واحد: الخدمة ترمي صنفًا، الفلتر يكتبه، المجهول يصبح 500 مع سجل، و <code>HttpException</code> تبقى على رمزها. الميزة الجديدة سطر في الجدول لا أسلوب جديد.</p>
+<h2>ماذا بعد؟</h2>
+<p>الرمز الذي تكتبه الاستراتيجية سيعيش مع العملاء طويلًا. الفصل التالي يشغّل أكثر من نسخة للمسارات داخل التطبيق نفسه عندما يتغير العقد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

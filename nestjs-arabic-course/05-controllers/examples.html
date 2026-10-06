@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة مسارات على موارد مختلفة. كل مثال يوضح قرارًا واحدًا من هذا الفصل: إرجاع القيمة، قراءة المدخلات، ومن يكتب الاستجابة. الاستيراد النسبي ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — JSON قياسي لطلبات النسخ</h2>
+<p><code>POST</code> يعيد الكائن برمز 201. <code>GET reprint</code> ثابت قبل <code>:id</code> حتى لا تُحجب الكلمة على Express الافتراضي.</p>
+<pre><code class="language-ts">import { Controller, Get, Param, Post } from &#39;@nestjs/common&#39;;
+import { CopiesService } from &#39;./copies.service.js&#39;;
+
+@Controller(&#39;copies&#39;)
+export class CopiesController {
+  constructor(private readonly copies: CopiesService) {}
+
+  @Get(&#39;reprint&#39;)
+  reprintQueue() {
+    return this.copies.reprintQueue();
+  }
+
+  @Get(&#39;:id&#39;)
+  findOne(@Param(&#39;id&#39;) id: string) {
+    return this.copies.findOne(id);
+  }
+
+  @Post()
+  create() {
+    return this.copies.createDraft();
+  }
+}
+</code></pre>
+<p><code>GET /copies/reprint</code> قائمة. <code>GET /copies/c-18</code> نسخة واحدة و <code>id</code> نص. <code>POST /copies</code> يعيد مسودة JSON برمز 201 لأن الطريقة POST ومن غير <code>@HttpCode</code>.</p>
+<h2>مثال 2 — رف في المسار وصفحة في الاستعلام</h2>
+<p>الهوية في المسار، والترقيم في <code>?</code>. <code>page</code> نص حتى يأتي Pipe.</p>
+<pre><code class="language-ts">import { Controller, Get, Param, Query } from &#39;@nestjs/common&#39;;
+import { AislesService } from &#39;./aisles.service.js&#39;;
+
+@Controller(&#39;aisles&#39;)
+export class AislesController {
+  constructor(private readonly aisles: AislesService) {}
+
+  @Get(&#39;:code/bins&#39;)
+  bins(@Param(&#39;code&#39;) code: string, @Query(&#39;page&#39;) page = &#39;1&#39;) {
+    return this.aisles.bins(code, page);
+  }
+}
+</code></pre>
+<p><code>GET /aisles/north/bins?page=3</code> يمرر <code>code</code> بالقيمة <code>north</code> و <code>page</code> بالقيمة <code>&quot;3&quot;</code>. طلب بلا <code>page</code> يستخدم <code>&#39;1&#39;</code> لأن الغياب <code>undefined</code>.</p>
+<h2>مثال 3 — CSV خام، cookie مع JSON، وتحويل دليل</h2>
+<p>كل مسار يختار من يكتب الاستجابة.</p>
+<pre><code class="language-ts">import {
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Query,
+  Redirect,
+  Res,
+} from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+import { DeskService } from &#39;./desk.service.js&#39;;
+
+@Controller(&#39;desk&#39;)
+export class DeskController {
+  constructor(private readonly desk: DeskService) {}
+
+  @Get(&#39;queue.csv&#39;)
+  queue(@Res() res: Response) {
+    res.type(&#39;text/csv&#39;);
+    res.send(this.desk.queueCsv());
+  }
+
+  @Post(&#39;ack&#39;)
+  @HttpCode(HttpStatus.OK)
+  @Header(&#39;Cache-Control&#39;, &#39;no-store&#39;)
+  ack(@Res({ passthrough: true }) res: Response) {
+    res.cookie(&#39;desk&#39;, &#39;acked&#39;, { httpOnly: true });
+    return { acked: true };
+  }
+
+  @Get(&#39;guide&#39;)
+  @Redirect(&#39;https://docs.example.com/desk&#39;, 302)
+  guide(@Query(&#39;year&#39;) year?: string) {
+    if (year === &#39;2026&#39;) {
+      return { url: &#39;https://docs.example.com/desk/2026&#39; };
+    }
+  }
+}
+</code></pre>
+<p><code>queue.csv</code> وضع مكتبة: <code>res.send</code> ينهي الرد، والقيمة المعادة غير مستخدمة. <code>ack</code> يضبط cookie ثم تعيد الدالة كائنًا، فترسله Nest JSON برمز 200 بسبب <code>@HttpCode</code> على POST. <code>guide</code> يحوّل إلى الدليل، و <code>?year=2026</code> يستبدل العنوان فقط فيبقى الرمز 302.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>كل Controller مذكور في <code>controllers</code> داخل Module تصل إلى الجذر.</li>
+<li>المسار الثابت مكتوب قبل <code>:id</code> ما دامت الاستراتيجية <code>declaration</code>.</li>
+<li><code>@Res()</code> بلا <code>passthrough</code> يرافقه <code>res.send</code> أو ما يعادله.</li>
+<li>جسم JSON العادي يُعاد كقيمة، والتحقق من الحقول يأتي مع Pipes لاحقًا.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

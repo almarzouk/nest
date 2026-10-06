@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AuthGuard</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-auth-guard.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>AuthGuard</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تطبيق <code>AuthGuard</code> من <code>@nestjs/passport</code> على مسار وعلى مجموعة مسارات، ومعرفة الفرق بينه وبين الحارس العام في <code>@nestjs/authentication</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فحص <code>req.user</code> في أول سطر من كل معالج يُنسى، ويعمل بعد أن بدأ المتحكم عملًا جانبيًا. كتابة الاسم <code>&#39;jwt&#39;</code> في عشر ملفات تكسرها عند تغيير الاسم. وضع الحارس المحلي على تطبيق كامل يطالب بكلمة المرور في كل <code>GET</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>AuthGuard(&#39;jwt&#39;)</code> حارس Nest يشغّل استراتيجية Passport بهذا الاسم قبل المعالج. صنف <code>JwtAuthGuard</code> يخفي النص. تضعه بـ <code>@UseGuards</code> على المتحكم أو المسار. الحارس العام عبر <code>APP_GUARD</code> ممكن للوصفة إن استثنيت الدخول. حارس حزمة Security مختلف: هو العام الافتراضي مع <code>@Public()</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { AuthGuard } from &quot;@nestjs/passport&quot;;
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard(&quot;jwt&quot;) {}
+</code></pre>
+<pre><code class="language-ts">@Controller(&quot;posts&quot;)
+@UseGuards(JwtAuthGuard)
+export class PostsController {}
+</code></pre>
+<p>مسار الدخول يبقى على <code>LocalAuthGuard</code> فقط، خارج هذا الصنف.</p>
+<p>تسجيل عام لوصفة Passport، إن اخترتها:</p>
+<pre><code class="language-ts">{
+  provide: APP_GUARD,
+  useClass: JwtAuthGuard,
+}
+</code></pre>
+<p>عندها علّم <code>POST /auth/login</code> و <code>POST /auth/register</code> باستثناء. Passport لا يوفّر <code>@Public()</code> من الحزمة نفسها. الاستثناء المعتاد في الوصفات وسم بيانات وحارس يغلف <code>AuthGuard</code> ويقرأ <code>Reflector</code>، وهو نمط فصل الحراس في الدورة، لا رمز <code>@Public()</code> الخاص بـ <code>@nestjs/authentication</code>.</p>
+<p><code>@nestjs/authentication</code> يسجّل حارسه وحده عند <code>forRoot</code>. لا تضف <code>APP_GUARD</code> من <code>JwtAuthGuard</code> فوقه.</p>
+<p>الحارس يعيد <code>false</code> أو يرمي فيصبح <code>401</code> قبل الخدمة. لا يقرر الدور. الدور <code>403</code> في فصل التفويض.</p>
+<p>ترتيب الدورة: الحارس بعد الأنبوب أم قبله؟ في Nest الحارس قبل الأنابيب. طلب بلا رمز لا يصل إلى فحص DTO. هذا متوقع.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مسار محمي
+  JwtAuthGuard
+    استراتيجية jwt
+    فشل -&gt; 401
+    نجاح -&gt; req.user ثم المعالج
+مسار login
+  LocalAuthGuard فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Post, Req, UseGuards } from &quot;@nestjs/common&quot;;
+import { CreatePostDto } from &quot;./create-post.dto.js&quot;;
+import { PostsService } from &quot;./posts.service.js&quot;;
+import { JwtAuthGuard } from &quot;../auth/jwt-auth.guard.js&quot;;
+
+@Controller(&quot;posts&quot;)
+export class PostsController {
+  constructor(private readonly posts: PostsService) {}
+
+  @Post()
+  @UseGuards(JwtAuthGuard)
+  create(
+    @Req() req: { user: { userId: number } },
+    @Body() dto: CreatePostDto,
+  ) {
+    return this.posts.create(req.user.userId, dto);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الحارس على الإنشاء فقط في هذا المقتطف. <code>GET /posts</code> العام يمكن أن يبقى بلا حارس في الوصفة إن كان الكتالوج مفتوحًا. في حزمة Security العكس: العام مغلق وتفتح الكتالوج بـ <code>@Public()</code>. اعرف أي افتراض يعمل في المشروع الذي تقرأه.</p>
+<p><code>userId</code> ناتج <code>validate</code> في استراتيجية JWT، لا <code>id</code> بالضرورة. طابق الاسم الذي تُرجعه <code>validate</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>AuthGuard</code> ينفّذ <code>canActivate</code>. Passport يشغّل الاستراتيجية بشكل غير متزامن. النجاح يكمل إلى المعترضات والأنبوب ثم المعالج، حسب ترتيب Nest. الفشل استثناء غير مصرح. المعالج لا يلتقطه إن لم تكتب مرشحًا خاصًا. جسم <code>401</code> يأتي من طبقة الاستثناءات.</p>
+<p>حارس على الصنف يحمي كل الطرق فيه. طريقة واحدة تُستثنى بحارس آخر أو بنقل الطريقة إلى متحكم بلا الحارس. لا يوجد في <code>AuthGuard(&#39;jwt&#39;)</code> وضع «اختياري» جاهز كـ <code>@Authenticate({ optional: true })</code>.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة على الوصفة: <code>PostsController</code> كله تحت <code>JwtAuthGuard</code> إلا إن فصلت متحكم القراءة العامة. اختبار e2e يوقّع رمزًا تجريبيًا بالمفتاح نفسه ويرسل <code>Bearer</code>. اختبار بلا رأس يتوقع <code>401</code> ولا يتوقع استدعاء <code>prisma.post.create</code>. اختبار كلمة المرور يضرب <code>POST /auth/login</code> لا <code>POST /posts</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>APP_GUARD</code> بـ <code>LocalAuthGuard</code>.</li>
+<li>الجمع بين حارس Passport العام و <code>@Public()</code> من الحزمة الأخرى كأنهما نظام واحد.</li>
+<li>حماية <code>login</code> بـ <code>JwtAuthGuard</code> فلا يستطيع أحد الدخول.</li>
+<li>قراءة <code>req.user</code> من غير حارس على مسار عام.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تكون استراتيجية <code>jwt</code> هي بوابة المسارات في مشروع Passport.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على مشروع يعتمد حارس <code>AuthenticationModule</code>. هناك <code>@Public()</code> و <code>@CurrentUser()</code> هما واجهة الإغلاق والفتح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>JwtAuthGuard</code></th>
+<th>حارس <code>@nestjs/authentication</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يشغّل Passport</td>
+<td>يشغّل مزودات السجل</td>
+</tr>
+<tr>
+<td>تغطيه حيث تضعه</td>
+<td>عام بعد <code>forRoot</code></td>
+</tr>
+<tr>
+<td>الاستثناء نمط <code>Reflector</code> إن عمّمته</td>
+<td><code>@Public()</code></td>
+</tr>
+<tr>
+<td><code>req.user</code></td>
+<td><code>@CurrentUser()</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حارس على <code>POST /auth/login</code> في الوصفة، وأي حارس على <code>POST /posts</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>LocalAuthGuard</code> للدخول، و <code>JwtAuthGuard</code> لإنشاء المقال.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الحارس العام بـ <code>LocalAuthGuard</code> يعطل التطبيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل طلب سيُطالب بجسم <code>email</code> و <code>password</code> عبر الاستراتيجية المحلية، ومنها <code>GET</code> الذي لا يحمل كلمة مرور.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد كتالوج <code>GET /posts</code> مفتوحًا و <code>POST /posts</code> مغلقًا في الوصفة. أين تضع <code>@UseGuards</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على طريقة <code>create</code> فقط، أو على المتحكم ثم تفصل القراءة في متحكم بلا الحارس. لا تستخدم الحارس العام لـ JWT ثم تتوقع أن القراءة مفتوحة من غير استثناء صريح.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغلف <code>JwtAuthGuard</code>؟</li>
+<li>هل هو حارس الأدوار؟</li>
+<li>كيف يختلف الافتراض عن حارس الحزمة الرسمية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>AuthGuard</code> بوابة استراتيجية Passport. استخدم <code>jwt</code> للمسارات المحمية و <code>local</code> للدخول فقط. لا تخلطه مع حارس <code>@nestjs/authentication</code> على السلسلة نفسها.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./12-which-approach.html">متى الحزمة الرسمية ومتى Passport</a> قرار المسار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أغلق الدروس ثم أجب. الحلول تحت <code>الحل</code>.</p>
+<h2>سهل</h2>
+<p>رتّب: <code>listen</code>، <code>onApplicationBootstrap</code>، <code>onModuleInit</code>، <code>onApplicationShutdown</code>، <code>onModuleDestroy</code>، <code>beforeApplicationShutdown</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>onModuleInit</code>، <code>onApplicationBootstrap</code>، <code>listen</code>، ثم عند الإنهاء: <code>onModuleDestroy</code>، <code>beforeApplicationShutdown</code>، إغلاق الاتصالات، <code>onApplicationShutdown</code>.</p>
+</details>
+
+<h2>متوسط</h2>
+<p><code>PrismaService</code> على <code>Scope.REQUEST</code> وفيه <code>onModuleInit</code> ينادي <code>$connect</code>. ماذا يحدث لخطاف التطبيق، وما الكلفة التي ستدرسها في الفصل التالي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خطافات دورة حياة التطبيق لا تُستدعى على أصناف الطلب. كل طلب سيبني شجرة جديدة إن بقي النطاق <code>REQUEST</code>، وهذا أغلى من Singleton يفتح المجمع مرة. الإبقاء على الافتراضي مع <code>$connect</code> مرة في <code>onModuleInit</code> هو المسار المناسب للعميل المشترك.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>Kubernetes يرسل <code>SIGTERM</code> وينتظر 30 ثانية ثم <code>SIGKILL</code>. اكتب أين تضع: <code>enableShutdownHooks</code>، <code>$disconnect</code>، وإيقاف مؤقت الفواتير. ماذا لا يفعله <code>app.close()</code> وحده للعملية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>enableShutdownHooks()</code> في <code>bootstrap</code> حتى تدخل الإشارة. <code>$disconnect</code> في <code>onModuleDestroy</code> لخدمة Prisma. <code>clearInterval</code> في <code>onModuleDestroy</code> أيضًا حتى لا يبقى مقبض. <code>app.close()</code> يشغّل السلسلة ويغلق السيرفر ولا يستدعي <code>process.exit</code>. إن بقي مؤقت، العملية تظل حتى <code>SIGKILL</code>.</p>
+</details>
+
+<h2>سؤال ربط</h2>
+<p>لماذا تفتح قاعدة البيانات في وحدة ورقة لا في <code>AppController</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الإقلاع يمشي من الأوراق إلى الجذر وينتظر كل وحدة. ورقة القاعدة تُنهى قبل المتحكمات التي ستطلبها، والإيقاف يعكس الاتجاه فيغلق الجذر جدولة العمل قبل قطع الورقة.</p>
+</details>
+
+<h2>جولة ثانية</h2>
+<h3>سهل — من يستقبل الإشارة؟</h3>
+<p><code>onModuleDestroy</code> أم <code>beforeApplicationShutdown</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>beforeApplicationShutdown(signal)</code> و <code>onApplicationShutdown(signal)</code>. <code>onModuleDestroy</code> بلا وسيط إشارة.</p>
+</details>
+
+<h3>سهل — متى تعمل الخطافات بلا enableShutdownHooks؟</h3>
+<details>
+<summary>الحل</summary>
+
+<p>عند <code>app.close()</code> الصريح، كما في الاختبار. الإشارات تحتاج <code>enableShutdownHooks()</code>.</p>
+</details>
+
+<h3>متوسط — connect على الناقل</h3>
+<p>أين <code>ClientProxy.connect</code>، وأين <code>close</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>connect</code> في <code>onApplicationBootstrap</code> حتى تكتمل الوحدات قبل الحجز. <code>close</code> في <code>onModuleDestroy</code> قبل خطوات قطع HTTP الأخيرة.</p>
+</details>
+
+<h3>متوسط — Windows</h3>
+<p>الحاوية على Linux تُغلق بـ <code>SIGTERM</code>. التطوير على Windows بـ Ctrl+C. ماذا يصل في كل بيئة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>SIGTERM</code> يصل على Linux بعد التفعيل. على Windows يصل <code>SIGINT</code> ولا يصل <code>SIGTERM</code>. السلسلة نفسها تعمل إن وصلت الإشارة المدعومة.</p>
+</details>
+
+<h3>متقدم — ترتيب الإغلاق</h3>
+<p>الجذر يجدول فاتورة كل دقيقة. الورقة Prisma. اكتب ترتيب <code>onModuleDestroy</code> ولماذا لا تقطع القاعدة أولًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإيقاف من الجذر إلى الأوراق. الجذر يمسح <code>setInterval</code> أولًا. الورقة تنادي <code>$disconnect</code> بعد أن تتوقف الوحدات الأعلى عن الاستعلام. القطع في الجذر قبل ذلك يترك كتابات على عميل مغلق.</p>
+</details>
+
+<h3>متقدم — process.exit</h3>
+<p>بعد <code>app.close()</code> بقيت العملية. ما الذي تفحصه، وما الذي لا تستدعيه داخل الخطاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>افحص المؤقتات والمقابض. <code>app.close()</code> لا ينهي العملية وحده. لا تستدعِ <code>process.exit</code> داخل الخطاف لإخفاء مقبض. أزل المقبض ثم دع الإغلاق يتم.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sorting</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-sorting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Sorting</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قبول الترتيب من قائمة مفاتيح ثابتة، مع فاصل تعادل يجعل الصفحات والمؤشر مستقرة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>orderBy</code> المبني من نص <code>sort</code> الحر يصل إلى عمود بلا فهرس أو إلى حقل لا يخص العقد. فصل المقالات سمح بـ <code>id</code> و <code>title</code>. التعميم ينسخ القائمة في كل خدمة وينسى فاصل <code>id</code>، فيتكرر صف عند تساوي العناوين بين صفحة وأخرى. مؤشر الترقيم يحتاج نفس المفاتيح.</p>
+<h2>الفكرة ببساطة</h2>
+<p>DTO تقبل <code>sort</code> و <code>order</code> عبر <code>@IsIn</code>. الخدمة لا تمرّر النص إلى SQL. تختار كائن <code>orderBy</code> من خريطة كتبتها. كل ترتيب ينتهي بـ <code>id</code> حتى يكون الترتيب كليًا. القيم الخارجة عن القائمة <code>400</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@IsOptional()
+@IsIn([&quot;id&quot;, &quot;title&quot;])
+sort: &quot;id&quot; | &quot;title&quot; = &quot;id&quot;;
+
+@IsOptional()
+@IsIn([&quot;asc&quot;, &quot;desc&quot;])
+order: &quot;asc&quot; | &quot;desc&quot; = &quot;asc&quot;;
+</code></pre>
+<p>الخريطة:</p>
+<pre><code class="language-ts">const orders = {
+  id: (order: &quot;asc&quot; | &quot;desc&quot;) =&gt; [{ id: order }],
+  title: (order: &quot;asc&quot; | &quot;desc&quot;) =&gt; [{ title: order }, { id: &quot;asc&quot; }],
+} as const;
+
+export function orderByPosts(sort: keyof typeof orders, order: &quot;asc&quot; | &quot;desc&quot;) {
+  return orders[sort](order);
+}
+</code></pre>
+<p>Prisma يقبل مصفوفة <code>orderBy</code>. العنوان أولًا ثم <code>id</code> تصاعديًا يكسر التعادل. حين يكون الفرز <code>id</code> وحده فالمفتاح فريد.</p>
+<p>اتجاه الفاصل ثابت <code>asc</code> حتى لا ينقلب مع <code>order</code> فيربك المؤشر. إن تبع الفاصل اتجاه العميل، فالمؤشر يخزّن الاتجاه أيضًا.</p>
+<p>التعليقات في خيط زمني تفرز <code>id</code> فقط. لا تعلن <code>title</code> على DTO التعليق. ملف مشترك يصدّر مفاتيح المقالات:</p>
+<pre><code class="language-ts">export const POST_SORTS = [&quot;id&quot;, &quot;title&quot;] as const;
+</code></pre>
+<p><code>@IsIn(POST_SORTS)</code> يبقى مع الخريطة. مفتاح في المصفوفة وغائب عن الكائن لا يُترجم لأن النوع يفرض فرعًا.</p>
+<p>لا <code>ORDER BY ${sort}</code> في <code>$queryRawUnsafe</code>. في SQL الخام الأعمدة من الخريطة والنص الذي يُرسل ثابت.</p>
+<p>المؤشر لفرز <code>title</code> ثم <code>id</code> يحمل القيمتين. فرز <code>id</code> فقط يحمل المعرّف. تغيير <code>sort</code> مع <code>cursor</code> قديم يبدأ من الأول أو يُرفض.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@IsIn يضيق النص
+الخريطة تبني orderBy
+آخر مفتاح فريد
+المؤشر يخزن مفاتيح الخريطة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">orderBy: orderByPosts(query.sort, query.order),
+</code></pre>
+<h2>شرح المثال</h2>
+<p>سطر واحد في <code>findMany</code>. <code>count</code> لا يحتاج ترتيبًا. اختبار وحدة بلا قاعدة يتوقع عنصرين عند <code>title</code>. الافتراضي <code>id</code> تصاعديًا يبقي سلوك قائمة الفصل 19 مستقرًا بعد استخراج الخريطة.</p>
+<p>حذف مفتاح يتم من <code>POST_SORTS</code> ومن <code>orders</code> معًا. OpenAPI يعرض التعداد نفسه بـ <code>enumName</code> حتى لا يولّد العميل قيمًا زائدة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Prisma يكتب <code>ORDER BY &quot;title&quot; ASC, &quot;id&quot; ASC</code>. من غير العمود الثاني، صفان بعنوان واحد بلا ترتيب مضمون، فينتقل صف عبر <code>OFFSET</code> إلى صفحة مجاورة بين طلبين. مع <code>id</code> الترتيب كلي على المفتاح الأساسي.</p>
+<p>الفهرس المفيد يغطي أعمدة الترتيب بعد أعمدة المساواة في <code>WHERE</code>. فرز بلا فهرس على جدول كبير يرتب في الذاكرة حتى لو كانت القائمة آمنة من الحقن.</p>
+<p>اتجاه <code>desc</code> على <code>id</code> يعيد الأحدث أولًا. التعليقات التصاعدية أبسط لمؤشر «بعد هذا المعرّف».</p>
+<h2>مثال عملي</h2>
+<p>اختبار DTO يرفض <code>sort=passwordHash</code> و <code>order=DROP</code>. اختبار الخريطة يتوقع مفتاحين عند <code>title</code>. اختبار صفحات: ثلاثة مقالات بعنوان واحد ومعرّفات متتالية، <code>pageSize=2</code>، والصفحة الثانية تبدأ حيث انتهت الأولى بلا تكرار. الواجهة تبدّل الفرز ضمن <code>POST_SORTS</code> فقط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تمرير <code>query.sort</code> كنص حر إلى قالب SQL.</li>
+<li>تعادل بلا <code>id</code>.</li>
+<li>قائمة <code>@IsIn</code> أوسع من الخريطة.</li>
+<li>مؤشر يختزن معرّفًا والفرز على العنوان.</li>
+<li>اتجاه فاصل يتغير بين طلبين لنفس المؤشر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تعرض الواجهة مبدّل ترتيب، وعلى أي مؤشر يعتمد على موضع مرتب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفرز من أي عمود يختاره العميل على <code>GET</code> عام. تقرير داخلي يكتب خريطته بعد مراجعة الفهارس، بعقد منفصل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>خريطة ثابتة</th>
+<th>نص إلى <code>ORDER BY</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@IsIn</code> ثم كائن</td>
+<td>القيمة قد تصبح SQL</td>
+</tr>
+<tr>
+<td>فاصل <code>id</code> ظاهر</td>
+<td>التعادل غير مضمون</td>
+</tr>
+<tr>
+<td>يطابق فهرسًا تعرفه</td>
+<td>قد يرتب عمودًا بلا فهرس</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مزخرف يحصر <code>sort</code> في <code>id</code> و <code>title</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@IsIn([&quot;id&quot;, &quot;title&quot;])</code> أو <code>@IsIn(POST_SORTS)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تُضاف <code>id</code> بعد <code>title</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العناوين تتساوى. <code>id</code> فريد فيصبح ترتيب الصفحتين ثابتًا بلا تكرار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تمنع مفتاحًا في <code>@IsIn</code> من غير فرع في الخريطة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كائن <code>orders</code> يغطي الاتحاد، والدالة تأخذ <code>keyof typeof orders</code>. المفتاح الجديد لا يُترجم حتى يُكتب الفرع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرز الافتراضي للمقالات؟</li>
+<li>ماذا يحمل مؤشر فرز العنوان؟</li>
+<li>هل <code>count</code> يحتاج <code>orderBy</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الفرز قائمة مفاتيح وخريطة إلى <code>orderBy</code> تنتهي بمفتاح فريد. النص لا يدخل SQL. المؤشر يحفظ المفاتيح نفسها.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-a-reusable-pattern.html">نمط قابل لإعادة الاستخدام</a> يجمع الصفحة والمرشح والفرز.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>Prisma — Pagination: <a href="https://www.prisma.io/docs/orm/prisma-client/queries/pagination">https://www.prisma.io/docs/orm/prisma-client/queries/pagination</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JWT Strategy</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-jwt-strategy.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>JWT Strategy</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حماية المسارات برمز حامل كما في وصفة Passport: إصدار بتوقيع <code>@nestjs/jwt</code> وفحص بـ <code>passport-jwt</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد <code>POST /auth/login</code> يملك العميل سلسلة. من غير استراتيجية ثانية، كل طلب لاحق لا يعرف كيف يقرأ <code>Authorization</code>. الوثوق بالسلسلة من غير فحص التوقيع و <code>exp</code> يعيد قبول أي JSON.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>JwtModule.register</code> يعرف السر وعمر التوقيع. الدخول المحلي، بعد نجاح الحارس، يستدعي <code>sign</code> ويضع <code>sub</code> معرّف المستخدم. <code>JwtStrategy</code> تقرأ الحامل، وPassport يتحقق من التوقيع والانتهاء، ثم <code>validate</code> ترجع ما سيصبح <code>req.user</code>. <code>JwtAuthGuard</code> يغلّف <code>AuthGuard(&#39;jwt&#39;)</code> على المسارات المحمية.</p>
+<h2>التعريف التقني</h2>
+<p>من الوصفة:</p>
+<pre><code class="language-ts">JwtModule.register({
+  secret: jwtConstants.secret,
+  signOptions: { expiresIn: &quot;60s&quot; },
+});
+</code></pre>
+<p><code>expiresIn</code> هنا بصيغة <code>@nestjs/jwt</code>، والمثال الرسمي قصير <code>60s</code> للعرض. في تمرين حقيقي اختر عمرًا قصيرًا مفهومًا، والسر من <code>ConfigService</code> عبر <code>registerAsync</code> لا من ملف <code>constants.ts</code> مرفوع. لا تنسخ سر المثال.</p>
+<pre><code class="language-ts">import { ExtractJwt, Strategy } from &quot;passport-jwt&quot;;
+import { PassportStrategy } from &quot;@nestjs/passport&quot;;
+import { Injectable } from &quot;@nestjs/common&quot;;
+
+@Injectable()
+export class JwtStrategy extends PassportStrategy(Strategy) {
+  constructor() {
+    super({
+      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ignoreExpiration: false,
+      secretOrKey: process.env.JWT_SECRET,
+    });
+  }
+
+  validate(payload: { sub: number; email: string }) {
+    return { userId: payload.sub, email: payload.email };
+  }
+}
+</code></pre>
+<p><code>ignoreExpiration: false</code> هو الافتراضي الصريح في الصفحة: الرمز المنتهي <code>401</code>. <code>validate</code> تستلم الحمولة بعد نجاح التوقيع، لا قبلها. ما تُرجعه يصبح <code>req.user</code>. يمكنك جلب المستخدم من القاعدة هنا إن أردت إبطالًا أقوى من عمر الرمز.</p>
+<p>الإصدار في خدمة الدخول:</p>
+<pre><code class="language-ts">return {
+  access_token: await this.jwt.signAsync({ sub: user.id, email: user.email }),
+};
+</code></pre>
+<p>هذه الوصفة في شكلها الأساسي بلا رمز تحديث دوار. التحديث الدوار والعائلة موجودان في <code>@nestjs/authentication</code> لا في هذا المثال. لا تخترع <code>TokenService</code> داخل استراتيجية Passport.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">login محلي ناجح -&gt; sign({ sub }) -&gt; access_token
+طلب تالٍ
+  Authorization: Bearer
+  passport-jwt يفحص التوقيع و exp
+  validate(payload) -&gt; req.user
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &quot;@nestjs/common&quot;;
+import { AuthGuard } from &quot;@nestjs/passport&quot;;
+
+@Injectable()
+export class JwtAuthGuard extends AuthGuard(&quot;jwt&quot;) {}
+</code></pre>
+<pre><code class="language-ts">@UseGuards(JwtAuthGuard)
+@Get(&quot;me&quot;)
+me(@Req() req: { user: { userId: number; email: string } }) {
+  return req.user;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>اسم <code>jwt</code> هو الاسم الافتراضي لاستراتيجية <code>passport-jwt</code> عند <code>PassportStrategy(Strategy)</code>. الحارس المحلي يبقى على <code>login</code> فقط. هذا الحارس على <code>me</code> و <code>POST /posts</code>. المعالج لا يقرأ الرأس بنفسه.</p>
+<p>الحمولة صغيرة: معرّف وبريد. لا تضع التجزئة ولا كلمة المرور. الدور إن وضعته قد يقدُم، لذلك جلب الصف داخل <code>validate</code> أفضل حين يتغير الدور.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>ExtractJwt.fromAuthHeaderAsBearerToken</code> يأخذ الجزء بعد <code>Bearer </code>. Passport يتحقق بالمفتاح نفسه الذي وقّع. اختلاف السر أو انتهاء العمر يوقف الطلب قبل <code>validate</code>. <code>validate</code> لا تعيد فحص التوقيع. دورها قرار إضافي: بناء كائن المستخدم أو رفض معرّف محذوف.</p>
+<p>العميل يخزّن <code>access_token</code> ويعيده. السرقة قبل <code>exp</code> تنتحل المستخدم. الوصفة الأساسية لا تسحب الرمز. إن احتجت سحبًا، إما عمر قصير جدًا أو مخزن إبطال تفحصه في <code>validate</code>، أو تنتقل إلى نموذج التحديث في حزمة Security.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /auth/login</code> يرجع الرمز. <code>GET /posts</code> بلا رأس <code>401</code>. بالرأس يعيد الصفحة. <code>POST /posts</code> يقرأ <code>req.user.userId</code> كمؤلف ويتجاهل أي <code>authorId</code> في الجسم. بعد <code>60s</code> في مثال التوثيق، الرمز نفسه <code>401</code> بسبب <code>ignoreExpiration: false</code>.</p>
+<p>أبقِ السر في البيئة. مثال <code>jwtConstants.secret</code> في المقالات التعليمية ليس إعداد إنتاج.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سر مختلف بين <code>JwtModule.register</code> و <code>secretOrKey</code>.</li>
+<li><code>ignoreExpiration: true</code> في الإنتاج.</li>
+<li>حمولة فيها <code>passwordHash</code>.</li>
+<li>استخدام هذا الحارس على مسار <code>login</code> الذي يرسل كلمة مرور لا حاملًا.</li>
+<li>ظن أن الوصفة تتضمن <code>refresh</code> دوارًا كما في <code>TokenService</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>داخل مشروع Passport بعد نجاح الاستراتيجية المحلية، لحماية API بالرأس <code>Bearer</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>إن كان <code>JwtBearerProvider</code> مسجّلًا أصلًا لفحص الحامل. حارسان على الرأس نفسه يربكان مصدر <code>401</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>JWT في الوصفة</th>
+<th>وصول <code>@nestjs/authentication</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@nestjs/jwt</code> بالثواني</td>
+<td><code>accessToken.ttl</code> بنص أو مللي ثانية</td>
+</tr>
+<tr>
+<td><code>AuthGuard(&#39;jwt&#39;)</code></td>
+<td><code>JwtBearerProvider</code></td>
+</tr>
+<tr>
+<td>تحديث ليس في المثال الأساسي</td>
+<td><code>TokenService.refresh</code> دوار</td>
+</tr>
+<tr>
+<td><code>req.user</code></td>
+<td><code>@CurrentUser()</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>متى تُستدعى <code>validate</code> في <code>JwtStrategy</code>، قبل فحص التوقيع أم بعده؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعد نجاح التوقيع وفك الحمولة. Passport لا يستدعيها لرمز تالف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يجب أن يتطابق السر في <code>sign</code> و <code>secretOrKey</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الفحص يعيد حساب التوقيع بالمفتاح. مفتاح آخر يرفض رمزًا أصدره التطبيق نفسه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المستخدم غيّر بريده وما زال الرمز يحوي البريد القديم. أين تُحدّث القيمة التي يراها <code>GET /me</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>validate</code> تجلب الصف الحالي بالمعرّف <code>sub</code> وتُرجع بريده الجديد، بدل نسخ <code>payload.email</code> كما هو.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي رأس يقرأه <code>fromAuthHeaderAsBearerToken</code>؟</li>
+<li>ماذا يفعل <code>ignoreExpiration: false</code>؟</li>
+<li>هل هذه الوصفة هي <code>TokenService</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>استراتيجية JWT في Passport تفحص الحامل بعد توقيع من <code>@nestjs/jwt</code>. <code>validate</code> تبني <code>req.user</code> من حمولة صحيحة. التحديث الدوار مسار الحزمة الأخرى.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./11-auth-guard.html">AuthGuard</a> يضع الحارس على المسار وعلى التطبيق بحذر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

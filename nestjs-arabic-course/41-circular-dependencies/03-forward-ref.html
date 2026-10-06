@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forwardRef</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-forward-ref.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>forwardRef</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تأجيل قراءة الصنف الدائري بـ <code>forwardRef</code> على الطرفين، للمزودات وللوحدات، من غير اعتبار المسكن تصميمًا نهائيًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عندما تبقى الدورة بعد حذف البرميل واستخراج ما يمكن استخراجه، يفشل الإقلاع لأن metadata الطرف الآخر غير جاهزة لحظة تحليل الـ <code>constructor</code>. <code>forwardRef(() =&gt; Other)</code> يعطي Nest دالة يقرأها عندما يصبح الصنف معرّفًا. طرف واحد لا يكفي في العلاقة المتبادلة التي يوثقها المثال الرسمي: الجهتان تستعملان <code>@Inject(forwardRef(() =&gt; ...))</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الاستيراد العادي يحفظ الرمز الآن. الدالة تحفظ طريقة الوصول إلى الرمز لاحقًا. الإطار يستدعي الدالة أثناء حل الرسم بعد تحميل الملفات. لذلك يُكتب الغلاف على كل طرف ما زال يحقن الآخر. الترتيب بين الـ <code>constructor</code> يبقى غير محدد.</p>
+<h2>التعريف التقني</h2>
+<p><code>forwardRef</code> من <code>@nestjs/common</code>. مثال التوثيق لخدمتين:</p>
+<pre><code class="language-ts">import { Inject, Injectable, forwardRef } from &#39;@nestjs/common&#39;;
+import { CommonService } from &#39;./common.service.js&#39;;
+
+@Injectable()
+export class CatsService {
+  constructor(
+    @Inject(forwardRef(() =&gt; CommonService))
+    private readonly commonService: CommonService,
+  ) {}
+}
+</code></pre>
+<pre><code class="language-ts">import { Inject, Injectable, forwardRef } from &#39;@nestjs/common&#39;;
+import { CatsService } from &#39;./cats.service.js&#39;;
+
+@Injectable()
+export class CommonService {
+  constructor(
+    @Inject(forwardRef(() =&gt; CatsService))
+    private readonly catsService: CatsService,
+  ) {}
+}
+</code></pre>
+<p>للوحدات، الغلاف على <code>imports</code> في الجهتين:</p>
+<pre><code class="language-ts">import { Module, forwardRef } from &#39;@nestjs/common&#39;;
+import { CatsModule } from &#39;../cats/cats.module.js&#39;;
+
+@Module({
+  imports: [forwardRef(() =&gt; CatsModule)],
+})
+export class CommonModule {}
+</code></pre>
+<p>و <code>CatsModule</code> يستورد <code>forwardRef(() =&gt; CommonModule)</code>. الغلاف على الوحدة لا يغني عن الغلاف على الـ <code>constructor</code> إن كانت الدورة بين الصنفين أيضًا. عالج مستوى الرسم الذي تدور فيه الأسهم.</p>
+<p>بديل موثق على طرف واحد: <code>ModuleRef</code> تجلب النسخة لاحقًا بدل حقنها في البناء. ذلك يُفصل في درس إعادة الرسم وفي فصل <code>ModuleRef</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طرف أ: @Inject(forwardRef(() =&gt; ب))
+طرف ب: @Inject(forwardRef(() =&gt; أ))
+الإقلاع ينجح
+أي constructor أولًا؟ غير محدد
+REQUEST + الدورة؟ قد يبقى الاعتماد undefined
+</code></pre>
+<p>المسكن يصلح metadata. لا يصنع ترتيبًا.</p>
+<h2>أبسط مثال</h2>
+<p>الدالتان أعلاه هما أصغر مثال يعمل. احذف <code>forwardRef</code> من <code>CommonService</code> فقط وأعد الإقلاع. العلاقة ناقصة من جهة واحدة فتعود مشكلة الحل. أرجعهما معًا أو أزل الدورة.</p>
+<h2>شرح المثال</h2>
+<p><code>@Inject</code> لازم لأن نوع المعامل وحده لا يحمل الدالة المؤجلة. <code>forwardRef</code> يستقبل مصنعًا بلا وسائط يعيد الصنف. استيراد الصنف في رأس الملف ما زال موجودًا للنوع. الغلاف يمنع استخدام الرمز كقيمة حقن مباشرة لحظة قد يكون فيها غير مهيأ. داخل الدوال بعد البناء استخدم <code>this.commonService</code> كالمعتاد، وتجنب نداء الطرف الآخر من داخل الـ <code>constructor</code> نفسه.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المزخرف يخزن مصنعًا لا صنفًا خامًا.</li>
+<li>بعد تقييم الملفات يستدعي Nest المصنع ويحصل على الصنف.</li>
+<li>يبني الطرفين من غير عقد على الترتيب.</li>
+<li>إن رمى <code>constructor</code> طرفًا نداءً على الآخر، قد يرى كائنًا لم تكتمل حقوله.</li>
+<li>مع <code>Scope.REQUEST</code> تتكرر هذه الهشاشة لكل طلب.</li>
+<li>دورة <code>imports</code> بالغلاف تسمح للوحدتين برؤية المصدَّر. سطح التصدير ما زال واسعًا إن لم تضيّقه.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>OrdersModule</code> و <code>BillingModule</code> تتبادلان الاستيراد لأن كل متحكم يستعمل خدمة الآخر. غلف <code>imports</code> في الملفين:</p>
+<pre><code class="language-ts">import { Module, forwardRef } from &#39;@nestjs/common&#39;;
+import { BillingModule } from &#39;../billing/billing.module.js&#39;;
+import { OrdersService } from &#39;./orders.service.js&#39;;
+
+@Module({
+  imports: [forwardRef(() =&gt; BillingModule)],
+  providers: [OrdersService],
+  exports: [OrdersService],
+})
+export class OrdersModule {}
+</code></pre>
+<p>وإن حقنت <code>BillingService</code> داخل <code>OrdersService</code> والعكس، كرر الغلاف على الـ <code>constructor</code> في الملفين. ثم اكتب في تعليق الإزالة: الفوترة يجب أن تستقبل المجموع وسيطًا. المسكن بلا هذه الجملة يُنسخ في الوحدة التالية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>غلاف على طرف واحد في علاقة متبادلة.</li>
+<li>نداء الطرف الآخر داخل <code>constructor</code>.</li>
+<li><code>forwardRef</code> حول برميل ما زال يدور في التحميل. أصلح الاستيراد أولًا.</li>
+<li>نسيان الغلاف على <code>imports</code> والإبقاء عليه على الخدمة فقط، فتبقى دورة الوحدات.</li>
+<li>إدخال <code>Scope.REQUEST</code> على أحد الطرفين.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>دورة مفهومة تعذّر فكها في هذا السحب، على الطرفين، مع اختبار إقلاع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل فحص البرميل، وقبل محاولة وسيط أو مزود ثالث. ولا كأسلوب لكل وحدتين تتكلمان.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الآلية</th>
+<th>ماذا تؤجل</th>
+<th>الطرفان</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>forwardRef</code> في <code>@Inject</code></td>
+<td>صنف المزود</td>
+<td>مطلوبان للدورة المتبادلة</td>
+</tr>
+<tr>
+<td><code>forwardRef</code> في <code>imports</code></td>
+<td>صنف الوحدة</td>
+<td>مطلوبان إن كانت دورة وحدات</td>
+</tr>
+<tr>
+<td><code>ModuleRef.get</code> لاحقًا</td>
+<td>الحقن نفسه إلى ما بعد البناء</td>
+<td>يكفي طرف واحد يتأخر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين تُستورد <code>forwardRef</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/common</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>@Inject</code> يحيط <code>forwardRef</code> في مثال الخدمتين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المصنع يجب أن يُحفظ في metadata الحقن. نوع TypeScript وحده لا يمرر الدالة المؤجلة إلى الإطار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>غلفت <code>imports</code> وبقي <code>constructor</code> يحقن الصنف مباشرة. أي دورة ما زالت مفتوحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>دورة المزودات. غلاف الوحدة يحل <code>imports</code> فقط. طرفا الـ <code>constructor</code> يحتاجان <code>@Inject(forwardRef(() =&gt; ...))</code> أيضًا ما داما يحقنان بعضهما.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا الطرفان معًا؟</li>
+<li>ماذا لا يضمنه نجاح الإقلاع؟</li>
+<li>أين يوضع الغلاف للوحدة مقابل الخدمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forwardRef(() =&gt; Other)</code> على الجهتين يؤجل الرمز حتى يكتمل التحميل. لا ترتب عليه أي <code>constructor</code> أولًا، ولا تضفه إلى مزود طلب داخل دورة.</p>
+<h2>ماذا بعد؟</h2>
+<p>إعادة رسم حدود الـ Modules حتى تُحذف الدورة بدل تغليفها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Circular dependency: <a href="https://docs.nestjs.com/fundamentals/circular-dependency">https://docs.nestjs.com/fundamentals/circular-dependency</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

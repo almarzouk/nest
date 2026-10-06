@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OpenID Connect</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-openid-connect.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OpenID Connect</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إضافة هوية فوق التفويض: مع رمز الوصول يأتي ID token يقول من المستخدم لدى المزود، وتتحقق رف من توقيعه قبل إنشاء جلستها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>OAuth أعطاكم access token إلى API المزود. قراءته لا تثبت وحدها أنكم عرفتم الشخص: الرمز قد يكون لنطاق بلا هوية، أو لواجهة لا تعيد موضوعًا ثابتًا. موظف رف سجّل بـ Google ثم غيّر بريده، وانكسر الربط لأنكم خزّنتم البريد مفتاحًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>OpenID Connect طبقة هوية على OAuth 2.0. المزود خادم تفويض ويمنح ID token (غالبًا JWT) فيه <code>sub</code> ثابت و <code>iss</code> و <code>aud</code> و <code>exp</code>. التطبيق يتحقق من التوقيع والمطالبات ثم يربط <code>sub</code> بحساب محلي. البريد صفة قد تتغير. <code>sub</code> لا يُستبدل كمفتاح الربط.</p>
+<h2>التعريف التقني</h2>
+<p><code>@nestjs/authentication</code> يشمل OpenID Connect مع الجلسات وتجزئة كلمات المرور والرموز، والحالة في مخزن تكتبونه ضد واجهات موثّقة (<code>OidcStateStore</code> وغيرها). التدفق في الحزمة: authorization code مع PKCE و <code>state</code> و <code>nonce</code>. <code>OidcService.start</code> يبدأ التوجيه و <code>finish</code> ينهي العودة: يطابق <code>state</code> بسر في كعكة <code>__Host-oidc_tx</code>، يستبدل الرمز، ويتحقق من توقيع ID token مقابل مفاتيح المزود المنشورة ومن المصدر والجمهور والانتهاء و <code>nonce</code>. فشل الوصول إلى المزود أو نقطة نهاية ليست https يُجاب بـ 502 لا 401 حسب الصفحة. وصفة Passport تبقى على <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a> لمن يختارها. لا تشغّلوا المسارين على نفس تسجيل الدخول.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">access token  → ماذا يُسمح أن نفعل عند المزود
+ID token      → من هو sub لدى iss
+حساب رف       → صف محلي مرتبط بـ (provider, sub)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface OidcIdentity {
+  provider: string;
+  subject: string;
+}
+
+export function identityKey(id: OidcIdentity) {
+  return `${id.provider}:${id.subject}`;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المفتاح زوج. <code>sub</code> من Google ليس فريدًا عبر المزودات.</li>
+<li>لا تضع البريد في المفتاح.</li>
+<li>الصف المحلي لرف (<code>User.id</code>) شيء آخر. الربط جدول هويات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>start</code> يحفظ معاملة الدخول تحت <code>state</code> ويرسل المتصفح إلى المزود.</li>
+<li>العودة تحمل <code>code</code>. <code>finish</code> يفحص الكعكة ثم يستبدل الرمز.</li>
+<li>يتحقق من ID token. <code>nonce</code> يمنع إعادة رمز قديم في غير محاولته.</li>
+<li><code>aud</code> يجب أن يكون عميل رف المسجّل. توكن مزود لجمهور آخر يُرفض.</li>
+<li>بعدها فقط يُسأل تطبيقكم: أي مستخدم محلي يقابل هذا <code>sub</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function acceptIdClaims(claims: { iss?: string; aud?: string; sub?: string; exp?: number }, now: number) {
+  if (claims.iss !== &#39;https://accounts.google.com&#39;) return false;
+  if (claims.aud !== process.env.GOOGLE_CLIENT_ID) return false;
+  if (!claims.sub) return false;
+  if (!claims.exp || claims.exp * 1000 &lt;= now) return false;
+  return true;
+}
+</code></pre>
+<p>هذا فحص شكل قبل أن تثقوا بمكتبة. التحقق الفعلي من التوقيع ضد JWKS تقوم به الحزمة في <code>finish</code>، لا <code>JSON.parse</code> للجزء الأوسط من JWT. لا تعيدوا بناء التوقيع يدويًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الثقة بحمولة JWT من غير تحقق توقيع.</li>
+<li>ربط الحساب بالبريد فقط.</li>
+<li>اعتبار access token الخاص بالمزود جلسة رف الدائمة وتمريره إلى كل <code>GET /books</code>.</li>
+<li>تشغيل Passport strategy و <code>OidcService</code> على نفس المسار فيتنازعان على الكعكة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يثبت مزود خارجي هوية شخص لتفتحوا له جلسة رف أو رمز رف.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تحتاجون إذنًا على API المزود بلا حساب شخص في رف (مهمة خادم-إلى-خادم بنطاق). هناك OAuth بلا مطالبة هوية. ولا عندما يكون الموظفون كلمات مرور محلية فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>OAuth 2.0</th>
+<th>OpenID Connect</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السؤال</td>
+<td>هل يُسمح بهذا النطاق؟</td>
+<td>من هو <code>sub</code>؟</td>
+</tr>
+<tr>
+<td>الرمز البارز</td>
+<td>access token</td>
+<td>ID token إضافة إلى التفويض</td>
+</tr>
+<tr>
+<td>مفتاح الربط المحلي</td>
+<td>حسب API</td>
+<td><code>(provider, subject)</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>مستخدم غيّر بريده عند Google. ماذا يبقى ثابتًا للربط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>sub</code> مع اسم المزود. البريد يُحدَّث كصفة إن وثقتهم بتغيّره، ولا يُستخدم كمفتاح الصف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا 502 لا 401 عندما لا يُوصل إلى مفاتيح Google؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الفشل عند الاعتمادية الخارجية لا يعني أن إثبات المستخدم باطل. الصفحة تميّز هذا: تعذّر الوصول أو نقطة ليست https يُجاب بـ 502. التوثيق الفاشل لتوقيع مستخدم يرفض الدخول نفسه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ID token فيه <code>aud</code> لتطبيق آخر و <code>sub</code> صحيح. هل تفتحون جلسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الجمهور جزء من التحقق. توكن أُصدر لعميل آخر لا يُقبل حتى لو كان الموقع صحيحًا والتوقيع سليمًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضيف OIDC على OAuth؟</li>
+<li>لماذا <code>sub</code> لا البريد؟</li>
+<li>من يتحقق من التوقيع في مسار الحزمة؟</li>
+<li>أين تبقى وثائق Passport؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>OIDC يعطيكم ID token موثّقًا: مصدر، جمهور، انتهاء، <code>nonce</code>، و <code>sub</code> ثابت. حساب رف يُربط بالزوج <code>(provider, subject)</code>. access token ليس جلسة رف. Passport ما زال وصفة رسمية إن اخترتموها بدل هذا المسار لا معه.</p>
+<h2>ماذا بعد؟</h2>
+<p>الهوية الخارجية واضحة. الدرس التالي شكل تسجيل الدخول الاجتماعي: حساب جديد، حساب عائد، وربط بحساب موجود.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>OpenID Connect Core: <a href="https://openid.net/specs/openid-connect-core-1_0.html">https://openid.net/specs/openid-connect-core-1_0.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

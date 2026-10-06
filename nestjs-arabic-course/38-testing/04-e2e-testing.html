@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>E2E Testing</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-e2e-testing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>E2E Testing</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرسال طلب HTTP إلى تطبيق Nest مركّب وقراءة الرمز والجسم، لإثبات الربط لا لإثبات كل فرع في الخدمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الوحدة والتكامل لا يريان أن المسار اسمه <code>POST /books/:id/publish</code> أو أن الأنبوب يرفض جسمًا ناقصًا قبل الخدمة. رحلة واحدة خضراء لا تغني عن الوحدة، لكنها تلتقط سلكًا منزوعًا: متحكم غير مسجّل، بادئة عامة، أو حارس يمنع الجميع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ابنِ التطبيق من وحدة الاختبار، <code>init</code> بلا <code>listen</code> إن لم تحتاج منفذًا حقيقيًا، أرسل الطلب بأداة HTTP، ثم <code>close</code>. قاعدة الاختبار أو وهم الخدمة حسب ما تثبته الرحلة. لا تشغّل إنتاجًا. لا تعتمد على ترتيب اختبارات أخرى.</p>
+<p>في الوثائق الاسم e2e. المقصود هنا طلب عبر إطار Nest حتى الرد، لا متصفحًا على شبكة عامة.</p>
+<h2>التعريف التقني</h2>
+<p>الشكل من صفحة الاختبار، بالأداة <code>supertest</code> التي يفصلها درس لاحق:</p>
+<pre><code class="language-ts">const moduleRef = await Test.createTestingModule({
+  imports: [BooksModule],
+}).compile();
+const app = moduleRef.createNestApplication();
+await app.init();
+await request(app.getHttpServer()).post(&#39;/books/42/publish&#39;).expect(201);
+await app.close();
+</code></pre>
+<p><code>getHttpServer()</code> يعطي الخادم بلا فتح منفذ على الجهاز، وهذا يكفي لـ Supertest. <code>listen</code> فقط إن كان عميل خارج العملية يحتاج عنوانًا.</p>
+<p>عدد الرحلات صغير: مسار سعيد، و <code>400</code> لجسم باطل، و <code>404</code> لمعرف غائب. فروع القص والبريد تبقى وحدة. الرحلة التي تشغّل Redis والطابور والناشر معًا بطيئة ونادرة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">TestingModule
+  createNestApplication
+    init
+      HTTP
+    close
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>رفض جسم الإنشاء:</p>
+<pre><code class="language-ts">await request(app.getHttpServer())
+  .post(&#39;/books&#39;)
+  .send({})
+  .expect(400);
+</code></pre>
+<p>الخدمة لا تُستدعى. إن استُدعيت فالأنبوب غير مركّب على التطبيق الاختباري. هذا ما لا يراه <code>new BooksService</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>send({})</code> JSON بلا <code>title</code>. <code>ValidationPipe</code> العالمي يجب أن يُركب في الاختبار كما في <code>main.ts</code>. نسيان <code>app.useGlobalPipes</code> في مصنع الاختبار يعطي <code>201</code> كاذبًا. شارك دالة <code>createTestApp()</code> بين الرحلات حتى لا ينحرف التطبيق عن الإقلاع الحقيقي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>createNestApplication</code> يبني سلسلة الوسيطات والمتحكمات. <code>init</code> يشغّل خطافات التهيئة دون أن يلزم <code>listen</code>. Supertest يكتب على كائن الخادم مباشرة. الحارس يعمل. بعد <code>close</code> تُغلق الاتصالات. إن تركت التطبيق مفتوحًا، الملف التالي يعلق أو يشارك حالة.</p>
+<p>رحلة النشر التي تضرب قاعدة الاختبار تكتب صفًا. نظّف في <code>afterEach</code> أو استخدم معاملة. رحلة تستبدل <code>BooksService</code> بوهم تثبت الربط فقط: المتحكم استدعى <code>publish</code>. لا تسمِّ الوهم تكامل قاعدة.</p>
+<h2>مثال عملي</h2>
+<p>ثلاث رحلات للمتجر لا ثلاثون:</p>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>يثبت</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /books</code> بجسم صالح</td>
+<td><code>201</code> وجسم فيه <code>id</code></td>
+</tr>
+<tr>
+<td><code>POST /books</code> بلا عنوان</td>
+<td><code>400</code></td>
+</tr>
+<tr>
+<td><code>POST /books/42/publish</code> بلا صلاحية</td>
+<td><code>403</code></td>
+</tr>
+</tbody></table>
+<p>قص الغلاف لا يُنتظر في هذه الرحلة. إما وهم المنتج الذي يتوقع <code>add</code>، وإما حالة <code>pending</code> في الجسم إن كانت القاعدة حقيقية والمنتج وهمًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>رحلة لكل فرع <code>if</code> في <code>resize</code>.</li>
+<li>نسيان <code>close</code>.</li>
+<li><code>listen</code> على 3000 فيصطدم بتشغيلك المحلي.</li>
+<li>مصنع اختبار بلا <code>ValidationPipe</code> الذي في <code>main.ts</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمسارات قليلة تمثل عقد HTTP: رمز، وشكل جسم، وحارس.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن وحدة الخريطة أو تكامل العمود. البطء سيقلل عدد الحالات التي تكتبها.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>وحدة</th>
+<th>تكامل</th>
+<th>e2e هنا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>HTTP</td>
+<td>لا</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>القاعدة</td>
+<td>لا</td>
+<td>غالبًا</td>
+<td>حسب المصنع</td>
+</tr>
+<tr>
+<td>العدد</td>
+<td>كثير</td>
+<td>أقل</td>
+<td>قليل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تستدعي بعد آخر طلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>await app.close()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد ينجح جسم فارغ في الاختبار ويفشل في التشغيل الحقيقي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن مصنع الاختبار لم يركب <code>ValidationPipe</code> كما في <code>main.ts</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أي سلوك قص لا تضعه في الرحلة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إعادة المحاولة وكتابة الملف. تلك وحدة أو تكامل <code>resize</code>. الرحلة تثبت <code>201</code> و <code>pending</code> أو أن <code>add</code> استُدعي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا <code>init</code> قد يكفي بلا <code>listen</code>؟</li>
+<li>ماذا لا يثبته اختبار وحدة المسار؟</li>
+<li>كيف تتجنب منفذ 3000؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الرحلة طلب HTTP على تطبيق اختباري مهيأ مثل الإقلاع، ثم <code>close</code>. قليلة، وتترك الفروع للوحدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أي مشغّل يشغّل هذه الملفات: Vitest مع قالب ESM، و Jest مع قالب CommonJS.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

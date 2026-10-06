@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>ماذا في حمولة النشر؟</li>
+<li>أي استدعاء ينتظر المستمع غير المتزامن؟</li>
+<li>هل الحدث يبلغ نسخة Nest ثانية وحده؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>{ bookId: string }</code> تحت الاسم <code>book.published</code>.</li>
+<li><code>emitAsync</code>.</li>
+<li>لا. البث داخل العملية.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>أضف تدقيقًا وبريدًا بعد النشر من غير تعديل جديد على جسم <code>publish</code> بعد أول <code>emit</code>. أين يعيش كل أثر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>publish</code> يبقى: تحديث ثم <code>emitAsync</code>. مستمع بريد في <code>providers</code> ينادي <code>enqueuePublished</code>. مستمع تدقيق يكتب سطر <code>{ bookId }</code> أو يدرج مهمة. حذفهما من الوحدة لا يغيّر دالة الحفظ. لا ترتيب بينهما كمعاملة.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>مستمع يستدعي SMTP مباشرة، ومخبأ الغلاف <code>Map</code> داخل العملية، ونسختان خلف الموازن. بعد النشر تُعاد تشغيل العملية أ. ماذا يصل المؤلف، وماذا يرى الزائر على ب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البريد قد لا يخرج إن ماتت العملية أثناء SMTP، ولا إعادة. انقل الإرسال إلى طابور قبل الرد. الزائر على ب قد يرى قائمة قديمة في <code>Map</code> تلك العملية لأن الحدث لم يصلها. إبطال Redis المشترك من المستمع على أ يفرغ المفتاح للجميع. <code>Map</code> المحلي لا يُبطل بحدث عملية أخرى.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

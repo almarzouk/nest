@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nest CLI</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-nest-cli.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Nest CLI</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ماذا يولّد الأمر <code>nest</code> وماذا لا يقرره مكانك.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إنشاء الملفات والعلاقات يدويًا يخطئ في التسجيل داخل الوحدة. المولّد يكتب الصنف ويسجّله حيث يتوقع الإطار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Nest CLI أداة أوامر تهيئ المشروع وتولّد الوحدات والمتحكمات والخدمات وتشغّل البناء. التوثيق يوصي بها للمبتدئ.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة <code>@nestjs/cli</code>. التثبيت الشائع <code>npm i -g @nestjs/cli</code>. يمكن تشغيلها عبر <code>npx @nestjs/cli</code> من غير تثبيت عام إن أردت تثبيت النسخة مع المشروع. الإصدار 12 أعاد بناء CLI على ESM، وجعل الاختبار الافتراضي للمشاريع الجديدة ESM هو Vitest، واستبدل ESLint بـ oxlint في القالب، وأضاف <code>nest upgrade</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">nest new        مشروع
+nest generate   ملف وربطه بالوحدة
+nest start      تشغيل عبر السكربت
+nest build      ترجمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npm i -g @nestjs/cli
+nest --version
+</code></pre>
+<h2>شرح المثال</h2>
+<p>التثبيت العام يضع الأمر <code>nest</code> على المسار. <code>--version</code> يؤكد أن الأمر هو أداة Nest لا اسمًا آخر. إن فشل الأمر، فالنسخة العالمية غير ظاهرة في الطرفية أو التثبيت لم يكتمل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المولّدات schematics من <code>@nestjs/schematics</code>. <code>nest g service users</code> ينشئ الملف ويضيف الرمز إلى <code>providers</code> في الوحدة المناسبة. هذا التسجيل هو ما تنساه عند نسخ ملف يدويًا. CLI لا يشغّل قاعدة بيانات ولا يختار Fastify إلا إذا طلبت ذلك لاحقًا.</p>
+<h2>مثال عملي</h2>
+<p>بعد التثبيت ستستخدم <code>nest new bookstore</code> في الدرس التالي. بقية الدورة تستخدم <code>nest g</code> عندما نضيف ميزة، مع شرح الملف الناتج لا الاكتفاء بالأمر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ ملف خدمة من مشروع آخر من غير إضافته إلى <code>providers</code>.</li>
+<li>تعلم الأعلام كلها قبل أول مشروع. ابدأ بـ <code>new</code> ثم <code>start:dev</code>.</li>
+<li>افتراض أن CLI يختار Fastify. الافتراضي Express.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لبدء المشروع ولتوليد Module و Controller و Service.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستخدم مولّد CRUD كاملًا قبل أن تكتب موردًا واحدًا بيدك وتفهم طبقاته. الوصفة موجودة في التوثيق عندما يصبح التكرار واضحًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>عمل</th>
+<th>بيدك</th>
+<th>CLI</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء الصنف</td>
+<td>نعم</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>تسجيله في الوحدة</td>
+<td>قد يُنسى</td>
+<td>المولّد يكتبه</td>
+</tr>
+<tr>
+<td>قرار المعمارية</td>
+<td>أنت</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الحزمة التي تثبت الأمر <code>nest</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@nestjs/cli</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا توليد الخدمة أفضل من لصق ملف فقط؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن المولّد يسجّل الصنف في <code>providers</code>. الملف غير المسجّل لا تدخله الحاوية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الذي تغيّر في قالب CLI 12 بخصوص الاختبار والتنسيق مقارنة بالدروس القديمة التي تذكر ESLint و Jest دائمًا؟</p>
+<details><summary>الحل</summary>
+
+<p>المشروع ESM الجديد يستخدم Vitest، و CommonJS يبقى على Jest. القالب يستخدم oxlint و Prettier لا ESLint. الدروس القديمة التي تفرض Jest و ESLint على كل مشروع جديد لم تعد تصف الافتراضي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يوصي التوثيق به لبدء أول مشروع؟</li>
+<li>ماذا يسجّل <code>nest g</code> إضافة إلى إنشاء الملف؟</li>
+<li>ما أداة lint في القالب الحالي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>CLI يولد الهيكل ويسجّل القطع. أنت ما زلت صاحب تقسيم الميزات.</p>
+<h2>ماذا بعد؟</h2>
+<p>ننشئ المشروع ونقرأ الأسئلة التي يطرحها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+<li>NestJS — CLI usage: <a href="https://docs.nestjs.com/cli/usages">https://docs.nestjs.com/cli/usages</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

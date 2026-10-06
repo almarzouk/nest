@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DTO و Validation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-dto-and-validation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>DTO و Validation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت جسم كل مسار كتابة في صنف يفحصه <code>ValidationPipe</code> قبل أن تصل الحقول إلى Prisma.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Body() body: any</code> يمرّر <code>published</code> و <code>passwordHash</code> و <code>role</code> إن أرسلها العميل. نوع Prisma يُمحى وقت التشغيل فلا يرفض الحقل الزائد. مقال بلا عنوان يصل إلى <code>NOT NULL</code> كخطأ قاعدة بدل <code>400</code> يشرح الحقل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>صنف لكل أمر كتابة: <code>CreateUserDto</code> و <code>CreatePostDto</code> و <code>CreateCommentDto</code>. الأنبوب العام يبيّض الحقول غير الموسومة ويرفض الزائد ويحوّل الأنواع. الخدمة تستقبل الناتج لا الطلب الخام.</p>
+<h2>التعريف التقني</h2>
+<p>في <code>main.ts</code>، كما في فصل التحقق:</p>
+<pre><code class="language-ts">app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }),
+);
+</code></pre>
+<p><code>whitelist</code> يحذف ما بلا وسوم. <code>forbidNonWhitelisted</code> يرمي <code>400</code> بدل الحذف الصامت. <code>transform</code> يبني نسخة من الصنف ويتيح <code>@Type</code> عند الحاجة.</p>
+<pre><code class="language-ts">import { IsEmail, IsInt, IsString, MaxLength, MinLength } from &quot;class-validator&quot;;
+
+export class CreateUserDto {
+  @IsEmail()
+  email: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  name: string;
+
+  @IsString()
+  @MinLength(12)
+  @MaxLength(128)
+  password: string;
+}
+</code></pre>
+<p><code>CreatePostDto</code> يضيف <code>@IsInt()</code> على <code>authorId</code>. مع <code>transform</code>، العدد القادم كنص JSON يبقى عددًا إن أرسله العميل عددًا. إن أرسل <code>&quot;3&quot;</code> كنص، التحويل الضمني يحتاج <code>transformOptions.enableImplicitConversion</code> بحذر، أو <code>@Type(() =&gt; Number)</code>. فضّل أن يرسل العميل عددًا حقيقيًا في JSON.</p>
+<p><code>CreateCommentDto</code> حقل <code>body</code> بـ <code>@MaxLength(500)</code>.</p>
+<p>لا تستخدم واجهة TypeScript وحدها. الأنبوب يحتاج صنفًا. مخطط Zod مع <code>StandardSchemaValidationPipe</code> بديل موثّق في Nest 12 إن كان المشروع كله على المخططات. هذا الفصل يبقي class-validator لأن الموارد الثلاثة أصناف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">JSON
+  -&gt; ValidationPipe
+       زائد -&gt; 400
+       عنوان فارغ -&gt; 400
+       نسخة CreatePostDto
+  -&gt; PostsService
+  -&gt; Prisma
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsInt, IsString, MinLength } from &quot;class-validator&quot;;
+
+export class CreatePostDto {
+  @IsString()
+  @MinLength(1)
+  title: string;
+
+  @IsString()
+  @MinLength(1)
+  body: string;
+
+  @IsInt()
+  authorId: number;
+}
+</code></pre>
+<pre><code class="language-ts">@Post()
+create(@Body() dto: CreatePostDto) {
+  return this.posts.create(dto);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المتحكم لا يعيد فحص <code>title</code>. الأنبوب فعل ذلك. الخدمة ما زالت تفرض <code>published: false</code> لأن ذلك قاعدة لا شكل حقل. التحقق يمنع الشكل الكاذب. الخدمة تمنع المعنى الذي لا يُعبَّر بوسم عام، مثل «المؤلف موجود».</p>
+<p><code>password</code> في DTO المستخدم لا يُسمّى <code>passwordHash</code>. الاسم في العقد هو ما يكتبه الإنسان. الترجمة إلى عمود التجزئة تتم في الخدمة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأنبوب يعمل بعد الوسطاء وقبل الحارس إن وُجد، ضمن دورة الطلب التي درستها. فشل التحقق استثناء يصل إلى مرشح الاستثناءات كـ <code>400</code> ورسالة فيها قائمة. الخدمة لا ترى الجسم الأصلي. الحقول المحذوفة مع <code>whitelist</code> وحدها تختفي بصمت، لذلك <code>forbidNonWhitelisted</code> أوضح لمن يخطئ في اسم الحقل.</p>
+<h2>مثال عملي</h2>
+<p>أرسل <code>POST /posts</code> مع <code>{ &quot;title&quot;: &quot;&quot;, &quot;body&quot;: &quot;x&quot;, &quot;authorId&quot;: 1, &quot;published&quot;: true }</code>. فراغ العنوان <code>400</code>، وإن أصلحته فالحقل <code>published</code> زائد ويعيد <code>400</code> مع <code>forbidNonWhitelisted</code>. أرسل <code>{ &quot;title&quot;: &quot;وحدات&quot;, &quot;body&quot;: &quot;شرح&quot;, &quot;authorId&quot;: 1 }</code> وتوقع وصول الثلاثة فقط إلى الخدمة. كرّر الفكرة على تعليق أطول من <code>500</code> حرف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>أنبوب بلا <code>whitelist</code>.</li>
+<li>DTO يعكس كل أعمدة الجدول بما فيها <code>id</code> و <code>passwordHash</code>.</li>
+<li>فحص «المؤلف موجود» داخل الواسم.</li>
+<li>نسيان الأنبوب في <code>main.ts</code> ثم الاعتقاد أن الوسوم تعمل وحدها.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل <code>@Body()</code> ولاحقًا على استعلامات القائمة في دروس التصفية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل <code>PrismaService</code>. العميل المولَّد لا يفحص HTTP. الفحص على الحدود.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>DTO</th>
+<th>نموذج Prisma</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>شكل الطلب</td>
+<td>شكل الصف</td>
+</tr>
+<tr>
+<td>وسوم وقت التشغيل</td>
+<td>أنواع وقت الترجمة</td>
+</tr>
+<tr>
+<td>يرفض الزائد</td>
+<td>يكتب ما تمرّره أنت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفعل <code>forbidNonWhitelisted</code> مع حقل <code>role</code> على <code>CreateUserDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يرفض الطلب بـ <code>400</code> لأن <code>role</code> بلا وسم على الصنف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكون <code>published</code> في <code>CreatePostDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المسودة قرار خدمة عند الإنشاء. وجود الحقل في DTO يجعل العميل يختاره حتى لو فحصت القيمة لاحقًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الفريق يريد Zod لكل الأجسام. أين يتغيّر الأنبوب من غير نقل SQL إلى المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استبدل الأنبوب العام بـ <code>StandardSchemaValidationPipe</code> ومرّر المخطط على <code>@Body</code> كما في توثيق التحقق. الخدمة تبقى تستقبل كائنًا ضيقًا. لا تخلط الأنبوبين على التطبيق نفسه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تُفعَّل الخيارات الثلاثة؟</li>
+<li>ما الفرق بين اسم <code>password</code> واسم العمود؟</li>
+<li>أي فحص لا يخص DTO؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>كل كتابة لها DTO، والأنبوب العام يرفض الناقص والزائد قبل Prisma. قاعدة الوجود والمعنى تبقى في الخدمة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-error-handling.html">Error Handling</a> يوحّد شكل <code>404</code> و <code>409</code> و <code>400</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — Pipes: <a href="https://docs.nestjs.com/pipes">https://docs.nestjs.com/pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

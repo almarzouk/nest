@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ترتيب التنفيذ</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-execution-order.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ترتيب التنفيذ</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حفظ ترتيب Middleware حين يجتمع <code>app.use</code> مع عدة وحدات وعدة دوال داخل <code>apply</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرّف الطلب الذي يُولَّد في وحدة داخلية يصل متأخرًا عن مسجّل عام قرأ الترويسة وهي فارغة. الترتيب يغيّر ما يراه كل طرف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عام المنصة أولًا، ثم Middleware الوحدات. داخل الوحدة: ترتيب <code>apply</code>. بين الوحدات: الوحدات المعلّمة بـ <code>@Global()</code> ثم الوحدة الجذر ثم البقية حسب بعدها عن الجذر في شجرة <code>imports</code>.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Request lifecycle تفصّل Middleware هكذا:</p>
+<ol>
+<li>Globally bound middleware، مثل <code>app.use()</code>.</li>
+<li>Module bound middleware المطابق للمسار.</li>
+</ol>
+<p>وتزيد: Middleware وحدات <code>@Global()</code> أولًا، ثم Middleware الوحدة الجذر، ثم Middleware الوحدات الأخرى مرتبة بحسب بعدها عن الجذر في رسم الاستيراد.</p>
+<p>داخل قائمة واحدة، الترتيب هو ترتيب الربط، كما في Express. <code>apply(a, b)</code> يشغّل <code>a</code> ثم <code>b</code>. استدعاء <code>apply</code> ثانٍ في <code>configure</code> يأتي بعد الأول.</p>
+<p>هذه الطبقة كلها قبل Guards. استثناء هنا لا يمر على فلتر المسار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">app.use(requestId)                 1
+@Global() AuditModule  auditLog    2
+AppModule              shelfStamp  3
+LoansModule            traceLoan   4
+ثم Guards
+</code></pre>
+<p>المسافة عن الجذر: وحدة يستوردها <code>AppModule</code> مباشرة أقرب من وحدة تستوردها تلك الوحدة. الأبعد يعمل لاحقًا بين Middleware الوحدات.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+import { requestId } from &#39;./request-id.middleware.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.use(requestId);
+await app.listen(3000);
+</code></pre>
+<pre><code class="language-ts">consumer.apply(traceLoan, shelfStamp).forRoutes(LoansController);
+</code></pre>
+<p>على <code>GET /loans</code>: <code>requestId</code> ثم <code>traceLoan</code> ثم <code>shelfStamp</code>، وبعدها Guard إن وُجد. هذا يفترض أن <code>traceLoan</code> و <code>shelfStamp</code> في الوحدة نفسها وأن <code>requestId</code> هو <code>app.use</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>requestId</code> في <code>main.ts</code> لذا يسبق كل <code>configure</code>.</li>
+<li><code>traceLoan</code> قبل <code>shelfStamp</code> لأنهما وسيطا <code>apply</code> بهذا الترتيب.</li>
+<li>نقل <code>shelfStamp</code> إلى استدعاء <code>apply</code> أعلى في الملف يعكس ترتيبهما.</li>
+<li>مسار لا يطابق <code>forRoutes</code> يتخطى سلسلة الوحدة ويبقى على <code>app.use</code> فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الإقلاع يجمع السلاسل. عند الطلب تمشي المنصة سلسلة <code>app.use</code>، ثم تسأل Nest عن Middleware الوحدات المطابقة وتمررها بالترتيب المحسوب من <code>@Global()</code> والجذر والمسافة.</p>
+<p>مثال مسافة: <code>AppModule</code> تستورد <code>CirculationModule</code>، و <code>CirculationModule</code> تستورد <code>LoansModule</code>. Middleware مسجّل في <code>CirculationModule</code> يسبق Middleware <code>LoansModule</code> لأن الأول أقرب إلى الجذر. Middleware في وحدة <code>@Global()</code> يسبق الاثنين، لأن القاعدة تضع العام أولًا.</p>
+<p>إن أردت أن يرى المسجّل ترويسة وضعها غيره، ضع كاتب الترويسة في مرحلة أسبق: <code>app.use</code> أو وحدة أقرب إلى الجذر.</p>
+<p>بعد آخر <code>next()</code> يبدأ أول Guard عام. Middleware لا ينتظر نتيجة المعالج. قياس المدة الكاملة للطلب يحتاج Interceptor حول المعالج، لأن العودة من الخدمة تحدث بعد هذه الطبقة.</p>
+<h2>مثال عملي</h2>
+<p>بوابة تضع <code>x-request-id</code> أحيانًا. <code>requestId</code> في <code>app.use</code> يقرأها أو يولّدها قبل أي وحدة. <code>AuditModule</code> العامة تكتب سطرًا يرى المعرّف جاهزًا. <code>LoansModule</code> تضيف <code>x-shelf</code> على مساراتها فقط. توليد المعرّف داخل <code>LoansModule</code> يجعل سطر التدقيق العام يُطبع والمعرّف ما زال فارغًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار ترتيب الملفات في المجلد ترتيب التنفيذ. الترتيب من <code>app.use</code> ثم رسم الوحدات ثم <code>apply</code>.</li>
+<li>وضع مولّد المعرّف في أبعد وحدة وتوقع أن المسجّل العام يراه.</li>
+<li>نسيان أن <code>@Global()</code> يقدّم Middleware تلك الوحدة على الجذر. تعليم وحدة عالمية يغيّر الترتيب.</li>
+<li>انتظار شكل الرد النهائي داخل Middleware. الجسم يُكتب في المعالج أو في Interceptor على طريق العودة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما أضفت Middleware ثانيًا. ارسم السطر: من يكتب الترويسة، ومن يقرأها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستخدم ترتيب Middleware لتعويض Guard أو Pipe. الترتيب داخل الطبقة لا ينقل العمل إلى طبقة أخرى.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصدر</th>
+<th>متى يعمل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>app.use</code></td>
+<td>أول Middleware</td>
+</tr>
+<tr>
+<td>وحدة <code>@Global()</code></td>
+<td>أول Middleware الوحدات</td>
+</tr>
+<tr>
+<td><code>AppModule.configure</code></td>
+<td>بعد العام</td>
+</tr>
+<tr>
+<td>وحدة أبعد في <code>imports</code></td>
+<td>بعد الأقرب إلى الجذر</td>
+</tr>
+<tr>
+<td><code>apply(a, b)</code></td>
+<td><code>a</code> ثم <code>b</code></td>
+</tr>
+<tr>
+<td>Guard</td>
+<td>بعد كل ما سبق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أيهما يسبق: <code>app.use(requestId)</code> أم <code>configure</code> في <code>LoansModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.use(requestId)</code>. Middleware المنصة العام قبل Middleware الوحدات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>AuditModule</code> معلّمة بـ <code>@Global()</code> وفيها <code>auditLog</code>. <code>AppModule</code> فيها <code>shelfStamp</code>. أيهما يعمل أولًا على طلب يطابق الاثنين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>auditLog</code>. Middleware الوحدات العامة قبل Middleware الوحدة الجذر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>AppModule</code> تستورد <code>DeskModule</code>، و <code>DeskModule</code> تستورد <code>LoansModule</code>. كل واحدة تربط دالة على المسار نفسه. رتب الدالتين مع <code>app.use</code> الموجود في <code>main.ts</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>app.use</code> أولًا، ثم دالة <code>DeskModule</code> لأنها أقرب إلى الجذر، ثم دالة <code>LoansModule</code>. داخل كل وحدة يبقى ترتيب <code>apply</code> المحلي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما أول مجموعة Middleware في الدورة؟</li>
+<li>كيف ترتّب الصفحة وحدات <code>@Global()</code> والجذر والبقية؟</li>
+<li>ماذا يعني ترتيب الوسائط داخل <code>apply</code>؟</li>
+<li>هل يستطيع Middleware قراءة JSON الذي سيكتبه المعالج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>app.use</code> ثم وحدات عامة ثم الجذر ثم الأبعد. داخل السلسلة ترتيب الكتابة في <code>apply</code>. ارسم هذا قبل أن تعتمد ترويسة يكتبها طرف ويقرأها طرف آخر.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يقرر متى هذه الطبقة هي الأداة، ومتى ينتقل العمل إلى Guard أو Pipe أو Interceptor.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>التمارين داخل كل درس تختبر ذلك الدرس. هذه الصفحة تربط المقدمة كلها. اكتب الجواب قبل فتحه.</p>
+<p>لا يُطلب منك تشغيل Nest في هذا الفصل.</p>
+<h2>تمرين سهل — تسمية الأجزاء</h2>
+<p>وصل هذا السجل من أداة تطوير في المتصفح:</p>
+<pre><code class="language-http">PATCH /books/2 HTTP/1.1
+Host: localhost:3000
+Content-Type: application/json
+Authorization: Bearer abc
+
+{&quot;price&quot;: 28}
+</code></pre>
+<p>والرد:</p>
+<pre><code class="language-http">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{&quot;id&quot;:&quot;2&quot;,&quot;title&quot;:&quot;Refactoring&quot;,&quot;price&quot;:28}
+</code></pre>
+<ol>
+<li>من Client في هذه المحادثة؟</li>
+<li>ما Method، وما المورد؟</li>
+<li>أي جزء يثبت نوع الجسم؟</li>
+<li>لماذا هذا أقرب إلى REST من <code>POST /updateBookPrice</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>البرنامج الذي أرسل <code>PATCH</code>، غالبًا الواجهة أو أداة مثل curl. عملية المتجر هي Server.</li>
+<li>Method هي <code>PATCH</code>. المورد هو الكتاب <code>2</code>، وعنوانه <code>/books/2</code>.</li>
+<li><code>Content-Type: application/json</code> على الطلب وعلى الرد.</li>
+<li>لأن الفعل <code>PATCH</code> والمعرّف في المسار، لا فعل إنجليزي داخل عنوان خاص. الجسم يحمل الجزء المتغير فقط.</li>
+</ol>
+</details>
+
+<h2>تمرين متوسط — Express ثم الحدود</h2>
+<p>اقرأ الدالة:</p>
+<pre><code class="language-ts">app.get(&#39;/books/:id/publish&#39;, async (req, res) =&gt; {
+  const book = await db.query(&#39;update books set status = $1 where id = $2 returning *&#39;, [
+    &#39;published&#39;,
+    req.params.id,
+  ]);
+  if (!req.header(&#39;x-admin&#39;)) {
+    res.status(403).json({ message: &#39;no&#39; });
+    return;
+  }
+  res.json(book.rows[0]);
+});
+</code></pre>
+<ol>
+<li>ما مشكلة Method بالنسبة لمعنى HTTP؟</li>
+<li>ما مشكلة ترتيب فحص المدير بالنسبة لأثر قاعدة البيانات؟</li>
+<li>سمِّ مكانين في خريطة Nest تفصل إليهما &quot;النشر&quot; و &quot;هل هو مدير؟&quot; من غير كتابة الكود.</li>
+<li>ماذا يجعل الاختبار صعبًا هنا؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>GET</code> يغيّر <code>status</code>. الروابط وإعادة المحاولة والذاكرة الوسيطة تفترض أن <code>GET</code> لا يغيّر حالة الخادم. النشر <code>POST</code> على مورد عملية أو <code>PATCH</code> على حالة الكتاب.</li>
+<li>التحديث يحدث قبل فحص <code>x-admin</code>. زائر يستطيع النشر إذا وصل إلى المسار، ثم قد يرى <code>403</code> بعد أن تغيّرت البيانات. الفحص يسبق الأثر.</li>
+<li>قرار المدير في Guard. تغيير حالة الكتاب في Service يناديها Controller. التحقق من شكل المعرّف، إن وُجد، في Pipe.</li>
+<li>الدالة تحتاج HTTP و <code>db</code> معًا، والقاعدة مكتوبة داخل المعالج. لا توجد دالة نشر تستقبل كتابًا وصلاحية جاهزة وتُختبر وحدها.</li>
+</ol>
+</details>
+
+<h2>تمرين متقدم — تتبع مسار Nest</h2>
+<p>طلب <code>POST /books</code> بجسم <code>{ &quot;title&quot;: &quot;&quot;, &quot;price&quot;: -1 }</code> على تطبيق فيه:</p>
+<ul>
+<li>Middleware يحلّل JSON</li>
+<li>Guard يسمح بالإنشاء للموظفين، والطلب من موظف مقبول</li>
+<li>Pipe يرفض العنوان الفارغ والسعر السالب</li>
+<li>Service كانت ستحفظ الكتاب</li>
+<li>Filter عام يحوّل الأخطاء غير المتوقعة إلى <code>500</code></li>
+</ul>
+<p>أجب:</p>
+<ol>
+<li>رتّب ما الذي يعمل وما الذي لا يصل إليه التنفيذ.</li>
+<li>فشل الـ Pipe يرمي استثناء تحقق. ماذا يحدث لباقي المحطات، ومن أين يبدأ اختيار الفلاتر؟</li>
+<li>لو نجح الشكل ورمت الخدمة خطأ قاعدة بيانات غير ممسوك، من يراه أولًا: فلتر على الدالة، أم فلتر على المتحكم، أم الفلتر العام؟</li>
+<li>لماذا لا نضع فحص السعر السالب داخل Middleware عام على كل المسارات؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Middleware يحلّل JSON، ثم Guard يقبل الموظف. Pipe يرفض الجسم. المتحكم والخدمة لا يعملان، ولا يُحفظ كتاب.</li>
+<li>فشل التحقق استثناء غير ممسوك بعد اختيار المسار. بقية محطات النجاح تُتخطى، والطلب يدخل Exception Filters من الأخص إلى الأعم: Route ثم Controller ثم Global. أول فلتر يلتقط هذا النوع هو الذي يكتب الرد، والافتراضي في Nest لخطأ التحقق من هذا النوع يكون ضمن فئة <code>400</code>. الفلتر العام الذي يحوّل كل شيء إلى <code>500</code> يراه فقط إذا لم يسبقه فلتر أخص، ولذلك فلتر &quot;غير متوقع&quot; يجب أن يترك أخطاء التحقق تمر بشكلها. تفاصيل <code>@Catch</code> في فصل Exception Filters.</li>
+<li>فلتر الدالة (Route) أولًا، ثم فلتر المتحكم، ثم العام.</li>
+<li>Middleware العام إما يفحص أجسامًا ليست كتبًا، أو يمتلئ بشروط على المسارات. شكل الكتاب يعيش مع عقد الكتاب (DTO) ويُطبَّق حيث يُستخدم العقد.</li>
+</ol>
+</details>
+
+<h2>سؤال تصميم أخير</h2>
+<p>اكتب جدولًا من خمسة صفوف لعملية &quot;إضافة مراجعة على كتاب&quot;: HTTP الذي تختاره، ومن Client، وأين تعيش قاعدة &quot;المراجعة لا تتجاوز 500 حرف&quot; في خريطة Nest، وأين تعيش قاعدة &quot;المستخدم اشترى الكتاب&quot;، وما الذي لا يجوز أن يعرفه كائن JSON الخارج.</p>
+<details>
+<summary>الحل</summary>
+
+<p>إجابة مقبولة:</p>
+<table>
+<thead>
+<tr>
+<th>البند</th>
+<th>الاختيار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>HTTP</td>
+<td><code>POST /books/:id/reviews</code> مع <code>201</code></td>
+</tr>
+<tr>
+<td>Client</td>
+<td>الواجهة أو التطبيق الذي أرسل الطلب</td>
+</tr>
+<tr>
+<td>حد الأحرف</td>
+<td>Pipe / DTO لأنه شكل مدخل</td>
+</tr>
+<tr>
+<td>شرط الشراء</td>
+<td>Service لأنه قاعدة عمل تحتاج بيانات طلبات، لا شكل النص فقط</td>
+</tr>
+<tr>
+<td>لا يخرج في JSON</td>
+<td>أسرار داخلية مثل هامش ربح الكتاب، أو بريد الموظف، أو أي حقل لم يدخل العقد</td>
+</tr>
+</tbody></table>
+<p>حد الأحرف يمكن أن يُعاد في الخدمة كحماية ثانية، لكن مكان إعلان العقد هو DTO.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>13 — وسوم المقالات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>13 — وسوم المقالات</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new tag-catalog</code></p>
+<h2>ماذا تبني</h2>
+<p>الوسم كيان مستقل. المقال يشير إلى معرفات وسوم. حذف وسم مستعمل ممنوع.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>تتعلم أن النص المكرر ليس علاقة. الوسم صف، والربط جدول حتى لو كان في الذاكرة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>تطبيع الاسم</li>
+<li>الربط والانفكاك</li>
+<li>409 عند الحذف المستعمل</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>شجرة وسوم</li>
+<li>بحث نصي كامل</li>
+<li>صلاحيات</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>التعليقات.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/04-modules/README.html">04-modules</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>اسم الوسم حروف صغيرة بلا مسافات طرفية.</li>
+<li>تكرار الاسم 409.</li>
+<li>المقال يحمل tagIds لا أسماء حرة عند الربط.</li>
+<li>وسم بلا مقالات يُحذف. وسم مربوط 409.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/tags</code></td>
+<td>201</td>
+<td>ينشئ وسمًا</td>
+</tr>
+<tr>
+<td><code>PUT</code></td>
+<td><code>/articles/:id/tags</code></td>
+<td>200</td>
+<td>يستبدل قائمة المعرفات</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/tags/:id/articles</code></td>
+<td>200</td>
+<td>المقالات التي تحمله</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new tag-catalog</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>وحّد الاسم بـ trim و toLowerCase.</li>
+<li>PUT يستبدل القائمة كلها حتى يكون العقد واضحًا، لا يضيف بصمت.</li>
+<li>معرف وسم مجهول داخل القائمة 400.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/tags/tags.service.ts
+src/articles/article-tags.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">replaceTags(articleId: string, tagIds: string[]) {
+  const unique = [...new Set(tagIds)];
+  for (const id of unique) this.tags.findOne(id);
+  this.links.set(articleId, unique);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>تخزين الوسوم كنص مفصول بفاصلة داخل المقال.</li>
+<li>PUT الذي يضيف بدل أن يستبدل.</li>
+<li>حذف وسم يترك معرفًا ميتًا على المقال.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>نفس الاسم مرتين 409.</li>
+<li>استبدال القائمة يزيل القديم.</li>
+<li>الحذف المستعمل 409.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف GET /articles?tag=nestjs بالاسم بعد ترجمته إلى معرف.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 13» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../12-article-comments/README.html">12. تعليقات المقال</a></li>
+<li>التالي: <a href="../14-library-catalog/README.html">14. فهرس كتب ومؤلفين</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

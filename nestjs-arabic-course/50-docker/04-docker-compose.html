@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>docker-compose</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-docker-compose.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>docker-compose</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف خدمات <code>api</code> و <code>postgres</code> و <code>redis</code> على شبكة واحدة، مع نشر المنافذ وفحص جاهزية القاعدة قبل اعتبارها قابلة للاتصال.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تشغيل ثلاثة أوامر Docker يدويًا يخطئ في الشبكة والأسماء. ملف Compose يصف الخدمات والمتغيرات والمنافذ. <code>depends_on</code> وحده ينتظر بدء الحاوية لا جاهزية Postgres لقبول اتصال. شرط <code>service_healthy</code> مع فحص صحة يقلل فشل الإقلاع المبكر. عنوان القاعدة داخل الملف اسم الخدمة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>docker compose up --build</code> يبني <code>api</code> ويشغّل الكل. من جهازك تفتح <code>localhost:3000</code> لأن المنفذ منشور. من حاوية <code>api</code> القاعدة على <code>postgres:5432</code> و Redis على <code>redis:6379</code>. لا تضع هذه الأسماء في كود Prisma. ضعها في <code>DATABASE_URL</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-yaml">services:
+  api:
+    build: .
+    ports:
+      - &quot;3000:3000&quot;
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    healthcheck:
+      test: [&quot;CMD-SHELL&quot;, &quot;pg_isready -U app -d app&quot;]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+volumes:
+  pgdata:
+</code></pre>
+<p>أمر <code>api</code> يأتي من <code>CMD</code> في Dockerfile: <code>node dist/main.js</code>. لا تكتب <code>command: npm run start:dev</code> على هذه الخدمة إن كان الملف إنتاجيًا. ملف <code>compose.dev.yml</code> منفصل يجوز أن يركّب المصدر ويشغّل المراقبة على الجهاز.</p>
+<p><code>ports</code> ينشر للضيف. الخدمات ترى بعضها بلا نشر المنفذ على الجهاز. لا تنشر <code>5432</code> على الإنترنت في الإنتاج. النشر المحلي للتطوير.</p>
+<p>كلمات <code>app</code> هنا للتعلم المحلي لا لصورة تُرفع. في بيئة مشتركة أسرار من ملف غير متتبع أو من مدير المنصة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ضيفك -&gt; localhost:3000 -&gt; حاوية api:3000
+api -&gt; postgres:5432
+api -&gt; redis:6379
+pgdata يبقى بعد الإيقاف
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الملف أعلاه في جذر المستودع. <code>docker compose up --build</code>. بعد جاهزية Postgres يبدأ <code>api</code>. إن فشل الاتصال فما زالت السلسلة تشير إلى <code>localhost</code>. ابحث في المتغير لا في صورة Postgres.</p>
+<h2>شرح المثال</h2>
+<p><code>service_healthy</code> ينتظر نجاح <code>pg_isready</code>. من دونها يبدأ Node قبل أن يسمع المنفذ فيفشل <code>$connect</code> ويعيد التشغيل إن كانت السياسة كذلك. Redis غالبًا يصبح جاهزًا أسرع، و <code>service_started</code> أقل صرامة. أضف فحص <code>redis-cli ping</code> إن رأيت سباقًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Compose ينشئ شبكة المشروع.</li>
+<li>يسجل اسم <code>postgres</code> و <code>redis</code> و <code>api</code>.</li>
+<li>الحجم <code>pgdata</code> يُربط ببيانات القاعدة.</li>
+<li>الفحص يتكرر حتى النجاح أو استنفاد المحاولات.</li>
+<li><code>api</code> تُبنى من Dockerfile متعدد المراحل وتستلم البيئة.</li>
+<li><code>compose down</code> يوقف الحاويات. <code>down -v</code> يحذف البيانات. لا تستعمله على حجم فيه ما تحتاجه.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>أضف خدمة <code>nats</code> أو <code>rabbitmq</code> بنفس الأسلوب عندما تصل إلى النقل: <code>RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672</code> للتطوير فقط. لا تخلط ملف الإنتاج الذي يسحب صورًا من سجل مع ملف التطوير الذي يبني المصدر. سمِّ الملفات صراحة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>DATABASE_URL</code> فيها <code>localhost</code>.</li>
+<li><code>command: npm run start:dev</code> على صورة أنتجت <code>dist</code> فقط فتفشل لأن <code>src</code> غير موجود.</li>
+<li>نشر Postgres على <code>0.0.0.0</code> في خادم عام.</li>
+<li>نسيان الحجم ثم العجب من ضياع البيانات.</li>
+<li>اعتبار <code>depends_on</code> بلا فحص يكفي دائمًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تشغيل محلي متكرر و CI يحتاج التطبيق مع القاعدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عنقود إنتاج كبير قد تديره منصة أخرى. يبقى Dockerfile هو عقد الصورة. Compose للتطوير ولنشر بسيط تفهم حدوده.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحقل</th>
+<th>دوره</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>build</code></td>
+<td>يصنع صورة <code>api</code></td>
+</tr>
+<tr>
+<td><code>image</code></td>
+<td>يسحب Postgres أو Redis</td>
+</tr>
+<tr>
+<td><code>environment</code></td>
+<td>عناوين بأسماء الخدمات</td>
+</tr>
+<tr>
+<td><code>healthcheck</code></td>
+<td>جاهزية لا مجرد بدء</td>
+</tr>
+<tr>
+<td><code>volumes</code></td>
+<td>بقاء بيانات القاعدة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين يفتح المتصفح التطبيق، ومن أين تفتحه حاوية أخرى؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المتصفح عبر المنفذ المنشور <code>localhost:3000</code>. حاوية أخرى عبر اسم الخدمة والمنفذ الداخلي، لا عبر منفذ الضيف بالضرورة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>pg_isready</code> وليس <code>depends_on</code> فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بدء الحاوية يسبق قبول Postgres للاتصالات. الفحص ينتظر الجاهزية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا فشل <code>start:dev</code> داخل هذه الـ <code>api</code> حتى بعد تصحيح الأمر في Dockerfile؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صورة التشغيل بلا <code>src</code> وبلا CLI. المراقبة للتطوير بتركيب المجلد في ملف Compose منفصل، لا بتغيير أمر الإنتاج.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>-v</code> مع <code>down</code>؟</li>
+<li>أي اسم في <code>DATABASE_URL</code>؟</li>
+<li>ماذا لا يُنشر على الإنترنت؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Compose يضع <code>api</code> و <code>postgres</code> و <code>redis</code> على شبكة بأسماء هي المضيفات، وينتظر جاهزية القاعدة، ويحفظ البيانات في حجم. أمر التطبيق يبقى تشغيل <code>dist</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>NestJS و PostgreSQL و Redis معًا: المتغيرات والإقلاع والإيقاف داخل هذا الملف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Docker — Compose: <a href="https://docs.docker.com/compose/">https://docs.docker.com/compose/</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

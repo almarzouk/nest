@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Public</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-public.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Public</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعليم مسار أو متحكم بأنه يتجاوز حارس الهوية العام، حتى تبقى الصحة وتسجيل الدخول مفتوحين.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>APP_GUARD</code> على <code>IdentifyDeskGuard</code> يغلق كل الدوال. <code>GET /health</code> و <code>POST /auth/login</code> يرجعان <code>401</code> قبل أن يُقرأ الجسم. <code>exclude</code> في Middleware لا يصل إلى الحارس. العلامة على الدالة هي الاستثناء الذي يقرأه الحارس نفسه.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Public(true)</code> تلصق علمًا عبر <code>Reflector.createDecorator&lt;boolean&gt;()</code>. أول أسطر الحارس العام تقرأ العلم بـ <code>getAllAndOverride</code>. إن كان <code>true</code> ترجع <code>true</code> من غير ترويسة. غير ذلك تكمل فحص الهوية.</p>
+<h2>التعريف التقني</h2>
+<p>شكل CLI للزينة المولَّدة، لا مفتاح نصي جديد في كل حارس:</p>
+<pre><code class="language-ts">import { Reflector } from &#39;@nestjs/core&#39;;
+
+export const Public = Reflector.createDecorator&lt;boolean&gt;();
+</code></pre>
+<p>الاستخدام <code>@Public(true)</code> على الدالة أو على صنف متحكم الدخول. القراءة:</p>
+<pre><code class="language-ts">const isPublic = this.reflector.getAllAndOverride(Public, [
+  context.getHandler(),
+  context.getClass(),
+]);
+if (isPublic) {
+  return true;
+}
+</code></pre>
+<p>الدالة قبل الصنف حتى يستطيع مسار واحد داخل متحكم محمي أن يُفتح، أو العكس إن علّمت الصنف ثم غطيت دالة لاحقًا. لتغليق دالة داخل صنف معلّم، <code>createDecorator</code> يخزن <code>false</code> أيضًا إن استدعيت <code>@Public(false)</code>، و <code>getAllAndOverride</code> يعتبر <code>false</code> قيمة موجودة فيغلب الإغلاق. لا تعتمد على حذف الزينة لإغلاق دالة على صنف مفتوح. ضع <code>@Public(false)</code> على الاستثناء.</p>
+<p>الشكل الأقدم <code>() =&gt; SetMetadata(IS_PUBLIC_KEY, true)</code> يعطي <code>@Public()</code> بلا وسيط. يبقى مفهومًا من درس <code>SetMetadata</code>. الزينة الجديدة في هذا المشروع تتبع <code>createDecorator</code> وسيطًا منطقيًا كما يفعل CLI مع الزينة المولَّدة.</p>
+<p>الحارس يجب أن يُحدَّث. العلامة وحدها لا تغيّر <code>401</code>.</p>
+<p><code>@Public(true)</code> لا يلغي <code>RolesGuard</code> إن كان عامًا أيضًا ويمنع عند الغياب. إن كانت الصحة بلا أدوار وحارس الأدوار يسمح عند الغياب، تكفي فتح الهوية. إن كان حارس الأدوار يرفض الغياب، علّمه أن يمرر <code>@Public</code> أيضًا أو لا تربطه على الصحة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">APP_GUARD IdentifyDeskGuard
+  يقرأ @Public(true) → return true
+  وإلا يفحص x-desk-name
+GET /health معلّم
+POST /tickets غير معلّم → 401 بلا ترويسة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type CanActivate, type ExecutionContext, Injectable, UnauthorizedException } from &#39;@nestjs/common&#39;;
+import { Reflector } from &#39;@nestjs/core&#39;;
+import { Public } from &#39;./public.decorator.js&#39;;
+
+@Injectable()
+export class IdentifyDeskGuard implements CanActivate {
+  constructor(private readonly reflector: Reflector) {}
+
+  canActivate(context: ExecutionContext): boolean {
+    const isPublic = this.reflector.getAllAndOverride(Public, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
+    }
+    const request = context.switchToHttp().getRequest&lt;{ headers: Record&lt;string, string | undefined&gt; }&gt;();
+    const name = request.headers[&#39;x-desk-name&#39;];
+    if (!name) {
+      throw new UnauthorizedException();
+    }
+    request.user = { name, roles: [&#39;audit&#39;] };
+    return true;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">@Public(true)
+@Get(&#39;health&#39;)
+health(): { ok: true } {
+  return { ok: true };
+}
+</code></pre>
+<p><code>GET /health</code> يعمل بلا ترويسة. <code>POST /tickets</code> بلا ترويسة يبقى <code>401</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>العلم يُفحص قبل الترويسة. هذا ترتيب الاستثناء.</li>
+<li><code>request.user</code> لا يُلصق على الصحة. <code>@CurrentUser()</code> هناك تكون <code>undefined</code>. لا تضعها على <code>health</code>.</li>
+<li><code>@Public(true)</code> على <code>AuthController</code> يفتح كل دوال الدخول. أدق من فتح التطبيق.</li>
+<li>لا <code>exclude(&#39;health&#39;)</code> في <code>configure</code>. ذلك ثقب Middleware لا ثقب حارس.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحارس العام يعمل على كل المسارات بعد Middleware. <code>getAllAndOverride</code> يقرأ بيانات الدالة ثم الصنف. <code>true</code> ينهي <code>canActivate</code> بنجاح فتكمل الدورة من غير <code>401</code>. الأنابيب على <code>login</code> تعمل بعد ذلك وتفحص كلمة المرور كشكل، ثم الخدمة تتحقق من السر. قبل العلامة كانت الدورة تموت في الحارس والجسم لا يُفحص.</p>
+<p><code>false</code> الصريح على دالة داخل صنف <code>@Public(true)</code> يُقرأ أولًا فيغلب. الصحة التي هي الدالة الوحيدة المعلمة لا تحتاج ذلك.</p>
+<p>فلتر المسار لا علاقة له بالفتح. الفتح قرار بوابة لا شكل خطأ.</p>
+<h2>مثال عملي</h2>
+<p>بعد نقل الهوية إلى <code>APP_GUARD</code> أُضيف <code>@Public(true)</code> على <code>health</code> وعلى <code>login</code> فقط. اختبار الصحة بلا ترويسة يتوقع <code>{ ok: true }</code>. اختبار <code>POST /tickets</code> بلا ترويسة يتوقع <code>401</code>. اختبار الدخول بجسم صالح شكليًا يصل إلى الخدمة. حذف سطر <code>if (isPublic)</code> يعيد إغلاق الصحة رغم بقاء الزينة، وهو اختبار يثبت أن القارئ جزء من العلامة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الزينة من غير فرع في الحارس.</li>
+<li><code>exclude</code> في Middleware بدل العلامة.</li>
+<li><code>@Public(true)</code> على <code>TicketsController</code> فيفتح الاسترداد.</li>
+<li>لصق مستخدم وهمي داخل فرع العام. المسار العام بلا هوية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على الصحة وتسجيل الدخول وما شابههما حين تكون الهوية <code>APP_GUARD</code>. وعلى دالة واحدة داخل متحكم مغلق إن كانت تلك الدالة عامة فعلًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعلّم كل المتحكمات لتهدئة <code>401</code>. أعد الحارس إلى مستوى المتحكم إن كانت الميزات المحمية قليلة. لا تستخدم العلامة مكان <code>@Roles</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>تفتح الصحة أمام حارس عام؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>exclude</code> في Middleware</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>@Public(true)</code> بلا قارئ</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>@Public(true)</code> وفرع أول في الحارس</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>إزالة <code>APP_GUARD</code></td>
+<td>نعم، وتغلق التذاكر أيضًا إن لم تُنقل الزينة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تضع فوق <code>health</code>، وما الوسيط الذي يمر إلى <code>createDecorator&lt;boolean&gt;</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Public(true)</code>. الوسيط <code>true</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يبقى <code>401</code> بعد إضافة الزينة إن لم يتغير الحارس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العلامة بيانات على الدالة. <code>canActivate</code> ما زال يفحص الترويسة أولًا. أضف قراءة <code>Public</code> وارجع <code>true</code> قبل الفحص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متحكم الدخول كله <code>@Public(true)</code> وفيه دالة <code>logout</code> يجب أن تبقى بهوية. كيف تغلق <code>logout</code> فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Public(false)</code> على <code>logout</code>، والقارئ <code>getAllAndOverride</code> يفحص الدالة قبل الصنف. <code>false</code> قيمة موجودة فتغلب علم الصنف. حذف الزينة عن <code>logout</code> يترك علم الصنف <code>true</code> ويبقيها مفتوحة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا يكفي <code>exclude</code>؟</li>
+<li>أين يُفحص العلم داخل <code>canActivate</code>؟</li>
+<li>ماذا يصل إلى <code>@CurrentUser</code> على مسار عام؟</li>
+<li>كيف تُغلق دالة واحدة داخل صنف معلَّم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Public(true)</code> استثناء يقرأه الحارس العام قبل فحص الهوية. الصحة والدخول يُعلَّمان، والتذاكر لا تُعلَّم. <code>false</code> على الدالة يغلب علم الصنف. الزينة بلا فرع في الحارس لا تفتح شيئًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع المستخدم والأدوار والعلم العام، ثم التمارين، ثم فصل الإعداد حيث تختلف القيم بين البيئات لا بين الدوال.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/fundamentals/execution-context">Execution context</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

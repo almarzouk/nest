@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ExecutionContext</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-execution-context.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ExecutionContext</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة سياق التنفيذ داخل الحارس: الطلب، وصنف المتحكم، ودالة المسار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>حارس يرى <code>req</code> فقط يستطيع فحص ترويسة، ولا يستطيع معرفة أن الدالة الحالية هي <code>reserve</code> لا <code>list</code>. الصفحة تفرّق لهذا السبب بين Middleware الأعمى عن المعالج والحارس الذي يعرف ماذا سيُنفَّذ.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ExecutionContext</code> يمتد من <code>ArgumentsHost</code>. منه <code>switchToHttp().getRequest()</code> للطلب، و <code>getHandler()</code> للدالة، و <code>getClass()</code> لصنف المتحكم. هذه المقابض هي ما سيقرأه <code>Reflector</code> لاحقًا على الزينة.</p>
+<h2>التعريف التقني</h2>
+<p><code>ArgumentsHost</code> يبدّل نوع النقل: <code>switchToHttp()</code> و <code>switchToRpc()</code> و <code>switchToWs()</code>. في تطبيق HTTP استخدم <code>switchToHttp()</code> ثم <code>getRequest()</code> و <code>getResponse()</code>. لا تفترض أن كائن HTTP هو نفسه كائن RPC.</p>
+<p><code>ExecutionContext</code> يضيف ما يخص التنفيذ الحالي:</p>
+<ul>
+<li><code>getHandler()</code> مرجع الدالة التي ستُستدعى.</li>
+<li><code>getClass()</code> صنف المتحكم.</li>
+<li><code>getType()</code> نوع السياق مثل <code>&#39;http&#39;</code>.</li>
+</ul>
+<p>الحارس العام الذي يعمل على HTTP و على ناقل آخر يفحص <code>getType()</code> قبل <code>switchToHttp()</code>. هذا الفصل يكتب أمثلة HTTP. الفصول اللاحقة للنقلات الأخرى.</p>
+<p>لا تخزّن <code>request</code> على الحارس كحقل في الصنف. الحارس singleton على الطلبات كلها. اقرأ الطلب من الوسيط داخل <code>canActivate</code> فقط.</p>
+<p><code>getHandler()</code> لا يستدعي الدالة. هو مرجع للقراءة، وللبيانات الوصفية التي ستُلصَق في فصل الزينة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ExecutionContext
+  getClass()     TicketsController
+  getHandler()   reserve
+  switchToHttp() request / response
+</code></pre>
+<p>Middleware لا يملك هذا الكائن. لذلك قرار يعتمد على اسم الدالة يعيش هنا.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type CanActivate, type ExecutionContext, Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class DeskRouteGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    if (context.getType() !== &#39;http&#39;) {
+      return true;
+    }
+    const handler = context.getHandler();
+    const controller = context.getClass();
+    const request = context.switchToHttp().getRequest&lt;{ method: string; url: string }&gt;();
+    void handler;
+    void controller;
+    return request.method === &#39;GET&#39; || request.url.startsWith(&#39;/tickets&#39;);
+  }
+}
+</code></pre>
+<p>المثال يقرأ المقابض الثلاثة حتى ترى من أين تأتي. الشرط التعليمي يسمح بـ <code>GET</code> أو بمسار يبدأ بـ <code>/tickets</code>. استبدله بقاعدة أوضح في درس التفويض. لا تبنِ صلاحيات من <code>url</code> نصًا حين تتوفر بيانات الدالة لاحقًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>getType()</code> يحمي حارسًا قد يُربَط في تطبيق فيه أكثر من نقل.</li>
+<li><code>getHandler</code> و <code>getClass</code> مرجعان. طباعتهما في التطوير ترياك اسم الدالة واسم الصنف.</li>
+<li><code>switchToHttp().getRequest()</code> طلب المنصة. على Express فيه <code>headers</code> و <code>method</code>.</li>
+<li><code>void</code> في المثال حتى يبقى التركيز على الحصول على المرجع لا على استخدامه في قاعدة ناقصة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند اختيار المسار يبني Nest سياقًا يشير إلى الدالة والصنف ووسائط الاستدعاء. الحارس يستلمه قبل Interceptor. قراءة <code>getHandler()</code> رخيصة. ما يُبنى فوقها لاحقًا هو <code>Reflector.get</code> على تلك الدالة ثم على الصنف.</p>
+<p><code>switchToHttp().getResponse()</code> متاح لكن كتابة الرد يدويًا من الحارس تتجاوز طبقة الاستثناءات. ارجع <code>false</code> أو ارمِ <code>HttpException</code> ودع الإطار يكتب الجسم.</p>
+<p>السياق ليس <code>req</code> الذي رآه Middleware فقط. هو وصف للخطوة التالية في الدورة. لذلك تستطيع بوابة واحدة أن تسمح بـ <code>list</code> وتمنع <code>reserve</code> حين تُلصَق بيانات مختلفة على الدالتين. اللصق نفسه درس <code>@Roles</code> و <code>SetMetadata</code>.</p>
+<h2>مثال عملي</h2>
+<p>أثناء التطوير اطبع <code>controller.name</code> و <code>handler.name</code> لطلب <code>POST /tickets</code>. ترى <code>TicketsController</code> و <code>reserve</code>. طلب <code>GET /health</code> على متحكم آخر يرى اسمًا مختلفًا إن كان الحارس عامًا. هذا التشخيص يفسر لماذا بوابة واحدة تستطيع أن تتفرع حسب الدالة، ولماذا Middleware الذي طُبع فيه المسار فقط لا يرى الاسم نفسه بالطريقة نفسها.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حفظ <code>request</code> على <code>this</code> فيستخدم طلب سابق في طلب لاحق.</li>
+<li><code>switchToRpc()</code> في تطبيق HTTP فقط ثم قراءة حقول غير موجودة.</li>
+<li>استدعاء <code>getHandler()</code> كأنها الدالة: <code>getHandler()()</code>. التنفيذ ما زال مسؤولية الدورة بعد كل البوابات.</li>
+<li>مقارنة <code>url</code> نصًا لكل صلاحية. المسار يتغير مع البادئة. بيانات الدالة أثبت حين تُكتب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل <code>canActivate</code> تحتاج الطلب أو هوية الدالة أو الصنف. وفي أي حارس قد يعمل خارج HTTP فتفحص <code>getType()</code> أولًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تقرأ السياق في Middleware. الواجهة غير موجودة هناك. لا تستخدم <code>getResponse()</code> لكتابة <code>403</code> يدويًا ما دام <code>false</code> يؤدي ذلك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المقبض</th>
+<th>يعيد</th>
+<th>لا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>getHandler()</code></td>
+<td>دالة المسار</td>
+<td>لا يستدعيها</td>
+</tr>
+<tr>
+<td><code>getClass()</code></td>
+<td>صنف المتحكم</td>
+<td>لا يبني نسخة جديدة</td>
+</tr>
+<tr>
+<td><code>switchToHttp()</code></td>
+<td>مضيف HTTP</td>
+<td>لا يصلح وحده لـ RPC</td>
+</tr>
+<tr>
+<td><code>getRequest()</code></td>
+<td>طلب هذه الدورة</td>
+<td>لا يُخزَّن على singleton</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تعيد مرجع معالج المسار من غير أن تستدعيه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>context.getHandler()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفسد حفظ <code>request</code> في حقل على <code>BoxPassGuard</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحارس يُشارَك بين الطلبات. الحقل يخلط طلبًا بطلب. اقرأ الطلب من <code>ExecutionContext</code> داخل الاستدعاء.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حارس عام موصول أيضًا بناقل رسائل. ماذا تفحص قبل <code>switchToHttp()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>context.getType()</code>. إن لم تكن <code>&#39;http&#39;</code> لا تقرأ طلب HTTP. لكل نقل مبدّله، وفصول النقل لاحقًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضيف <code>ExecutionContext</code> على <code>ArgumentsHost</code>؟</li>
+<li>كيف تصل إلى طلب HTTP؟</li>
+<li>لماذا لا يخزَّن الطلب على الصنف؟</li>
+<li>أي فرق هذا عن Middleware؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>السياق يعطيك الدالة والصنف والطلب للخطوة الحالية. اقرأه داخل <code>canActivate</code> ولا تحتفظ به. هذه المقابض هي ما يجعل البوابة تعرف أي مسار ستحمي، وهي ما ستُبنى عليه قراءة الزينة لاحقًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفرّق المصادقة عن التفويض مفاهيميًا، ويبقي بناء الرمز الحقيقي خارج هذا الفصل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/fundamentals/execution-context">Execution context</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

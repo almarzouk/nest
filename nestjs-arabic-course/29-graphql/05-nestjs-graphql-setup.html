@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@nestjs/graphql</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-nestjs-graphql-setup.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@nestjs/graphql</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل مسار <code>/graphql</code> بمحرك Apollo داخل Nest، وفتح GraphiQL في التطوير، قبل كتابة أول محلل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرفة SDL لا تربط HTTP بمشغّل GraphQL. من غير وحدة، لا يوجد مسار يستقبل <code>{ &quot;query&quot;: &quot;...&quot; }</code>. المقالات القديمة تثبّت <code>apollo-server-express</code> و <code>playground</code>. ذلك مسار أزيل من تكامل Nest الحالي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ثبّت حزم Apollo الخاصة بـ Express، واستورد <code>GraphQLModule.forRoot</code> مع <code>ApolloDriver</code>. واجهة التجربة اسمها GraphiQL وتُفتح خارج الإنتاج من غير خيار إضافي. خيار <code>playground</code> اسم قديم لم يعد طريقة الكتابة.</p>
+<h2>التعريف التقني</h2>
+<p>على المحول الافتراضي Express، من صفحة البداية:</p>
+<pre><code class="language-bash">npm i @nestjs/graphql @nestjs/apollo @apollo/server @as-integrations/express5 graphql
+</code></pre>
+<p>Fastify مع Apollo يستبدل تكامل Express بحزمة <code>@as-integrations/fastify</code>. Mercurius حزمة <code>@nestjs/mercurius</code> ومسار آخر. هذه الدورة تبقى على Express و Apollo.</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { GraphQLModule } from &#39;@nestjs/graphql&#39;;
+import { ApolloDriver, ApolloDriverConfig } from &#39;@nestjs/apollo&#39;;
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+      driver: ApolloDriver,
+      graphiql: false,
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p><code>driver</code> مطلوب. الخيارات تُمرر إلى المحرك. GraphiQL هو IDE المدمج منذ <code>@nestjs/graphql</code> v14، ويُفعَّل تلقائيًا عندما لا تكون <code>NODE_ENV</code> هي <code>production</code>. <code>graphiql: false</code> يخفيه. <code>graphiql: true</code> يبقيه حتى في الإنتاج، وذلك قرار متعمد لا افتراض.</p>
+<p>تحذير الصفحة: <code>playground</code> ما زال اسمًا منطقيًا قديمًا كقيمة بوليانية فقط، والكتابة الجديدة <code>graphiql</code>. لا تنسخ كائن إعداد Playground من مقال.</p>
+<p><code>context</code> يبني كائن التنفيذ لكل طلب. مثال الصفحة: <code>context: ({ req, res }) =&gt; ({ req, res })</code>. المحلل يقرؤه لاحقًا بـ <code>@Context()</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /graphql
+  ApolloDriver
+    يتحقق من المخطط
+    يستدعي المحللات المسجّلة
+GET /graphql في التطوير
+  GraphiQL
+</code></pre>
+<p>من غير <code>autoSchemaFile</code> أو <code>typePaths</code> لا يوجد مخطط بعد. ذلك درسا code-first و schema-first. هذا الدرس يوصل الأنبوب فقط.</p>
+<h2>أبسط مثال</h2>
+<p>وحدة الجذر في التطوير، بلا إجبار الواجهة في الإنتاج:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { GraphQLModule } from &#39;@nestjs/graphql&#39;;
+import { ApolloDriver, ApolloDriverConfig } from &#39;@nestjs/apollo&#39;;
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+      driver: ApolloDriver,
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>شغّل التطبيق وافتح <code>http://localhost:3000/graphql</code> وأنت خارج <code>production</code>. الواجهة تظهر بعد أن يوجد مخطط ومحلل، كما تقول الصفحة. قبل ذلك المسار قد يجيب بلا حقول مفيدة.</p>
+<h2>شرح المثال</h2>
+<p>ترك <code>graphiql</code> غير مضبوط يتبع افتراض Nest: واجهة في التطوير، وصفحة هبوط مطفأة في الإنتاج حتى لا ينكشف التصفح على بيئة عامة. إن كانت بيئة تجريبية عامة و <code>NODE_ENV</code> ليست <code>production</code>، ضع <code>graphiql: false</code> صراحة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>forRoot</code> يبني الخادم ويربطه بمحول HTTP على المسار الافتراضي <code>/graphql</code>. طلب <code>POST</code> يحمل العملية. طلب المتصفح <code>GET</code> على العنوان نفسه يخدم GraphiQL عندما تكون مفعّلة. الاستبطان (introspection) هو ما تغذي به الواجهة قائمة الحقول. إطفاؤه في الإنتاج قرار أمني إن كان المخطط خاصًا. لا تضع ترويسة <code>Authorization</code> ثابتة داخل مستودع عبر <code>graphiql: { headers }</code> إلا لقيمة تطوير محلية، والخيار موجود في الصفحة لتجربة الواجهة لا لأسرار الإنتاج.</p>
+<h2>مثال عملي</h2>
+<p>تطوير محلي مع ترويسة جاهزة للتجربة، والقيمة من بيئة المطور لا من الالتزام:</p>
+<pre><code class="language-ts">GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  graphiql: process.env.NODE_ENV === &#39;production&#39; ? false : { shouldPersistHeaders: true },
+});
+</code></pre>
+<p>الإنتاج يُغلق الواجهة. التطوير يبقيها ويحفظ ترويسات المحرر في المتصفح حتى لا تعيد لصق الرمز في كل تحديث.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تثبيت <code>apollo-server-express</code> من درس قديم.</li>
+<li><code>playground: { settings: ... }</code> كأنه ما زال مدعومًا ككائن.</li>
+<li>نسيان <code>@as-integrations/express5</code> على Express 5.</li>
+<li>فتح GraphiQL على إنتاج عام لأنه «مفيد للدعم».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند إضافة أول وحدة GraphQL إلى تطبيق Nest على Express. Mercurius فقط إن كان المحول Fastify وقرر الفريق ذلك صراحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستدعِ <code>forRoot</code> في كل وحدة ميزة. التسجيل مرة في الجذر أو في وحدة GraphQL مستوردة مرة واحدة. المحللات تعيش في وحدات الميزات بعد أن يوجد المخطط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاسم في المقالات القديمة</th>
+<th>الكتابة الحالية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>apollo-server-express</code></td>
+<td><code>@apollo/server</code> مع <code>@nestjs/apollo</code></td>
+</tr>
+<tr>
+<td><code>playground: true</code></td>
+<td>الافتراض خارج الإنتاج، أو <code>graphiql</code></td>
+</tr>
+<tr>
+<td>بلا <code>driver</code></td>
+<td><code>driver: ApolloDriver</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيار يسمي IDE الحالية؟</p>
+<details>
+<summary>الحل</summary>
+`graphiql`. Playground أزيل، والاسم القديم ليس كتابة جديدة.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا قد تظهر الواجهة محليًا وتختفي في الإنتاج بلا أن تكتب <code>graphiql</code>؟</p>
+<details>
+<summary>الحل</summary>
+لأن التفعيل التلقائي مشروط بأن `NODE_ENV` ليست `production`.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بيئة staging عامة و <code>NODE_ENV=staging</code>. ماذا تضبط؟</p>
+<details>
+<summary>الحل</summary>
+`graphiql: false` إن كان المخطط لا يجب أن يُستعرض علنًا. الافتراض لا يحمي إلا قيمة `production`.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما حزم Express + Apollo في صفحة البداية؟</li>
+<li>أين يُفتح GraphiQL؟</li>
+<li>ماذا ينقص هذا الإعداد حتى توجد حقول؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>GraphQLModule</code> مع <code>ApolloDriver</code> يفتح <code>/graphql</code>. GraphiQL واجهة التطوير. المخطط يأتي من code-first أو schema-first في الدرسين التاليين.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>autoSchemaFile</code>: المخطط يُولَّد من أصناف TypeScript، وهو المسار الذي تكمله الدورة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

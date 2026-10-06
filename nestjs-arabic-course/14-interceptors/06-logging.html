@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Logging</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-logging.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Logging</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل مرور الطلب على المعالج: الطريقة والمسار والمدة، من غير تغيير جسم الرد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>console.log</code> داخل كل دالة تذاكر ينسى مسارًا جديدًا ويخلط نص السجل بشكل JSON. القياس داخل Middleware لا يرى لحظة الرجوع من الخدمة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>معترض واحد على متحكم التذاكر. قبل <code>handle</code> يحفظ الساعة والطريقة والمسار. <code>tap</code> بعد النجاح تطبع المدة. الجسم الراجع يمر كما هو لأن <code>tap</code> لا تستبدله.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تعرض <code>LoggingInterceptor</code> بهذا النمط: <code>console.log(&#39;Before...&#39;)</code> ثم <code>next.handle().pipe(tap(() =&gt; ...))</code>. نطبّقه على الشباك بحقول أوضح.</p>
+<p><code>tap</code> لا تُستدعى عند الخطأ. للمدة في الحالتين أضف <code>finalize</code> من <code>rxjs</code>. هذا الدرس يطبع النجاح بـ <code>tap</code> ويسجّل الفشل بـ <code>tap</code> ذات المعالجين حتى ترى الشكلين من عامل واحد.</p>
+<p>لا تسجّل جسم الحجز كاملًا إن فيه بيانات شخصية. المسار والمدة واسم الدالة تكفي هنا. <code>context.getHandler().name</code> يعطي اسم الدالة.</p>
+<p>المسجل الذي يُحقن من حاوية لاحقًا يستبدل <code>console.log</code>. الواجهة نفسها. الربط على الصنف لا على التطبيق حتى لا تمتلئ صحة <code>GET /health</code> بسطور التذاكر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دخول: method + url + started
+نجاح: tap next  → سطر بالمدة
+فشل:  tap error → سطر بالفشل
+الجسم إلى العميل لم يتغير
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  type CallHandler,
+  type ExecutionContext,
+  Injectable,
+  type NestInterceptor,
+} from &#39;@nestjs/common&#39;;
+import { type Observable } from &#39;rxjs&#39;;
+import { tap } from &#39;rxjs/operators&#39;;
+
+@Injectable()
+export class TicketLogInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const http = context.switchToHttp();
+    const request = http.getRequest&lt;{ method: string; url: string }&gt;();
+    const started = Date.now();
+    const label = `${request.method} ${request.url}`;
+    return next.handle().pipe(
+      tap({
+        next: () =&gt; console.log(`${label} ${Date.now() - started}ms`),
+        error: () =&gt; console.log(`${label} failed ${Date.now() - started}ms`),
+      }),
+    );
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>label</code> يُغلق عليه من الدخول.</li>
+<li><code>tap</code> بالكائن تفرّق النجاح عن الخطأ. القيمة لا تُستبدل في أي فرع.</li>
+<li>لا <code>map</code>. عقد الرد يبقى عقد الدالة.</li>
+<li><code>failed</code> لا يبتلع الخطأ. بعد <code>tap</code> يكمل الخطأ إلى الفلتر. هذا مهم: التسجيل ليس <code>catchError</code> يرجع <code>of</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الاشتراك يشغّل السلسلة. عند الإصدار يمر العامل <code>next</code> في <code>tap</code> ثم تكمل القيمة إلى Nest لتُكتب JSON. عند الخطأ يمر فرع <code>error</code> ثم يستمر الخطأ ما لم تُرجع تيارًا بديلًا. <code>tap</code> لا ترجع تيارًا بديلًا، فهي آمنة للسجل.</p>
+<p>المدة تشمل ما لفّه هذا المعترض: أنابيب أقرب إلى الدالة، والمتحكم، والخدمة، ومعترضات داخلية على طريق الخروج قبل هذا العامل. ليست مدة SQL وحدها. الصفحة تذكر أن هذا القياس المصغّر يشبه ما تفعله أدوات المراقبة، من غير أن تستبدلها.</p>
+<p>حارس رفض الطلب قبل المعترض: لا سطر. هذا متوقع. السجل هنا لمن عبر البوابة.</p>
+<h2>مثال عملي</h2>
+<p><code>TicketsController</code> عليه <code>@UseInterceptors(TicketLogInterceptor)</code>. <code>POST /tickets</code> الناجح يطبع المدة. <code>POST</code> يفشل في <code>@Min(1)</code> بعد دخول المعترض العام على المتحكم: سطر <code>failed</code> لأن الأنبوب داخل الالتفاف، ولا جسم <code>{ data }</code> إضافي. <code>GET /health</code> بلا الزينة لا يطبع. الدعم يقرأ المسار والمدة من غير فتح كل خدمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>catchError</code> تسجّل ثم ترجع <code>of(null)</code> فيصير الفشل <code>200</code>.</li>
+<li>طباعة <code>request.body</code> وفيه كلمة مرور أو اسم زائر كامل.</li>
+<li>الربط العام ثم ضجيج على كل فحص صحة.</li>
+<li>قياس المدة في Middleware واعتبارها مدة <code>reserve</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تريد أثرًا موحدًا حول مجموعة مسارات، على النجاح والفشل، من غير تغيير العقد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسجّل أسرارًا. لا تستبدل الفلتر الذي يشكّل جسم الخطأ. السطر في السجل والJSON للعميل قراران مختلفان. لا تضع هذا الصنف مكان حارس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>مدة <code>reserve</code></th>
+<th>يغيّر JSON</th>
+<th>يرى رفض الحارس</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Middleware</td>
+<td>لا يرى الخروج</td>
+<td>قد يكتب ترويسة</td>
+<td>نعم لأنه قبل الحارس</td>
+</tr>
+<tr>
+<td>هذا المعترض</td>
+<td>نعم</td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>console.log</code> في الدالة</td>
+<td>جزء فقط</td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا نستخدم <code>map</code> في معترض السجل هذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن السجل أثر جانبي. <code>map</code> يبدّل القيمة التي يراها العميل. <code>tap</code> تمررها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>فشل <code>@Min(1)</code> وطُبع <code>failed</code>. لماذا لم يُطبع شيء لحارس أعاد <code>false</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأنبوب بعد المعترض في الدخول، ففشل الشكل يحدث داخل التيار. الحارس قبل المعترض، فالرفض لا يدخل <code>intercept</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد المدة في السجل وجسم الخطأ للعميل كما هو. لماذا <code>catchError</code> الذي لا يعيد <code>throwError</code> يفسد الهدف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يستبدل الخطأ بقيمة نجاح. أبقِ <code>tap</code> على فرع الخطأ حتى يُسجَّل ثم يكمل الاستثناء إلى الفلتر الذي يكتب الجسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي عامل يسجّل من غير تغيير الرد؟</li>
+<li>لماذا تُحفظ الساعة قبل <code>handle</code>؟</li>
+<li>هل <code>tap</code> على الخطأ تبتلع الاستثناء؟</li>
+<li>لماذا الربط على متحكم التذاكر لا على التطبيق في المثال؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>معترض السجل يقرأ الطريق في الدخول ويطبع المدة في <code>tap</code> على النجاح وعلى الفشل، ويمرر القيمة والخطأ كما هما. التغليف والحارس والفلتر تبقى أصنافًا أخرى.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يغيّر شكل الرد عمدًا: <code>map</code> إلى غلاف <code>{ data }</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

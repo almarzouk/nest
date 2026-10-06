@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>38 — ويب هوك صادر</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>38 — ويب هوك صادر</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new outbound-webhooks</code></p>
+<h2>ماذا تبني</h2>
+<p>عند دفع الطلب ترسل حدثًا إلى عنوان سجّله الشريك. التوقيع HMAC. الفشل المؤقت يعيد المحاولة. النجاح لا يُكرر الأثر عندك.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>الشريك لا يقرأ قاعدتك. الحدث الخارج يحتاج توقيعًا ومحاولة ثانية.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>HMAC</li>
+<li>سجل تسليم</li>
+<li>إعادة على 503 لا على 400</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>صندوق صادر كامل. التمهيد هنا والإكمال في المشروع 46.</li>
+<li>كل أنواع الأحداث</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الدفع الوهمي وطابور BullMQ.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/61-webhooks/README.html">61-webhooks</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>السر في البيئة.</li>
+<li>التوقيع على الجسم الخام الذي أرسلته.</li>
+<li>2xx تغلق التسليم.</li>
+<li>5xx وشبكة تعيد المحاولة بحد.</li>
+<li>4xx لا تعيد لأن العقد مرفوض.</li>
+<li>معرّف الحدث ثابت عبر المحاولات.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/partners/:id/endpoints</code></td>
+<td>201</td>
+<td>يحفظ URL</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/deliveries/:id</code></td>
+<td>200</td>
+<td>حالة التسليم</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new outbound-webhooks</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>عند الدفع أنشئ صف تسليم بمعرّف حدث.</li>
+<li>العامل يرسل POST مع الترويسة x-signature.</li>
+<li>مستقبل محلي صغير في الاختبار يعيد 503 مرة ثم 200.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/webhooks/sign.ts
+src/webhooks/delivery.processor.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">export function sign(secret: string, body: Buffer) {
+  return createHmac(&quot;sha256&quot;, secret).update(body).digest(&quot;hex&quot;);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>توقيع الكائن بعد JSON.parse ثم stringify مختلف.</li>
+<li>إعادة المحاولة على 400 إلى ما لا نهاية.</li>
+<li>سر داخل المستودع.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>الحدث نفسه يُعاد بنفس المعرّف.</li>
+<li>200 يوقف المحاولات.</li>
+<li>توقيع المستقبل التجريبي يطابق.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف تدوير سر بنسخة توقيع v1.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 38» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../37-checkout-idempotency/README.html">37. دفع وهمي بلا تكرار</a></li>
+<li>التالي: <a href="../39-inbound-webhooks/README.html">39. ويب هوك وارد</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

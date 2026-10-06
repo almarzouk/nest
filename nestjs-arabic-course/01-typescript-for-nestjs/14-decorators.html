@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Decorators</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="14-decorators.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Decorators</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم أن <code>@Controller</code> دالة تعمل عند تعريف الصنف، وتلصق وصفًا، ولا تنفّذ طلب HTTP بنفسها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>يمكن تسجيل المسارات في قائمة بعيدة عن الدالة. القائمة تبتعد عن الكود كلما كبر الملف. الـ Decorator يضع الإعلان فوق الدالة أو الصنف مباشرة: هذا مسار <code>GET</code>، وهذا الصنف وحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Name</code> فوق صنف أو دالة يستدعي دالة <code>Name</code> ويمرر لها الهدف. تلك الدالة قد تعدّل الهدف أو تخزن Metadata. Nest تقرأ المخزون عند الإقلاع.</p>
+<p>Nest 12 تستخدم صيغة Decorators التقليدية في TypeScript (<code>experimentalDecorators</code>)، لأن مسار Metadata التصميم ما زال مرتبطًا بها. صيغة المعيار الأحدث (stage 3) ليست ما تكتبه في أمثلة التوثيق الحالية.</p>
+<h2>التعريف التقني</h2>
+<p>Decorator دالة. حسب مكانها:</p>
+<ul>
+<li>Decorator صنف يستقبل constructor.</li>
+<li>Decorator دالة (method) يستقبل prototype والاسم والواصف.</li>
+<li>Decorator معامل يستقبل الهدف واسم الدالة وترتيب المعامل.</li>
+</ul>
+<p>النتيجة قد تكون صنفًا بديلًا أو الواصف المعدّل، أو تكتفي بأثر جانبي: تسجيل Metadata.</p>
+<p>في <code>tsconfig</code> الذي تستخدمه Nest تحتاج <code>experimentalDecorators</code>. ومع الحقن تحتاج <code>emitDecoratorMetadata</code> أيضًا، والدرس التالي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تحميل الملف
+   |
+   v
+تشغيل @Get فوق الدالة  -&gt;  Metadata: method GET والمسار
+   |
+   v
+تشغيل @Controller على الصنف -&gt; Metadata: بادئة المسار
+   |
+   v
+لاحقًا عند الإقلاع Nest تقرأ ولا تنتظر طلبًا لتشغيل الـ Decorator نفسه
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>Decorator تعليمي من غير Nest، ليظهر أن الاسم الذي بعد <code>@</code> دالة:</p>
+<pre><code class="language-ts">function Frozen(target: Function): void {
+  Object.freeze(target);
+  Object.freeze(target.prototype);
+}
+
+@Frozen
+class Book {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>Frozen</code> دالة تستقبل الصنف.</li>
+<li><code>@Frozen</code> فوق <code>class Book</code> يستدعي <code>Frozen(Book)</code> بعد تعريف الصنف.</li>
+<li><code>Object.freeze</code> أثر وقت التشغيل على الدالة والنموذج. مثال تعليمي، وليس أسلوب Nest.</li>
+<li>لو وضعت <code>@Frozen</code> ولم تُعرَّف الدالة، فالخطأ مرجع مفقود لا سحر لغة.</li>
+</ul>
+<p>Decorator دالة يسجّل اسمًا في مصفوفة على الصنف:</p>
+<pre><code class="language-ts">const routes: string[] = [];
+
+function Get(path = &#39;/&#39;): MethodDecorator {
+  return (_target, propertyKey) =&gt; {
+    routes.push(`${String(propertyKey)} ${path}`);
+  };
+}
+
+class Books {
+  @Get(&#39;/books&#39;)
+  list(): string[] {
+    return [];
+  }
+}
+</code></pre>
+<ul>
+<li><code>Get(&#39;/books&#39;)</code> يستدعى فورًا عند قراءة السطر، ويعيد دالة هي الـ Decorator الفعلي. هذا مصنع Decorator: الدالة الخارجية تأخذ الخيارات، والداخلية تستقبل الهدف.</li>
+<li><code>list</code> لا تُستدعى أثناء ذلك. الذي يشتغل هو التسجيل في <code>routes</code>.</li>
+<li><code>@Get()</code> و <code>@Controller(&#39;books&#39;)</code> في Nest المصنع نفسه بفكرة: الوسيط مسار، والأثر Metadata لا مصفوفة عامة كتبتها أنت.</li>
+</ul>
+<p><code>MethodDecorator</code> نوع TypeScript لدالة الزينة على الدوال. لا تحفظ كل تواقيع الزينة. احفظ: المصنع يأخذ خياراتك، والدالة الداخلية ترى الهدف.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند تحميل الوحدة، التعريفات تُنفَّذ من الأعلى، والزينة تعمل بعد اكتمال تعريف الهدف الذي تزينه. الترتيب على العنصر نفسه من الأسفل إلى الأعلى في تطبيق الزينة التقليدية عند تعددها: الزينة الأقرب إلى الدالة تُطبَّق أولًا في سلسلة التغليف. في Nest أغلب الزينة لا تغلف الدالة بل تسجل Metadata، والترتيب الذي يهمك لاحقًا هو ترتيب مسار الطلب لا ترتيب تطبيق الزينة.</p>
+<p>الطلب HTTP لا يمر داخل دالة <code>@Get</code>. يمر في Express ثم إلى الدالة الأصلية <code>list</code> بعد أن وجدت Nest الربط في Metadata.</p>
+<p>JavaScript الناتج يستدعي دالة مساعدة <code>__decorate</code>. وجود <code>reflect-metadata</code> يسمح بتخزين مفاتيح على الهدف. Nest تخزن عليها نوع المسار والمسار وغير ذلك.</p>
+<h2>مثال عملي</h2>
+<p>قراءة وصف المسار كما ستراه، من غير تشغيل إطار:</p>
+<pre><code class="language-ts">@Controller(&#39;books&#39;)
+class BooksController {
+  @Get(&#39;:id&#39;)
+  findOne(): string {
+    return &#39;later&#39;;
+  }
+}
+</code></pre>
+<p>المعنى الذي ستبنيه الفصول القادمة، لا التنفيذ اليوم:</p>
+<ul>
+<li><code>@Controller(&#39;books&#39;)</code> بادئة.</li>
+<li><code>@Get(&#39;:id&#39;)</code> طريقة <code>GET</code> ومسار نسبي <code>:id</code>.</li>
+<li>المسار الكامل المتوقع <code>/books/:id</code>.</li>
+<li><code>findOne</code> تُستدعى عند التطابق، لا عند تحميل الملف.</li>
+</ul>
+<p><code>@Injectable()</code> على خدمة مصنع بلا وسائط غالبًا: أثره تعليم الصنف حتى تُقرأ أنواع حقنه. سنفصله مع المزوّدات. لغويًا هو Decorator صنف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع أن الزينة تعمل عند كل طلب. تعمل عند تحميل الصنف.</li>
+<li>نسيان <code>experimentalDecorators</code> في <code>tsconfig</code> الذي يبني فعلًا، فيفشل البناء أو تُتجاهل الزينة حسب الإعداد.</li>
+<li>منطق عمل داخل Decorator. يصير صعب الاختبار ويعمل وقت التحميل لا وقت الطلب. ضع العمل في الدالة.</li>
+<li>الخلط مع stage 3. انسخ صيغة توثيق Nest، لا صيغة مقال عن المعيار الجديد، حتى يعلن الإطار انتقالًا.</li>
+</ul>
+<h2>متى نستخدم Decorator؟</h2>
+<p>عندما يقرأ إطار وصفًا بجانب الكود: مسارات، ووحدات، وحقن، وصلاحيات. ستكتب الزينة الجاهزة أولًا، ثم تصنع واحدة في فصل Custom Decorators.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتغليف كل دالة عادية في مشروعك &quot;لأن Nest تفعل ذلك&quot;. دالة صريحة أوضح إن لم يكن هناك قارئ إطار.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>تسجيل يدوي <code>routes.push</code></th>
+<th>Decorator</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مكان الإعلان</td>
+<td>قد يبتعد عن الدالة</td>
+<td>فوق الهدف</td>
+</tr>
+<tr>
+<td>وقت التنفيذ</td>
+<td>عندما تصل إلى السطر</td>
+<td>عند تعريف الهدف</td>
+</tr>
+<tr>
+<td>من يقرأ النتيجة في Nest</td>
+<td>أنت</td>
+<td>الإطار عند الإقلاع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في مثال <code>Get</code>، متى تُدفع السلسلة إلى <code>routes</code>: عند تعريف الصنف أم عند نداء <code>list()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عند تعريف الصنف وتحميله، لا عند نداء <code>list()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>Get(path)</code> ترجع دالة بدل أن تكون هي الزينة مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تأخذ <code>path</code> من عندك وتغلق عليه (closure)، ثم تعيد الدالة التي تستقبل الهدف. <code>@Get(&#39;/books&#39;)</code> يمرر الخيار. <code>@Get</code> بلا مصنع لا يرى المسار الذي تريده.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لو اشتغل Decorator عند كل طلب، ماذا كان سيختلف في تسجيل المسار <code>/books/:id</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التسجيل كان سيتكرر أو يعتمد على وصول طلب، والمسار قد لا يوجد قبل أول طلب، والوصف يختلط بالعمل. التسجيل عند التحميل يجعل جدول المسارات جاهزًا قبل <code>listen</code>، وهو ما تفعله Nest في الإقلاع.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما نوع الشيء الذي تضعه بعد <code>@</code>؟</li>
+<li>لماذا مصنع Decorator يرجع دالة؟</li>
+<li>متى تعمل الزينة مقارنة بوقت الطلب؟</li>
+<li>أي خيار مترجم تحتاجه صيغة Nest الحالية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Decorator دالة إعلان تعمل عند التعريف وتخزن وصفًا أو تعدّل الهدف. Nest تبني المسارات والحقن من هذا الوصف عند الإقلاع. الزينة لا تستبدل جسم دالة العمل.</p>
+<h2>ماذا بعد؟</h2>
+<p>الوصف يُخزَّن بمفاتيح Reflection حتى تجده Nest بعد الترجمة. هذا Metadata.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Decorators: <a href="https://www.typescriptlang.org/docs/handbook/decorators.html">https://www.typescriptlang.org/docs/handbook/decorators.html</a></li>
+<li>TypeScript — <code>experimentalDecorators</code>: <a href="https://www.typescriptlang.org/tsconfig/#experimentalDecorators">https://www.typescriptlang.org/tsconfig/#experimentalDecorators</a></li>
+<li>NestJS — Custom decorators: <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

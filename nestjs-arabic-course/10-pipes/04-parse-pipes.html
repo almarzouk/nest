@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ParseIntPipe و ParseBoolPipe و ParseUUIDPipe و ParseArrayPipe</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-parse-pipes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ParseIntPipe و ParseBoolPipe و ParseUUIDPipe و ParseArrayPipe</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استخدام الأنابيب الأربعة على مسار واستعلام وجسم، مع الخيارات التي تغيّر الرمز أو شكل القائمة أو إصدار UUID.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الاستعلام والنمط في العنوان يصلان نصًا. الخدمة التي تجمع أرقام صفحات أو تقارن UUID تنكسر بصمت إن بقي النص، أو ترمي <code>500</code> إن استخدمت <code>parseInt</code> بلا رفض واضح.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل أنبوب يُربَط كوسيط ثانٍ في <code>@Param</code> أو <code>@Query</code> أو <code>@Body</code>. النجاح يبدّل النوع. الفشل <code>400</code> ما لم تغيّر <code>errorHttpStatusCode</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>ParseIntPipe</code> يقبل سلسلة رقمية صحيحة. <code>GET /invoices/abc</code> على <code>@Param(&#39;id&#39;, ParseIntPipe)</code> ينتج:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 400,
+  &quot;message&quot;: &quot;Validation failed (numeric string is expected)&quot;,
+  &quot;error&quot;: &quot;Bad Request&quot;
+}
+</code></pre>
+<p><code>ParseBoolPipe</code> يقبل القيم المنطقية التي يفهمها الأنبوب، ومنها النصوص <code>true</code> و <code>false</code> في الاستعلام.</p>
+<p><code>ParseUUIDPipe</code> يقبل UUID من الإصدارات التي تذكرها الصفحة، بما فيها Nil و Max، ما لم تمرر <code>version</code>. القيم الموثّقة للخيار: <code>&#39;1&#39;</code> حتى <code>&#39;8&#39;</code>.</p>
+<p><code>ParseArrayPipe</code> يفك مصفوفة. لاستعلام مفصول بفواصل: <code>{ items: Number, separator: &#39;,&#39; }</code> على <code>?ids=1,2,3</code>. لعناصر هي أصناف DTO: <code>{ items: CreateLineDto }</code> لأن TypeScript لا يصدر بيانات لأنواع عامة مثل <code>CreateLineDto[]</code>، فـ <code>ValidationPipe</code> وحده لا يفحص عناصر المصفوفة العارية.</p>
+<p>الخيار <code>optional: true</code> على أنابيب <code>Parse*</code> يسمح بغياب القيمة. من غيره، <code>null</code> و <code>undefined</code> يُرفضان. <code>exceptionFactory</code> يستبدل الاستثناء الذي يُرمى.</p>
+<p>تمرير الصنف بلا <code>new</code> يكفي حين لا توجد خيارات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">&quot;4&quot;        ParseIntPipe     → 4
+&quot;true&quot;     ParseBoolPipe    → true
+uuid نص    ParseUUIDPipe    → النص نفسه إن كان UUID
+&quot;1,2,3&quot;    ParseArrayPipe   → [1, 2, 3]
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { ParseIntPipe, ParseUUIDPipe } from &#39;@nestjs/common&#39;;
+
+@Get(&#39;:id&#39;)
+findOne(@Param(&#39;id&#39;, ParseIntPipe) id: number): { id: number } {
+  return { id };
+}
+
+@Get(&#39;ref/:ref&#39;)
+findByRef(
+  @Param(&#39;ref&#39;, new ParseUUIDPipe({ version: &#39;4&#39; })) ref: string,
+): { ref: string } {
+  return { ref };
+}
+</code></pre>
+<p><code>/invoices/4</code> يستلم <code>id</code> كعدد. <code>/invoices/ref/</code> متبوعًا بـ UUID إصدار 4 يمر. إصدار 1 يُرفض حين يكون الخيار <code>version: &#39;4&#39;</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>ParseIntPipe</code> بلا خيارات يبنيه الإطار.</li>
+<li><code>new ParseUUIDPipe({ version: &#39;4&#39; })</code> نسخة لأن الخيار في البناء.</li>
+<li>النوع في TypeScript <code>number</code> أو <code>string</code> يطابق ما يرجع الأنبوب. الأنبوب هو الذي يجعل ذلك صادقًا وقت التشغيل.</li>
+<li>غيّر الرمز بـ <code>new ParseIntPipe({ errorHttpStatusCode: HttpStatus.NOT_ACCEPTABLE })</code> إن كان العقد <code>406</code>. الافتراضي <code>400</code> أوضح لمعظم الواجهات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المنصة تمرر النص. الأنبوب يحلله. النجاح يستبدل المعامل. الفشل يرمي قبل الدالة فيُلتقط كأي استثناء أنبوب: فلاتر المسار ثم المتحكم ثم العام.</p>
+<p><code>ParseArrayPipe</code> على الجسم مع <code>items: CreateLineDto</code> يبني كل عنصر ويفحصه. على الاستعلام يفصل النص عند <code>separator</code> ثم يحوّل كل قطعة حسب <code>items</code>.</p>
+<p><code>ParseBoolPipe</code> على <code>sort=true</code> يعطي <code>true</code> المنطقي. النص <code>&quot;true&quot;</code> في JSON الجسم قد يكون أصلًا منطقيًا إن حلّل <code>express.json</code> الجسم. الأنبوب أهم على الاستعلام والمسار حيث كل شيء نص.</p>
+<p>هذه الأنابيب لا تزيل حقولًا زائدة من كائن. ذلك <code>whitelist</code> في <code>ValidationPipe</code>.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { ParseArrayPipe, ParseBoolPipe, ParseIntPipe } from &#39;@nestjs/common&#39;;
+
+@Get()
+findByIds(
+  @Query(&#39;ids&#39;, new ParseArrayPipe({ items: Number, separator: &#39;,&#39; }))
+  ids: number[],
+  @Query(&#39;open&#39;, ParseBoolPipe) open: boolean,
+  @Query(&#39;page&#39;, ParseIntPipe) page: number,
+): { ids: number[]; open: boolean; page: number } {
+  return { ids, open, page };
+}
+</code></pre>
+<p><code>GET /invoices?ids=1,2,3&amp;open=true&amp;page=2</code> يصل إلى الدالة والمصفوفة أعداد والعلم منطقي والصفحة عدد. <code>open=yes</code> يُرفض. <code>ids</code> بلا فاصلة تُفهم قطعة واحدة إن كانت رقمًا صالحًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>ParseIntPipe</code> على UUID. الشكل UUID نص يبقى نصًا عبر <code>ParseUUIDPipe</code>.</li>
+<li>نسيان <code>separator</code> ثم الدهشة أن <code>&quot;1,2&quot;</code> لا يصبح مصفوفة.</li>
+<li>توقع فحص عناصر <code>CreateLineDto[]</code> من غير <code>ParseArrayPipe</code> أو صنف يغلّف المصفوفة. البيانات الوصفية لا تُصدر للمصفوفة العامة.</li>
+<li><code>version: &#39;4&#39;</code> مع معرّفات إصدار 7 قادمة من قاعدة جديدة. الخيار يجب أن يطابق ما تولّده.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على <code>@Param</code> و <code>@Query</code> و <code>@Body</code> حين تكون القاعدة أحد الأشكال الأربعة: عدد صحيح، منطق، UUID، أو قائمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لنص حر مثل اسم عميل، أو لكائن فيه عدة حقول مزيّنة. الأول يمر بلا أنبوب أو بأنبوب نطاق، والثاني <code>ValidationPipe</code>. ولا تستخدمها لختم الطلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأنبوب</th>
+<th>دخل شائع</th>
+<th>خرج ناجح</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ParseIntPipe</code></td>
+<td><code>&quot;2&quot;</code></td>
+<td><code>2</code></td>
+</tr>
+<tr>
+<td><code>ParseBoolPipe</code></td>
+<td><code>&quot;false&quot;</code></td>
+<td><code>false</code></td>
+</tr>
+<tr>
+<td><code>ParseUUIDPipe</code></td>
+<td>UUID نصًا</td>
+<td>النص إن طابق الإصدار</td>
+</tr>
+<tr>
+<td><code>ParseArrayPipe</code></td>
+<td><code>&quot;1,2&quot;</code> أو JSON مصفوفة</td>
+<td>مصفوفة عناصر محللة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما رمز الحالة الافتراضي حين يفشل <code>ParseIntPipe</code> على <code>abc</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>400</code> مع رسالة أن سلسلة رقمية مطلوبة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تقصر <code>ParseUUIDPipe</code> على الإصدار 7؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>new ParseUUIDPipe({ version: &#39;7&#39; })</code> على المعامل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يفشل <code>@Body() lines: CreateLineDto[]</code> في فحص العناصر مع <code>ValidationPipe</code> عام، وما البناء الذي تعطيه صفحة التحقق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>TypeScript لا يصدر بيانات للأنواع العامة، فالعناصر لا تُفحص. استخدم <code>new ParseArrayPipe({ items: CreateLineDto })</code>، أو صنفًا يغلّف القائمة في حقل يُفحص.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يرجع <code>ParseIntPipe</code> عند النجاح؟</li>
+<li>كيف تطلب إصدار UUID بعينه؟</li>
+<li>ماذا يفعل <code>separator</code> في <code>ParseArrayPipe</code>؟</li>
+<li>لماذا لا يكفي نوع المصفوفة في التوقيع لفحص العناصر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأربعة أنابيب تحليل مربوطة على المعامل. العدد والمنطق والقائمة تتغير أنواعها. UUID يبقى نصًا بعد التأكد من شكله. الخيارات تضبط الرمز والإصدار وفاصل القائمة وعنصر المصفوفة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي مقدمة <code>ValidationPipe</code>: فحص صنف مزيّن بـ <code>class-validator</code>، بلا الغوص في كل الخيارات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

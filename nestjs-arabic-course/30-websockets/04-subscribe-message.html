@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@SubscribeMessage</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-subscribe-message.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@SubscribeMessage</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط اسم رسالة بدالة، وقراءة الجسم والمقبس، ومعرفة أن قيمة الإرجاع إيصال للمرسل لا بثًا للغرفة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد ضبط البوابة لا يوجد بعد اسم يستمع إليه الخادم. العميل يرسل <code>join</code> والخادم يتجاهله. أو الدالة تعيد التعليق فتصل للمرسل فقط، والقارئ الآخر لا يراه، لأن الإرجاع ليس <code>emit</code> للغرفة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@SubscribeMessage(&#39;join&#39;)</code> يربط الاسم. <code>@MessageBody()</code> جسم الرسالة. <code>@ConnectedSocket()</code> مقبس هذا العميل. أعد قيمة صغيرة كإيصال. للآخرين استخدم <code>server.to(...).emit</code> أو <code>client.to(room).emit</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import {
+  ConnectedSocket,
+  MessageBody,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from &#39;@nestjs/websockets&#39;;
+import type { Server, Socket } from &#39;socket.io&#39;;
+
+@WebSocketGateway({ namespace: &#39;comments&#39; })
+export class CommentsGateway {
+  @WebSocketServer()
+  server: Server;
+
+  @SubscribeMessage(&#39;join&#39;)
+  join(
+    @MessageBody() body: { bookId: string },
+    @ConnectedSocket() client: Socket,
+  ) {
+    client.join(body.bookId);
+    return { joined: body.bookId };
+  }
+}
+</code></pre>
+<p><code>client.join</code> غرفة Socket.IO باسم معرف الكتاب. الإرجاع <code>{ joined }</code> يذهب كإقرار إلى المرسل إن كان العميل ينتظر ack. بقية الغرفة لا تستلم هذا الكائن.</p>
+<p>التحقق من شكل <code>body</code> أنبوب لاحق. هنا افترض كائنًا بسيطًا. لا تثق بـ <code>bookId</code> القادم من العميل كمسار قرص. هو مفتاح غرفة ونص يُفحص مقابل الكتب إن لزم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عميل emit(&#39;join&#39;, { bookId })
+  join()
+    client.join(bookId)
+    return إيصال للمرسل فقط
+عميل emit(&#39;comment&#39;, payload) من مسار آخر
+  server.to(bookId).emit(&#39;comment&#39;, payload)
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>رسالة لا تحفظ في القاعدة، فقط ترفض البث المباشر من المتصفح:</p>
+<pre><code class="language-ts">@SubscribeMessage(&#39;comment&#39;)
+comment(@MessageBody() body: { bookId: string; text: string }) {
+  return { accepted: false, reason: &#39;use POST /books/:id/comments&#39; };
+}
+</code></pre>
+<p>الحفظ عبر HTTP حتى يبقى التحقق والقاعدة على المسار الذي اختبرته. البوابة للانضمام وللبث الذي يستدعيه المتحكم عبر <code>announce</code>. السماح للعميل ببث <code>comment</code> مباشرة يتخطى الخدمة.</p>
+<h2>شرح المثال</h2>
+<p>هذا الرفض مقصود في تصميم المتجر. رسالة <code>join</code> ضرورية حتى تمتلئ الغرفة. رسالة <code>comment</code> على المقبس ليست باب الكتابة. إن أعاد العميل الإرسال ظنًا أن المقبس يحفظ، الإيصال <code>{ accepted: false }</code> يشرح العقد. البث الحقيقي:</p>
+<pre><code class="language-ts">announce(bookId: string, comment: { id: string; text: string }) {
+  this.server.to(bookId).emit(&#39;comment&#39;, comment);
+}
+</code></pre>
+<p>والمتحكم بعد <code>201</code> ينادي <code>announce</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Socket.IO يمرر اسم الحدث إلى الدالة المسجّلة. Nest تملأ المعاملات من الجسم والمقبس. قيمة الإرجاع تُرسل كرد على الحدث للعميل الذي أرسل، وهو نمط acknowledgment. <code>emit</code> على <code>server</code> حدث جديد باسم قد يختلف عن اسم الرسالة الواردة. المستمع في الواجهة <code>socket.on(&#39;comment&#39;, ...)</code> لا يرى قيمة <code>return</code>. من لم ينفّذ <code>join</code> ليس في الغرفة فلا يصله <code>to(bookId)</code>.</p>
+<h2>مثال عملي</h2>
+<p>عقد الواجهة:</p>
+<table>
+<thead>
+<tr>
+<th>الحدث الصادر</th>
+<th>من يعالجه</th>
+<th>النتيجة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>join</code></td>
+<td>البوابة</td>
+<td>الغرفة + إيصال</td>
+</tr>
+<tr>
+<td><code>POST</code> تعليق</td>
+<td>المتحكم والخدمة</td>
+<td>صف</td>
+</tr>
+<tr>
+<td><code>comment</code> الوارد من الخادم</td>
+<td>الواجهة</td>
+<td>إلحاق بالقائمة</td>
+</tr>
+</tbody></table>
+<p>لا تسمِّ إيصال الانضمام <code>comment</code> حتى لا ترسمه الواجهة كتعليق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار <code>return</code> بثًا لكل الغرفة.</li>
+<li>قبول <code>comment</code> من المقبس وكتابته في القاعدة بلا الأنابيب التي على REST.</li>
+<li><code>client.join</code> بمعرف لم يُفحص، فيصنع العميل غرفًا بلا نهاية.</li>
+<li>نسيان أن الإقرار لا يصل إلى <code>@SubscribeMessage</code> آخر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لرسائل المقبس الحقيقية: انضمام، مغادرة، مؤشر. الكتابة الدائمة تبقى مسارًا يستدعي <code>announce</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لكل عملية لها DTO على HTTP. تكرار العقدين يضاعف التحقق. رسالة واحدة للانضمام أوضح من إعادة تنفيذ <code>POST</code> داخل البوابة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الإجراء</th>
+<th>من يسمع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>return</code> من المعالج</td>
+<td>المرسل، كإقرار</td>
+</tr>
+<tr>
+<td><code>server.to(room).emit</code></td>
+<td>المنضمون إلى الغرفة</td>
+</tr>
+<tr>
+<td><code>server.emit</code></td>
+<td>كل متصل بالفضاء على هذه العملية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة تربط الدالة باسم <code>join</code>؟</p>
+<details>
+<summary>الحل</summary>
+`@SubscribeMessage('join')`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يظهر <code>return { joined }</code> عند القارئ الآخر؟</p>
+<details>
+<summary>الحل</summary>
+لأن الإرجاع إقرار للمرسل. البث للغرفة `emit` منفصل.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يرفض المثال حفظ التعليق القادم من المقبس؟</p>
+<details>
+<summary>الحل</summary>
+حتى يبقى التحقق والحفظ على `POST`، والبوابة تنضم وتبث بعد النجاح فقط.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفعل <code>client.join</code>؟</li>
+<li>من يستدعي <code>announce</code>؟</li>
+<li>أي اسم حدث يجب ألا يختلط بالإقرار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@SubscribeMessage</code> يستقبل حدثًا. الإرجاع للمرسل. الغرفة تُملأ بـ <code>join</code>، والتعليق المحفوظ يُبث بـ <code>emit</code> بعد المسار.</p>
+<h2>ماذا بعد؟</h2>
+<p>Socket.IO هو المحول الذي جعل <code>join</code> و <code>to</code> و <code>emit</code> بهذه الأسماء.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>30 — سجل تدقيق</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>30 — سجل تدقيق</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new audit-trail</code></p>
+<h2>ماذا تبني</h2>
+<p>كل تغيير سعر أو دور يكتب سطر تدقيق: الفاعل، والفعل، والمعرّف، والوقت. من غير أسرار.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>اللوج العام لا يغني عن سجل عمل تراجعه لاحقًا.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>كتابة بعد النجاح</li>
+<li>منع الأسرار</li>
+<li>قراءة السجل للمدير</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>تخزين غير قابل للتعديل مشفر</li>
+<li>تصدير قانوني كامل</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الأدوار.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/37-logging/README.html">37-logging</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>السطر يُكتب بعد نجاح العملية.</li>
+<li>لا كلمة مرور ولا مفتاح ولا رمز جلسة.</li>
+<li>القارئ غير المدير 403.</li>
+<li>الحذف لا يمسح سطور التدقيق.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>PATCH</code></td>
+<td><code>/products/:id/price</code></td>
+<td>200</td>
+<td>ويكتب تدقيقًا</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/audit</code></td>
+<td>200</td>
+<td>للمدير</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new audit-trail</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>AuditService.append من داخل الخدمة بعد الحفظ.</li>
+<li>خزّن before و after للسعر فقط.</li>
+<li>اختبر أن password لو وُجد في الكائن لا يُنسخ. لا تمرره أصلًا.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/audit/audit.service.ts
+src/products/products.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">this.audit.append({
+  actorId: user.id,
+  action: &quot;product.price.change&quot;,
+  entityId: product.id,
+  before: previous,
+  after: next,
+});
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>كتابة التدقيق قبل أن تنجح العملية فتؤرخ فشلًا كنجاح.</li>
+<li>نسخ req.body كاملًا.</li>
+<li>حذف السجل مع حذف المنتج.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>تغيير السعر يظهر في السجل.</li>
+<li>غير المدير 403.</li>
+<li>لا أسرار في السطور.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف ترشيح ?entityId=.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 30» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../29-domain-events/README.html">29. حدث نشر المقال</a></li>
+<li>التالي: <a href="../31-shop-tenants/README.html">31. ملاحظات لكل متجر</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

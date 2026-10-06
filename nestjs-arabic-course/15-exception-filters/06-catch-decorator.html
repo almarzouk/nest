@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Catch</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-catch-decorator.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Catch</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد أي استثناءات يدخل الفلتر عبر <code>@Catch</code>، وتجنّب تحويل <code>400</code> إلى <code>500</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فلتر بلا أنواع يمسك كل شيء، بما فيه <code>BadRequestException</code> و <code>SeatTakenException</code>، ثم يكتب <code>500</code>. العميل يفقد الفرق بين مقعد تالف ومقعد مبيع وعطل خادم.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Catch(SeatTakenException)</code> يمسك ذلك الصنف فقط. <code>@Catch(HttpException)</code> يمسك الأب والفئات. <code>@Catch()</code> بلا وسيط يمسك الكل. في الفراغ افحص النوع: إن كان <code>HttpException</code> فانسخ <code>getStatus()</code> و <code>getResponse()</code>، وإن كان غيره فاكتب <code>500</code> من غير جسم داخلي.</p>
+<h2>التعريف التقني</h2>
+<p>الزينة من <code>@nestjs/common</code> على صنف الفلتر. يمكن تمرير أكثر من نوع: <code>@Catch(SeatTakenException, NotFoundException)</code>.</p>
+<p>القوس الفارغ يعني أي قيمة رُميت، ومنها <code>TypeError</code>. هذا مفيد لسجل أخير عام، وخطير إن كان الجسم واحدًا لكل الأنواع.</p>
+<p>نمط آمن للفراغ:</p>
+<pre><code class="language-ts">const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+const body = exception instanceof HttpException ? exception.getResponse() : { statusCode: status, message: &#39;Internal server error&#39; };
+</code></pre>
+<p><code>getResponse()</code> قد يكون نصًا أو كائنًا. إن كان كائن <code>SeatTakenException</code> ففيه <code>code</code>. لا تستبدله بـ <code>{ message: &#39;Internal server error&#39; }</code>.</p>
+<p>لا ترمِ <code>new InternalServerErrorException()</code> من فرع <code>HttpException</code>. ذلك تحويل <code>400</code> و <code>409</code> إلى <code>500</code>.</p>
+<p>الفلتر المربوط بهذا <code>@Catch</code> لا يرى نوعًا خارج القائمة. ذلك النوع يكمل إلى فلتر أوسع إن وُجد في مستوى لاحق حسب ترتيب الحل. داخل المستوى نفسه أول تطابق يمسك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@Catch(SeatTakenException)   409 ذو code فقط
+@Catch(HttpException)        كل HTTP بما فيه 400
+@Catch()                     الكل، مع فرع يحفظ رمز HTTP
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Catch, type ExceptionFilter, HttpException, HttpStatus, type ArgumentsHost } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+
+@Catch()
+export class DeskExceptionFilter implements ExceptionFilter {
+  catch(exception: unknown, host: ArgumentsHost): void {
+    const response = host.switchToHttp().getResponse&lt;Response&gt;();
+    if (exception instanceof HttpException) {
+      const status = exception.getStatus();
+      const payload = exception.getResponse();
+      response.status(status).json(
+        typeof payload === &#39;string&#39; ? { statusCode: status, message: payload } : payload,
+      );
+      return;
+    }
+    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: &#39;Internal server error&#39;,
+    });
+  }
+}
+</code></pre>
+<p><code>SeatTakenException</code> يخرج بجسمه و <code>409</code>. <code>TypeError</code> يخرج <code>500</code> عامًا بلا مكدس.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>instanceof</code> قبل أي كتابة ثابتة.</li>
+<li>النص يُلف ليبقى <code>statusCode</code>. الكائن يُمرَّر كما بُني، وفيه <code>code</code> إن وُجد.</li>
+<li>فرع المجهول لا ينسخ <code>exception</code> إلى JSON.</li>
+<li><code>@Catch()</code> هنا عام الخطر إن حذفت الفرع. الفرع هو الدرس.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تقارن الاستثناء بقائمة <code>@Catch</code>. التطابق يستدعي <code>catch</code> ويتوقف. <code>@Catch(HttpException)</code> يطابق الفئات لأن <code>instanceof HttpException</code> ينجح لها. <code>@Catch(SeatTakenException)</code> لا يطابق <code>NotFoundException</code>. ذلك الاستثناء يبحث عن فلتر آخر في ترتيب المسار ثم المتحكم ثم العام.</p>
+<p>فلتر <code>@Catch()</code> على المسار يبتلع الكل قبل أن يصل العام، حتى أخطاء البرمجة. إن كان يسجل ثم يعيد الرمز الصحيح فذلك مفيد. إن كان يكتب <code>500</code> دائمًا فأنبوب التحقق «ينكسر» من جهة العميل.</p>
+<p>لا تمرر الاستثناء إلى فلتر ثانٍ بنداء يدوي. الوراثة من فلتر أساس إن أردت مشاركة كتابة الرأس.</p>
+<h2>مثال عملي</h2>
+<p>الشباك يضع <code>DeskExceptionFilter</code> عامًا بهذا الفحص. اختبار <code>seat: 0</code> يتوقع <code>400</code> لا <code>500</code>. اختبار المقعد المبيع يتوقع <code>code: SEAT_TAKEN</code> و <code>409</code>. اختبار رمي <code>TypeError</code> من مسار تجريبي يتوقع <code>500</code> وغياب <code>stack</code>. حذف فرع <code>instanceof</code> يكسر الاختبار الأول، وهو دليل المراجعة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>@Catch()</code> ثم <code>status(500)</code> دائمًا.</li>
+<li><code>@Catch(Error)</code> لالتقاط «المجهول فقط». سلسلة <code>HttpException</code> تصل إلى <code>Error</code> عبر <code>IntrinsicException</code>، فيمسك القوس أخطاء HTTP أيضًا. المجهول يُفرز داخل <code>@Catch()</code> بفحص <code>instanceof HttpException</code>.</li>
+<li>ابتلاع <code>HttpException</code> داخل الفلتر من غير كتابة رد، فيعلق العميل.</li>
+<li>تسجيل <code>getResponse()</code> كاملًا إن كان يومًا فيه بيانات حساسة. عقد <code>SeatTakenException</code> لا يضع أسرارًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>@Catch(نوع)</code> لسجل أو شكل يخص حالة واحدة. <code>@Catch(HttpException)</code> لتوحيد غلاف مع الإبقاء على الرمز. <code>@Catch()</code> لشبكة أمان أخيرة بشرط فرع HTTP.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفرغ القوس ثم توحّد الرمز على <code>500</code>. لا تلتقط نوعًا حتى تخفي <code>409</code> عن الواجهة التي تتفرع على <code>code</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>تمسك</th>
+<th>خطر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Catch(SeatTakenException)</code></td>
+<td>تلك الحالة</td>
+<td>ضيق مقصود</td>
+</tr>
+<tr>
+<td><code>@Catch(HttpException)</code></td>
+<td><code>400</code> و <code>401</code> و <code>403</code> و <code>404</code> و <code>409</code> وغيرها</td>
+<td>كتابة <code>500</code> ثابت</td>
+</tr>
+<tr>
+<td><code>@Catch()</code></td>
+<td>المجهول أيضًا</td>
+<td>طمس الرمز إن لم تفحص</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>كيف تجعل الفلتر يرى <code>SeatTakenException</code> فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Catch(SeatTakenException)</code> على الصنف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>@Catch()</code> استقبل <code>BadRequestException</code>. أي رمز تكتب في <code>response.status</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>400</code> عبر <code>exception.getStatus()</code>، لا <code>500</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فلتر المسار <code>@Catch()</code> يكتب دائمًا <code>Internal server error</code> برمز <code>500</code>. لماذا فشل اختبار الزينة، وأين الإصلاح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فلتر المسار أولى من العام ويمسك <code>BadRequestException</code> قبل أن يخرج جسم الأنبوب. الإصلاح: فرع <code>instanceof HttpException</code> ينسخ الحالة والجسم، ويبقي <code>500</code> للمجهول فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يمسك <code>@Catch()</code> الفارغ؟</li>
+<li>كيف تحافظ على <code>409</code> داخل فلتر واسع؟</li>
+<li>لماذا لا يُمرَّر الاستثناء إلى الفلتر التالي؟</li>
+<li>لماذا لا تعتمد على <code>@Catch(Error)</code> لفئات HTTP؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Catch</code> يضيّق الأنواع. القوس الفارغ مسموح لشبكة أخيرة إن نسخت رمز <code>HttpException</code> وجسمه. تثبيت <code>500</code> يحوّل رفض العميل إلى عطل خادم.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي تسجيل الفلتر على التطبيق كله، ومن يرى استثناء Middleware.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REQUEST</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-request-scope.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>REQUEST</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم نسخة لكل طلب، وحقن رمز <code>REQUEST</code>، وقاعدة العدوى: من يحقن مزود طلب يصبح نفسه نطاق طلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>أحيانًا تحتاج كائنًا يموت مع الرد: ذاكرة تخزين مؤقت لحل GraphQL واحد، أو مصدر بيانات يُختار من ترويسة المستأجر. الخلط الشائع هو تعليم الخدمة <code>REQUEST</code> فقط لتمرير <code>user</code>. ذلك يعيد بناء سلسلة الحقن لكل طلب. المستخدم يُقرأ من الطلب عبر Guard وديكور، والخدمة تبقى Singleton وتستقبل المعرف وسيطًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Scope.REQUEST</code> ينشئ نسخة للطلب الوارد وتُجمع بعد معالجته. إن حقنها Controller أو Provider، يصعد النطاق في سلسلة الحقن. التابع الذي لا يحقنها يبقى <code>DEFAULT</code>. رمز <code>REQUEST</code> نفسه نطاق طلب بطبيعته، ومن يعتمد عليه يصعد حتى لو لم تكتب <code>scope</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Injectable, Scope } from &#39;@nestjs/common&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class TenantDb {}
+</code></pre>
+<p>على المتحكم:</p>
+<pre><code class="language-ts">import { Controller, Scope } from &#39;@nestjs/common&#39;;
+
+@Controller({ path: &#39;cats&#39;, scope: Scope.REQUEST })
+export class CatsController {}
+</code></pre>
+<p>حقن الطلب في HTTP:</p>
+<pre><code class="language-ts">import { Inject, Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { REQUEST } from &#39;@nestjs/core&#39;;
+import type { Request } from &#39;express&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class TenantDb {
+  constructor(@Inject(REQUEST) private readonly request: Request) {}
+}
+</code></pre>
+<p>كتابة <code>scope</code> مع <code>REQUEST</code> تُهمل لأن الرمز أصلًا نطاق طلب، والعدوى لا تُلغى. في GraphQL تحقن <code>CONTEXT</code> من <code>@nestjs/graphql</code> بدل <code>REQUEST</code>. بوابات WebSocket لا تستخدم هذا النطاق لأنها تغلف مقبسًا حقيقيًا ويجب أن تبقى Singleton، ومثلها بعض استراتيجيات Passport ومتحكمات Cron.</p>
+<p>رسم التوثيق: <code>CatsController &lt;- CatsService &lt;- CatsRepository</code>. إن كانت <code>CatsService</code> نطاق طلب، يصبح المتحكم نطاق طلب. <code>CatsRepository</code> إن لم يحقن الخدمة يبقى Singleton.</p>
+<p>خطافات دورة حياة التطبيق لا تُستدعى على هذه الأصناف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب وارد -&gt; context id -&gt; نسخة TenantDb ونسخة كل من يحقنها
+الرد خرج -&gt; النسخ تُجمع
+Repository لم يحقنها -&gt; النسخة القديمة Singleton
+</code></pre>
+<p>العدوى تصعد إلى المستهلك، ولا تنزل إلى من لا يعتمد على المزود.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { createParamDecorator, type ExecutionContext } from &#39;@nestjs/common&#39;;
+
+export const CurrentUser = createParamDecorator(
+  (_data: unknown, ctx: ExecutionContext) =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ user?: { id: string } }&gt;();
+    return request.user;
+  },
+);
+</code></pre>
+<p>Guard وضع <code>request.user</code> قبل المعالج. الديكور يقرأ الحقل. <code>BooksService.findFor(userId)</code> تبقى <code>Scope.DEFAULT</code>. لا <code>REQUEST</code> في السلسلة.</p>
+<h2>شرح المثال</h2>
+<p>هذا بديل تمرير المستخدم، وهو المسار الذي يقصده التحذير: لا تغيّر عمر الخدمة لتقرأ قيمة موجودة على كائن الطلب. الديكور يعمل عند المعالج فقط. الخدمة لا تعرف Express إن استقبلت <code>string</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>يصل طلب فيُنشأ context id.</li>
+<li>أي مزود <code>REQUEST</code> في سلسلة هذا المتحكم يُبنى داخل تلك الشجرة الفرعية.</li>
+<li>المتحكم الذي يحقن المزود يُبنى هو أيضًا لهذا الطلب ثم يُجمع.</li>
+<li>مزود <code>DEFAULT</code> خارج السلسلة يُعاد من الكاش.</li>
+<li>بعد الرد تُجمع النسخ المؤقتة. لا <code>onModuleDestroy</code> لها.</li>
+<li>في GraphQL السياق يحمل الطلب إن هيأت <code>context</code> في <code>GraphQLModule</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مصدر بيانات يختلف حقًا لكل طلب لأن الاتصال يُختار من ترويسة:</p>
+<pre><code class="language-ts">import { Inject, Injectable, Scope } from &#39;@nestjs/common&#39;;
+import { REQUEST } from &#39;@nestjs/core&#39;;
+import type { Request } from &#39;express&#39;;
+
+@Injectable({ scope: Scope.REQUEST })
+export class TenantDb {
+  constructor(@Inject(REQUEST) request: Request) {
+    this.schema = String(request.headers[&#39;x-tenant-id&#39;] ?? &#39;public&#39;);
+  }
+
+  readonly schema: string;
+}
+</code></pre>
+<p>كل من يحقن <code>TenantDb</code> يصبح نطاق طلب. إن حقنته خدمة كتب واسعة، أعدت بناء تلك الخدمة لكل طلب. الدرس قبل الأخير في الفصل يحسب هذه الكلفة، والدرس الأخير يشرح <code>durable</code> عندما يتجمع الطلبات على مستأجر لا على طلب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تعليم كل الخدمات <code>REQUEST</code> لتمرير المستخدم.</li>
+<li>نسيان أن العدوى تصعد إلى المتحكم.</li>
+<li>توقع <code>onModuleInit</code> على الصنف.</li>
+<li>وضع النطاق على Gateway.</li>
+<li>افتراض أن كتابة <code>Scope.DEFAULT</code> على المستهلك تلغي العدوى. التوثيق يقول إن السلوك لا يُلغى.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>نسخة يجب أن تموت مع الطلب: كاش لحل واحد، أو تتبع يخص الطلب، أو مصدر يقرأ الطلب نفسه ولا يمكن تجميعه في شجرة أطول عمرًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقراءة المستخدم أو اللغة أو المستأجر إن كانت القيمة وسيطًا أو حقلًا على الطلب. Guard يملأ الحقل، والديكور أو وسيط الدالة يوصله، والخدمة Singleton.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحاجة</th>
+<th>الآلية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المستخدم الحالي</td>
+<td>Guard ثم <code>@CurrentUser()</code> ووسيط</td>
+</tr>
+<tr>
+<td>كائن يُبنى من الطلب ويموت معه</td>
+<td><code>Scope.REQUEST</code></td>
+</tr>
+<tr>
+<td>نسخة لكل مكان حقن داخل الطلب نفسه</td>
+<td><code>TRANSIENT</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يصعد إلى نطاق الطلب: الذي يحقن المزود أم الذي يُحقن هو؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المستهلك الذي يحقن مزود <code>REQUEST</code> يصعد. المزود الذي لا يحقن أحدًا من السلسلة يبقى على نطاقه.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُهمل <code>scope</code> إن حقنت <code>REQUEST</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الرمز نطاق طلب أصلًا، وأي معتمد عليه يتبنى النطاق، وهذا لا يُغيَّر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>BooksService</code> حقنت <code>TenantDb</code> نطاق طلب، و <code>BooksService</code> موثقة كـ Singleton في ذهنك. ماذا يصبح المتحكم الذي يحقن <code>BooksService</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>BooksService</code> تصعد إلى <code>REQUEST</code> بالعدوى، والمتحكم يحقنها فيصعد أيضًا. تُبنى نسخة متحكم لكل طلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تُجمع النسخة؟</li>
+<li>ماذا تحقن في GraphQL بدل <code>REQUEST</code>؟</li>
+<li>لماذا الديكور أصلح لتمرير المستخدم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>REQUEST</code> نسخة للطلب وتعدي صعودًا. استعملها عندما تختلف النسخة نفسها، واقرأ المستخدم من الطلب من غير تغيير عمر الخدمة.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>TRANSIENT</code>: نسخة لكل مستهلك، من غير أن يصعد النطاق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

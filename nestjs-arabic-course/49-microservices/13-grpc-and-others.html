@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>gRPC و MQTT ونواقل أخرى</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="13-grpc-and-others.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>gRPC و MQTT ونواقل أخرى</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة متى تختار gRPC أو MQTT بدل أنماط Nest النصية، وكيف تعبر الأخطاء بـ <code>RpcException</code> على أي ناقل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ليس كل تكامل <code>@MessagePattern</code> على TCP. عقد صارم مع فرق تستعمل protobuf يناسبه gRPC. أجهزة ومواضيع خفيفة تناسب MQTT. الخطأ الذي يُرمى كـ <code>HttpException</code> لا يُفهم على هذه النواقل. <code>RpcException</code> الشكل الذي يسلسله الإطار نحو <code>ClientProxy</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Transport.GRPC</code> يحتاج ملف <code>.proto</code> وحزمة <code>@grpc/grpc-js</code> و <code>@grpc/proto-loader</code>. الدالة <code>@GrpcMethod</code> أو <code>@MessagePattern</code> حسب صفحة gRPC في التوثيق. <code>Transport.MQTT</code> يحتاج حزمة <code>mqtt</code> وعنوان <code>mqtt://broker:1883</code>. بقية النواقل في الوثائق (Kafka و NATS و Redis و Rabbit و TCP) مرت في دروسها. اختر بالضمان لا بالاسم الشائع.</p>
+<p><code>new RpcException(&#39;order missing&#39;)</code> أو <code>new RpcException({ message: &#39;order missing&#39; })</code> من المعالج. العميل يرى الخطأ على Observable الـ <code>send</code>.</p>
+<h2>التعريف التقني</h2>
+<p>gRPC شكل عقد:</p>
+<pre><code class="language-ts">{
+  transport: Transport.GRPC,
+  options: {
+    package: &#39;billing&#39;,
+    protoPath: join(process.cwd(), &#39;proto/billing.proto&#39;),
+    url: process.env.GRPC_URL ?? &#39;0.0.0.0:5000&#39;,
+  },
+}
+</code></pre>
+<p>العميل يشير إلى <code>billing:5000</code> في Compose لا إلى <code>localhost</code> إن عبر الحاويات. الأسلوب في الـ proto هو العقد، أقوى من كائن <code>{ cmd }</code> حر. مناسب لحدود فرق تتفق على ملف. ثقيل للتعلم إن كان الطرفان Nest فقط وما زال العقد يتغير كل يوم.</p>
+<p>MQTT:</p>
+<pre><code class="language-ts">{
+  transport: Transport.MQTT,
+  options: { url: process.env.MQTT_URL ?? &#39;mqtt://127.0.0.1:1883&#39; },
+}
+</code></pre>
+<p>المواضيع أحداث أجهزة أو إشارات خفيفة. لا تجعله قاعدة فواتير.</p>
+<pre><code class="language-ts">import { RpcException } from &#39;@nestjs/microservices&#39;;
+
+if (order === null) {
+  throw new RpcException({ message: &#39;order missing&#39; });
+}
+</code></pre>
+<p>في التطبيق الهجين ارمِ <code>HttpException</code> من مسار HTTP و <code>RpcException</code> من مسار الرسالة، أو ترجم في فلتر حسب <code>getType()</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عقد protobuf ثابت     -&gt; gRPC
+موضوع جهاز خفيف       -&gt; MQTT
+خطأ يعبر ClientProxy -&gt; RpcException
+اختيار الناقل         -&gt; ضمان التسليم لا شهرته
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>معالج فاتورة يرمي <code>RpcException</code> عند غياب الطلب. عميل <code>send</code> يدخل <code>catch</code> بعد <code>lastValueFrom</code> ويعرض تعذر الإصدار. لا يبحث عن حقل <code>statusCode</code> الخاص بـ HTTP إلا إذا وضعته أنت داخل كائن <code>RpcException</code>.</p>
+<h2>شرح المثال</h2>
+<p>الكائن الصغير يكفي. لا ترسل صف Prisma ولا تتبع المكدس إلى عملية أخرى. المكدس يبقى في سجل المستمع. العميل يحصل على رسالة يفهمها.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>gRPC يطابق الأسلوب في الـ proto إلى الدالة.</li>
+<li>MQTT يطابق الموضوع إلى <code>@EventPattern</code> أو نمط الرسالة حسب الصفحة.</li>
+<li><code>RpcException</code> تُلتقط في طبقة النقل وتُسلسل للعميل.</li>
+<li>استثناء عادي قد يظهر كخطأ داخلي بلا جسم متفق عليه.</li>
+<li><code>HttpException</code> على مسار RPC لا تمر بفلتر HTTP إلا في الهجين وعلى مدخل HTTP.</li>
+<li>العنوان في الخيارات يُحل داخل شبكة Docker باسم الخدمة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>فريق دفع خارجي يعطيك <code>billing.proto</code>. استعمل gRPC على تلك الحدود فقط. بين الكتالوج والفوترة داخل شركتك ابقِ على NATS أو Rabbit ما دام العقد يتغير. حساسات مخزن تتحدث MQTT إلى بوابة، والبوابة تترجم إلى أمر داخلي على طابور. لا توصل MQTT بقاعدة المتجر مباشرة من المعالج بلا تحقق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>gRPC لكل دالة داخلية متغيرة.</li>
+<li>MQTT كطابور فواتير.</li>
+<li><code>throw new Error</code> بلا <code>RpcException</code> ثم شكل خطأ مختلف لكل ناقل.</li>
+<li><code>localhost</code> في <code>url</code> بين الحاويات.</li>
+<li>تسريب مكدس داخل كائن الاستثناء.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>gRPC لعقد protobuf مستقر بين فرق. MQTT لحافة أجهزة. <code>RpcException</code> كلما عبر الخطأ <code>ClientProxy</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تجمع كل النواقل في العملية «للاحتياط». ناقل واحد واضح. ولا gRPC بديلًا عن حد وحدة لم يُرسم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النقل</th>
+<th>يناسبه</th>
+<th>الحزمة الشائعة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>gRPC</td>
+<td>عقد proto</td>
+<td><code>@grpc/grpc-js</code> و <code>@grpc/proto-loader</code></td>
+</tr>
+<tr>
+<td>MQTT</td>
+<td>مواضيع خفيفة</td>
+<td><code>mqtt</code></td>
+</tr>
+<tr>
+<td>NATS</td>
+<td>طلب-رد تشغيلي</td>
+<td><code>nats</code></td>
+</tr>
+<tr>
+<td>RabbitMQ</td>
+<td>طابور أعمال</td>
+<td><code>amqplib</code></td>
+</tr>
+<tr>
+<td>Kafka</td>
+<td>سجل أحداث</td>
+<td><code>kafkajs</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استثناء ترميه ليراه <code>send</code> على العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>RpcException</code> من <code>@nestjs/microservices</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تضع المكدس في كائن <code>RpcException</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الرسالة تعبر عملية أخرى وقد تصل إلى سجل العميل. التفاصيل تبقى عند المستمع. العميل يأخذ سببًا قصيرًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حساسات MQTT وفريق دفع عنده proto. كم ناقلًا عند حدودك، وأين لا تضع منطق الخصم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>MQTT عند الحساسات و gRPC عند حدود الدفع، أو ترجمة الحساسات إلى ناقل داخلي واحد. الخصم في خدمة الدومين لا في محول الموضوع ولا في ملف proto.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحتاج gRPC غير <code>Transport</code>؟</li>
+<li>ماذا لا يُخزن MQTT نيابة عن فواتيرك؟</li>
+<li>أين يُترجم خطأ HTTP في الهجين؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>gRPC عقد صارم و MQTT مواضيع خفيفة. على كل ناقل ارمِ <code>RpcException</code> للخطأ الذي يراه العميل، واختر النقل بالضمان، وحل العنوان باسم الخدمة داخل Compose.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة TCP و NATS وطابور، ثم Docker حيث تعيش هذه العناوين.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — gRPC: <a href="https://docs.nestjs.com/microservices/grpc">https://docs.nestjs.com/microservices/grpc</a></li>
+<li>NestJS — MQTT: <a href="https://docs.nestjs.com/microservices/mqtt">https://docs.nestjs.com/microservices/mqtt</a></li>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+<li>NestJS — Exception filters (RpcException): <a href="https://docs.nestjs.com/microservices/exception-filters">https://docs.nestjs.com/microservices/exception-filters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

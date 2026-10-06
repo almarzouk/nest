@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>useFactory</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-use-factory.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>useFactory</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء قيمة المزود بدالة تستقبل مزودات أخرى، عندما لا يكفي <code>useClass</code> ولا قيمة ثابتة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عميل قاعدة يحتاج خيارات من <code>ConfigService</code> ثم <code>new DatabaseConnection(options)</code>. الصنف وحده لا يرى الإعداد إلا إذا حقنته أنت. المصنع يصرح <code>inject</code> فيستلم النسخ ويعيد القيمة التي تُخزن تحت الرمز.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>useFactory</code> دالة، و <code>inject</code> مصفوفة رموز تُمرر معاملات بالترتيب نفسه. الناتج هو ما يُحقن لاحقًا. الدالة قد ترجع <code>Promise</code>، وذلك درس Async Factories. هنا الناتج متزامن حتى ترى الربط.</p>
+<h2>التعريف التقني</h2>
+<p>شكل التوثيق، مع اعتماد اختياري:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DatabaseConnection } from &#39;./database.connection.js&#39;;
+import { OptionsProvider } from &#39;./options.provider.js&#39;;
+
+const connectionProvider = {
+  provide: &#39;CONNECTION&#39;,
+  useFactory: (optionsProvider: OptionsProvider, label?: string) =&gt; {
+    const options = optionsProvider.get();
+    return new DatabaseConnection(options, label ?? &#39;default&#39;);
+  },
+  inject: [OptionsProvider, { token: &#39;LABEL&#39;, optional: true }],
+};
+
+@Module({
+  providers: [connectionProvider, OptionsProvider],
+  exports: [&#39;CONNECTION&#39;],
+})
+export class DatabaseModule {}
+</code></pre>
+<p><code>{ token, optional: true }</code> يجعل الغياب <code>undefined</code> بدل فشل الإقلاع. الرموز الإلزامية في <code>inject</code> يجب أن تكون مسجّلة في الوحدة أو مستوردة.</p>
+<p>المستهلك:</p>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { DatabaseConnection } from &#39;./database.connection.js&#39;;
+
+@Injectable()
+export class BooksRepository {
+  constructor(@Inject(&#39;CONNECTION&#39;) private readonly db: DatabaseConnection) {}
+}
+</code></pre>
+<p>صدّر <code>&#39;CONNECTION&#39;</code> أو كائن المزود كاملًا. التوثيق يسمح بالاثنين.</p>
+<p>لا تضع <code>useClass</code> مع <code>useFactory</code> على العنصر نفسه. أسلوب واحد لكل رمز.</p>
+<p>المصنع يعمل عند بناء Singleton مرة. إن علّمت المزود <code>Scope.REQUEST</code> فالمصنع يتكرر لكل طلب، ومعه كلفة الشجرة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حل inject من اليسار إلى اليمين
+  -&gt; استدعاء useFactory
+  -&gt; تخزين الناتج تحت provide
+  -&gt; حقن الناتج لا الدالة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>مقطع <code>connectionProvider</code>. <code>OptionsProvider</code> صنف <code>@Injectable</code> يعيد <code>{ url: string }</code>. المصنع ينشئ <code>DatabaseConnection</code>. <code>BooksRepository</code> لا تعرف <code>OptionsProvider</code> إن لم تحقنها. هذا عزل: تجميع العميل في مكان واحد.</p>
+<h2>شرح المثال</h2>
+<p>الترتيب في <code>inject</code> هو العقد. تبديل العنصرين يمرر النص مكان المزود ويكسر الدالة عند التشغيل لا عند المترجم بالضرورة. الاعتماد الاختياري آخرًا أسهل قراءة. <code>exports: [&#39;CONNECTION&#39;]</code> يطابق <code>provide</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية تبني <code>OptionsProvider</code> أولًا لأنه في <code>inject</code>.</li>
+<li>تبحث عن <code>&#39;LABEL&#39;</code>. مع <code>optional</code> تكمل بلا قيمة.</li>
+<li>تستدعي الدالة بالنسخ.</li>
+<li>تخزن كائن <code>DatabaseConnection</code> تحت <code>&#39;CONNECTION&#39;</code>.</li>
+<li>تبني <code>BooksRepository</code> وتمرر الكائن.</li>
+<li>رمي المصنع يوقف الإقلاع. مناسب لعنوان ناقص، وقاسٍ لتكامل اختياري.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختيار محوّل بريد من الإعداد من غير شرط داخل كل إرسال:</p>
+<pre><code class="language-ts">{
+  provide: &#39;MAILER&#39;,
+  useFactory: (config: ConfigService) =&gt; {
+    const host = config.getOrThrow&lt;string&gt;(&#39;SMTP_HOST&#39;);
+    return { host };
+  },
+  inject: [ConfigService],
+}
+</code></pre>
+<p>الوحدة تستورد <code>ConfigModule</code>. الاختبار يستبدل الرمز بـ <code>useValue</code> ولا يشغّل المصنع. إن أردت الإعداد على مستوى مكتبة لا مزود واحد، ابقَ على <code>forRootAsync</code> الذي يسجل عدة مزودات من كائن خيارات.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اختلاف ترتيب <code>inject</code> عن المعاملات.</li>
+<li>نسيان تسجيل <code>OptionsProvider</code> في <code>providers</code> أو <code>imports</code>.</li>
+<li>مصنع ثقيل على <code>Scope.REQUEST</code>.</li>
+<li>إرجاع صنف لا نسخة: <code>return DatabaseConnection</code> بدل <code>return new DatabaseConnection(...)</code> إلا إن كان المقصود قيمة أخرى.</li>
+<li>منطق طلب داخل المصنع. لا <code>REQUEST</code> هنا إلا بقصد النطاق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تجميع كائن من مزودات عند الإقلاع، أو إخفاء <code>new</code> لمكتبة خارجية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>تنفيذ بسيط بلا تجميع: <code>useClass</code>. ثابت اختبار: <code>useValue</code>. لقب لنسخة قائمة: <code>useExisting</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>المدخل</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useFactory</code></td>
+<td>رموز <code>inject</code></td>
+<td>ما ترجعه الدالة</td>
+</tr>
+<tr>
+<td><code>useClass</code></td>
+<td>constructor الصنف</td>
+<td>نسخة الصنف</td>
+</tr>
+<tr>
+<td><code>forRootAsync</code></td>
+<td>مصنع خيارات وحدة</td>
+<td>وحدة فيها مزودات عدة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يُحقن في <code>BooksRepository</code>: الدالة أم ناتجها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ناتج <code>useFactory</code> المخزون تحت <code>&#39;CONNECTION&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يفعل <code>optional: true</code> على عنصر في <code>inject</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إن غاب الرمز تُمرر <code>undefined</code> ولا يفشل الإقلاع بسبب هذا الرمز.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا استبدال <code>&#39;CONNECTION&#39;</code> بـ <code>useValue</code> في الاختبار يلغي المصنع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الرمز يُغطى بقيمة جاهزة في حاوية الاختبار، فلا حاجة لحل <code>inject</code> ولا لاستدعاء الدالة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما علاقة ترتيب <code>inject</code> بالمعاملات؟</li>
+<li>كيف تُصدّر الرمز النصي؟</li>
+<li>متى المصنع أغلى من اللازم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useFactory</code> يبني قيمة الرمز من مزودات تصرح بها. الناتج هو ما يُحقن. أبقِ المصنع على إقلاع Singleton ما لم تقس نطاقًا أضيق.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>useExisting</code>: الرمز الثاني الذي يشير إلى النسخة نفسها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

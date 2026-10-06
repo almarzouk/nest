@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>forRootAsync</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-for-root-async.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>forRootAsync</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء خيارات <code>forRoot</code> بعد أن تتوفر اعتماديات أخرى، خصوصًا <code>ConfigService</code>، عبر مصنع قد يرجع وعدًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>forRoot(process.env.DATABASE_URL)</code> يقرأ البيئة لحظة تقييم الزخرفة وقد يسبق التحقق والفشل الواضح. <code>forRootAsync</code> يؤخر بناء الكائن حتى يحقن الإطار المصنع بـ <code>ConfigService</code> وينتظر إن رجع <code>Promise</code>. الإقلاع يتوقف على عنوان ناقص بعد رسالة إعداد، لا على عميل بُني بسلسلة فارغة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>نفس وحدة <code>forRoot</code>، ودالة ثانية <code>forRootAsync</code> تستقبل <code>imports</code> و <code>useFactory</code> و <code>inject</code>. المصنع يعيد كائن الخيارات. الوحدة الديناميكية تسجل الخيارات كمزود ثم تبني الخدمة التي تحقنها. الاستدعاء يبقى مرة في الجذر.</p>
+<h2>التعريف التقني</h2>
+<p>شكل المصنع كما في <code>registerAsync</code> في التوثيق، والاسم هنا <code>forRootAsync</code> لأن التكوين مرة واحدة. الحقول المتداولة:</p>
+<table>
+<thead>
+<tr>
+<th>الحقل</th>
+<th>الدور</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>imports</code></td>
+<td>وحدات تُستورد حتى تُحقن مصدَّراتها في المصنع</td>
+</tr>
+<tr>
+<td><code>useFactory</code></td>
+<td>يعيد الخيارات أو وعدًا بها</td>
+</tr>
+<tr>
+<td><code>inject</code></td>
+<td>رموز تُمرر إلى المصنع بالترتيب</td>
+</tr>
+<tr>
+<td><code>useClass</code></td>
+<td>صنف فيه <code>create()</code> يعيد الخيارات</td>
+</tr>
+<tr>
+<td><code>useExisting</code></td>
+<td>يعيد استخدام صنف موجود بدل نسخة جديدة</td>
+</tr>
+</tbody></table>
+<p>اختر واحدًا من <code>useFactory</code> و <code>useClass</code> و <code>useExisting</code>.</p>
+<pre><code class="language-ts">import { DynamicModule, Module } from &#39;@nestjs/common&#39;;
+import { DatabaseService } from &#39;./database.service.js&#39;;
+
+@Module({})
+export class DatabaseModule {
+  static forRootAsync(options: {
+    imports?: DynamicModule[&#39;imports&#39;];
+    useFactory: (...args: never[]) =&gt; Promise&lt;{ url: string }&gt; | { url: string };
+    inject?: never[];
+  }): DynamicModule {
+    return {
+      module: DatabaseModule,
+      imports: options.imports ?? [],
+      providers: [
+        {
+          provide: &#39;DATABASE_OPTIONS&#39;,
+          useFactory: options.useFactory,
+          inject: options.inject ?? [],
+        },
+        DatabaseService,
+      ],
+      exports: [DatabaseService],
+    };
+  }
+}
+</code></pre>
+<p>الجذر:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ConfigModule, ConfigService } from &#39;@nestjs/config&#39;;
+import { DatabaseModule } from &#39;./database/database.module.js&#39;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({ isGlobal: true }),
+    DatabaseModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =&gt; ({
+        url: config.getOrThrow&lt;string&gt;(&#39;DATABASE_URL&#39;),
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p><code>ConfigurableModuleBuilder</code> يولّد هذا الشكل لاحقًا. هنا الكتابة يدوية حتى ترى المزود.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ConfigModule يُهيأ
+  -&gt; useFactory(config) -&gt; { url }
+  -&gt; الرمز DATABASE_OPTIONS
+  -&gt; DatabaseService تُبنى
+  -&gt; listen
+</code></pre>
+<p>المصنع جزء من الإقلاع. الفشل فيه يمنع الباب.</p>
+<h2>أبسط مثال</h2>
+<p>مقطعا الوحدة والجذر أعلاه. <code>DatabaseService</code> تحقن <code>&#39;DATABASE_OPTIONS&#39;</code> وتقرأ <code>url</code>. لا تقرأ <code>process.env</code> داخل الخدمة إن مررت الخيار من المصنع، حتى يبقى الاختبار قادرًا على استبدال الرمز.</p>
+<h2>شرح المثال</h2>
+<p><code>imports: [ConfigModule]</code> يجعل <code>ConfigService</code> مرئيًا لمصنع هذه الوحدة الديناميكية. <code>inject</code> يطابق معاملات المصنع ترتيبًا. <code>getOrThrow</code> يرمي إن غاب المتغير، فيقف الإقلاع. <code>ConfigModule.forRoot</code> نفسه استدعاء تكوين مرة واحدة، وهذا اتساق مع درس <code>forRoot</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإطار يستورد ما في <code>imports</code> الخاص بـ <code>forRootAsync</code>.</li>
+<li>يحل رموز <code>inject</code>.</li>
+<li>يستدعي المصنع وينتظر الوعد إن وُجد.</li>
+<li>يسجل الناتج تحت <code>&#39;DATABASE_OPTIONS&#39;</code>.</li>
+<li>يبني <code>DatabaseService</code> بحقن ذلك الرمز.</li>
+<li>الميزات لا تعيد <code>forRootAsync</code>. من يحتاج الخدمة يستورد الوحدة العامة أو الصنف المعاد تصديره.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مهلة بريد تُقرأ من الإعداد:</p>
+<pre><code class="language-ts">useFactory: (config: ConfigService) =&gt; ({
+  url: config.getOrThrow&lt;string&gt;(&#39;SMTP_URL&#39;),
+  timeoutMs: Number(config.get(&#39;SMTP_TIMEOUT_MS&#39;) ?? 3000),
+}),
+</code></pre>
+<p>اختبار يمرر مصنعًا يعيد <code>{ url: &#39;smtp://example&#39;, timeoutMs: 10 }</code> من غير ملف <code>.env</code>. هذا ربح <code>forRootAsync</code> على قراءة البيئة داخل الـ <code>constructor</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>imports</code> ثم تعجب أن <code>ConfigService</code> غير موجود في المصنع.</li>
+<li>اختلاف ترتيب <code>inject</code> عن معاملات الدالة.</li>
+<li>استدعاء <code>forRoot</code> و <code>forRootAsync</code> معًا على الوحدة نفسها في الجذر.</li>
+<li>مصنع يرجع الخيار ثم الخدمة تقرأ <code>process.env</code> فتلغي الاختبار.</li>
+<li><code>useFactory</code> و <code>useClass</code> معًا. الحقول متنافية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>خيار جذر يعتمد على مزود آخر أو على عملية غير متزامنة قبل بناء العميل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>خيار ثابت في اختبار صغير. <code>forRoot({ url })</code> أقصر. خيار لكل ميزة ينتظر <code>registerAsync</code> لا اسم <code>forRoot</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>forRoot</code></th>
+<th><code>forRootAsync</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مصدر الخيار</td>
+<td>معامل مباشر</td>
+<td>مصنع أو صنف <code>create</code></td>
+</tr>
+<tr>
+<td>انتظار وعد</td>
+<td>لا داخل التوقيع المتزامن</td>
+<td>نعم إن رجع المصنع وعدًا</td>
+</tr>
+<tr>
+<td><code>ConfigService</code></td>
+<td>تقرأه أنت قبل النداء</td>
+<td>يُحقن في المصنع</td>
+</tr>
+<tr>
+<td>عدد المرات</td>
+<td>واحد</td>
+<td>واحد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يجب أن يطابق ترتيب <code>inject</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترتيب معاملات <code>useFactory</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>imports: [ConfigModule]</code> داخل <code>forRootAsync</code> رغم أن الجذر استورد الإعداد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مصنع الوحدة الديناميكية يرى مزودات ما يستورده هو. الاستيراد في الجذر لا يفتح <code>ConfigService</code> تلقائيًا داخل كائن الوحدة الراجعة إلا إن جعلت الإعداد عامًا وما زلت تحتاج التصريح حسب المكتبة. التصريح في <code>imports</code> الخاص بالنداء هو العقد الواضح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يريد عنوانًا مزيفًا من غير <code>ConfigModule</code>. أي شكل تستعمل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>forRoot({ url: &#39;postgresql://test/db&#39; })</code> أو <code>forRootAsync</code> بمصنع بلا <code>inject</code> يرجع الكائن مباشرة. لا حاجة لقراءة بيئة الاختبار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حقول متنافية في الاستدعاء غير المتزامن؟</li>
+<li>أين يبقى الاستدعاء في التطبيق؟</li>
+<li>ماذا يفعل الإطار بوعد المصنع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>forRootAsync</code> يبني خيار الجذر بعد حقن اعتماديات المصنع وينتظر الوعد. مرة واحدة، ثم الخدمة تستهلك الرمز لا البيئة مباشرة.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>register</code>: التكوين نفسه بشكل قد يختلف مع كل مستورد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Dynamic modules: <a href="https://docs.nestjs.com/fundamentals/dynamic-modules">https://docs.nestjs.com/fundamentals/dynamic-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

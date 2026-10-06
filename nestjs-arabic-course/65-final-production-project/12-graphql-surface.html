@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>سطح GraphQL</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-graphql-surface.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>سطح GraphQL</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إضافة استعلام قراءة لمشاريع منظمة رف عبر GraphQL، بنفس العزل، من غير نقل كل API ومن غير ادّعاء أن الحماية المتقدمة ديكور واحد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الواجهة ستطلب المشروع فقط ثم تُغرى بإضافة مؤلف ومراجعات فيصبح N+1. أو المخطط يفتح كل المنظمات. أو يُنسخ منطق العزل بطريقة أضعف من REST فترى دار النيل مشاريع غيرها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>استعلام <code>projects</code> يعيد عنوان المشروع وحالته للمنظمة في السياق. نفس <code>TenantGuard</code> أو ما يعادله على طلب GraphQL. لا mutation في هذه الشريحة؛ الإنشاء يبقى REST حتى لا يتفرع العقد. DataLoader لا يُضاف حتى يظهر حقل علاقة. التعقيد والعمق والاتحاد ليست جزءًا من السطح الأول.</p>
+<h2>التعريف التقني</h2>
+<p><code>GraphQLModule</code> من <code>@nestjs/graphql</code> كما في التوثيق، code first أو schema first واحد فقط. الحقل يقرأ <code>currentTenantId()</code> ويستدعي <code>ProjectsService.list</code> حتى لا يتفرع <code>where</code>. قائمة فارغة مصفوفة فارغة لا خطأ. 404 للفرد عبر union أو خطأ GraphQL موثّق، لكن هذه الشريحة قائمة فقط حتى يبقى السطح صغيرًا. لا <code>@nestjs/apollo</code> federation هنا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">REST يبقى للإنشاء والنشر
+GraphQL projects → نفس الخدمة ونفس المنظمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Resolver()
+export class ProjectsResolver {
+  constructor(private readonly projects: ProjectsService) {}
+
+  @Query(() =&gt; [ProjectType])
+  projects() {
+    return this.projects.listRows(currentTenantId());
+  }
+}
+</code></pre>
+<p><code>listRows</code> تعيد الصفوف التي يغلفها REST داخل <code>data</code>. لا تعيدوا غلاف REST داخل GraphQL إن كان المخطط يعد بمصفوفة؛ اتفقوا على شكل واحد في هذا الاستعلام واتركوا الغلاف لـ REST.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الخدمة المشتركة تمنع اختلاف العزل.</li>
+<li>لا وسيط <code>organizationId</code> في الاستعلام.</li>
+<li>النوع يعرض <code>id</code> و <code>title</code> و <code>status</code> فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>سياق HTTP يملأ المستأجر قبل الحل إن كان المسار خلف نفس التطبيق.</li>
+<li><code>projects</code> تستدعي القائمة المقيّدة.</li>
+<li>صفر صفوف مصفوفة فارغة.</li>
+<li>لا resolver حقل إضافي فلا N+1 بعد.</li>
+<li>REST <code>POST</code> لم يُحذف.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-graphql">query Shelf {
+  projects {
+    id
+    title
+    status
+  }
+}
+</code></pre>
+<p>اختبار يطلب الاستعلام بترويسة منظمة بلا مشاريع ويتوقع <code>[]</code>. اختبار ثانٍ بمشروع الجار لا يظهر العنوان. لا تختبروا عمقًا عشوائيًا؛ المخطط لا يسمح به.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وسيط <code>organizationId</code> في GraphQL يثق بالجسم.</li>
+<li>نقل النشر إلى mutation بلا <code>PlanPolicy</code>.</li>
+<li>تفعيل GraphiQL في الإنتاج مع استعلامات حرة بلا قائمة محفوظة إن فتحتم الباب لاحقًا.</li>
+<li>نسخة ثانية من <code>findMany</code> داخل الـ resolver.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بعد استقرار REST للقراءة البسيطة التي تريدها الواجهة في جولة واحدة لاحقًا. اليوم الجولة حقل واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا Checkout أو الويب هوك بـ GraphQL. ولا تضيفوا Federation لمكتبة واحدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>REST في رف</th>
+<th>هذا السطح</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء</td>
+<td><code>POST</code> 201</td>
+<td>غير موجود</td>
+</tr>
+<tr>
+<td>قائمة فارغة</td>
+<td>200 و <code>data: []</code></td>
+<td><code>[]</code></td>
+</tr>
+<tr>
+<td>العزل</td>
+<td>الخدمة</td>
+<td>نفس الخدمة</td>
+</tr>
+<tr>
+<td>تعقيد و DataLoader</td>
+<td>—</td>
+<td>عند ظهور علاقة فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا وسيط منظمة في <code>projects</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المصدر السياق بعد العضوية. الوسيط يعيد ثقب الجسم الذي رُفض في REST.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>القائمة فارغة. هل ترمي خطأ GraphQL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. المصفوفة الفارغة نتيجة صحيحة مثل 200 في REST.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أضفتم حقل <code>owner { email }</code> لكل مشروع بلا مجمّع. ماذا يفسد، وماذا لا تفعلونه اليوم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>N+1 على المستخدمين. لا تضيفوا الحقل في هذه الشريحة. إن أُضيف لاحقًا فـ DataLoader لكل طلب لا ديكور خيالي شامل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي خدمة تُستدعى؟</li>
+<li>ماذا لا يُنقل إلى GraphQL بعد؟</li>
+<li>كيف تبدو القائمة الفارغة؟</li>
+<li>متى يظهر DataLoader؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>سطح GraphQL قراءة مشاريع المنظمة عبر الخدمة الموجودة. الإنشاء والنشر والدفع تبقى REST. لا علاقة فلا مجمّع بعد.</p>
+<h2>ماذا بعد؟</h2>
+<p>عقد REST يحتاج وثيقة تقرأها الواجهة. الدرس التالي Swagger.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — GraphQL quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+<li>NestJS — Resolvers: <a href="https://docs.nestjs.com/graphql/resolvers">https://docs.nestjs.com/graphql/resolvers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا تشبه NestJS إطار Angular</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="15-why-nestjs-resembles-angular.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا تشبه NestJS إطار Angular</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم الاستعارة التي يصرّح بها التوثيق، حتى تصبح أسماء Module و Decorator و Dependency Injection قرارات مألوفة لا تقليدًا شكليًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قارئ يصل إلى Nest فيرى <code>@Module</code> و <code>@Injectable</code> و constructor فيه خدمات، فيظن أنه أمام واجهة متصفح نُقلت بالخطأ إلى الخادم. أو يظن أنه يجب أن يتعلم Angular أولًا.</p>
+<p>الاستعارة مفيدة إذا عرفنا <strong>ما الذي نُقل</strong>: طريقة تنظيم كود كبير. وغير مفيدة إذا بحثنا عن صفحات ومكوّنات DOM.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Angular واجه مشكلة تطبيقات واجهة تكبر: ملفات كثيرة، وخدمات مشتركة، وحاجة إلى اختبار القطع منفصلة. جوابها كان وحدات، وحقن اعتماديات، و Decorators تصف الصنف بجانبه.</p>
+<p>Nest، كما تقول الصفحة الأولى، استلهمت معماريتها بشدة من Angular لتعطي جهة الخادم جوابًا من العائلة نفسها.</p>
+<p>أنت لا تشغّل Angular داخل Nest. لا متصفح، ولا قوالب HTML كمسار افتراضي. التشابه في <strong>شكل تنظيم الكود</strong>.</p>
+<h2>التعريف التقني</h2>
+<p>الأفكار المشتركة التي ستلمسها في هذه الدورة:</p>
+<table>
+<thead>
+<tr>
+<th>الفكرة</th>
+<th>معناها هنا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Module</td>
+<td>حدود تجمع قطعًا مترابطة وتصرح ماذا تستورد وماذا تصدّر</td>
+</tr>
+<tr>
+<td>Dependency Injection</td>
+<td>الحاوية تنشئ ما تحتاجه وتسلّمه عبر constructor</td>
+</tr>
+<tr>
+<td>Decorator</td>
+<td>دالة خاصة تعلّم الصنف أو الدالة بـ Metadata يقرأها الإطار</td>
+</tr>
+<tr>
+<td>Provider</td>
+<td>شيء تسجّله الحاوية حتى يُطلب لاحقًا</td>
+</tr>
+</tbody></table>
+<p>في Angular تخدم هذه الأفكار مكوّنات واجهة. في Nest تخدم Controllers و Services ومسار طلب HTTP.</p>
+<p>فرق يذكره توثيق Nest نفسه في فصل Modules: في Angular المزوّدات المسجّلة بشكل معين تتاح على نطاق واسع. Nest تغلّف المزوّدات داخل الوحدة. لا تستخدم مزوّد وحدة أخرى إلا إذا استوردت تلك الوحدة وكانت قد صدّرته. هذا الفرق سيُشرح بهدوء في فصل Modules لأنه من أكثر أسباب خطأ &quot;الخدمة غير موجودة&quot;.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Angular (واجهة)                 Nest (خادم)
+
+NgModule                        Module
+Component يستقبل عرض المستخدم   Controller يستقبل HTTP
+Service فيه منطق قابل لإعادة   Service فيه منطق قابل لإعادة
+استخدام                         استخدام
+حقن في constructor              حقن في constructor
+Decorator فوق الصنف             Decorator فوق الصنف
+</code></pre>
+<p>الصفوف متقابلة في الوظيفة التنظيمية، لا في المكتبات.</p>
+<h2>أبسط مثال</h2>
+<p>الشكل الذي ستراه مئات المرات. نقرؤه كجملة عربية، لا كدرس DI.</p>
+<pre><code class="language-ts">constructor(private readonly usersService: UsersService) {}
+</code></pre>
+<p>المعنى المقصود عندما نصل إلى TypeScript ثم إلى الحقن:</p>
+<ul>
+<li>هذا الصنف يحتاج <code>UsersService</code> ليعمل.</li>
+<li>هو لا يكتب <code>new UsersService()</code> داخل الدالة.</li>
+<li>الإطار يرى نوع المعامل، فينشئ الخدمة أو يعيد النسخة الموجودة، ويمررها عند بناء الصنف.</li>
+<li><code>private readonly</code> كلمات TypeScript: خاصية خاصة لا نعيد تعيينها. فصل TypeScript سيفك السطر كلمة كلمة.</li>
+</ul>
+<p>لماذا هذا الشبه مع Angular؟ لأن Angular علّمت جمهورًا واسعًا أن الاعتماد يُعلن في constructor ولا يُصنع في كل دالة. Nest تبنت الإعلان نفسه حتى يصبح الاختبار: مرّر خدمة بديلة عند بناء الصنف، ولا تطارد <code>new</code> داخل الأساليب.</p>
+<h2>شرح المثال</h2>
+<p>لن ننفذ المثال اليوم. نشرح <strong>لماذا هذا الشكل هو جواب ألم Express</strong>:</p>
+<ul>
+<li>في Express كان الملف يستورد <code>db</code> العام أو يعمل <code>new Mailer()</code>.</li>
+<li>الإعلان في constructor يجعل الاعتماد ظاهرًا في توقيع الصنف. قارئ الصنف يرى احتياجاته في أعلى الملف.</li>
+<li>الحاوية تجمع هذه الإعلانات وتبني الرسم. اسم الرسم في التوثيق application graph.</li>
+<li>إذا لم تُسجَّل الخدمة في Module، الإطار لا يخترعها. التسجيل صريح. هذا أقرب إلى ضبط معماري منه إلى سحر.</li>
+</ul>
+<p><code>@Injectable()</code> وسم ستضعه على الخدمة ليسمح للإطار بقراءة بيانات الحقن. استخدمناه بالاسم فقط. فصله هو Providers.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Decorators في TypeScript دوال تعمل على الصنف عند تحميل الملف، وتستطيع لصق Metadata. Nest لا تنفّذ طلبات HTTP داخل الـ Decorator. هي تخزن وصفًا: &quot;هذا Controller ومساره <code>users</code>&quot; أو &quot;هذا الصنف قابل للحقن&quot;.</p>
+<p>عند الإقلاع، لا عند كل طلب، يمشي الإطار على الوحدات ويقرأ الوصف عبر <code>reflect-metadata</code>. ثم يبني الحاوية. عند الطلب، المسار جاهز والكائنات أُنشئت غالبًا.</p>
+<p>هذا هو الجواب عن &quot;لماذا Decorators؟&quot;: حتى تعيش نية الصنف بجانب الكود الذي ينفّذها، ويقرأها الإطار دفعة واحدة عند البناء. البديل ملف تسجيل مركزي يبتعد عن الدالة كلما كبر المشروع، أو استيراد يدوي يعيد ألم Express.</p>
+<p>FRP تدخل من باب آخر غير Angular تحديدًا: Interceptor يعيد <code>Observable</code> من RxJS، وهي مكتبة ترافق Nest في الحزم الدنيا. Angular تستخدم RxJS أيضًا، وهذا يزيد الإحساس بالشبه. في Nest ستكتفي أولًا بأن <code>next.handle()</code> تيار تكمل عليه قبل إرسال الرد. الحد الأدنى يُشرح في أول درس من فصل Interceptors، لا هنا.</p>
+<h2>مثال عملي</h2>
+<p>ميزة مستخدمين كحدود Module، بالأسماء فقط:</p>
+<pre><code class="language-text">UsersModule
+   controllers: UsersController     يستقبل /users
+   providers:   UsersService        القواعد
+   exports:     UsersService        إن كان لوحدة أخرى حق الاستخدام
+</code></pre>
+<p>وحدة الطلبات لا تستورد ملف الخدمة مباشرة من عمق المجلد وتتجاوز الحد. هي تستورد <code>UsersModule</code> إذا صرّحت الوحدة المالكة أن خدمتها جزء من واجهتها العامة. هذا encapsulation يذكره فصل Modules: المزوّدات مغلّفة افتراضيًا، وما تصدّره الوحدة هو واجهتها.</p>
+<p>Angular تعطي إحساس &quot;الوحدة صندوق ميزة&quot; نفسه لمطوري الواجهات. Nest تستخدم الصندوق لميزات الخادم: مستخدمون، طلبات، فواتير. الصندوق هو سبب أن المجلد في الدرس 12 صار <code>orders/</code> فيه module و controller و service، لا <code>helpers/</code> بلا عقد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إيقاف الدورة لتعلم Angular. غير مطلوب. التشابه مفهومي.</li>
+<li>نقل عادات مكوّن الواجهة: حالة شاشة، ودورة حياة DOM، إلى Service على الخادم. الخدمة في Nest تخدم طلبات كثيرة. الحالة العامة عليها خطر سنفصله مع Scopes.</li>
+<li>جعل كل شيء <code>@Global()</code> لأن Angular أشعر بعض الناس أن الخدمات في كل مكان. توثيق Nest يحذّر: الوحدات العامة تقلل التكرار وتضعف وضوح <code>imports</code>. التحذير سيُعاد مع الكود.</li>
+<li>الظن أن Decorator يعمل عند كل طلب. التسجيل عند تحميل الوحدات والإقلاع. الطلب يستخدم ما بُني.</li>
+</ul>
+<h2>متى تفيد هذه الاستعارة؟</h2>
+<p>عندما تسأل: أين أضع هذا الكود؟ إذا كان عرض HTTP فهو جهة Controller. إذا كان قاعدة تُختبر وحدها فهو Provider. إذا كان حدود ميزة فهو Module. الاستعارة أداة فرز.</p>
+<h2>متى تضرك؟</h2>
+<p>عندما تبحث في توثيق Angular عن سلوك HTTP في Nest، أو تنسخ وحدة واجهة إلى خادم. المصدر السلوكي لـ Nest هو docs.nestjs.com. Angular تشرح لماذا الشكل مألوف.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Angular</th>
+<th>NestJS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يعمل أين</td>
+<td>المتصفح غالبًا</td>
+<td>Node.js</td>
+</tr>
+<tr>
+<td>وحدة العرض</td>
+<td>Component</td>
+<td>Controller لمسار HTTP</td>
+</tr>
+<tr>
+<td>من أين التوثيق</td>
+<td>angular.dev</td>
+<td>docs.nestjs.com</td>
+</tr>
+<tr>
+<td>الحقن</td>
+<td>جزء من الإطار</td>
+<td>جزء من الإطار</td>
+</tr>
+<tr>
+<td>نطاق المزوّد</td>
+<td>أوسع في النموذج الشائع الذي يقارن به توثيق Nest</td>
+<td>مغلف داخل Module إلا إذا صُدّر أو جُعل عالميًا</td>
+</tr>
+<tr>
+<td>RxJS</td>
+<td>واسعة في الواجهة</td>
+<td>في نقاط محددة: Interceptors وعميل HTTP وما يشبههما</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>اذكر ثلاث أفكار مشتركة بالاسم بين الشكل الذي استلهمته Nest و Angular، وواحدة لا تنتقل (شيء خاص بالواجهة).</p>
+<details>
+<summary>الحل</summary>
+
+<p>مشتركة: Module و Dependency Injection و Decorator. لا ينتقل: قالب HTML ودورة حياة مكوّن الشاشة. أي مثال واجهة واضح يُقبل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الإعلان <code>constructor(private readonly usersService: UsersService)</code> أسهل للاختبار من <code>const usersService = new UsersService()</code> داخل الدالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإعلان يترك إنشاء الخدمة لمن يبني الصنف. الاختبار يبني الصنف ويمرر كائنًا بديلًا يحقق السلوك المطلوب. <code>new</code> الداخلي يخفي الاعتماد ويجبر الاختبار على استخدام الخدمة الحقيقية وما تسحبه معها من قاعدة بيانات وإعدادات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>وحدة الفواتير تحتاج قراءة المستخدم. مطور استورد <code>UsersService</code> من مسار الملف مباشرة من غير أن يضيف <code>UsersModule</code> إلى <code>imports</code>. لماذا هذا مخالف لفكرة الحدود حتى قبل أن نعرف رسالة الخطأ الحرفية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاستيراد من عمق الملفات يتجاوز الواجهة العامة للوحدة. التغليف يقول: ما لم يُصدَّر ويُستورد عبر Module ليس متاحًا. حتى لو سمح المترجم TypeScript بالاستيراد لأن الملف موجود، حاوية Nest تنظر إلى التسجيل داخل الوحدات لا إلى إمكانية الوصول إلى الملف. سترى الخطأ عمليًا في فصل Modules. المبدأ الآن: الحدود تُعلن في الوحدة لا في سطر import طويل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا استلهمت Nest من Angular، وماذا لم تنقله؟</li>
+<li>لماذا Decorator مكان مناسب لوصف Controller؟</li>
+<li>ما الفرق الذي يذكره توثيق Nest عن نطاق المزوّدات مقارنة بـ Angular؟</li>
+<li>متى تُقرأ Metadata: عند كل طلب أم عند الإقلاع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الشبه مع Angular شبه تنظيم: وحدات، وحقن، ووسوم تصف الأصناف. Nest تطبق ذلك على خادم Node، وتغلّف المزوّدات داخل الوحدة. لا تحتاج Angular، وتحتاج أن تحترم الحدود التي نُقلت من هذه الفكرة.</p>
+<h2>ماذا بعد؟</h2>
+<p>نجمع الخريطة في صفحة واحدة: من الإقلاع حتى رد الطلب، بالأسماء الرسمية، مع وعد أن كل صندوق سيُفتح في فصله.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Introduction (المعمارية مستوحاة من Angular): <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+<li>NestJS — Modules (التغليف، والمقارنة الصريحة مع نطاق Angular، و application graph): <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — Custom decorators (الإطار مبني حول Decorators): <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

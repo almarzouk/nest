@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gateway</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-gateway.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Gateway</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة البوابة كصنف مزوّد يستقبل رسائل المقبس، مقابل المتحكم الذي يستقبل HTTP.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>وضع منطق التعليق داخل <code>CommentsController</code> ثم مناداة <code>socket.emit</code> من المتحكم يخلط بابين. طلب <code>POST</code> يحفظ الصف. المقبس ينضم إلى غرفة ويبث. البوابة هي باب المقبس: حقن خدمات، ورسائل بأسماء، ودورة حياة اتصال لا توجد على <code>@Get</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>البوابة صنف عليه <code>@WebSocketGateway()</code> ويُذكر في <code>providers</code>. ليست في <code>controllers</code>. دوالها تعالج رسائل لا مسارات. الخدمة نفسها التي يحفظ بها المتحكم التعليق يمكن حقنها هنا للبث بعد الحفظ، أو يحفظ المتحكم وتكتفي البوابة بالإعلام. الحد: لا SQL منسوخ داخل الدالة المزينة.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة البوابات: البوابة صنف مزود بالزينة، والأفكار من بقية Nest — حقن، ومرشحات، وأنابيب، وحراس — تسري عليها حيث أمكن. المنصات الجاهزة Socket.IO و <code>ws</code>. الافتراض في التطبيق المعتاد Socket.IO، ودرسه لاحقًا.</p>
+<p>البوابة تسمع على منفذ HTTP نفسه ما لم تغيّر المنفذ. <code>@WebSocketGateway(3001)</code> يفصل المنفذ. فضاء الاسم خيار في كائن الزينة، مثل <code>{ namespace: &#39;comments&#39; }</code>، حتى لا تختلط أحداث التعليقات بأحداث أخرى على المقبس نفسه.</p>
+<p>الصنف singleton كالمزوّد العادي. حالة «من في الغرفة» إن حفظتها في <code>Map</code> على الصنف فهي حالة العملية. لا تضع تعليق المستخدم الحالي في خاصية واحدة تتبدل مع كل رسالة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CommentsController   POST يحفظ ثم يعيد JSON
+CommentsGateway      رسالة join / comment على المقبس
+CommentsService      القاعدة لكليهما إن لزم
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تسجيل بلا رسالة بعد:</p>
+<pre><code class="language-ts">import { WebSocketGateway } from &#39;@nestjs/websockets&#39;;
+
+@WebSocketGateway({ namespace: &#39;comments&#39; })
+export class CommentsGateway {}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { CommentsGateway } from &#39;./comments.gateway.js&#39;;
+
+@Module({
+  providers: [CommentsGateway],
+})
+export class CommentsModule {}
+</code></pre>
+<p>الوحدة مستوردة من الجذر. بوابة غير مذكورة في <code>providers</code> لا تُنشأ ولا تسمع.</p>
+<h2>شرح المثال</h2>
+<p><code>namespace: &#39;comments&#39;</code> يفصل عنوان المقبس عن بوابة ثانية قد تخدم التنبيهات. العميل يتصل بفضاء الاسم هذا لا بالجذر فقط. الصنف الفارغ يثبت التسجيل. الرسائل في <code>@SubscribeMessage</code> لاحقًا. إبقاء الصنف في <code>controllers</code> لا يركّب البوابة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تقرأ Nest الزينة وتبني مقبس الخادم عبر المحول، Socket.IO ما لم تبدّل المحول. كل اتصال جديد كائن عميل تمرره الخطافات لاحقًا. الدوال التي ستزينها تُربط بأسماء الرسائل. الحقن يعمل: تستطيع استلام <code>CommentsService</code> في الباني إن كانت مسجّلة في الوحدة نفسها أو مصدّرة إليها. البوابة لا تمر بسلسلة <code>POST</code> الخاصة بالمتحكم. حارس HTTP على المتحكم لا يحمي الرسالة.</p>
+<h2>مثال عملي</h2>
+<p>حد المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>العمل</th>
+<th>الباب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST /books/:id/comments</code></td>
+<td>المتحكم يحفظ ويعيد التعليق</td>
+</tr>
+<tr>
+<td>الانضمام إلى صفحة الكتاب</td>
+<td>البوابة</td>
+</tr>
+<tr>
+<td>إعلام الموجودين في الصفحة</td>
+<td>البوابة بعد أن نجح الحفظ</td>
+</tr>
+</tbody></table>
+<p>المتحكم يمكنه حقن البوابة واستدعاء دالة <code>broadcast</code> عامة تكتبها أنت. البوابة لا تستقبل <code>@Body()</code> الخاص بـ HTTP. إن حقنت المتحكم في البوابة والبوابة في المتحكم صنعت دورة. اجعل البث دالة على البوابة ويستدعيها المتحكم، أو انشر حدثًا داخليًا لاحقًا في فصل الأحداث. للدورة هنا: المتحكم يحفظ، ثم يستدعي البوابة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسجيل البوابة في <code>controllers</code>.</li>
+<li>نسخ استعلام Prisma داخل البوابة لأن «أسرع».</li>
+<li><code>Map</code> على البوابة يحمل نص التعليق الأخير لكل المستخدمين.</li>
+<li>نسيان استيراد الوحدة من الجذر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تصل رسالة من مقبس وتريد خدمات Nest معك: تعليق حي، إشعار، لوحة داخلية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعملية لها مسار HTTP واضح بلا مستمعين. <code>POST</code> يكفي. ولا تستبدل بوابة GraphQL subscription إن كان العقد حقلًا في المخطط والعميل GraphQL فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>المتحكم</th>
+<th>البوابة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الزينة</td>
+<td><code>@Controller</code></td>
+<td><code>@WebSocketGateway</code></td>
+</tr>
+<tr>
+<td>التسجيل</td>
+<td><code>controllers</code></td>
+<td><code>providers</code></td>
+</tr>
+<tr>
+<td>المدخل</td>
+<td>مسار وMethod</td>
+<td>رسالة على مقبس</td>
+</tr>
+<tr>
+<td>العمر</td>
+<td>الطلب</td>
+<td>الاتصال</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تُسجَّل <code>CommentsGateway</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>providers</code> داخل الوحدة، والوحدة تصل إلى الجذر.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي حارس المتحكم لحماية رسالة المقبس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الرسالة لا تمر على مسار المتحكم. باب المقبس هو البوابة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تتجنب دورة استيراد بين المتحكم والبوابة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اتجاه واحد: المتحكم يستدعي دالة بث على البوابة بعد الحفظ. البوابة لا تحقن المتحكم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما فضاء الاسم في المثال؟</li>
+<li>لماذا البوابة singleton تمنع تخزين «التعليق الحالي» في حقل واحد؟</li>
+<li>أي فصل سبق وشرح قناة داخل المخطط بدل البوابة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>البوابة مزوّد لرسائل المقبس. المتحكم يبقى باب HTTP. الخدمة أو دالة بث واحدة تجمع الحفظ بالإعلام بلا دورة حقن.</p>
+<h2>ماذا بعد؟</h2>
+<p>شكل الزينة <code>@WebSocketGateway</code> والمنفذ وCORS قبل أول <code>@SubscribeMessage</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

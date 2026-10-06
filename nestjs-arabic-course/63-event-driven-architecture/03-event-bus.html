@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Event Bus</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-event-bus.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Event Bus</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز ناقل يمرر الأحداث داخل عملية رف عن ناقل يصل بين عمليات، واختيار الوسيط حسب ما يجب أن يعيش بعد سقوط العملية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يسمي <code>EventEmitter2</code> ناقلًا موزعًا. عند إعادة التشغيل تختفي أحداث النشر التي لم يخدمها المستمع. أو يضعون Kafka لحدث تدقيق داخل نفس العملية فيتعقد التشغيل بلا حاجة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ناقل داخل العملية يسلّم في الذاكرة: سريع ويضيع مع العملية. ناقل بين العمليات (طابور، Redis، وسيط Nest) يسلّم رسائل تكامل ويتحمل إعادة المحاولة. الاختيار يتبع سؤالًا: هل ضياع الرسالة بعد النجاح التجاري مقبول؟</p>
+<h2>التعريف التقني</h2>
+<p><code>@nestjs/event-emitter</code> ناقل داخل العملية: <code>emit</code> و <code>@OnEvent</code>. لا مخزن. ناقل التكامل في Nest قد يكون نقلًا في microservices (<code>ClientProxy.emit</code>) أو طابور BullMQ كما في الحدود السابقة. الرسالة على الناقل الخارجي حدث تكامل لا صنف نطاق. المستهلك يعالج بمعرّف. لا تشغّلوا الأثر التجاري فقط على الناقل من غير كتابة الحالة أولًا، وإلا ضاعت الحقيقة إن ضاعت الرسالة. صندوق الصادر لاحقًا يقرب الكتابة من الإرسال.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ذاكرة: EventEmitter → مستمع محلي → قد يضيع عند القتل
+وسيط: كتاب ملتزم → رسالة book.published → مستهلك بعيد
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { OnEvent } from &#39;@nestjs/event-emitter&#39;;
+import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class LocalAuditListener {
+  @OnEvent(&#39;book.published&#39;)
+  handle(event: { organizationId: string; bookId: string }) {
+    return event.bookId;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>هذا ناقل ذاكرة. مناسب لتدقيق تريدونه في نفس العملية بعد <code>emit</code>.</li>
+<li>لا عنوان شريك هنا.</li>
+<li>إن رمى <code>handle</code> قد يصل الاستثناء إلى الناشر حسب طريقة الإطلاق. التقطوا داخل المستمع إن كان جانبيًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>emit</code> يستدعي المستمعين المسجّلين في هذه العملية.</li>
+<li>لا كتابة إلى قرص الوسيط.</li>
+<li><code>ClientProxy.emit</code> أو <code>queue.add</code> يسلّم نسخة إلى وسيط خارج الذاكرة.</li>
+<li>المستهلك البعيد يقرأ حدث التكامل.</li>
+<li>إعادة تشغيل API تمسح مستمعي الخطوة 1 غير المنفَّذين، ولا تمسح رسالة وسيط متين إن التزمت هناك.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export interface Bus {
+  local(name: string, payload: unknown): void;
+  integration(name: string, payload: { id: string }): Promise&lt;void&gt;;
+}
+</code></pre>
+<p><code>local</code> غلاف <code>EventEmitter</code>. <code>integration</code> غلاف الطابور. <code>PublishCoordinator</code> يستدعي <code>local</code> للتدقيق الفوري و <code>integration</code> لنسخة <code>toIntegration</code>. الاختبار يستبدل الواجهة. لا تمرروا نفس الدالة إلى الاثنين بالخطأ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية EventEmitter «Kafka داخلي».</li>
+<li>أثر وحيد (خصم مخزون الشريك) على الناقل الذاكري.</li>
+<li>مستهلك بعيد يستورد <code>BookPublished</code> من مسار <code>src</code> الخاص بالكتالوج.</li>
+<li>ناقل خارجي بلا معرّف تكرار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الذاكرة للمستمعين الذين إن فشلوا تُعاد من حالة الصف (أو يُقبل ضياعهم). الوسيط لما يجب أن يعبر عملية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضيفوا وسيطًا قبل أن يوجد مستهلك خارج العملية. ابدأوا بالدالة ثم بالذاكرة ثم بالوسيط عندما يظهر الحد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>EventEmitter</th>
+<th>طابور / ناقل خارجي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>البقاء بعد القتل</td>
+<td>لا</td>
+<td>نعم إن كان الوسيط متينًا</td>
+</tr>
+<tr>
+<td>العقد</td>
+<td>صنف داخلي</td>
+<td>حدث تكامل</td>
+</tr>
+<tr>
+<td>التشغيل</td>
+<td>بلا بنية إضافية</td>
+<td>وسيط تشغّلونه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أُعيد تشغيل API قبل أن يعمل مستمع الذاكرة. هل يصل <code>book.published</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. لم يُخزَّن. إن كان الأثر واجب الوصول، فالنشر يكتب الحالة والمستمع يُعاد من الصفوف أو الرسالة على وسيط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا واجهتان <code>local</code> و <code>integration</code> أفضل من <code>emit</code> واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يذهب حدث داخلي إلى الشريك أو يُرسل العقد العام في الذاكرة فقط. مكان الاستدعاء يعلن نوع التسليم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>التدقيق يجب ألا يضيع، والبريد يجوز أن يتأخر. أين كل منهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التدقيق في معاملة النشر (صف) لا على أمل الناقل. البريد حدث أو مهمة على وسيط يعيد المحاولة. الذاكرة لا تكفي للاثنين إن كان الضياع ممنوعًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يضيع مع عملية Node؟</li>
+<li>أي حمولة تركب على الوسيط الخارجي؟</li>
+<li>لماذا لا يكفي اسم «ناقل»؟</li>
+<li>أين يُكتب الأثر الذي لا يجوز أن يضيع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ناقل الذاكرة يبلّغ مستمعي هذه العملية. ناقل التكامل يبلّغ عبر وسيط برسالة عقد. ما لا يجوز ضياعه يُكتب في القاعدة أولًا لا يُعلَّق على الذاكرة.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعد الإرسال، الشريك أو الفهرس قد يتأخر عن حالة الكتاب. الدرس التالي الاتساق المؤجَّل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Events: <a href="https://docs.nestjs.com/application/events">https://docs.nestjs.com/application/events</a></li>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

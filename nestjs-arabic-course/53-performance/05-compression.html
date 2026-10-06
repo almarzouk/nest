@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Compression</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-compression.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Compression</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تقليل حجم جسم HTTP الخارج من متجر رف عندما يكون النص كبيرًا، ومعرفة أن التوثيق يفضّل نقل الضغط عن عملية Node في المواقع عالية الحركة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>GET /books</code> يعيد عشرين كتابًا بجسم JSON من عشرات الكيلوبايتات. على شبكة الجوال، النقل أغلى من توليد JSON. الضغط يجعل الجسم أصغر. تشغيله داخل كل عملية Nest يستهلك CPU على الحلقة نفسها التي تخدم البيع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>العميل يرسل <code>Accept-Encoding</code>. الخادم يضغط الجسم بخوارزمية يقبلها العميل ويكتب <code>Content-Encoding</code>. المتصفح أو عميل HTTP يفك الضغط قبل أن يرى تطبيقك JSON. الصور المضغوطة أصلًا لا تربح شيئًا يذكر، وتكلّف CPU.</p>
+<h2>التعريف التقني</h2>
+<p>على Express، حزمة <code>compression</code> تُسجَّل بـ <code>app.use(compression())</code> بعد إنشاء التطبيق، وتدعم gzip و deflate و Brotli حسب <code>Accept-Encoding</code>. على Fastify، الحزمة <code>@fastify/compress</code> تُسجَّل بـ <code>app.register</code> على <code>NestFastifyApplication</code>، وتفضّل افتراضيًا zstd ثم Brotli ثم gzip ثم deflate على إصدارات Node التي تدعم ذلك. جودة Brotli الافتراضية في الإضافة 4 لا 11، لأن الجودة الأعلى أبطأ. صفحة Compression تقول بوضوح: للمواقع عالية الحركة في الإنتاج، انقل الضغط إلى وكيل عكسي مثل Nginx ولا تستخدم وسيط الضغط داخل التطبيق عندها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">جسم JSON 80KB
+→ gzip داخل Node أو داخل Nginx
+→ على السلك ~15KB
+→ العميل يفك إلى نفس الكائن
+</code></pre>
+<p>المعنى لا يتغير. الذي يتغير وقت CPU ومكانه.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import compression from &#39;compression&#39;;
+import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.use(compression());
+  await app.listen(process.env.PORT ?? 3000);
+}
+bootstrap();
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>هذا مسار Express الافتراضي. <code>compression()</code> وسيط عام قبل المسارات.</li>
+<li>الأجسام الصغيرة قد تُترك كما هي حسب عتبة الحزمة، وهذا مطلوب حتى لا يكلف الضغط أكثر من النقل.</li>
+<li>لا تضف الوسائط على Fastify بهذا الاستيراد. هناك الإضافة الخاصة، وتسجيلها يحتاج نوع <code>NestFastifyApplication</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب يصل ومعه <code>Accept-Encoding: gzip, br</code>.</li>
+<li>الـ Handler يبني كائن JavaScript.</li>
+<li>Nest يسلسله إلى JSON.</li>
+<li>وسيط الضغط يضغط البايتات إن تجاوزت العتبة ونوع المحتوى مناسب.</li>
+<li>الاستجابة تحمل <code>Content-Encoding</code> و <code>Vary: Accept-Encoding</code> حتى لا تخزن طبقة وسيطة نسخة مضغوطة لمن لا يقبلها.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>Fastify مع جودة Brotli صريحة، كما في التوثيق:</p>
+<pre><code class="language-ts">import { constants } from &#39;node:zlib&#39;;
+import compression from &#39;@fastify/compress&#39;;
+import { NestFactory } from &#39;@nestjs/core&#39;;
+import { FastifyAdapter, type NestFastifyApplication } from &#39;@nestjs/platform-fastify&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create&lt;NestFastifyApplication&gt;(AppModule, new FastifyAdapter());
+  await app.register(compression, {
+    brotliOptions: { params: { [constants.BROTLI_PARAM_QUALITY]: 4 } },
+  });
+  await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+}
+bootstrap();
+</code></pre>
+<p>على رف في الإنتاج أمام Nginx، اترك التطبيق بلا هذا التسجيل واضبط <code>gzip</code> أو <code>brotli</code> على الوكيل للاستجابات <code>application/json</code>. قياس CPU العملية قبل وبعد هو الذي يبرر المكان.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>ضغط الصور <code>image/jpeg</code> وملفات PDF الجاهزة.</li>
+<li>تفعيل الضغط في Node وNginx معًا فيضغط الجسم مرتين أو تتعارض الترويسات.</li>
+<li>الحكم على الربح بحجم الملف على القرص لا بقياس p95 و CPU تحت الحمل.</li>
+<li>نسيان <code>Vary</code> عند تخزين الاستجابة في CDN، فيصل gzip إلى عميل طلب الهوية بلا ضغط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>JSON كبير يتكرر على شبكات بطيئة، وCPU العملية فيه متسع، أو — وهو الأفضل تحت الحمل — الوكيل أمام التطبيق يتولى الضغط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تكون الأجسام أصغر من عتبة الحزمة، أو المحتوى مضغوطًا، أو القياس يُظهر أن CPU الضغط يرفع زمن الاستجابة أكثر مما يوفره النقل. وعندها أزل الوسيط من التطبيق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>compression</code> على Express</td>
+<td>تطوير أو حركة متوسطة بعد قياس</td>
+</tr>
+<tr>
+<td><code>@fastify/compress</code></td>
+<td>نفس القرار على محول Fastify</td>
+</tr>
+<tr>
+<td>Nginx / الوكيل</td>
+<td>إنتاج عالي الحركة، كما توصي الصفحة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>عميل يرسل <code>Accept-Encoding: gzip</code> ويستلم JSON في الكود. من فك الضغط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عميل HTTP (المتصفح أو المكتبة) يفك <code>Content-Encoding</code> قبل أن يسلم النص لتطبيق الواجهة. كود Nest ما زال يعيد كائنًا، والضغط يحدث على البايتات بعد التسلسل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا نبقي <code>app.use(compression())</code> على رف وقد أصبح خلف Nginx يضغط أصلًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصفحة الرسمية تطلب عدم استخدام وسيط الضغط داخل التطبيق عندما ينقل الإنتاج هذه المهمة إلى الوكيل. الضغط مرتين يهدر CPU وقد يفسد الترويسات. اتركه في طبقة واحدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>قياس أظهر أن Brotli بجودة 11 خفض الحجم 8٪ إضافية ورفع CPU العملية إلى الضعف. ماذا تغيّر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أخفض الجودة (الافتراضي في <code>@fastify/compress</code> هو 4) أو انقل الضغط إلى الوكيل حيث يمكن ضبطه بمعزل عن حلقة الطلب. الحجم ليس الهدف الوحيد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي ترويسة يعلن بها العميل الخوارزميات المقبولة؟</li>
+<li>ماذا توصي صفحة Compression للموقع عالي الحركة؟</li>
+<li>لماذا نوع التطبيق <code>NestFastifyApplication</code> شرط لتسجيل الإضافة؟</li>
+<li>أي أنواع ملفات لا تستفيد من الضغط؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الضغط يصغّر النص على السلك ويكلف CPU. في Express الحزمة <code>compression</code>، وفي Fastify <code>@fastify/compress</code>. تحت الحمل الثقيل مكانه الوكيل لا حلقة Nest.</p>
+<h2>ماذا بعد؟</h2>
+<p>حتى مع جسم أصغر، عملية Node واحدة تستخدم نواة واحدة للحساب. الدرس التالي عن تشغيل أكثر من عملية.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Compression: <a href="https://docs.nestjs.com/http/compression">https://docs.nestjs.com/http/compression</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

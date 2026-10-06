@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Bearer Tokens و Refresh Tokens</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-bearer-and-refresh-tokens.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Bearer Tokens و Refresh Tokens</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إصدار رمز وصول قصير ورمز تحديث دوار عبر <code>TokenService</code>، والتحقق منهما بـ <code>JwtBearerProvider</code> بجانب جلسة الكعكة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تطبيق الجوال لا يدير كعكة المتصفح كما تفعل واجهة نفس الموقع. نسخ الجلسة إلى ترويسة يخترعها كل عميل يفوّت فحص التوقيع والانتهاء. رمز واحد طويل العمر لا يُسحب عند ضياع الهاتف إلا بقائمة سوداء لكل طلب.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>POST /auth/token</code> يثبت الكلمة ثم يستدعي <code>issue</code>. العميل يرسل الوصول في <code>Authorization: Bearer</code>. عند انتهائه يرسل التحديث إلى <code>POST /auth/token/refresh</code> فيأخذ زوجًا جديدًا. التحديث يُستخدم مرة. مزوّد <code>JwtAuth</code> يتحقق من الوصول بعد مزوّد الجلسة، فالكعكة والجوال يتعايشان.</p>
+<h2>التعريف التقني</h2>
+<p>خيار التوقيع في <code>forRoot</code> أو <code>forRootAsync</code>:</p>
+<pre><code class="language-ts">accessToken: {
+  key: process.env.JWT_SECRET!,
+  issuer: &quot;https://api.example.com&quot;,
+  audience: &quot;mobile-app&quot;,
+  ttl: &quot;15m&quot;,
+}
+</code></pre>
+<p>المفتاح <code>32</code> بايتًا على الأقل. غيابه يوقف الإقلاع لأن <code>accessToken.key</code> مطلوب حين تُصدر رموزًا. التوقيع HS256 حين يكون المفتاح سرًا مشتركًا. إن كانت خدمات أخرى تتحقق، الصفحة تشرح مفتاح ES256 عامًا. لا تضع السر في Git. خذه من <code>ConfigService</code>.</p>
+<pre><code class="language-ts">@Injectable()
+export class JwtAuth extends JwtBearerProvider&lt;PublicUser&gt; {
+  constructor(
+    private readonly users: UsersService,
+    registry: AuthenticationRegistry,
+  ) {
+    super({ realm: &quot;store&quot; });
+    registry.registerProvider(this, { order: 1 });
+  }
+
+  validate({ sub }: JwtClaims) {
+    return sub ? this.users.findById(sub) : null;
+  }
+}
+</code></pre>
+<p>ترتيب <code>0</code> للجلسة و <code>1</code> للرمز. تكرار الترتيب يفشل الإقلاع. الطلب بلا دليل يرجع <code>401</code> مع <code>WWW-Authenticate: Bearer</code>. رمز تالف يشرح <code>error=&quot;invalid_token&quot;</code> كما في RFC 6750.</p>
+<pre><code class="language-ts">return this.tokenService.issue(user.id, {
+  method: &quot;password&quot;,
+  claims: { amr: [&quot;pwd&quot;] },
+});
+</code></pre>
+<p><code>refresh(refreshToken)</code> يستهلك الرمز. <code>RefreshTokenError</code> يصبح <code>401</code> من الوحدة. إعادة الاستخدام تلغي العائلة. لا تضع الأدوار المتغيرة داخل <code>claims</code> لأن التحديث يعيد نسخها طوال عمر العائلة. <code>validate</code> يحمّل المستخدم الحالي من القاعدة.</p>
+<p>المخزن <code>RefreshTokenStore</code> في الإنتاج، مثل الجلسة. الذاكرة ليست إنتاجًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كلمة مرور -&gt; issue -&gt; access + refresh
+Bearer access -&gt; JwtAuth.validate -&gt; User
+refresh مرة -&gt; زوج جديد
+refresh مسروق مكرر -&gt; إلغاء العائلة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, HttpCode, Post, UnauthorizedException } from &quot;@nestjs/common&quot;;
+import { Public, TokenService } from &quot;@nestjs/authentication&quot;;
+import { SignInDto } from &quot;./sign-in.dto.js&quot;;
+import { CredentialsService } from &quot;./credentials.service.js&quot;;
+
+@Public()
+@Controller(&quot;auth/token&quot;)
+export class TokensController {
+  constructor(
+    private readonly credentials: CredentialsService,
+    private readonly tokens: TokenService,
+  ) {}
+
+  @Post()
+  @HttpCode(200)
+  async issue(@Body() body: SignInDto) {
+    const user = await this.credentials.verify(body.email, body.password);
+    if (!user) {
+      throw new UnauthorizedException(&quot;Invalid email or password&quot;);
+    }
+    return this.tokens.issue(user.id, { method: &quot;password&quot;, claims: { amr: [&quot;pwd&quot;] } });
+  }
+
+  @Post(&quot;refresh&quot;)
+  @HttpCode(200)
+  refresh(@Body(&quot;refreshToken&quot;) refreshToken: string) {
+    return this.tokens.refresh(refreshToken);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>@Public()</code> لأن الإصدار يحدث قبل وجود وصول. <code>@HttpCode(200)</code> لأن <code>@Post</code> وإلا يرجع <code>201</code>، والصفحة تثبّت <code>200</code> لهذا الفعل. <code>verify</code> هي نفسها فكرة الدخول الموحّد الرسالة. لا تسجّل <code>refreshToken</code> في السجلات.</p>
+<p>الجلسة تبقى للمتصفح على مساراتها. هذا المتحكم للجوال. الحارس يجرّب الجلسة أولًا ثم الحامل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>issue</code> يوقّع الوصول بـ <code>iss</code> و <code>aud</code> و <code>exp</code> و <code>sub</code>، وينشئ تحديثًا عشوائيًا يخزّن تجزئته. <code>JwtBearerProvider</code> يفحص التوقيع والجمهور والمصدر والانتهاء ثم يستدعي <code>validate</code>. رجوع <code>null</code> يرفض الرمز ولو كان التوقيع صحيحًا، مثلاً إن حُذف المستخدم.</p>
+<p><code>refresh</code> يعلّم الرمز مستهلكًا في عملية واحدة في المخزن حتى لا يربح طلبان متزامنان. الفائز يأخذ خليفة. الخاسر أو السارق الذي يعيد الرمز القديم يلغي <code>familyId</code>.</p>
+<h2>مثال عملي</h2>
+<p>جوال المكتبة يسجّل الدخول ويحفظ الزوجين في مخزن الجهاز لا في سجل التصحيح. كل <code>GET /posts</code> يضع الوصول. قبل انتهاء <code>15m</code> يستدعي التحديث. إن استُعيد رمز قديم من نسخة احتياطية للجهاز، العائلة تموت والمستخدم يدخل من جديد. الخروج من كل الأجهزة في الحزمة يستدعي إبطال رموز المستخدم، وهو أوسع من مسح كعكة واحدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سر JWT أقصر من الحد أو داخل المستودع.</li>
+<li>تخزين الوصول في query string فيظهر في السجلات.</li>
+<li>وضع <code>roles</code> داخل <code>claims</code> ثم تغيير دور المستخدم من غير أثر حتى تنتهي العائلة.</li>
+<li>ترتيب المزوّدين نفسه فيفشل الإقلاع.</li>
+<li>معاملة <code>3600</code> كساعة في <code>ttl</code> هذه الحزمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لعميل لا يعتمد على كعكة المتصفح ويقدر أن يخزّن سر التحديث بأمان.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لصفحة نفس الموقع التي تكفيها جلسة <code>HttpOnly</code>. الرمز في <code>localStorage</code> هناك سطح أوسع أمام سكربت الصفحة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>كعكة الجلسة</th>
+<th>Bearer + refresh</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المتصفح يرسلها</td>
+<td>العميل يضع الرأس</td>
+</tr>
+<tr>
+<td>إبطال بحذف السجل</td>
+<td>وصول قصير وتحديث دوار</td>
+</tr>
+<tr>
+<td><code>SessionAuth</code> ترتيب <code>0</code></td>
+<td><code>JwtAuth</code> ترتيب <code>1</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مسار يصدر الزوجين، وأي مسار يجدّدهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>POST /auth/token</code> يصدر، و <code>POST /auth/token/refresh</code> يجدّد.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>validate</code> تجلب المستخدم من القاعدة رغم صحة التوقيع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التوقيع يثبت أن الخادم أصدر الرمز. الجلب يثبت أن الشخص ما زال موجودًا ويقرأ بياناته الحالية لا نسخة قديمة داخل الرمز.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يُرفض تخزين الدور داخل <code>claims</code> التي يعيد <code>refresh</code> نسخها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العائلة تعيش أطول من الوصول. تغيير الدور في الجدول لا يصل إلى الرموز الجديدة إن كانت تنسخ الدور القديم. <code>validate</code> يقرأ الدور من الصف عند كل طلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحدث عند إعادة استخدام تحديث مستهلك؟</li>
+<li>من يفحص <code>Bearer</code>، الجلسة أم <code>JwtAuth</code>؟</li>
+<li>أين يُحفظ سر التوقيع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الجوال يحمل وصولًا قصيرًا يجدّده تحديث يُستخدم مرة. المزودان يتعايشان بترتيب ثابت. الدور الحالي يأتي من القاعدة لا من نسخة داخل الرمز.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./08-passport-overview.html">Passport و @nestjs/passport</a> الوصفة الرسمية التي ما زالت في التوثيق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

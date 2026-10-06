@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>عقد كتب رف في صفحة واحدة. الأرقام هنا هي العقد، والآلية في الفصول السابقة.</p>
+<h2>المثال 1 — مورد وقائمة فارغة</h2>
+<pre><code class="language-http">GET /v1/books?author=لا-أحد&amp;limit=20 HTTP/1.1
+</code></pre>
+<pre><code class="language-http">HTTP/1.1 200 OK
+
+{ &quot;data&quot;: [], &quot;nextCursor&quot;: null }
+</code></pre>
+<p>المسار اسم مجموعة. التصفية بلا نتائج ليست 404.</p>
+<h2>المثال 2 — إنشاء بمفتاح</h2>
+<pre><code class="language-http">POST /v1/books HTTP/1.1
+Idempotency-Key: 6f1c0c2e-7b1a-4d0a-9c2e-1a2b3c4d5e6f
+Content-Type: application/json
+
+{ &quot;title&quot;: &quot;موسم الهجرة إلى الشمال&quot; }
+</code></pre>
+<pre><code class="language-http">HTTP/1.1 201 Created
+
+{ &quot;id&quot;: &quot;b1&quot;, &quot;title&quot;: &quot;موسم الهجرة إلى الشمال&quot;, &quot;price&quot;: 2500 }
+</code></pre>
+<p>الإعادة بنفس المفتاح ونفس المعنى تعيد 201 و <code>b1</code>. جسم بعنوان آخر يعيد:</p>
+<pre><code class="language-json">{ &quot;statusCode&quot;: 409, &quot;code&quot;: &quot;idempotency_conflict&quot;, &quot;message&quot;: &quot;Key reused with a different payload&quot; }
+</code></pre>
+<h2>المثال 3 — نفس الكتاب في v2 ونفس الخطأ</h2>
+<pre><code class="language-json">{ &quot;id&quot;: &quot;b1&quot;, &quot;title&quot;: &quot;موسم الهجرة إلى الشمال&quot;, &quot;price&quot;: { &quot;amount&quot;: 2500, &quot;currency&quot;: &quot;SAR&quot; } }
+</code></pre>
+<p><code>GET /v1/books/missing</code> و <code>GET /v2/books/missing</code> كلاهما:</p>
+<pre><code class="language-json">{ &quot;statusCode&quot;: 404, &quot;code&quot;: &quot;book_not_found&quot;, &quot;message&quot;: &quot;Book not found&quot; }
+</code></pre>
+<p>سطر الكسر الوحيد في هذه الأمثلة هو شكل <code>price</code>.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

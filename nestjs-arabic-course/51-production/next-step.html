@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>البناء والبيئة والسجل والإيقاف والوكيل يجهزون النسخة. المنسّق ما زال لا يعرف إن كانت هذه النسخة تقدر أن تخدم طلبًا. حاوية «تعمل» قد تكون في منتصف هجرة، أو فقدت Postgres، أو بدأت الإغلاق بعد <code>SIGTERM</code>.</p>
+<p>الفصل التالي يفصل سؤالين. الحياة: هل العملية ترد على مسار رخيص بلا قاعدة، حتى لا يُعاد تشغيل الجميع لأن القاعدة غمضت. الجاهزية: هل التبعيات اللازمة متاحة، حتى يسحب الوكيل النسخة من التوزيع ويعيد المرور عندما تعود، من غير <code>SIGKILL</code>.</p>
+<p><code>@nestjs/terminus</code> يجمع المؤشرات خلف <code>@HealthCheck()</code>. TypeORM ينفّذ <code>SELECT 1</code> عبر <code>pingCheck(&#39;database&#39;).withTimeout(1000)</code>. Prisma يستعمل <code>PrismaHealthIndicator.pingCheck</code>. Redis ليس مؤشرًا جاهزًا: تبنيه بـ <code>HealthIndicatorService</code> و <code>ping</code>. كاش يمكن أن يكون <code>degraded</code> فيبقى HTTP <code>200</code>. طابور لا يعمل بلا Redis يكون <code>down</code> فيصير الفحص <code>503</code>.</p>
+<p>مع <code>enableShutdownHooks()</code> الذي فعّلته هنا، Terminus يبلّغ <code>shutting_down</code> و <code>503</code> خلال <code>gracefulShutdownTimeoutMs</code> حتى يتوقف المرور الجديد قبل قطع العملاء. مسار الصحة يبقى بلا حارس دخول وبلا كاش في Nginx.</p>
+<p>اكتب قبل أن تفتح المجلد: <code>/health/live</code> لا يلمس القاعدة، و <code>/health/ready</code> يلمسها بمهلة قصيرة، والكاش المتدهور لا يُخرج النسخة من الخدمة.</p>
+<p><a href="../52-health-checks/README.html">Health Checks</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

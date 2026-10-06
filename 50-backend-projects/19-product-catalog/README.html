@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>19 — كتالوج بمنتجات مرقمة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>19 — كتالوج بمنتجات مرقمة</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new product-catalog</code></p>
+<h2>ماذا تبني</h2>
+<p>قائمة منتجات لا تُعاد كاملة. صفحة، وسقف، وفرز من خريطة مسموحة، وتصفية بالفئة.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>العقد على القائمة أصعب من عقد العنصر. هذا تمهيد لقاعدة البيانات من غير أن تحتاجها بعد.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>limit و cursor أو page</li>
+<li>فرز أبيض</li>
+<li>غلاف data</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>Elasticsearch</li>
+<li>مخزون</li>
+<li>سعر متغير حسب المستخدم</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>التذاكر.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/26-pagination-filtering-sorting/README.html">26-pagination-filtering-sorting</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>limit بين 1 و 50 والافتراضي 20.</li>
+<li>sort واحد من: name و price و createdAt ومعها الاتجاه.</li>
+<li>حقل فرز غير معروف 400.</li>
+<li>الصفحة خارج المدى 200 و data فارغة لا 404.</li>
+<li>السعر وحدة صغرى صحيحة.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/products</code></td>
+<td>201</td>
+<td>منتج</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/products?limit=20&amp;sort=price&amp;category=tea</code></td>
+<td>200</td>
+<td>صفحة</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new product-catalog</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>اختَر ترقيمًا بالصفحة في هذا المشروع. المؤشر يأتي مع البحث لاحقًا.</li>
+<li>رتّب في الخدمة لا في المتحكم.</li>
+<li>الغلاف { data, page, limit } حتى لو فرغ data.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/products/list-query.ts
+src/products/products.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">const SORTS = new Set([&quot;name&quot;, &quot;price&quot;, &quot;createdAt&quot;]);
+if (!SORTS.has(sort)) throw new BadRequestException(&quot;unknown sort&quot;);
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>إرجاع المصفوفة كلها ثم القص في الواجهة. لا واجهة هنا أصلًا، والقص على الخادم.</li>
+<li>sort=-price من نص يُقحَم في ترتيب قاعدة لاحقًا. ابقَ على خريطة.</li>
+<li>404 حين تنتهي الصفحات.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>limit=0 يُرفض.</li>
+<li>فئة بلا منتجات 200.</li>
+<li>الفرز المجهول 400.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف nextPage إن بقي عناصر.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 19» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../18-support-desk/README.html">18. مكتب تذاكر</a></li>
+<li>التالي: <a href="../20-shopping-cart/README.html">20. سلة لا تثق بالسعر</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

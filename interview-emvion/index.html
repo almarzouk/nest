@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تدريب مقابلة emvion</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f5f2;
+    --paper: #fff;
+    --ink: #1c1b19;
+    --muted: #5e5a54;
+    --line: #e2ddd4;
+    --accent: #1f4b3a;
+    --accent-ink: #fff;
+    --soft: #e7f0eb;
+    --warn: #8a4b12;
+    --warn-bg: #f8efe4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141513;
+      --paper: #1d1e1b;
+      --ink: #f3f1ea;
+      --muted: #b7b2a8;
+      --line: #33342f;
+      --accent: #8fbfa8;
+      --accent-ink: #14211b;
+      --soft: #243028;
+      --warn: #e2b48a;
+      --warn-bg: #2c241c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "IBM Plex Sans Arabic", "Segoe UI", Tahoma, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.65;
+  }
+  header, main { width: min(980px, calc(100% - 32px)); margin: 0 auto; }
+  header { padding: 32px 0 8px; }
+  h1 { font-size: 24px; line-height: 1.3; margin: 0 0 8px; }
+  h2 { font-size: 18px; margin: 28px 0 10px; }
+  p { margin: 0 0 10px; }
+  .muted { color: var(--muted); }
+  .stats { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; }
+  .stat { background: var(--paper); border: 1px solid var(--line); padding: 10px 14px; min-width: 120px; }
+  .stat b { display: block; font-size: 22px; }
+  .filters, .tools { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0; }
+  button, .pill {
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  input[type="search"] {
+    flex: 1;
+    min-width: 180px;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font: inherit;
+    padding: 8px 10px;
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--paper); }
+  th, td { border-bottom: 1px solid var(--line); text-align: right; padding: 8px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  article {
+    background: var(--paper);
+    border: 1px solid var(--line);
+    padding: 14px 16px;
+    margin: 10px 0;
+  }
+  .meta { color: var(--muted); font-size: 13px; }
+  .answer, .say, .trap { margin-top: 10px; }
+  .say {
+    background: var(--soft);
+    padding: 10px 12px;
+    direction: ltr;
+    text-align: left;
+  }
+  .trap { background: var(--warn-bg); color: var(--warn); padding: 8px 12px; }
+  .hidden { display: none; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .know { outline: 2px solid var(--accent); }
+</style>
+<link rel="stylesheet" href="../assets/learn.css" />
+</head>
+<body data-learn="embed">
+<div id="learn-root"></div>
+<header>
+  <h1>تدريب مقابلة emvion — Rheine</h1>
+  <p class="muted">Softwareentwickler مع خبرة. ثلاثة محاور في إعلان واحد: Symfony، أو NestJS، أو React. المنتج venabo لتسجيل الوقت والأداء. الحضور ثلاثة أيام في المكتب وحتى يومين عن بعد.</p>
+  <div class="stats">
+    <div class="stat"><b id="count-all">0</b><span>سؤال ظاهر</span></div>
+    <div class="stat"><b id="count-know">0</b><span>أعرفها</span></div>
+    <div class="stat"><b id="count-review">0</b><span>أراجعها</span></div>
+  </div>
+  <div class="filters" id="filters"></div>
+  <div class="tools">
+    <input id="q" type="search" placeholder="ابحث في السؤال أو الجواب" />
+    <button id="mode" type="button">وضع المقابلة: الجواب مخفي</button>
+    <button id="random" type="button">سؤال عشوائي</button>
+  </div>
+</header>
+<main>
+  <h2>سطر الإعلان وأين تتدرب</h2>
+  <table>
+    <thead><tr><th>من الإعلان</th><th>السؤال</th><th>الفكرة</th></tr></thead>
+    <tbody id="map"></tbody>
+  </table>
+  <h2>الأسئلة</h2>
+  <div id="list"></div>
+</main>
+<script id="data" type="application/json">{"tracks":[{"id":"all","label":"الكل"},{"id":"nest","label":"NestJS"},{"id":"php","label":"PHP / Symfony"},{"id":"react","label":"React"},{"id":"data","label":"PostgreSQL و API"},{"id":"talk","label":"المقابلة"}],"adMap":[["منتج venabo: تسجيل الوقت والأداء","data-schema","اشرح كيان الوقت من غير اختراع جداولهم"],["PHP 8 و Symfony و OOP","php-services","خدمات رفيعة ومتحكم رفيع"],["TypeScript و Node و NestJS","nest-modules","حدود الوحدة والحقن"],["REST و GraphQL","data-rest-graphql","متى كل عقد"],["PostgreSQL: مخطط وترحيل وأداء","data-index","فهرس واستعلام"],["React و TypeScript و HTML و CSS","react-figma","مكوّن من التصميم"],["State وبيانات غير متزامنة","react-apollo","Apollo Client"],["Legacy ومراجعات واختبارات","talk-review","جودة من غير إعادة كتابة عمياء"],["Jest و React Testing Library","react-rtl","اختبار السلوك"],["ثلاثة أيام في المكتب ويومان عن بعد","talk-onsite","قل كيف تعمل بهذا الإيقاع"]],"questions":[{"id":"talk-pitch","track":"talk","topic":"افتتاح","q":"عرّف نفسك في دقيقة بما يناسب هذا الإعلان.","answer":"لا تقل إنك تغطي المسارات الثلاثة بالعمق نفسه إن لم يكن ذلك صحيحًا. emvion تبحث عن شخص قوي في محور واحد. إن كان محورُك NestJS فقل ذلك أولًا، ثم اذكر PostgreSQL و REST و GraphQL، ثم React بالمستوى الحقيقي، ثم PHP كقدرة على الدخول إلى Symfony لأن المفاهيم واحدة: خدمة، حقن، عقد API، ترحيل. المنتج الذي ستلمسه هو venabo لتسجيل الوقت والأداء. اسأل لاحقًا أي محور مفتوح فعلًا.","say":"Ich bin Entwickler mit Schwerpunkt TypeScript, Node.js und NestJS. Dazu PostgreSQL, REST und GraphQL. React setze ich für Oberflächen ein. Symfony und PHP 8 sind für mich derselbe Architekturgedanke, und dort arbeite ich mich an eurem Code ein, statt so zu tun, als wäre ich seit Jahren im PHP-Team.","trap":"جملة «أتقن كل شيء في الإعلان» تُكشف في أول سؤال Symfony أو React."},{"id":"talk-why","track":"talk","topic":"الدافع","q":"لماذا emvion ولماذا venabo وليس أي وظيفة Backend؟","answer":"اربط الجواب بالمنتج لا بالمزايا. venabo نظام يسجّل الوقت والخدمة، يعني بيانات حساسة للرواتب والمشاريع وموافقات. هذا يحتاج عقود API واضحة وقاعدة صحيحة واختبارات، وهو ما تبنيه. اذكر أنك تريد منتجًا يملكونه هم، لا مشروع عميل يختفي بعد التسليم. الإيقاع: ثلاثة أيام في Rheine ويومان عن بعد يناسبك إن كان ذلك صادقًا. لا تمدح السيارة أو الفاكهة.","say":"Mich interessiert ein eigenes Produkt mit klarer Fachlichkeit: Zeit- und Leistungserfassung. Da zählen korrekte Daten, saubere APIs und Wartbarkeit mehr als ein weiterer Prototyp.","trap":"بدء الجواب بالراتب أو بالعمل من المنزل."},{"id":"talk-onsite","track":"talk","topic":"طريقة العمل","q":"كيف تعمل مع ثلاثة أيام في المكتب ويومين من البيت؟","answer":"المكتب للمراجعات والتصميم والغموض. البيت للعمل العميق بعد أن تصبح المهمة مكتوبة. تقول إنك توثّق القرار في التذكرة قبل أن تختفي يوم الخميس، وتترك المراجعة بحجم يمكن قراءته في ساعة. لا تساوم على الحضور في المقابلة إن كان شرطًا معلنًا.","say":"Die Bürotage nutze ich für Abstimmung und Reviews. Im Homeoffice will ich eine klar geschnittene Aufgabe, deren Kontext schon im Ticket steht.","trap":"طلب خمسة أيام عن بعد والإعلان يقول ثلاثة في المكتب."},{"id":"talk-review","track":"talk","topic":"مراجعة الكود","q":"ماذا تفعل في Code Review؟","answer":"تقرأ العقد أولًا: هل المسار والرمز والحقول صحيحة؟ ثم الحدود: هل القاعدة في الخدمة أم في المتحكم؟ ثم البيانات: هل الاستعلام مقيّد ومفهرس؟ ثم الاختبار الذي يثبت الحالة التي كُسرت. الأسلوب والإطالة تأتي بعد ذلك. على Legacy لا تطلب إعادة كتابة الملف لأنك لم تكتبه.","say":"Ich prüfe zuerst den Vertrag und die Daten, danach die Struktur. Stil kommentiere ich nur, wenn er die nächste Änderung gefährdet.","trap":"تعليقات على المسافات وأسماء المتغيرات فقط."},{"id":"talk-legacy","track":"talk","topic":"Legacy","q":"كيف تطوّر كودًا قديمًا من غير أن توقف المنتج؟","answer":"تغلّف السلوك الحالي باختبار يصف ما يحدث اليوم. تغيّر شريحة صغيرة خلف نفس العقد. تترك مسارًا قديمًا يعمل حتى ينتقل المتصلون. في venabo هذا يعني أن شاشة الوقت القديمة وواجهة جديدة يمكن أن تشاركا نفس الـ API حتى يكتمل التصميم. لا توجد إعادة كتابة كبيرة في فرع طويل.","say":"Ich sichere das aktuelle Verhalten mit einem Test, ändere eine Scheibe dahinter und lasse den alten Vertrag stehen, bis die Aufrufer umgezogen sind.","trap":"اقتراح رمي Symfony أو الواجهة القديمة في الربع الأول."},{"id":"talk-star","track":"talk","topic":"موقف سابق","q":"احكِ عن عطل في الإنتاج أو عن قرار تقني صعب.","answer":"أربع جمل: الموقف، ما كان يراه المستخدم، ماذا فعلت أنت تحديدًا، ماذا تغيّر بعد ذلك. مثال صالح لمحور Nest: خصم أو حفظ يتكرر عند إعادة الطلب، فأضفت مفتاح تكرار وقيدًا فريدًا. إن لم يكن عندك هذا الموقف فاختر موقفًا حدث فعلًا. الأرقام التقريبية مقبولة، والقصة المخترعة لا تنجو من سؤال «أي ملف لمست؟».","say":"Die Nutzer sahen doppelte Einträge nach einem Retry. Ich habe den Schreibweg idempotent gemacht und danach einen Test auf denselben Schlüssel ergänzt.","trap":"قصة بصيغة «الفريق قرر» من غير فعل قمت به."},{"id":"talk-ask","track":"talk","topic":"أسئلتك لهم","q":"ماذا تسأل في نهاية المقابلة؟","answer":"أي محور من الثلاثة مفتوح لهذه المقابلة. كيف يُقسَّم venabo اليوم بين Symfony و Nest. من يملك مخطط PostgreSQL. كيف تُراجع الواجهة مع Figma: هل المكوّن يسبق الشاشة أم العكس. كيف تبدو أول تذكرة في الشهر الأول. لا تسأل عن المزايا المكتوبة في الإعلان.","say":"Welcher Schwerpunkt ist für diese Stelle offen, und woran würde ich in den ersten vier Wochen konkret arbeiten?","trap":"سؤال واحد عام: «كيف هي الثقافة عندكم؟» ثم صمت."},{"id":"nest-modules","track":"nest","topic":"Modules","q":"كيف تقسّم منطق venabo داخل NestJS؟","answer":"وحدة للوقت، ووحدة للمشاريع، ووحدة للهوية. الخدمة تُحقن داخل وحدتها. ما تحتاجه وحدة أخرى يمر عبر exports ثم imports. حساب مدة اليوم ليس حقلًا يحسبه React ويصدّقه الخادم. AppModule يجمع الوحدات ولا يحتوي القاعدة. @Global() نادر، للإعداد مثلًا، لا لوحدة الوقت.","say":"Ich schneide nach Fachlichkeit: Zeit, Projekte, Identität. Exportiert wird nur, was eine andere Einheit wirklich braucht.","trap":"وضع كل الخدمات في AppModule حتى «تسهل»."},{"id":"nest-lifecycle","track":"nest","topic":"Request lifecycle","q":"رتّب ما يحدث لطلب تسجيل وقت.","answer":"Middleware ثم Guard ثم Interceptor قبل المتحكم ثم Pipe ثم الدالة ثم الخدمة. على طريق الرجوع ينعكس المعترض لأن الناتج Observable. عند الاستثناء تُختار الفلاتر من المسار إلى المتحكم إلى العام، وأول من يمسك يوقف الباقي. استثناء Middleware تراه الفلاتر العامة فقط. التحقق من أن النهاية بعد البداية مكانه الأنبوب أو الخدمة، والهوية مكانها الحارس.","say":"Middleware, Guard, Interceptor, Pipe, dann der Controller. Filter laufen nur bei einer unbehandelten Exception, von der Route nach oben.","trap":"وضع التحقق من الهوية داخل Pipe أو بعد ما كُتب الصف."},{"id":"nest-validation","track":"nest","topic":"Validation","q":"كيف تمنع حقلًا زائدًا في جسم تسجيل الوقت؟","answer":"صنف DTO لا interface، لأن الواجهة تُمحى. ValidationPipe مع whitelist و forbidNonWhitelisted و transform. الحقول: startedAt و endedAt و projectId. employeeId لا يأتي من الجسم بل من الرمز. إن أرسل العميل duration أو approved تُرفض. StandardSchemaValidationPipe خيار إن كان العقد Zod، و class-validator يبقى صالحًا.","say":"Der Body wird gegen eine Klasse geprüft. whitelist entfernt Fremdes, forbidNonWhitelisted lehnt es ab. Die Mitarbeiter-ID kommt aus dem Token, nicht aus dem JSON.","trap":"الثقة بنوع TypeScript على req.body."},{"id":"nest-guard","track":"nest","topic":"Guard و Interceptor","q":"ما الفرق بين Guard و Pipe و Interceptor في هذا المنتج؟","answer":"الحارس يجيب: هل نكمل. 401 إن غاب الرمز، و 403 إن كان المستخدم معروفًا وممنوعًا من اعتماد وقت زميله. الأنبوب يشكّل الدخل ويفحصه. المعترض يلف التنفيذ: قياس الزمن أو تحويل الشكل، عبر next.handle() التي ترجع Observable. الفلتر يترجم الاستثناء إلى رد. لا تضع اعتماد الدوام داخل المعترض.","say":"Der Guard entscheidet, ob der Request weiterdarf. Die Pipe prüft die Eingabe. Der Interceptor umschließt die Ausführung. Die Freigabe einer Zeit bleibt eine Fachregel in der Service.","trap":"استخدام Middleware للصلاحيات لأنها لا ترى سياق المسار كما يراه الحارس."},{"id":"nest-scope","track":"nest","topic":"Scopes","q":"لماذا لا تجعل خدمة الوقت Request-scoped لتمرير المستخدم؟","answer":"النطاق الافتراضي singleton. REQUEST ينشئ نسخة لكل طلب، ويُعدي كل من يحقن تلك الخدمة فيصعد المتحكم نفسه إلى الطلب. هذا ثقيل. المستخدم يُقرأ في الحارس ويُمرَّر وسيطًا إلى الدالة. PrismaClient يبقى singleton واحدًا حتى يبقى مجمع الاتصالات واحدًا.","say":"Den Nutzer lege ich im Guard auf den Request und gebe ihn als Argument weiter. Request-Scope nur für den Nutzer wäre ansteckend und teuer.","trap":"حقن REQUEST في خدمة ثم استغراب أن نصف التطبيق صار يُبنى كل مرة."},{"id":"nest-prisma","track":"nest","topic":"PostgreSQL","q":"كيف تضع Prisma داخل Nest مع معاملة تسجيل الوقت؟","answer":"PrismaService تمتد PrismaClient وتتصل في OnModuleInit وتُغلق في OnModuleDestroy، وتُصدَّر من وحدتها. إنشاء السطر وفحص التداخل يكونان في $transaction. تحديث مشروط: لا يُكتب وقت يتقاطع مع وقت موجود لنفس الموظف. السعر أو الاعتماد لا يُحسب في React. الترحيل بأداة Prisma لا بـ synchronize الذي قد يمسح بيانات.","say":"Prisma lebt in einem Provider, eine Verbindung pro Prozess. Überlappende Zeiten prüfe und schreibe ich in derselben Transaktion. Schemaänderungen nur über Migrationen.","trap":"استدعاء PrismaClient جديد داخل كل خدمة."},{"id":"nest-errors","track":"nest","topic":"أخطاء HTTP","q":"أي رمز ترجع لحالات تسجيل الوقت؟","answer":"201 عند إنشاء السطر. 200 لقائمة فارغة في ذلك اليوم. 400 للمدخل الرديء. 401 من غير هوية. 403 لموظف يفتح اعتماد غيره. 404 لسجل غير موجود أو ليس له. 409 لتداخل وقتين أو لإعادة نفس المفتاح بجسم مختلف. 500 فقط لما لم تتوقعه. الفلتر العام لا يحوّل 400 إلى 500.","say":"Anlegen ist 201, eine leere Liste bleibt 200, überlappende Zeiten sind 409. Ein leeres Ergebnis ist kein Fehler.","trap":"404 حين لا يوجد تسجيل لهذا اليوم."},{"id":"nest-graphql","track":"nest","topic":"GraphQL","q":"كيف تبني GraphQL في Nest من غير N+1؟","answer":"المخطط بالكود: Resolver للقراءة و Mutation للكتابة. قائمة تسجيلات مع المشروع لا تستعلم المشروع داخل حلقة. DataLoader يجمع المعرفات في طلب واحد لكل دورة. REST يبقى للعمليات البسيطة والويب هوك. GraphQL للشاشات التي تختلف حقولها، مثل شبكة الوقت. العمق يُحد حتى لا يطلب العميل شجرة بلا نهاية.","say":"Code-first Resolver, Mutationen fürs Schreiben, DataLoader gegen N+plus-1. REST lasse ich daneben, wo der Vertrag stabil und klein ist.","trap":"Resolver يكتب في القاعدة داخل كل حقل ابن."},{"id":"nest-mvp","track":"nest","topic":"تثبيت MVP","q":"الإعلان يقول ثبّت منطق MVP قائم. ماذا تفعل في الأسبوع الأول؟","answer":"تقرأ المسارات التي تكتب المال أو الوقت. تبحث عن قاعدة في المتحكم، وعن استعلام بلا قيد، وعن سر في المستودع. تضيف اختبار رحلة على المسار الأخطر قبل أي تصميم جديد. تخرج العمل البطيء، مثل تصدير التقرير، إلى طابور BullMQ لا إلى Bull القديم. لا تفتح إعادة هيكلة عامة قبل أن يكون الاختبار أخضر.","say":"Zuerst sichere ich den Schreibweg mit einem Test. Danach ziehe ich Fachlogik aus dem Controller und langsame Arbeit aus dem Request.","trap":"أسبوع أول فيه إعادة تسمية المجلدات فقط."},{"id":"nest-test","track":"nest","topic":"اختبار","q":"كيف تختبر خدمة الوقت؟","answer":"قالب ESM من nest new يستخدم Vitest، و CommonJS يستخدم Jest. اختبار الوحدة يستبدل المستودع ويثبت أن التداخل يرفض. الرحلة بـ supertest تتوقع 201 ثم 409. لا تتصل بقاعدة التطوير. قاعدة الاختبار تُنشأ وتُهدم في CI. الحارس في رحلة الصلاحيات يُستبدل حين تختبر الخدمة، ويبقى حين تختبر 403.","say":"Die Überlappung teste ich als Unit mit einem Fake. Den HTTP-Vertrag teste ich mit einem e2e-Lauf gegen eine Wegwerf-Datenbank, nicht gegen Entwicklung.","trap":"jest.fn في مشروع Vitest، أو اختبار يعتمد على ترتيب اختبار سابق."},{"id":"php-services","track":"php","topic":"Symfony","q":"ما مقابل Module و Provider في Symfony؟","answer":"الحاوية في Symfony تحقن الخدمات. غالبًا autowire و autoconfigure في services.yaml. المتحكم يستقبل الخدمة في البنّاء. PHP 8 يسمح بترقية البنّاء: function __construct(private TimeEntryService $service). المنطق في الخدمة. المتحكم يقرأ Request ويرجع Response أو كائنًا يمر على المسلسل. هذا نفس حد Nest: المتحكم رفيع.","say":"Symfony injiziert Services über den Container. Der Controller bleibt dünn, die Fachregel liegt im Service. Constructor Promotion in PHP 8 hält den Konstruktor kurz.","trap":"كتابة SQL أو حساب المدة داخل Action طويل."},{"id":"php-routes","track":"php","topic":"PHP 8","q":"كيف تعرّف مسار API في PHP 8؟","answer":"بالـ Attribute: #[Route('/api/time-entries', methods: ['POST'])]. Attributes حلّت محل كثير من الإعداد في YAML للمسارات. الأنواع الموحّدة و readonly والـ enums تناسب حالة التسجيل: draft و submitted و approved. تعيد JSON عبر المسلسل لا عبر echo. رمز الإنشاء 201 كما في Nest.","say":"Routen lege ich mit PHP-8-Attributen fest. Den Status modelliere ich als Enum, nicht als freie Zeichenkette. Anlegen antwortet mit 201.","trap":"سلسلة حالة يكتبها العميل كما يشاء: approved=true في أول POST."},{"id":"php-doctrine","track":"php","topic":"Doctrine","q":"كيف تغيّر مخطط PostgreSQL في Symfony؟","answer":"الكيان يصف الجدول بـ Attributes من Doctrine. التغيير يولّد ترحيلًا، ثم doctrine:migrations:migrate على كل بيئة. لا تُحدَّث إنتاج بأمر schema update الذي يطبّق الفرق مباشرة. العلاقة بين الموظف والتسجيل ManyToOne. الفهرس على الموظف وبداية الوقت يُذكر في الكيان أو في الترحيل. تشرح أنك تأتي من Prisma وتقرأ الترحيل قبل تشغيله.","say":"Entitäten beschreiben das Schema, Migrationen ändern es. schema:update ist kein Weg für Produktion. Den Index auf Mitarbeiter und Beginn schreibe ich ausdrücklich ins Schema.","trap":"تعديل القاعدة يدويًا ثم مفاجأة أن الزميل لا يملك نفس الجدول."},{"id":"php-voter","track":"php","topic":"صلاحيات","q":"كيف تمنع موظفًا من اعتماد وقته بنفسه؟","answer":"Voter في Symfony يجيب عن صفة مثل TIME_APPROVE على الكيان. isGranted داخل المتحكم أو عبر Attribute. القاعدة: المقدِّم لا يعتمد سجله، والمدير يعتمد فريقه. هذا يقابل Policy في Nest. 401 من غير دخول، و 403 بعد الدخول. لا تخفِ السجل بـ 404 إن كان العقد أن المستخدم يعرفه لكنه ممنوع.","say":"Ein Voter entscheidet TIME_APPROVE. Wer einreicht, gibt nicht selbst frei. Danach ist es 403, nicht 401.","trap":"if على الدور منسوخ في كل Action."},{"id":"php-api","track":"php","topic":"API","q":"كيف تبني REST في Symfony من غير اختراع إطار ثانٍ؟","answer":"متحكم يرجع كائنًا ويمر على Serializer مع مجموعات Groups حتى لا يخرج حقل داخلي. الدخل عبر DTO أو MapRequestPayload في إصدارات Symfony الحديثة، مع Validator على Assert. اسألهم إن كانوا على API Platform. لا تفترض ذلك لأنه غير مذكور في الإعلان. GraphQL على جهة PHP مكتبة أخرى. قل إنك تثبت العقد باختبار WebTestCase.","say":"JSON über den Serializer, Eingabe über ein DTO mit Validator, Vertragstest mit WebTestCase. Ob API Platform im Einsatz ist, frage ich, statt es anzunehmen.","trap":"الادعاء أنك بنيت API Platform لسنوات إن لم تفعل."},{"id":"php-messenger","track":"php","topic":"عمل مؤجل","q":"تصدير كشف الشهر يبطئ الطلب. أين تضعه في Symfony؟","answer":"Symfony Messenger يرسل رسالة ExportTimesheet. المعالج يعمل خارج الطلب. الفشل يُعاد حسب سياسة المحاولة. هذا يقابل طابور BullMQ في Nest. الرد للعميل 202 مع معرّف مهمة، لا انتظار الملف. الرسالة تحمل المعرفات لا كيان Doctrine كاملًا قد يفسد بعد انتهاء الطلب.","say":"Der Export geht als Message in den Messenger. Der HTTP-Request endet mit 202. In der Nachricht stehen IDs, keine lebendigen Entities.","trap":"توليد PDF داخل Action ثم انتهاء مهلة الوكيل."},{"id":"php-bridge","track":"php","topic":"انتقال صادق","q":"خبرتك Nest وأسئلتهم Symfony. ماذا تقول؟","answer":"تقول إن الحاوية والخدمة والترحيل والاختبار هي نفسها بأسماء أخرى. في الأسبوع الأول تقرأ Entity و Voter ومسار الكتابة، وتسلّم إصلاحًا صغيرًا مع اختبار. لا تعد بقيادة PHP في الشهر الأول إن كان فريقهم كبيرًا على Symfony. إن كان المحور المفتوح هو Nest، فهذا الجواب يكفي لإظهار أنك لا تخاف الكود الآخر.","say":"Die Namen unterscheiden sich, der Schnitt nicht: dünner Controller, Service, Migration, Test. In der ersten Woche lese ich den Schreibweg und liefere eine kleine getestete Änderung.","trap":"حفظ مصطلحات Symfony وانهيار عند طلب كتابة Voter على اللوح."},{"id":"react-figma","track":"react","topic":"تصميم","q":"كيف تحوّل Figma إلى مكوّنات React؟","answer":"لا تنسخ كل شاشة إلى ملف. تستخرج المكوّن المتكرر: حقل، زر، صف جدول، شارة الحالة. الخصائص بالأنواع: variant و size و disabled. الألوان والمسافات من رموز التصميم إلى متغيرات CSS، لا أرقام سحرية في كل ملف. HTML دلالي: زر زر، وجدول جدول. الشاشة تركّب المكوّنات. الإعلان يذكر HTML5 و CSS3، فلا تفترض مكتبة CSS لم يذكروها.","say":"Ich ziehe wiederkehrende Teile aus Figma in typisierte Komponenten und lege Abstände und Farben als Tokens ab. Seiten setzen diese Teile nur zusammen.","trap":"مكوّن واحد اسمه VenaboPage فيه كل الشاشات."},{"id":"react-parallel","track":"react","topic":"إعادة التصميم","q":"كيف تبني ميزة جديدة بينما التصميم القديم ما زال يعمل؟","answer":"العقد مع الخادم ثابت. الواجهة الجديدة خلف مسار أو علم يظهر لفريق داخلي. الشاشات المتشابهة، مثل قائمة واعتماد، تشتركان في نمط جدول واحد يختلف بالأعمدة والأفعال. عندما تكتمل الشاشة تُحذف القديمة. لا يوجد فرع redesign يعيش شهرين بعيدًا عن main.","say":"Das neue UI hängt hinter demselben API-Vertrag. Ähnliche Masken teilen sich ein Tabellenmuster. Der alte View bleibt, bis der neue fertig ist, aber nicht auf einem langen Nebenbranch.","trap":"إيقاف الميزات شهرًا لأن «التصميم لم ينتهِ»."},{"id":"react-apollo","track":"react","topic":"Apollo","q":"كيف تجلب شبكة الوقت بـ Apollo Client؟","answer":"useQuery باستعلام يطلب الحقول التي ترسمها الشاشة فقط. الأنواع من مولّد GraphQL حتى لا يكون data أيًا. بعد mutation تسجيل الوقت تحدّث الكاش أو تعيد جلب اليوم. حالة التحميل والخطأ ظاهرتان في الواجهة. لا تضع نسخة ثانية من الحقيقة في Redux إن كان الكاش يكفي. الحالة المحلية للفلتر المفتوح تبقى في المكوّن.","say":"Apollo ist der Server-State. Die Query holt nur Felder, die wir zeichnen. Lokaler UI-State, etwa ein offenes Dialogfeld, bleibt in der Komponente.","trap":"نسخ نتيجة الاستعلام إلى useState ثم نسيان تحديثها."},{"id":"react-form","track":"react","topic":"نموذج","q":"كيف تبني نموذج تسجيل وقت؟","answer":"حقول محكومة. البداية والنهاية input من نوع datetime-local أو ما يتفق مع التصميم. الزر يتعطل أثناء الإرسال حتى لا يُنشأ سطران. رسالة الخادم 409 للتداخل تظهر بجانب النموذج لا في alert عام فقط. المدة المعروضة للبشر تُحسب للعرض، والخادم يعيد حسابها. لا ترسل employeeId مخفيًا يمكن تعديله من أدوات المتصفح وتتوقع أن يُقبل.","say":"Der Dialog ist controlled. Der Server prüft die Überlappung erneut. Die angezeigte Dauer ist nur eine Hilfe, keine Quelle der Wahrheit.","trap":"إرسال النموذج مرتين لأن الزر بقي فعالًا."},{"id":"react-rtl","track":"react","topic":"اختبار الواجهة","q":"ماذا تختبر بـ React Testing Library؟","answer":"ما يراه المستخدم: تسمية الحقل، الضغط على حفظ، ظهور رسالة التداخل. لا تختبر state الداخلي ولا اسم الصنف CSS. Jest أو Vitest يشغّل الاختبار، والمكتبة تجد العناصر بالدور والنص. استعلام Apollo يُستبدل بمزود اختباري. اختبار لقطة الشاشة كاملة هش عند إعادة التصميم.","say":"Ich teste das Verhalten: Feld, Speichern, Fehlermeldung. Nicht den internen State und nicht die CSS-Klasse.","trap":"enzyme أو الغوص في instance المكوّن. RTL وُجد ليحل محل ذلك الأسلوب."},{"id":"react-perf","track":"react","topic":"أداء الواجهة","q":"شبكة شهر لخمسين موظفًا بطيئة. من أين تبدأ؟","answer":"لا تبدأ بـ memo على كل شيء. انظر هل الاستعلام يجلب الشهر كله دفعة واحدة، وهل المفتاح في القائمة ثابت هو معرّف السجل لا الدليل. ثم هل إعادة رسم الأب تهدم الصفوف. التقسيم أو النافذة الافتراضية إن بقيت العقدة كثيرة. في Apollo قلّل الحقول. قِس قبل أن تلف كل مكوّن.","say":"Zuerst die Query und stabile Keys. Memo und Virtualisierung erst, wenn die Messung zeigt, dass das Rendern der Engpass ist.","trap":"useMemo حول كل دالة في الملف وتقديم ذلك كتحسين."},{"id":"react-a11y","track":"react","topic":"HTML","q":"ما الذي يجعل مكوّن الزر من Figma واجهة لا رسمًا؟","answer":"عنصر button لا div عليه onClick. التسمية مقروءة. التركيز ظاهر في CSS. الحالة ليست باللون وحده لأن شارة «معتمد» تحتاج نصًا. النموذج يربط label بـ input. هذا ما يقصده الإعلان بـ HTML5 إلى جانب React. الاختبار بـ getByRole يفشل إن كان العنصر div.","say":"Ein Button bleibt ein button. Status kommt als Text, nicht nur als Farbe. Das ist auch der Grund, warum die Tests getByRole nutzen.","trap":"div قابل للنقر لأن التصميم لم يرسم إطار زر."},{"id":"data-schema","track":"data","topic":"نموذج","q":"كيف تتخيّل جدول تسجيل الوقت من غير أن تدّعي أنه مخططهم؟","answer":"قل صراحة إنك تقترح شكلًا للمناقشة. سجل فيه موظف، ومشروع أو أمر خدمة، وبداية، ونهاية، وحالة من enum، ومن اعتمد. المدة عمود مولَّد أو تُحسب في الاستعلام حتى لا تختلف عن الطرفين. منع التداخل قيد استبعاد في PostgreSQL على الموظف للفترة، لا فحص في الواجهة فقط. اسألهم عن الغياب والاستراحات قبل أن تضيفها.","say":"Ich würde Zeiten als Zeitraum speichern, den Status als Enum, und Überlappungen in PostgreSQL ausschließen. Ob Pausen und Abwesenheiten eigene Tabellen sind, kläre ich am bestehenden Schema.","trap":"رسم عشرين جدولًا في المقابلة كأنك رأيت قاعدتهم."},{"id":"data-index","track":"data","topic":"أداء","q":"تقرير الشهر بطيء. ماذا تفحص؟","answer":"EXPLAIN على الاستعلام الحقيقي. غالبًا ينقص فهرس على employee_id و started_at، أو يفلتر العميل بعد سحب السنة كلها. الحد في SQL. لا SELECT *. الإحصاءات تُحدَّث إن كان المخطط تغيّر. الفهرس يُضاف بترحيل لا بيد على الإنتاج. في الواجهة لا تعوّض البطء بتحميل كل شيء إلى المتصفح.","say":"Ich lese EXPLAIN, setze einen passenden Index per Migration und begrenze die Zeilen in SQL. Den Browser lasse ich nicht tausend Zeilen sortieren.","trap":"إضافة فهرس على كل عمود."},{"id":"data-migration","track":"data","topic":"ترحيل","q":"كيف تشحن تغيير مخطط من غير إيقاف الكتابة؟","answer":"التوسعة أولًا: عمود جديد يقبل الفراغ، والكود يكتبه مع القديم. ثم تعبئة. ثم قراءة من الجديد. ثم حذف القديم في ترحيل لاحق. في Prisma migrate deploy، وفي Doctrine migrations:migrate. الترحيل جزء من الإقلاع أو خطوة نشر واضحة، لا شيء يشغّله أول طلب عشوائيًا على الإنتاج. لا synchronize ولا schema:update --force.","say":"Erst erweitern, dann backfill, dann lesen, dann aufräumen. Jede Stufe ist eine eigene Migration, die auf Produktion nur vorwärts läuft.","trap":"إعادة تسمية عمود مباشرة بينما النسخة القديمة ما زالت تعمل."},{"id":"data-rest-graphql","track":"data","topic":"العقد","q":"متى REST ومتى GraphQL في venabo؟","answer":"REST لعمليات واضحة: أنشئ تسجيلًا، اعتمد، صدّر. الرمز يشرح النتيجة. GraphQL لشاشات الشبكة التي تطلب أعمدة مختلفة لكل دور، عبر Apollo في الواجهة. العقدان يضربان نفس الخدمة حتى لا توجد قاعدتان. الإصدار في REST بالمسار أو الترويسة عندما ينكسر شكل قديم. لا تُصدر GraphQL عامًا بلا حد عمق.","say":"REST für klare Kommandos, GraphQL für die Tabelle, deren Spalten je Rolle wechseln. Beide rufen denselben Service.","trap":"إعادة كتابة كل REST إلى GraphQL لأن الإعلان ذكر الاثنين."},{"id":"data-tx","track":"data","topic":"معاملة","q":"اعتماد عشرة سجلات يجب أن ينجح كله أو يفشل كله. كيف؟","answer":"معاملة واحدة. تحديث مشروط WHERE status = submitted حتى لا يُعتمد سجل تغيّر بين القراءة والكتابة. إن كان العدد العائد أقل من المتوقع تُلغى المعاملة بـ 409. السجل التدقيقي يُكتب في نفس المعاملة: من اعتمد ومتى. بعد الالتزام يمكن إرسال إشعار عبر طابور أو Messenger، لا داخل المعاملة عبر الشبكة.","say":"Eine Transaktion, bedingtes Update auf den erwarteten Status, Audit-Zeile darin. Die Benachrichtigung geht erst nach dem Commit in die Queue.","trap":"عشرة طلبات HTTP منفصلة من الواجهة ثم اعتبار ذلك اعتمادًا ذريًا."},{"id":"data-nplus1","track":"data","topic":"N+1","q":"قائمة التسجيلات تطلق استعلامًا لكل مشروع. ما الحل في الجهتين؟","answer":"في SQL: join أو where id in (...) دفعة واحدة. في Prisma: include بوعي أو استعلام مجمّع. في GraphQL: DataLoader. في Doctrine: join fetch حتى لا يسأل الوكيل كل علاقة. العلامة: خمسون تسجيلًا وخمسون استعلامًا إضافيًا. الحل ليس كاشًا يخزّن النتيجة الخاطئة.","say":"Ich hole die Projekte in einer Abfrage oder über einen DataLoader. Ein Cache käme erst danach, und nur mit einem klaren Invalidieren.","trap":"تخزين القائمة دقيقة كاملة بينما الاعتماد غيّر الحالة."},{"id":"data-idem","track":"data","topic":"تكرار","q":"المستخدم أعاد إرسال نموذج الوقت لأن الشبكة انقطعت.","answer":"ترويسة Idempotency-Key أو مفتاح من العميل يُخزَّن بقيد فريد مع هاش الجسم. الإعادة بنفس المفتاح والجسم ترجع نفس السجل. جسم مختلف بنفس المفتاح 409. الواجهة تعطّل الزر أيضًا، وهذا لا يغني عن القيد. نفس الفكرة على ويب هوك الدفع إن وُجد، وعلى Messenger إن أُعيدت الرسالة.","say":"Der Schlüssel ist eindeutig gespeichert. Derselbe Schlüssel liefert dasselbe Ergebnis. Der Button-Schutz im UI reicht nicht.","trap":"الاعتماد على تعطيل الزر فقط."}]}</script>
+<script>
+const data = JSON.parse(document.getElementById("data").textContent);
+const marks = JSON.parse(localStorage.getItem("emvion-marks") || "{}");
+let track = localStorage.getItem("emvion-track") || "all";
+let interview = localStorage.getItem("emvion-mode") === "interview";
+const filters = document.getElementById("filters");
+const list = document.getElementById("list");
+const search = document.getElementById("q");
+
+function save() {
+  localStorage.setItem("emvion-marks", JSON.stringify(marks));
+  localStorage.setItem("emvion-track", track);
+  localStorage.setItem("emvion-mode", interview ? "interview" : "study");
+}
+
+function visible() {
+  const term = search.value.trim();
+  return data.questions.filter((item) => {
+    if (track !== "all" && item.track !== track) return false;
+    if (!term) return true;
+    return (item.q + item.topic + item.answer + item.say).includes(term);
+  });
+}
+
+function renderFilters() {
+  filters.innerHTML = "";
+  data.tracks.forEach((item) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = item.id === track ? "active" : "";
+    button.textContent = item.label;
+    button.onclick = () => { track = item.id; save(); draw(); };
+    filters.appendChild(button);
+  });
+}
+
+function draw() {
+  renderFilters();
+  document.getElementById("mode").textContent = interview ? "وضع الدراسة: أظهر الأجوبة" : "وضع المقابلة: أخفِ الأجوبة";
+  const rows = visible();
+  document.getElementById("count-all").textContent = String(rows.length);
+  document.getElementById("count-know").textContent = String(Object.values(marks).filter((v) => v === "know").length);
+  document.getElementById("count-review").textContent = String(Object.values(marks).filter((v) => v === "review").length);
+  list.innerHTML = "";
+  rows.forEach((item) => {
+    const article = document.createElement("article");
+    if (marks[item.id] === "know") article.classList.add("know");
+    const title = document.createElement("h3");
+    title.textContent = item.q;
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.textContent = item.topic + " · " + item.track;
+    const answer = document.createElement("div");
+    answer.className = "answer" + (interview ? " hidden" : "");
+    answer.innerHTML = "<p></p><div class='say'></div><div class='trap'></div>";
+    answer.querySelector("p").textContent = item.answer;
+    answer.querySelector(".say").textContent = item.say;
+    answer.querySelector(".trap").textContent = "انتبه: " + item.trap;
+    const row = document.createElement("div");
+    row.className = "row";
+    const reveal = document.createElement("button");
+    reveal.type = "button";
+    reveal.textContent = interview ? "أظهر الجواب" : "أخفِ الجواب";
+    reveal.onclick = () => answer.classList.toggle("hidden");
+    const know = document.createElement("button");
+    know.type = "button";
+    know.textContent = marks[item.id] === "know" ? "معروفة" : "أعرفها";
+    know.onclick = () => { marks[item.id] = "know"; save(); draw(); };
+    const review = document.createElement("button");
+    review.type = "button";
+    review.textContent = marks[item.id] === "review" ? "للمراجعة" : "أراجعها";
+    review.onclick = () => { marks[item.id] = "review"; save(); draw(); };
+    row.append(reveal, know, review);
+    article.append(meta, title, row, answer);
+    list.appendChild(article);
+  });
+}
+
+document.getElementById("map").innerHTML = data.adMap.map((row) =>
+  "<tr><td>" + row[0] + "</td><td><code>" + row[1] + "</code></td><td>" + row[2] + "</td></tr>"
+).join("");
+document.getElementById("mode").onclick = () => { interview = !interview; save(); draw(); };
+document.getElementById("random").onclick = () => {
+  const rows = visible();
+  if (!rows.length) return;
+  const pick = rows[Math.floor(Math.random() * rows.length)];
+  interview = true;
+  save();
+  search.value = pick.q.slice(0, 24);
+  draw();
+  list.querySelector("article")?.scrollIntoView({ behavior: "smooth", block: "center" });
+};
+search.oninput = draw;
+draw();
+</script>
+<script src="../assets/learn.js"></script>
+</body>
+</html>

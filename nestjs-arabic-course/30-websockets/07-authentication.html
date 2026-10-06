@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Authentication</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-authentication.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Authentication</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فحص الرمز عند الاتصال وإغلاق المقبس قبل <code>join</code>، لأن حارس الرسالة يأتي بعد أن صار العميل متصلًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@UseGuards</code> على <code>@SubscribeMessage</code> لا يمنع المصافحة. عميل بلا رمز يبقى في الفضاء ويستمع إن انضم إلى غرفة عامة أو إن وصلته أحداث على مستوى الفضاء. صفحة الكتاب قد تكون عامة، لكن بث المسودات أو إشعار المحرر ليس عامًا. الانتظار حتى أول رسالة يترك نافذة استماع.</p>
+<h2>الفكرة ببساطة</h2>
+<p>العميل يمرر الرمز في مصافحة Socket.IO: <code>auth: { token }</code> لا في عنوان يُسجَّل بسهولة. <code>handleConnection</code> يتحقق. عند الفشل <code>client.disconnect()</code>. عند النجاح ضع <code>userId</code> على <code>client.data</code>. حارس الرسالة يبقى للعمليات التي تحتاج الدور، لا بديلًا عن إغلاق الاتصال.</p>
+<h2>التعريف التقني</h2>
+<p>عميل:</p>
+<pre><code class="language-ts">import { io } from &#39;socket.io-client&#39;;
+
+io(&#39;http://localhost:3000/comments&#39;, {
+  auth: { token: &#39;Bearer eyJ...&#39; },
+});
+</code></pre>
+<p>البوابة:</p>
+<pre><code class="language-ts">import type { Socket } from &#39;socket.io&#39;;
+
+handleConnection(client: Socket) {
+  const token = client.handshake.auth?.token;
+  const userId = this.tokens.verify(String(token ?? &#39;&#39;));
+  if (!userId) {
+    client.disconnect();
+    return;
+  }
+  client.data.userId = userId;
+}
+</code></pre>
+<p><code>handshake.auth</code> حمولة مصافحة Socket.IO. <code>handshake.query</code> يظهر في العنوان والسجلات، فتجنّبه للرمز. <code>verify</code> تعيد معرفًا أو فراغًا. تفاصيل JWT نفسها من فصل المصادقة في الدورة، لا تُعاد هنا. هذه الدالة لا تثق بالسلسلة.</p>
+<p><code>client.data</code> متاح لاحقًا:</p>
+<pre><code class="language-ts">@SubscribeMessage(&#39;join&#39;)
+join(@ConnectedSocket() client: Socket, @MessageBody() body: { bookId: string }) {
+  return { joined: body.bookId, as: client.data.userId };
+}
+</code></pre>
+<h2>Mental Model</h2>
+<pre><code class="language-text">مصافحة auth.token
+  verify فشل -&gt; disconnect
+  verify نجح -&gt; data.userId
+    بعدها join
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تعليقات الكتاب المنشور قد تسمح باتصال بلا حساب للقراءة فقط. افصل الفضاءات إن اختلفت السياسة:</p>
+<pre><code class="language-text">/comments   كتالوج منشور، join بلا رمز
+/desk       مسودات المحرر، handleConnection يقطع بلا رمز
+</code></pre>
+<p>لا تضع السياستين على فضاء واحد ثم تنسَ فحص الغرفة. غرفة <code>draft:42</code> على فضاء عام تعني أن من عرف الاسم سمع.</p>
+<h2>شرح المثال</h2>
+<p>الفضاء العام لا يستدعي <code>verify</code>. فضاء المكتب يستدعيه دائمًا. <code>disconnect</code> قبل أي <code>emit</code> منتج. إن رغبت برسالة خطأ قبل القطع، أرسل حدثًا ثم افصل في المهلة التالية. القطع الصامت أسهل للعقد: الواجهة ترى <code>disconnect</code> وتعيد المستخدم إلى الدخول.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Socket.IO يضع <code>auth</code> على كائن المصافحة لهذه الجلسة. <code>handleConnection</code> يعمل بعد نجاح النقل وقبل رسائل تطبيقك إن كتبت الفحص في أوله. <code>disconnect</code> ينهي الجلسة ويستدعي <code>handleDisconnect</code>. من لم يُقطع يستطيع <code>emit(&#39;join&#39;)</code> إلى أي <code>bookId</code> يعرفه. لذلك المصادقة تجيب «من هذا»، ورسالة <code>join</code> ما زالت تحتاج قرار «هل يرى هذا الكتاب». معرف في <code>client.data</code> لا يغني عن فحص العضوية إن كانت المسودات خاصة. حارس <code>@SubscribeMessage</code> يرى المقبس عبر <code>switchToWs().getClient()</code> ويمنع حدثًا واحدًا. الاتصال نفسه قرار الخطاف.</p>
+<h2>مثال عملي</h2>
+<p><code>join</code> لمسودة:</p>
+<pre><code class="language-ts">@SubscribeMessage(&#39;join&#39;)
+join(@ConnectedSocket() client: Socket, @MessageBody() body: { bookId: string }) {
+  const allowed = this.books.canReadDraft(body.bookId, client.data.userId);
+  if (!allowed) {
+    return { joined: null };
+  }
+  client.join(`draft:${body.bookId}`);
+  return { joined: body.bookId };
+}
+</code></pre>
+<p>المستخدم معروف من المصافحة. الإذن على الكتاب من الخدمة. الإرجاع <code>{ joined: null }</code> إيصال رفض بلا بث.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الرمز في <code>query</code> لأنه أسهل في التجربة.</li>
+<li>حارس على <code>comment</code> فقط، والعميل يسمع <code>server.emit</code> العام.</li>
+<li>الثقة بـ <code>body.userId</code> من رسالة <code>join</code>.</li>
+<li>إبقاء الاتصال بعد فشل <code>verify</code> مع حدث <code>error</code> بلا <code>disconnect</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على أي فضاء ليس عامًا بالكامل، وفي أول <code>handleConnection</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفضاء تعليقات الكتالوج المنشور إن كانت الغرف لا تحمل مسودات. التعقيد هناك يقطع القارئ بلا مكسب. لا تعِد فحص كلمة المرور في كل رسالة إن كان الرمز فُحص عند الاتصال وما زال الاتصال قصير العمر.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المكان</th>
+<th>ماذا يمنع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>handleConnection</code></td>
+<td>بقاء مقبس بلا هوية</td>
+</tr>
+<tr>
+<td>حارس على الرسالة</td>
+<td>حدثًا واحدًا بعد الاتصال</td>
+</tr>
+<tr>
+<td><code>join</code> + خدمة</td>
+<td>دخول غرفة بلا إذن على المورد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يضع عميل Socket.IO الرمز في هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+في `auth: { token }` عند إنشاء الاتصال، ويُقرأ من `handshake.auth`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الحارس على الرسالة لا يغلق مستمعًا صامتًا؟</p>
+<details>
+<summary>الحل</summary>
+لأنه لا يعمل إلا عند رسالة مزينة. الاتصال والبث العام يسبقان ذلك.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>المستخدم مصادق وانضم إلى <code>draft:42</code> وهو ليس المحرر. أي فحص نقص؟</p>
+<details>
+<summary>الحل</summary>
+فحص العضوية في `join` عبر الخدمة. الهوية تعرف من المتصل، ولا تثبت أنه يملك المسودة.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تستدعي عند فشل <code>verify</code>؟</li>
+<li>لماذا تُرفض <code>body.userId</code>؟</li>
+<li>أي فضاء في المثال يبقى بلا رمز؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>افحص الرمز في <code>handleConnection</code> واقطع الفشل. ضع <code>userId</code> على <code>client.data</code>. إذن المورد يبقى في <code>join</code> عبر الخدمة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الأنبوب والمرشح والحارس على الرسالة نفسها، بعد أن صار الاتصال مقبولًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

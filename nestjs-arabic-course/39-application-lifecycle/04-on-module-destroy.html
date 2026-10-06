@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OnModuleDestroy</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-on-module-destroy.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>OnModuleDestroy</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إغلاق ما فتحته الوحدة عندما يبدأ الإنهاء، قبل خطافَي الإيقاف اللذين يأتيان بعده.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العملية التي تستلم <code>SIGTERM</code> وتُقتل فورًا تترك اتصال Prisma أو مؤقتًا أو عميلًا مفتوحًا. <code>onModuleDestroy</code> هو أول خطاف terminating. مكانه تحرير موارد هذه الوحدة، بشرط أن يكون الإغلاق قد بدأ فعلًا عبر <code>app.close()</code> أو عبر إشارة بعد <code>enableShutdownHooks()</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عندما يدخل التطبيق مرحلة الإنهاء، يستدعي Nest <code>onModuleDestroy</code> من الجذر نحو الأوراق، وينتظر كل وحدة. الدالة لا تستقبل اسم الإشارة. بعدها، لا قبلها، يأتي <code>beforeApplicationShutdown</code>.</p>
+<h2>التعريف التقني</h2>
+<p>الواجهة <code>OnModuleDestroy</code> تعرّف <code>onModuleDestroy(): void | Promise&lt;void&gt;</code>. التوثيق: تُستدعى بعد استلام إشارة إنهاء مثل <code>SIGTERM</code>. المسار الآخر هو <code>app.close()</code> الصريح، وهذا يعمل حتى من غير تفعيل مستمعي الإشارات.</p>
+<p>الاتجاه عكس الإقلاع: الوحدات الأقل عمقًا أولًا، والأوراق آخرًا. الوعد يُنتظر، والرفض لا يوقف السلسلة عن الاستمرار حتى يُحسم الوعد (resolved أو rejected) ثم يكمل الإطار.</p>
+<p>أصناف الطلب لا تستقبل هذا الخطاف. <code>app.close()</code> يشغّل السلسلة ولا ينهي عملية Node إن بقيت مقابض مفتوحة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قرار إنهاء
+  -&gt; onModuleDestroy من الجذر إلى الأوراق
+  -&gt; beforeApplicationShutdown
+  -&gt; إغلاق الاتصالات القائمة
+  -&gt; onApplicationShutdown
+</code></pre>
+<p>أغلق هنا موردًا تملكه الوحدة: عميل قاعدة، مؤقت، اشتراك. لا تفترض أن مقابس HTTP أُغلقت؛ ذلك يقع بعد <code>beforeApplicationShutdown</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, OnModuleDestroy
+{
+  async onModuleInit(): Promise&lt;void&gt; {
+    await this.$connect();
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<p>الزوج <code>connect</code> / <code>disconnect</code> يبقى على الخدمة نفسها. الإغلاق ينتظر انتهاء الاستعلامات التي يسمح Prisma بإنهائها قبل قطع العميل.</p>
+<h2>شرح المثال</h2>
+<p><code>onModuleInit</code> يفتح و <code>onModuleDestroy</code> يغلق. من غير مسار إنهاء حقيقي لن يُستدعى الإغلاق: اختبار يستدعي <code>app.close()</code>، أو عملية إنتاج فعّلت <code>enableShutdownHooks</code> ثم استلمت الإشارة. استدعاء <code>$disconnect</code> من غير الخطاف في نهاية طلب عادي يغلق المجمع تحت أقدام الطلبات الأخرى لأن الخدمة Singleton.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>app.close()</code> أو الإشارة المفعّلة تبدأ terminating.</li>
+<li>Nest يمشي الوحدات من الأقرب للجذر إلى الأعمق.</li>
+<li>لكل وحدة يستدعي <code>onModuleDestroy</code> وينتظر.</li>
+<li>خدمة الكتب في الجذر يمكن أن تتوقف عن جدولة عمل جديد قبل أن تُقطع ورقة قاعدة البيانات.</li>
+<li>بعد اكتمال الجميع يأتي <code>beforeApplicationShutdown(signal)</code>. هذه الدالة لا ترى <code>signal</code>.</li>
+<li>ثم تُغلق الاتصالات، ثم <code>onApplicationShutdown</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مؤقت داخل العملية يجب أن يُمسح وإلا بقيت العملية حية بعد <code>close</code>:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnApplicationBootstrap } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class InvoiceSweep implements OnApplicationBootstrap, OnModuleDestroy {
+  private timer: NodeJS.Timeout | undefined;
+
+  onApplicationBootstrap(): void {
+    this.timer = setInterval(() =&gt; {
+      void this.sweep();
+    }, 60_000);
+  }
+
+  onModuleDestroy(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+  }
+
+  private async sweep(): Promise&lt;void&gt; {
+    return undefined;
+  }
+}
+</code></pre>
+<p><code>clearInterval</code> هنا يحرر المقبض قبل خطوات الإيقاف التالية. إن تركته، <code>app.close()</code> ينهي خطافات Nest وتبقى عملية Node.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>انتظار <code>SIGTERM</code> من غير <code>enableShutdownHooks</code>، فالخطاف لا يعمل.</li>
+<li>إغلاق مجمع قاعدة في كل طلب لأن الخدمة ظُنت per-request.</li>
+<li>افتراض وصول <code>signal</code> وسيطًا. التوقيع بلا معاملات.</li>
+<li>إيقاف HTTP يدويًا هنا بينما الإطار سيغلق الاتصالات لاحقًا.</li>
+<li>رمي خطأ ثم افتراض أن بقية الوحدات لن تُستدعى. الإطار يكمل بعد حسم الوعد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تحرير مورد ملكته عند الإقلاع: disconnect، إيقاف مؤقت، إغلاق عميل تملكه هذه الوحدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>منطق يعتمد على اسم الإشارة مثل <code>SIGINT</code> مقابل <code>SIGTERM</code>: ذلك وسيط الخطافين التاليين. رد readiness أثناء فترة السماح يخص Terminus مع خطافات الإيقاف، لا هذا التوقيع وحده.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطاف</th>
+<th>الإشارة</th>
+<th>موقعه في الإيقاف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>onModuleDestroy</code></td>
+<td>لا يستقبلها</td>
+<td>الأول</td>
+</tr>
+<tr>
+<td><code>beforeApplicationShutdown</code></td>
+<td>وسيط أول</td>
+<td>بعد كل destroy، وقبل إغلاق الاتصالات</td>
+</tr>
+<tr>
+<td><code>onApplicationShutdown</code></td>
+<td>وسيط أول</td>
+<td>بعد إغلاق الاتصالات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل توقيع <code>onModuleDestroy</code> يأخذ <code>signal</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الإشارة تصل إلى <code>beforeApplicationShutdown</code> و <code>onApplicationShutdown</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>اختبار يستدعي <code>app.close()</code> من غير <code>enableShutdownHooks</code>. هل يعمل <code>onModuleDestroy</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نعم. <code>app.close()</code> يشغّل خطافات الإنهاء. تفعيل المستمعين لازم لإشارات النظام، لا للنداء الصريح.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يُستدعى الجذر قبل ورقة <code>PrismaModule</code> في هذا الخطاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الإيقاف يعكس الإقلاع. التوثيق: من الأقل عمقًا إلى الأكثر عمقًا، حتى تتوقف الوحدات العليا عن الاستخدام قبل قطع الأوراق.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الشرطان اللذان يبدآن هذا الخطاف؟</li>
+<li>ماذا تفعل بوعده؟</li>
+<li>لماذا <code>clearInterval</code> جزء من الإغلاق الصحيح؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>onModuleDestroy</code> أول خطوة إنهاء، بلا اسم إشارة، ومن الجذر نحو الأوراق. أغلق فيه ما فتحته، واترك إغلاق المقابس للإطار بعد الخطاف التالي.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>BeforeApplicationShutdown</code>: ماذا تستطيع أن تفعل والإشارة معروفة والاتصالات ما زالت قائمة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

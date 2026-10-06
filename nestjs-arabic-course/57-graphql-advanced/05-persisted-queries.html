@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Persisted Queries</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-persisted-queries.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Persisted Queries</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قبول تنفيذ استعلام كتب في رف فقط إذا كان نصه مسجّلًا مسبقًا لدى الخادم، أو إذا جاء بمعرّف تعرفه، بدل فتح باب أي مستند تحت سقف التعقيد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الحدود ترفض الأسوأ وما زال الباب مفتوحًا لنص جديد كل دقيقة: استكشاف الحقول، أو عميل يخزّن استعلامًا ثقيلًا تحت السقف بقليل. فريق الواجهة أصلًا يعرف الاستعلامات التي تبني الشاشات. الخادم يمكنه تنفيذ هذه القائمة وإغلاق الباقي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عند البناء، تُحسب بصمة لكل استعلام واجهة ويُحفظ النص على الخادم. في التشغيل يرسل العميل البصمة (وأحيانًا النص مرة أولى في النمط التلقائي). الخادم ينفّذ النص الذي يعرفه. النص المجهول يُرفض. هذه آلية Apollo ومنصات GraphQL، تُركَّب مع الخادم. ليست <code>@PersistedQuery()</code> من <code>@nestjs/common</code>.</p>
+<h2>التعريف التقني</h2>
+<p>نمطان شائعان. Automatic Persisted Queries: العميل يرسل SHA-256 للنص؛ إن لم يعرفه الخادم يطلب النص ثم يخزّنه. هذا يقلل حجم النقل ولا يغلق الباب، لأن أي عميل يستطيع التسجيل بإرسال النص. القائمة المغلقة (safelist) تناسب رف العام: الخادم يملك خريطة <code>hash → document</code> بُنيت من ملفات الواجهة، ويرفض التجزئة الغائبة. التوصيل يتم في إعداد Apollo (إضافة persisted queries أو مخزن تعرفه عملية Nest)، لا في Resolver الكتاب. DataLoader والتعقيد والعمق تبقى للحماية داخل الاستعلامات المسموحة إن بقيت القائمة واسعة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">بناء الواجهة → hash لاستعلام شاشة الكتب
+تشغيل: { extensions: { persistedQuery: { sha256Hash } } }
+الخادم يجد النص أو يعيد خطأ
+لا نص حر في الإنتاج
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { createHash } from &#39;node:crypto&#39;;
+
+export function queryId(document: string) {
+  return createHash(&#39;sha256&#39;).update(document).digest(&#39;hex&#39;);
+}
+
+export const allowed = new Map&lt;string, string&gt;();
+
+export function register(document: string) {
+  allowed.set(queryId(document), document);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المفتاح تجزئة النص الكامل بما فيه الفراغات التي ثبّتها المولّد. تغيير مسافة يغيّر المفتاح.</li>
+<li><code>register</code> يعمل وقت البناء أو الإقلاع من ملف ولّدته الواجهة، لا من طلب الإنتاج.</li>
+<li>التنفيذ لاحقًا يبحث في <code>allowed</code> قبل <code>execute</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>طلب الإنتاج يحمل التجزئة في امتداد Apollo المعتاد أو في حقل اتفقتم عليه.</li>
+<li>طبقة قبل الـ Resolver تبحث في الخريطة.</li>
+<li>الغياب: خطأ واضح ولا تنفيذ. لا تمرر النص الحر «مؤقتًا» في الإنتاج.</li>
+<li>الوجود: يُستبدل المعرّف بالنص المحفوظ ويُكمل التحقق (عمق، تعقيد) ثم الحل.</li>
+<li>النمط التلقائي الذي يخزّن أي نص عند أول مقابلة لا يحقق هذا الدرس. هو تحسين نقل.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function resolvePersisted(hash: string, documents: Map&lt;string, string&gt;) {
+  const document = documents.get(hash);
+  if (!document) {
+    return { ok: false as const, error: &#39;Persisted query not found&#39; };
+  }
+  return { ok: true as const, document };
+}
+</code></pre>
+<p>اختبار: سجّل <code>query Shelf { books { title } }</code> وتوقع <code>ok</code>. أرسل تجزئة عشوائية وتوقع الرسالة. لا تضع هذه الدالة داخل <code>@Query</code> الكتب؛ هي بوابة الخادم. إن ربطتها بإضافة Apollo، الإضافة هي التي تستدعي المخزن الذي تملؤه <code>register</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تفعيل APQ التلقائي وظن الباب أُغلق.</li>
+<li>حساب التجزئة على خادم يختلف في المسافات عن مولّد الواجهة فتفشل الاستعلامات الشرعية.</li>
+<li>نسيان أن المتغيرات (<code>variables</code>) تبقى حرة حتى داخل نص ثابت: <code>limit</code> ما زال يحتاج حدًا وتعقيدًا.</li>
+<li>اعتبار القائمة المغلقة بديلًا عن صلاحيات الحقول. النص المسموح قد يطلب حقل مدير.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>واجهة أولى تبني استعلاماتها وقت البناء، وAPI عام لا تريد له مستندًا حرًا في الإنتاج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>أثناء بناء المخطط محليًا حيث GraphiQL يحتاج نصًا حرًا. عطّل الإغلاق في التطوير. ولا كآلية تخزين مؤقت لنتيجة الكتب؛ هو تخزين لنص الاستعلام.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>النمط</th>
+<th>أي نص يُنفَّذ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>باب مفتوح + تعقيد</td>
+<td>أي مستند تحت السقف</td>
+</tr>
+<tr>
+<td>APQ تلقائي</td>
+<td>أي نص بعد إرساله مرة</td>
+</tr>
+<tr>
+<td>قائمة مغلقة</td>
+<td>ما سجّله البناء فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الذي يرسله العميل في الإنتاج المغلق: النص أم التجزئة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التجزئة. النص يعيش في خريطة الخادم التي بناها إصدار الواجهة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المتغيرات تبقى خطرًا داخل استعلام محفوظ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النص الثابت قد يعلن <code>books(limit: $n)</code>. العميل يضع <code>n = 10000</code>. احفظ الاستعلام وقيّد المتغير في التحقق والتعقيد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فرّق APQ التلقائي عن قائمة رف المغلقة في جملة تشغيل.</p>
+<details>
+<summary>الحل</summary>
+
+<p>التلقائي يخزّن النص عندما يراه أول مرة فيقبل عميلًا جديدًا لم يمر بالبناء. المغلقة لا تكتب في الخريطة من الطلب، وترفض التجزئة الغائبة. الأول توفير بايتات، والثاني قيد تنفيذ.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تُسجَّل الاستعلامات: من الطلب أم من البناء؟</li>
+<li>لماذا اختلاف المسافات يكسر التجزئة؟</li>
+<li>هل هذا ديكور في <code>@nestjs/graphql</code>؟</li>
+<li>ماذا يبقى مطلوبًا للمتغيرات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاستعلامات المحفوظة في الإنتاج المغلق خريطة من تجزئة إلى نص ولّدها البناء. الطلب الحر لا يُنفَّذ. APQ التلقائي لا يغلق الباب. الآلية إضافة على Apollo لا ديكور Nest واحد.</p>
+<h2>ماذا بعد؟</h2>
+<p>مخطط رف ما زال في عملية واحدة. الدرس التالي يشرح Federation عندما يملك فريق آخر جزءًا من النوع نفسه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Apollo — Persisted queries: <a href="https://www.apollographql.com/docs/apollo-server/performance/apq">https://www.apollographql.com/docs/apollo-server/performance/apq</a></li>
+<li>NestJS — GraphQL quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

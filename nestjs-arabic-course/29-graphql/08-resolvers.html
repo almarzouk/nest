@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Resolver و @Query و @Mutation و @Args</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-resolvers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Resolver و @Query و @Mutation و @Args</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط حقول الجذر بدوال صنف: المحلل مكان المتحكم في GraphQL، والحجة تصل عبر <code>@Args</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المخطط المولَّد بلا دوال يعرّف الحقول ولا يجلب كتابًا. وضع الجلب داخل <code>BooksController</code> ثم استدعاؤه من عميل GraphQL من الشبكة يضاعف الدخول. المحلل يستدعي الخدمة نفسها التي قد يستدعيها REST، ويبقى هو باب العملية.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Resolver()</code> على الصنف. <code>@Query()</code> على قراءة و <code>@Mutation()</code> على كتابة. <code>@Args(&#39;id&#39;)</code> يقرأ حجة بالاسم. الصنف مزوّد في <code>providers</code>، لا في <code>controllers</code>. الخدمة تُحقن في الباني كالمعتاد.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Args, ID, Mutation, Query, Resolver } from &#39;@nestjs/graphql&#39;;
+import { Book } from &#39;./book.model.js&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+import { CreateBookInput } from &#39;./create-book.input.js&#39;;
+
+@Resolver(() =&gt; Book)
+export class BooksResolver {
+  constructor(private readonly books: BooksService) {}
+
+  @Query(() =&gt; Book, { nullable: true })
+  book(@Args(&#39;id&#39;, { type: () =&gt; ID }) id: string) {
+    return this.books.findById(id);
+  }
+
+  @Mutation(() =&gt; Book)
+  createBook(@Args(&#39;input&#39;) input: CreateBookInput) {
+    return this.books.create(input);
+  }
+}
+</code></pre>
+<p><code>() =&gt; Book</code> دالة حتى لا تنكسر الأنواع عند الترتيب الدائري. <code>nullable: true</code> يطابق مخططًا يعيد <code>Book</code> بلا <code>!</code>. من غيرها قد يعلن التوليد حقلًا مطلوبًا ثم تعيد الخدمة <code>null</code>.</p>
+<p><code>@Args(&#39;input&#39;)</code> اسم الحجة في SDL. يمكن تمرير كائن خيارات للحجة، ومنها <code>type</code> عندما لا يكفي انعكاس TypeScript، كما مع <code>ID</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">query { book(id: &quot;42&quot;) { title } }
+  BooksResolver.book(&quot;42&quot;)
+    BooksService.findById
+      Book
+        حقل title من الكائن إن لم يوجد @ResolveField
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>تسجيل المحلل في الوحدة مع code-first:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { BooksResolver } from &#39;./books.resolver.js&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+@Module({
+  providers: [BooksResolver, BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<p><code>BooksModule</code> مستوردة من الجذر الذي فيه <code>autoSchemaFile</code>. بعد الإقلاع يحوي <code>schema.gql</code> الحقلين <code>book</code> و <code>createBook</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>@Resolver(() =&gt; Book)</code> يعلن أن هذا الصنف يتحدث عن نوع <code>Book</code>. الاستعلامات على الجذر ما زالت <code>@Query</code>. الدالة <code>book</code> اسمها في الصنف هو اسم الحقل ما لم تغيّره بالخيار <code>name</code>. أبقِ الاسم مطابقًا حتى يسهل إيجاد الدالة من SDL.</p>
+<p>الخدمة تعيد كائنًا فيه <code>id</code> و <code>title</code> على الأقل. المحلل لا ينسق JSON. Apollo يختار الحقول التي طلبها العميل من قيمة الإرجاع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest تسجل الدوال المزينة كمحللات حقول الجذر. عند التنفيذ تُبنى الحجج من المتغيرات وتُمرر إلى المعاملات. إن رمى المحلل استثناء HTTP من Nest، الطبقة تحوّله إلى خطأ GraphQL. <code>null</code> من <code>findById</code> مع <code>nullable: true</code> يصبح <code>data.book: null</code> بلا استثناء. اختر واحدًا من الأسلوبين وثبّته: الغياب <code>null</code> أو الغياب خطأ. لا تخلطهما بين <code>book</code> و <code>author</code>.</p>
+<h2>مثال عملي</h2>
+<p>قائمة بلا حجج، ثم حجة اختيارية للتصفية في درس الأنواع:</p>
+<pre><code class="language-ts">@Query(() =&gt; [Book])
+books() {
+  return this.books.findAll();
+}
+</code></pre>
+<p><code>[Book]</code> في الزينة يولّد قائمة. اضبط <code>nullable</code> على العناصر إن كان مخططك <code>[Book!]!</code> يحتاج ذلك عبر خيارات النوع. إن أعادت الخدمة <code>null</code> داخل المصفوفة والمخطط يمنعها، يفشل التنفيذ. أعد مصفوفة فارغة لا <code>null</code> عندما لا توجد كتب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع المحلل في <code>controllers</code>.</li>
+<li><code>@Args(&#39;bookId&#39;)</code> بينما العملية ترسل <code>id</code>.</li>
+<li>إرجاع كيان Prisma وفيه حقول لا توجد على <code>@ObjectType</code>، فيتسرّب شكل القاعدة إن سُلسل الحقل بالخطأ لاحقًا.</li>
+<li>رمي <code>NotFoundException</code> تارة و <code>null</code> تارة للحقل نفسه.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل حقل جذر في كتالوج الكتب: قراءة في <code>@Query</code> وكتابة في <code>@Mutation</code>، والجسم في الخدمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحقل كائن ابن مثل <code>author</code> على <code>Book</code> عندما يحتاج جلبًا خاصًا. ذلك <code>@ResolveField</code> في درس العلاقات، لا <code>@Query</code> جديد لكل علاقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>REST</th>
+<th>GraphQL في Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Controller(&#39;books&#39;)</code></td>
+<td><code>@Resolver(() =&gt; Book)</code></td>
+</tr>
+<tr>
+<td><code>@Get(&#39;:id&#39;)</code></td>
+<td><code>@Query</code> مع <code>@Args(&#39;id&#39;)</code></td>
+</tr>
+<tr>
+<td><code>@Post()</code> و DTO</td>
+<td><code>@Mutation</code> و <code>@Args(&#39;input&#39;)</code></td>
+</tr>
+<tr>
+<td><code>providers</code> للخدمة فقط</td>
+<td>المحلل والخدمة في <code>providers</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في أي مصفوفة بالوحدة يُذكر <code>BooksResolver</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>providers</code>، لا في <code>controllers</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يطابق <code>{ nullable: true }</code> في SDL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حقلًا بلا <code>!</code>، فيجوز أن تعيد الدالة <code>null</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تُكتب <code>() =&gt; Book</code> لا <code>Book</code> مباشرة في بعض المشاريع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الدالة تؤخر قراءة الصنف حتى يكتمل التحميل، وهذا يلزم عندما تشير الأنواع بعضها إلى بعض.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي زينة للجذر وأي زينة للحجة؟</li>
+<li>من يختار حقول JSON النهائية؟</li>
+<li>أين تعيش قاعدة «الكتاب غير موجود»؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المحلل مزوّد يربط <code>@Query</code> و <code>@Mutation</code> بالخدمة. <code>@Args</code> يسمي الحجة كما في المخطط. الغياب سياسة واحدة للحقل.</p>
+<h2>ماذا بعد؟</h2>
+<p>شكل <code>Book</code> و <code>CreateBookInput</code> كأصناف مزينة، وهي التي يولّد منها <code>autoSchemaFile</code> الأنواع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Resolvers: <a href="https://docs.nestjs.com/graphql/resolvers">https://docs.nestjs.com/graphql/resolvers</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

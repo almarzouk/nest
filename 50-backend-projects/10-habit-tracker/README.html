@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>10 — متتبع عادات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>10 — متتبع عادات</h1>
+<p><strong>المستوى:</strong> مبتدئ<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new habit-tracker</code></p>
+<h2>ماذا تبني</h2>
+<p>عادة تتكرر كل يوم. تسجيل اليوم مرتين لنفس العادة مرفوض. سلسلة الأيام تُحسب على الخادم.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>تختم المرحلة الأولى بقاعدة تمنع التكرار الزمني، لا بتكرار شكل الملاحظات.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>مفتاح مركب عادة+يوم</li>
+<li>409</li>
+<li>حساب سلسلة من غير ثقة بالعميل</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>إشعارات</li>
+<li>مناطق زمنية متعددة</li>
+<li>حسابات</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>دفتر المصروفات.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/06-providers/README.html">06-providers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>اليوم YYYY-MM-DD يرسله العميل، والخادم لا يصدّق سلسلة streak في الجسم.</li>
+<li>تسجيل نفس اليوم مرتين 409.</li>
+<li>الحذف للتسجيل يُعاد به حساب السلسلة.</li>
+<li>السلسلة أيام متتالية تنتهي بآخر يوم مسجّل لا باليوم الحالي إن نسي المستخدم.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/habits</code></td>
+<td>201</td>
+<td>ينشئ عادة</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/habits/:id/check-ins</code></td>
+<td>201</td>
+<td>يسجّل يومًا</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/habits/:id</code></td>
+<td>200</td>
+<td>العادة مع streak المحسوب</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new habit-tracker</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>مفتاح التفرد habitId+day.</li>
+<li>دالة streak تمشي الأيام للخلف من آخر تسجيل.</li>
+<li>ارفض تاريخًا مستقبليًا.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/habits/streak.ts
+src/habits/habits.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">export function streakEndingAt(days: string[], last: string) {
+  const set = new Set(days);
+  let count = 0;
+  const cursor = new Date(last + &quot;T00:00:00Z&quot;);
+  while (set.has(cursor.toISOString().slice(0, 10))) {
+    count += 1;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return count;
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>قبول streak من العميل.</li>
+<li>مقارنة التواريخ بتوقيت محلي يتغير مع السيرفر.</li>
+<li>201 عند تكرار اليوم.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>اليوم المكرر 409.</li>
+<li>ثلاثة أيام متتالية تعطي streak يساوي 3.</li>
+<li>انقطاع يوم يصفر ما بعده فقط.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف GET /habits يعرض كل العادات مع سلسلتها.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 10» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../09-expense-ledger/README.html">9. دفتر مصروفات</a></li>
+<li>التالي: <a href="../11-article-blog/README.html">11. مقالات بتحقق</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

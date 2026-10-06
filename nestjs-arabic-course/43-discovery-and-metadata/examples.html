@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>علم عام يغلب على الدالة</h2>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const IS_PUBLIC_KEY = &#39;isPublic&#39;;
+export const Public = () =&gt; SetMetadata(IS_PUBLIC_KEY, true);
+</code></pre>
+<pre><code class="language-ts">const isPublic = this.reflector.getAllAndOverride&lt;boolean&gt;(IS_PUBLIC_KEY, [
+  context.getHandler(),
+  context.getClass(),
+]);
+</code></pre>
+<p>الدالة أولًا. <code>@Public()</code> على <code>GET /health</code> يسمح حتى لو بقي المتحكم بلا العلم. غياب المفتاح يعني أن الحارس يكمل فحص الجلسة.</p>
+<h2>أدوار تُستبدل لا تُدمج</h2>
+<pre><code class="language-ts">@Controller(&#39;invoices&#39;)
+@Roles(&#39;staff&#39;)
+export class InvoicesController {
+  @Post()
+  @Roles(&#39;payroll&#39;)
+  create(): { ok: true } {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p>مع <code>getAllAndOverride</code> يرى <code>POST</code> قائمة <code>payroll</code> فقط. مع <code>getAllAndMerge</code> يرى القائمتين. اختر قاعدة واحدة في الحارس.</p>
+<h2>ماسح أعلام عند الإقلاع</h2>
+<pre><code class="language-ts">const tagged = this.discovery.getProviders({
+  metadataKey: FeatureFlag.KEY,
+});
+</code></pre>
+<p><code>FlagsModule</code> يستورد <code>DiscoveryModule</code>. المسح في <code>onApplicationBootstrap</code> بعد اكتمال الرسم. لا تستدعِ المسح من داخل <code>GET</code>.</p>
+<h2>فاعل حسب القناة</h2>
+<pre><code class="language-ts">if (context.getType() === &#39;rpc&#39;) {
+  return context.switchToRpc().getData&lt;{ userId?: string }&gt;().userId;
+}
+return context.switchToHttp().getRequest&lt;{ user?: { id: string } }&gt;().user?.id;
+</code></pre>
+<p>الخدمة تستقبل <code>string</code> الناتج، لا السياق.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>مفتاح المزخرف يطابق مفتاح <code>Reflector</code>.</li>
+<li><code>APP_GUARD</code> أو <code>@UseGuards</code> موجود فعلًا وإلا فاللصق لا يمنع أحدًا.</li>
+<li><code>DiscoveryModule</code> في <code>imports</code> قبل حقن الماسح.</li>
+<li>حارس التطبيق الهجين يفرع على <code>getType()</code> قبل <code>switchToHttp</code>.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

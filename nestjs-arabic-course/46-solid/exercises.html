@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>أي مبدأ يخرقه مزيف <code>find</code> يرمي بينما Prisma يعيد <code>null</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Liskov Substitution. البديل لا يقف مكان الأصل أمام المستدعي الذي يفحص <code>null</code>.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>التقرير والقناة الإدارية يحقنان <code>Store</code> فيها قراءة وكتابة وبريد. ماذا تقسم، وكيف تبقى نسخة Prisma واحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>واجهتا <code>BooksRead</code> و <code>BooksWrite</code> ورمز لكل منهما. <code>useExisting</code> نحو صنف واحد. التقرير لا يحقن الكتابة ولا البريد. البريد عقد ثالث إن كان مستهلكه مختلفًا.</p>
+</details>
+
+<h2>متقدم</h2>
+<p><code>CheckoutService</code> فيها <code>switch</code> لثلاث قنوات وتستورد <code>PrismaClient</code>. طبّق مبدأين معًا بما يغيّر الملفات.</p>
+<details>
+<summary>الحل</summary>
+
+<p>Open/Closed: عقد <code>Payment</code> وقائمة مزودات. Dependency Inversion: <code>OrdersPort</code> بجانب السياسة ومحول Prisma في <code>useClass</code> أو <code>useExisting</code>. المتحكم يبقى على <code>place</code> بلا SQL ولا فروع قنوات.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

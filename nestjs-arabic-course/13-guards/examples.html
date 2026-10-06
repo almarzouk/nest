@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>بوابتان على شباك التذاكر، ثم مسار صحة يبقى خارجهما. الترويسة التعليمية <code>x-desk-name</code> ليست رمز إنتاج.</p>
+<h2>مثال 1 — هوية تلصق اسم الشباك</h2>
+<pre><code class="language-ts">import {
+  type CanActivate,
+  type ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from &#39;@nestjs/common&#39;;
+
+type DeskRequest = {
+  headers: Record&lt;string, string | undefined&gt;;
+  user?: { name: string };
+};
+
+@Injectable()
+export class IdentifyDeskGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest&lt;DeskRequest&gt;();
+    const name = request.headers[&#39;x-desk-name&#39;];
+    if (!name) {
+      throw new UnauthorizedException();
+    }
+    request.user = { name };
+    return true;
+  }
+}
+</code></pre>
+<p>غياب الترويسة <code>401</code>. وجودها أي نص غير فارغ <code>true</code> مع <code>request.user</code>.</p>
+<h2>مثال 2 — منع الاسترداد لغير <code>lead</code></h2>
+<pre><code class="language-ts">@Injectable()
+export class RefundGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    const request = context.switchToHttp().getRequest&lt;DeskRequest&gt;();
+    return request.user?.name === &#39;lead&#39;;
+  }
+}
+</code></pre>
+<p><code>false</code> يصبح <code>403</code>. الحارس لا يرمي <code>401</code> لأن الغياب عولج قبله. إن استُدعي وحده بلا هوية، <code>user</code> فارغ والناتج <code>403</code> أيضًا، لذلك الترتيب في المثال 3 يضع الهوية أولًا.</p>
+<h2>مثال 3 — الربط على المتحكم لا على التطبيق</h2>
+<pre><code class="language-ts">@Controller(&#39;tickets&#39;)
+@UseGuards(IdentifyDeskGuard)
+export class TicketsController {
+  @Get()
+  list(): { ok: true } {
+    return { ok: true };
+  }
+
+  @Post(&#39;refund&#39;)
+  @UseGuards(RefundGuard)
+  refund(): { ok: true } {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p><code>GET /health</code> على متحكم آخر بلا هذه الزينة يبقى مفتوحًا. <code>POST /tickets/refund</code> يعمل <code>IdentifyDeskGuard</code> ثم <code>RefundGuard</code>. الاسم <code>lead</code> يكمل إلى الأنبوب. اسم <code>guest</code> يرجع <code>403</code> قبل فحص جسم الاسترداد.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>APP_GUARD</code> في هذه الأمثلة حتى لا تُغلق الصحة.</li>
+<li>الهوية تُكتب يسار أي حارس يقرأ <code>user</code>، أو على الصنف قبله.</li>
+<li><code>seat</code> لا يُفحص داخل الحارسين.</li>
+<li>فشل الحارس لا يُلتقط بـ <code>try/catch</code> في الدالة.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

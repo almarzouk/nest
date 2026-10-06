@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>من أين تبدأ <code>page</code>؟</li>
+<li>ماذا تعيد قائمة بلا صفوف؟</li>
+<li>أي مزخرف يحصر مفاتيح الفرز؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>من <code>1</code>.</li>
+<li><code>200</code> مع <code>items</code> فارغة.</li>
+<li><code>@IsIn</code> على قائمة ثابتة.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>كيف يُحسب <code>skip</code>؟</li>
+<li>لماذا <code>&quot;false&quot;</code> خطر مع التحويل الضمني؟</li>
+<li>أي فهرس لتعليقات مقال مرتبة بـ <code>id</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>(page - 1) * pageSize</code>.</li>
+<li>النص غير الفارغ يصبح <code>true</code> مع <code>Boolean</code> أو التحويل الساذج.</li>
+<li><code>@@index([postId, id])</code>.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>خيط تعليقات بعشرات الآلاف، ولوحة مقالات تريد أرقام صفحات على المنشور فقط. العميل يطلب <code>sort=title</code> مع <code>cursor</code> قديم بُني على <code>id</code>، و <code>authorId</code> لمستخدم آخر.</p>
+<ol>
+<li>أي عقد لكل مسار؟</li>
+<li>لماذا يُرفض المؤشر أو يُصفَّر عند تغيير الفرز؟</li>
+<li>أين يُفرض نطاق المؤلف؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>إزاحة <code>PageQueryDto</code> للوحة، ومؤشر بلا <code>page</code> للخيط، وفهرس يطابق كل عقد.</li>
+<li>المؤشر موضع في ترتيب معيّن. مفاتيحه يجب أن تطابق <code>orderBy</code> الحالي.</li>
+<li>في <code>visibility</code> من الجلسة والسياسة قبل دمج مرشح الاستعلام. المعامل لا يوسّع الملكية.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

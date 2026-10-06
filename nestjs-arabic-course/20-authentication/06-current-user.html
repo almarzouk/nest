@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>قراءة المستخدم الحالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-current-user.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>قراءة المستخدم الحالي</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الشخص الذي ثبّته مزوّد المصادقة داخل المتحكم أو الخدمة، وربط <code>POST /posts</code> به.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد الحارس ما زال المتحكم يطلب <code>authorId</code> من JSON. تمرير <code>req.user</code> عبر كل دالة يلوّث التواقيع ويكسر الاختبار. نسيان معامل في مسار جديد يكتب المقال باسم يأتي من العميل.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@CurrentUser()</code> يحقن ما رجعه <code>validate</code>. <code>@CurrentUser(&quot;id&quot;)</code> يحقن خاصية واحدة. الخدمة التي لا تريد معاملًا تقرأ <code>AuthenticationContext</code>. المنشور يُنشأ لصاحب السياق، والجسم يبقى عنوانًا ونصًا.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة المصادقة:</p>
+<pre><code class="language-ts">import { Controller, Get } from &quot;@nestjs/common&quot;;
+import { CurrentUser } from &quot;@nestjs/authentication&quot;;
+
+@Controller(&quot;me&quot;)
+export class MeController {
+  @Get()
+  me(@CurrentUser() user: User) {
+    return user;
+  }
+}
+</code></pre>
+<p><code>@CurrentUser(&quot;id&quot;)</code> للخاصية. <code>@CurrentSession()</code> لسجل الجلسة عند مزوّد الكعكة. توسيع النوع اختياري عبر <code>declare module &quot;@nestjs/authentication&quot;</code> وواجهة <code>AuthenticationTypes</code> حتى يقبل <code>@CurrentUser(&quot;key&quot;)</code> مفاتيح <code>User</code> فقط. التوسعة لا تغيّر وسم المعامل نفسه: تكتب <code>user: User</code> بيدك. نوع واحد للتطبيق كله.</p>
+<p><code>AuthenticationContext</code> للخدمة. مثال الصفحة: الطلبات تقرأ العميل من السياق حتى لا يمرّر المتحكم المستخدم في كل نداء. إن كان المسار <code>@Public()</code> والسياق فارغًا، لا تستخدم الحقل كأنه شخص.</p>
+<p><code>@Authenticate({ optional: true })</code> للمسار الذي يعمل لضيف ومستخدم، مثل كتالوج يرى مسودات للموظف فقط لاحقًا في التفويض.</p>
+<p>على <code>CreatePostDto</code> احذف <code>authorId</code> بعد هذه الخطوة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حارس -&gt; validate رجعت User
+        |
+ @CurrentUser() في المتحكم
+ AuthenticationContext في الخدمة
+        |
+ PostsService.create(title, body) تقرأ id من السياق
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Body, Controller, Post } from &quot;@nestjs/common&quot;;
+import { CurrentUser } from &quot;@nestjs/authentication&quot;;
+import { CreatePostDto } from &quot;./create-post.dto.js&quot;;
+import { PostsService } from &quot;./posts.service.js&quot;;
+import type { PublicUser } from &quot;../users/public-user.js&quot;;
+
+@Controller(&quot;posts&quot;)
+export class PostsController {
+  constructor(private readonly posts: PostsService) {}
+
+  @Post()
+  create(@CurrentUser() user: PublicUser, @Body() dto: CreatePostDto) {
+    return this.posts.create(user.id, dto);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>CreatePostDto</code> فيه <code>title</code> و <code>body</code> فقط. المعرّف وسيط ثانٍ من نوع هويتك، نص أو عدد حسب الجدول. اختبار المتحكم يمرّر مستخدمًا مزيفًا عبر طبقة HTTP التي تضع الدليل، أو يختبر الخدمة بتمرير <code>id</code> مباشرة إن فصلت الدالة عن السياق.</p>
+<p>إن استخدمت السياق داخل الخدمة، اختبار الوحدة يحتاج أن يملأ السياق بالطريقة التي تعرضها الحزمة، وإلا فالتوقيع الصريح <code>create(authorId, dto)</code> أسهل في الاختبار والمعنى واحد: المؤلف لا يأتي من DTO.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المزوّد وضع المستخدم على الطلب بعد نجاح الدليل. المزخرف يقرأ تلك القيمة عند استدعاء المعالج. إن وصلت إلى معالج غير عام بلا مستخدم، الحارس سبق أن أوقف الطلب بـ <code>401</code>، فالمعامل في المسار المغلق موجود. على مسار عام، المعامل قد يكون فارغًا: لا تفترض <code>user.id</code> من غير فحص.</p>
+<p><code>select</code> في Prisma ما زال يمنع <code>passwordHash</code>. <code>@CurrentUser()</code> يجب أن يكون الشخص العام الذي رجعه <code>validate</code>، لا صف القاعدة الكامل. إن أعاد <code>validate</code> الصف مع التجزئة، فـ <code>GET /me</code> يسرّبها. أصلح <code>validate</code> لا القالب فقط.</p>
+<h2>مثال عملي</h2>
+<p><code>GET /me</code> يعيد <code>{ id, email, name }</code> لمن حمل الكعكة. <code>POST /posts</code> بعنوان «جلسة» ينشئ صفًا بـ <code>authorId</code> نفسه. طلب ثانٍ يحاول إرسال <code>authorId</code> في JSON فيرفضه الأنبوب كحقل زائد. مستخدم آخر يدخل ويكتب مقالًا بمعرّفه هو. قائمة <code>GET /posts?authorId=</code> للتصفية ما زالت استعلام قراءة، وتختلف عن حقل الإنشاء: التصفية تسأل «مقالات من؟» والإنشاء يقرر «باسم من».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرجاع صف Prisma كامل من <code>validate</code>.</li>
+<li>الإبقاء على <code>authorId</code> في DTO «للتوافق» من غير تجاهله.</li>
+<li><code>@CurrentUser()</code> على مسار <code>@Public()</code> ثم الوصول إلى <code>id</code> بلا فحص.</li>
+<li>تمرير <code>request</code> إلى <code>PostsService</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل كتابة يجب أن تُنسب إلى الشخص الذي أثبت الحارس هويته.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في سكربت داخلي بلا طلب HTTP. هناك المعرّف معامل صريح من موجّه المهمة، لا مزخرف طلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>authorId</code> في الجسم</th>
+<th><code>@CurrentUser()</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يختاره العميل</td>
+<td>يثبته المزوّد</td>
+</tr>
+<tr>
+<td>مناسب قبل هذا الفصل</td>
+<td>مصدر الإنشاء بعد الدخول</td>
+</tr>
+<tr>
+<td>يُحذف من DTO الكتابة</td>
+<td>يبقى في استعلام التصفية إن لزم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحقن <code>@CurrentUser(&quot;id&quot;)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خاصية <code>id</code> من المستخدم الذي رجعه <code>validate</code>، لا الجسم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا فشل <code>GET /me</code> بتسريب التجزئة رغم <code>select</code> في <code>UsersService.findOne</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>validate</code> أعادت صفًا آخر فيه <code>passwordHash</code>. المزخرف يحقن ما رجعه المزوّد. ضيّق قيمة <code>validate</code> إلى الشخص العام.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مسار الكتالوج <code>@Public()</code> ويعرض زر «مسوداتي» إن وُجد مستخدم. أي أداة تقرأ الضيف والمستخدم من غير إجبار <code>401</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Authenticate({ optional: true })</code> ثم <code>@CurrentUser()</code> الذي قد يكون فارغًا، والخدمة تتفرع على الغياب. لا تضع المسار خلف الحارس العام ثم تستثنيه بالكامل فتفقد المستخدم إن وُجدت كعكة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يملأ قيمة <code>@CurrentUser()</code>؟</li>
+<li>لماذا حُذف <code>authorId</code> من إنشاء المقال؟</li>
+<li>أين تقرأ الخدمة الهوية إن لم يمرّرها المتحكم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المستخدم الحالي ناتج <code>validate</code>. المتحكم يقرأه بمزخرف، والكتابة تنسبه إليه. الجسم لم يعد يختار المؤلف.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./07-bearer-and-refresh-tokens.html">Bearer Tokens و Refresh Tokens</a> للجوال الذي لا يرسل كعكة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

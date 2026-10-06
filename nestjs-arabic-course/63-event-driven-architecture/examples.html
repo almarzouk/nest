@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>نشر كتاب في رف بثلاث طبقات لا تختلط.</p>
+<h2>المثال 1 — داخل النموذج</h2>
+<p>المعاملة تضع <code>published</code> وتدرج تدقيق <code>books.publish</code>. بعد الالتزام يُطلق <code>BookPublished</code> في الذاكرة لمستمع يحدّث عدادًا محليًا يجوز أن يضيع. لا شريك في هذا المستمع.</p>
+<h2>المثال 2 — خارج الحد</h2>
+<p><code>toIntegration</code> ينتج <code>book.published</code> بالإصدار <code>1</code> والمعرّف <code>evt_pub_b1</code>. الصف يُدرج في <code>outbox</code> داخل نفس معاملة المثال 1 إن كان الشريك واجب التبليغ. العامل لاحقًا يرسل الويب هوك بنفس المعرّف.</p>
+<h2>المثال 3 — ماذا يقرأ الموظف</h2>
+<p><code>GET /books/b1</code> من الجدول يرى <code>published</code> فور 200. <code>GET /search</code> قد يخلو من العنوان ثوانيًا. واجهة رف تقول إن البحث يلحق. لا تعيدوا حالة الكتاب من نتيجة البحث.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

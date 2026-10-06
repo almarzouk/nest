@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Metadata و Reflection</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="15-metadata-and-reflection.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Metadata و Reflection</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم كيف يبقى نوع <code>UsersService</code> مفيدًا بعد أن يمسح المترجم الأنواع، وكيف تجد Nest الوصف الذي لصقته Decorators.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>JavaScript الناتج لا يعرف أن معامل constructor كان <code>UsersService</code>. من غير معلومة إضافية، الحاوية ترى وسيطًا بلا نوع. كذلك <code>@Get(&#39;:id&#39;)</code> يحتاج مخزنًا يبقى على الدالة حتى الإقلاع.</p>
+<p>Reflection هنا يعني: سؤال الهدف عن وصف لُصق عليه سابقًا، لا قراءة أفكار البرنامج.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>Reflect.defineMetadata(key, value, target)</code> يخزن قيمة على هدف بمفتاح. <code>Reflect.getMetadata</code> يقرأها. <code>emitDecoratorMetadata</code> يجعل المترجم يخزن أنواع التصميم تلقائيًا بجانب الزينة. مكتبة <code>reflect-metadata</code> تعرّف <code>Reflect.metadata</code> وعمليات القراءة، وهي من الحزم الدنيا التي يسميها توثيق Nest.</p>
+<h2>التعريف التقني</h2>
+<p>Metadata بيانات مرتبطة بهدف (صنف، أو prototype دالة، أو معامل) بمفتاح. التصميم الذي يصدره TypeScript يستخدم مفاتيح مثل <code>design:paramtypes</code> لأنواع معاملات الدالة المزينة، و <code>design:type</code> لنوع الخاصية، و <code>design:returntype</code> لنوع الإرجاع.</p>
+<p>الإصدار يحدث فقط إذا:</p>
+<ol>
+<li><code>emitDecoratorMetadata</code> مفعّل.</li>
+<li>توجد Decorator واحدة على الأقل على الهدف (الصنف أو الدالة). بلا زينة لا تُصدر هذه المفاتيح للتصميم.</li>
+<li>تُحمَّل <code>reflect-metadata</code> مرة عند إقلاع العملية قبل إنشاء التطبيق. قالب Nest يفعل ذلك في المدخل.</li>
+</ol>
+<p>أنواع تُمسح أو تصير <code>Object</code> في هذه المفاتيح: الواجهات، والاتحادات، والـ generics الممحوة. لهذا الحقن يعتمد على أصناف ملموسة، والتحقق يعتمد على أصناف لا interfaces.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">constructor(private readonly usersService: UsersService)
+
+مع @Injectable على الصنف
+        |
+        v
+المترجم يضيف design:paramtypes = [UsersService]
+        |
+        v
+Nest عند الإقلاع: المعامل 0 مفتاحه UsersService
+        |
+        v
+الحاوية تبحث عن مزوّد سُجّل بهذا الصنف
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import &#39;reflect-metadata&#39;;
+
+const KEY = &#39;route:path&#39;;
+
+function Path(path: string): ClassDecorator {
+  return (target) =&gt; {
+    Reflect.defineMetadata(KEY, path, target);
+  };
+}
+
+@Path(&#39;/books&#39;)
+class BooksController {}
+
+const saved = Reflect.getMetadata(KEY, BooksController) as string;
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>import &#39;reflect-metadata&#39;</code> يجهّز <code>Reflect.defineMetadata</code>. من غيره تفشل الاستدعاءات أو لا توجد.</li>
+<li><code>KEY</code> مفتاح نتفق عليه. Nest تستخدم مفاتيحها داخل الحزم، لا مفتاحك هذا.</li>
+<li><code>Path</code> مصنع يعيد Decorator صنف.</li>
+<li>داخل الزينة، <code>target</code> هو <code>BooksController</code>.</li>
+<li><code>defineMetadata</code> يربط <code>&#39;/books&#39;</code> بالصنف تحت المفتاح.</li>
+<li><code>getMetadata</code> يعيد <code>&#39;/books&#39;</code> لاحقًا من أي مكان يملك الصنف والمفتاح.</li>
+<li><code>saved</code> نص المسار. لا يوجد خادم بعد. الوصف فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المكتبة تضع القيم في مخزن ضعيف مرتبط بالهدف حتى لا تبقى الكائنات حية بلا داعٍ فقط بسبب الوصف، حسب تصميم <code>reflect-metadata</code>. المهم لك: الوصف يعيش على الصنف بعد تحميل الملف، والإقلاع يمشيه.</p>
+<p>لحقن الاعتماديات يصدر المترجم ما يشبه:</p>
+<pre><code class="language-js">__metadata(&#39;design:paramtypes&#39;, [UsersService]);
+</code></pre>
+<p>بجانب زينة الصنف. <code>UsersService</code> هنا مرجع للدالة البناء، لا اسم نصي فقط. لذلك الصنف يجب أن يكون معرفًا كقيمة. <code>import type</code> يمسح المرجع، فينكسر الحقن أو البناء. استورد الخدمات استيراد قيمة:</p>
+<pre><code class="language-ts">import { UsersService } from &#39;./users.service.js&#39;;
+</code></pre>
+<p>لا:</p>
+<pre><code class="language-ts">import type { UsersService } from &#39;./users.service.js&#39;;
+</code></pre>
+<p><code>import type</code> صحيح للأنواع الممحوة التي لا تلمسها Nest وقت التشغيل، مثل Interface داخل ملف لا يُحقن.</p>
+<p>حدود Metadata التصميم:</p>
+<table>
+<thead>
+<tr>
+<th>المكتوب</th>
+<th>ماذا يرى design:paramtypes غالبًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صنف <code>UsersService</code></td>
+<td>الدالة <code>UsersService</code></td>
+</tr>
+<tr>
+<td><code>string</code> و <code>number</code> و <code>boolean</code></td>
+<td>الدوال المقابلة في اللغة</td>
+</tr>
+<tr>
+<td>Interface أو type alias لكائن</td>
+<td><code>Object</code></td>
+</tr>
+<tr>
+<td>اتحاد</td>
+<td><code>Object</code> أو ما تبقى بعد المحو</td>
+</tr>
+<tr>
+<td>Generic ممحو</td>
+<td>لا تفاصيل الحقول</td>
+</tr>
+</tbody></table>
+<p>لذلك <code>@Body() dto: CreateBookDto</code> يعمل مع صنف <code>CreateBookDto</code>، ولا يعمل الفحص إن كان <code>dto</code> واجهة. الحقن بالمعامل <code>usersService: UsersService</code> يعمل لأن <code>UsersService</code> صنف.</p>
+<p>Nest تخزن أيضًا Metadata خاصة بالمسار عبر زينتها، بمفاتيح داخل <code>@nestjs/common</code>. <code>Reflector</code> لاحقًا يقرأ مفاتيحًا تعلنها أنت مع <code>SetMetadata</code>. لا تستخدم مفاتيح داخلية غير موثّقة.</p>
+<p>SWC و Vitest في مشاريع Nest 12 يحتاجان مسارًا يصدر Metadata التصميم أيضًا. قالب CLI يضبط ذلك. إن بنيت بأداة تتجاهل الزينة، الإقلاع يفشل لأن الأنواع غير موجودة. هذا سبب ذكر التوثيق لـ SWC مع إعداد الإطار لا أي مترجم عشوائي.</p>
+<h2>مثال عملي</h2>
+<p>صنف خدمة بلا Decorator، ومتحكم يطلبها:</p>
+<pre><code class="language-ts">class UsersService {}
+
+@Controller()
+class UsersController {
+  constructor(private readonly usersService: UsersService) {}
+}
+</code></pre>
+<p><code>@Controller</code> يزين الصنف، فيمكن إصدار <code>design:paramtypes</code> للمتحكم لأن الزينة على الصنف. المعامل يُرى <code>UsersService</code>. لكن الخدمة نفسها إن لم تُسجَّل في <code>providers</code> فالحاوية لا تنشئها حتى لو عرفت النوع. Metadata تجيب &quot;ماذا تريد؟&quot;. التسجيل يجيب &quot;هل أملك واحدة؟&quot;. السؤالان معًا في فصلي Modules و DI.</p>
+<p><code>@Injectable()</code> على الخدمة مطلوب في الممارسة التي يوثّقها Nest حتى تُعامل كمزوّد قابل للحقن وتُصدر بياناتها إن كان لها اعتماديات. ستضعه دائمًا على الخدمات في هذه الدورة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>import &#39;reflect-metadata&#39;</code> في مدخل بنيناه يدويًا. قالب <code>nest new</code> يتضمنه.</li>
+<li><code>import type</code> لخدمة تُحقن.</li>
+<li>توقع Metadata لحقول Interface.</li>
+<li>إطفاء <code>emitDecoratorMetadata</code> ويبقى <code>experimentalDecorators</code>. الزينة قد تعمل والمسارات تُسجل إن خزنت الزينة مسارها بنفسها، بينما أنواع المعاملات تختفي فيفشل الحقن الصامت أو يرمي عند الإقلاع.</li>
+<li>قراءة Metadata عند كل طلب بحثًا عن مسار. المسارات تُبنى عند الإقلاع. القراءة المتكررة لكل طلب لها أماكن أخرى مثل <code>Reflector</code> داخل Guard، وهي رخيصة مقارنة بقاعدة البيانات، لكنها ليست بديلًا عن جدول المسارات.</li>
+</ul>
+<h2>متى نستخدم Reflection مباشرة؟</h2>
+<p>عندما تكتب Decorator خاصًا وتخزن مفتاحًا موثّقًا، ثم تقرأه بـ <code>Reflector</code> الذي تغلفه Nest. الفصل 16 في المسار (Custom Decorators) والدرس المتقدم Discovery. اليوم يكفي أن تعرف المخزن موجود.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتخزين حالة الطلب. Metadata على الصنف مشتركة بين كل الطلبات لأنها على القالب لا على الطلب. حالة الطلب تذهب مع كائن الطلب أو مع قيمة ترجعها الدالة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الآلية</th>
+<th>ماذا تبقي بعد الترجمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نوع عادي <code>: Book</code></td>
+<td>لا شيء</td>
+</tr>
+<tr>
+<td>Interface</td>
+<td>لا شيء</td>
+</tr>
+<tr>
+<td>Decorator كتبتها</td>
+<td>استدعاء دالة التخزين</td>
+</tr>
+<tr>
+<td><code>emitDecoratorMetadata</code></td>
+<td>مفاتيح <code>design:*</code> على الهدف المزين</td>
+</tr>
+<tr>
+<td>تسجيل <code>providers</code></td>
+<td>قرار الحاوية عند الإقلاع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعيد <code>getMetadata</code> في المثال إذا كان المفتاح <code>KEY</code> والقيمة <code>&#39;/books&#39;</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النص <code>&#39;/books&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا وجود <code>@Controller()</code> على الصنف يؤثر على قدرة المترجم على إصدار أنواع معاملات الـ constructor؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إصدار <code>design:paramtypes</code> مرتبط بوجود Decorator على الهدف. الزينة سبب لإصدار التصميم، لا مجرد تزيين شكلي. بلا أي زينة على الصنف قد لا تُصدر أنواع المعاملات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>معامل <code>config: AppConfig</code> و <code>AppConfig</code> واجهة. ماذا تتوقع أن تجد الحاوية في <code>design:paramtypes</code>، وهل يكفي ذلك لحقن صحيح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>غالبًا <code>Object</code> لا الواجهة، لأن الواجهة مُحيت. كل الواجهات تتشابه في هذه الخانة، فلا مفتاح فريد للحقن. الحل: صنف، أو رمز حقن <code>@Inject(TOKEN)</code> مع مزوّد مسجّل بذلك الرمز. الرموز درس Providers.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما دور حزمة <code>reflect-metadata</code>؟</li>
+<li>ما الشرطان الظاهران لإصدار <code>design:paramtypes</code>؟</li>
+<li>لماذا <code>import type</code> يكسر حقن خدمة؟</li>
+<li>أين تُخزَّن Metadata الصنف: على الطلب أم على القالب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Reflection مخزن وصف على الأصناف والدوال. Decorators تكتب فيه، و <code>emitDecoratorMetadata</code> يكتب أنواع التصميم للأصناف الملموسة، و Nest تقرأ ذلك عند الإقلاع لتربط المسارات والحقن. الواجهات لا تبقى. التسجيل في الوحدة ما زال مطلوبًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>ملف الأمثلة يجمع السطر الكامل كما سيبدو قبل إنشاء المشروع، ثم التمارين، ثم تثبيت Nest حيث ترى <code>tsconfig</code> الحقيقي.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — <code>emitDecoratorMetadata</code>: <a href="https://www.typescriptlang.org/tsconfig/emitDecoratorMetadata.html">https://www.typescriptlang.org/tsconfig/emitDecoratorMetadata.html</a></li>
+<li>حزمة <code>reflect-metadata</code>: <a href="https://github.com/rbuckton/reflect-metadata">https://github.com/rbuckton/reflect-metadata</a></li>
+<li>NestJS — Custom decorators: <a href="https://docs.nestjs.com/custom-decorators">https://docs.nestjs.com/custom-decorators</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — Validation (لا metadata للواجهات): <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

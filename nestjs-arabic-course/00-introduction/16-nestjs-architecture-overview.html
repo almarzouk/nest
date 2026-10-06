@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Architecture الخاصة بـ NestJS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="16-nestjs-architecture-overview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Architecture الخاصة بـ NestJS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رسم خريطة واحدة للتطبيق ولمسار الطلب، بالأسماء التي يستخدمها التوثيق، بحيث تعرف أين سيقع كل فصل لاحق.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>من غير خريطة، كل Decorator يبدو قاعدة عشوائية. الخريطة تجيب: في أي لحظة من حياة التطبيق نكون، ومن ينادي هذه القطعة، وماذا يجب ألا تعرفه.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تطبيق Nest شجرة وحدات تبدأ من Root Module. داخل الوحدة متحكمات تستقبل الطلبات ومزوّدات تنفّذ العمل. الطلب يمر بمحطات ثابتة قبل المتحكم وبعده. المنصة تحت ذلك Express ما لم تغيّرها.</p>
+<h2>التعريف التقني</h2>
+<p>من التوثيق:</p>
+<ul>
+<li><strong>Module</strong>: صنف معلّم بـ <code>@Module()</code>. الـ Decorator يعطي Metadata تنظم بها Nest هيكل التطبيق.</li>
+<li><strong>Root Module</strong>: الوحدة التي تمررها إلى <code>NestFactory.create</code>. منها يبدأ بناء <strong>application graph</strong>، وهو التركيب الداخلي الذي تحل به Nest العلاقات بين الوحدات والمزوّدات.</li>
+<li><strong>Controller</strong>: يستقبل الطلب ويعيد الرد. منطق العمل الثقيل ليس بيته.</li>
+<li><strong>Provider</strong>: قطعة تسجّلها الحاوية. <strong>Service</strong> نوع شائع من المزوّدات يضع فيه الفريق Business Logic. ليس كل Provider يسمى Service في اسم الصنف، لكن الخدمة مزوّد.</li>
+<li><strong>IoC container</strong>: الحاوية التي تنشئ المزوّدات وتحقنها. Inversion of Control يعني أن الإطار يملك الإنشاء.</li>
+<li><strong>Request lifecycle</strong>: التتابع الذي يعالج فيه التطبيق الطلب وينتج الرد.</li>
+</ul>
+<p>سنستخدم <code>@Module</code> و <code>@Controller</code> و <code>@Injectable</code> في المعاينة التالية. تفاصيل معاملاتها فصول <code>04</code> و <code>05</code> و <code>06</code>. إن بدت غامضة، اقرأها كعناوين صناديق لا كمرجع كتابة.</p>
+<h2>Mental Model</h2>
+<p>بناء التطبيق مرة عند الإقلاع:</p>
+<pre><code class="language-text">main.ts
+   |
+   v
+NestFactory.create(AppModule)
+   |
+   v
+Application graph
+   |
+   +-- AppModule
+         imports:  UsersModule, OrdersModule, ...
+         كل Module:
+            controllers  -&gt; مسارات HTTP
+            providers    -&gt; خدمات وغيرها
+            exports      -&gt; ما يسمح للغير بحقنه
+   |
+   v
+حاوية تنشئ المزوّدات (غالبًا Singleton)
+   |
+   v
+HTTP Adapter يربط المسارات على Express
+   |
+   v
+listen
+</code></pre>
+<p>طلب واحد بعد الإقلاع، بالترتيب الذي يلخصه توثيق Request Lifecycle:</p>
+<pre><code class="language-text">1  Incoming request
+2  Middleware
+     2.1  Middleware عام (مثل app.use)
+     2.2  Middleware مربوط بالوحدات
+3  Guards
+     3.1  Global
+     3.2  Controller
+     3.3  Route
+4  Interceptors قبل المتحكم
+     4.1 Global ثم 4.2 Controller ثم 4.3 Route
+5  Pipes
+     5.1 Global
+     5.2 Controller
+     5.3 Route
+     5.4 Route parameter pipes
+6  Controller (دالة المسار)
+7  Service إن وُجدت واستُدعيت
+8  Interceptors بعد المتحكم
+     من Route رجوعًا إلى Controller ثم Global
+9  Exception filters إن وُجد استثناء غير ممسوك
+     9.1 Route ثم 9.2 Controller ثم 9.3 Global
+10 Server response
+</code></pre>
+<p>احفظ اتجاهين فقط هذا الأسبوع:</p>
+<ul>
+<li>المحطات 2 إلى 5 من الأعم إلى الأخص غالبًا: Global ثم Controller ثم Route.</li>
+<li>الفلاتر عكس ذلك: تبحث من الأخص، Route أولًا. وإذا أمسك فلتر المسار الاستثناء، لا يراه الفلتر العام. الاستثناء الذي تمسكه أنت بـ <code>try/catch</code> لا يصل إلى الفلتر أصلًا.</li>
+</ul>
+<p>استثناء من Middleware يذكره التوثيق: الاستثناءات الخارجة من Middleware يصل إليها طبقة الاستثناءات، لكن <strong>الفلاتر العامة فقط</strong> تنطبق، لأن Middleware يعمل قبل اختيار معالج المسار.</p>
+<h2>أبسط مثال</h2>
+<p>هيكل الملفات الذي يولّده CLI، كما في First steps:</p>
+<pre><code class="language-text">src/
+  main.ts
+  app.module.ts
+  app.controller.ts
+  app.service.ts
+  app.controller.spec.ts
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>الملف</th>
+<th>وظيفته كما يصفها التوثيق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>main.ts</code></td>
+<td>نقطة الدخول. تستخدم <code>NestFactory</code> لإنشاء التطبيق</td>
+</tr>
+<tr>
+<td><code>app.module.ts</code></td>
+<td>الوحدة الجذر</td>
+</tr>
+<tr>
+<td><code>app.controller.ts</code></td>
+<td>متحكم بمسار أساسي</td>
+</tr>
+<tr>
+<td><code>app.service.ts</code></td>
+<td>خدمة بدالة أساسية</td>
+</tr>
+<tr>
+<td><code>app.controller.spec.ts</code></td>
+<td>اختبار وحدة للمتحكم</td>
+</tr>
+</tbody></table>
+<p>معاينة العلاقة، مبسطة عن قالب البداية. الوسوم ستُشرح لاحقًا:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { AppController } from &#39;./app.controller.js&#39;;
+import { AppService } from &#39;./app.service.js&#39;;
+
+@Module({
+  controllers: [AppController],
+  providers: [AppService],
+})
+export class AppModule {}
+</code></pre>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { AppService } from &#39;./app.service.js&#39;;
+
+@Controller()
+export class AppController {
+  constructor(private readonly appService: AppService) {}
+
+  @Get()
+  getHello(): string {
+    return this.appService.getHello();
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class AppService {
+  getHello(): string {
+    return &#39;Hello World!&#39;;
+  }
+}
+</code></pre>
+<p><code>main.ts</code> كما في التوثيق الحالي:</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p>عند التشغيل، <code>GET /</code> يعيد النص <code>Hello World!</code>. هذا سلوك قالب البداية الموصوف في First steps.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Module({ ... })</code> يصف الوحدة: المتحكمات التي تُنشأ، والمزوّدات التي تسجّلها الحاوية. لا يوجد <code>imports</code> لأن هذا التطبيق لا يسحب وحدة أخرى بعد.</li>
+<li><code>controllers: [AppController]</code> يسجّل المتحكم. من غير هذا السطر، وجود الملف على القرص لا ينشر مسارًا.</li>
+<li><code>providers: [AppService]</code> يسجّل الخدمة حتى يستطيع الحقن إيجادها.</li>
+<li><code>@Controller()</code> بلا نص يعني أن مسارات هذا الصنف تبدأ من جذر التطبيق. <code>@Controller(&#39;books&#39;)</code> سيسبق المسارات بـ <code>/books</code> لاحقًا.</li>
+<li><code>@Get()</code> يربط الدالة بطريقة <code>GET</code> على مسار المتحكم. المقابل في Express: <code>app.get(&#39;/&#39;, ...)</code>.</li>
+<li><code>constructor(private readonly appService: AppService)</code> يعلن الاعتماد. الحاوية تمرر الخدمة. <code>private readonly</code> تصنع خاصية للصنف. الشرح اللغوي في الفصل <code>01</code>.</li>
+<li><code>getHello()</code> في المتحكم لا تكتب <code>res.send</code>. تُرجع نصًا. Nest ترسل القيمة كاستجابة ناجحة: الرمز الافتراضي <code>200</code>، وطلبات <code>POST</code> تستخدم <code>201</code> ما لم تضع <code>@HttpCode</code>. هذا Standard response handling، ويقابله في Express استدعاؤك الصريح لـ <code>res</code>. فصل Controllers يفصله مع الحالة التي تحقن فيها <code>@Res()</code>.</li>
+<li>المتحكم لا يركّب النص بنفسه. ينادي الخدمة. حتى في مثال &quot;أهلًا&quot; يضع القالب العادة: HTTP في Controller، والعمل في Service.</li>
+<li><code>@Injectable()</code> يعلّم الخدمة كمزوّد تُقرأ بيانات حقنه.</li>
+<li><code>bootstrap</code> تبني الرسم ثم تستمع. <code>await bootstrap()</code> في أعلى الملف أسلوب ESM الذي يولّده القالب الحالي.</li>
+</ul>
+<p>Express المقابل للمسار فقط:</p>
+<pre><code class="language-ts">app.get(&#39;/&#39;, (req, res) =&gt; {
+  res.send(&#39;Hello World!&#39;);
+});
+</code></pre>
+<p>Nest فرقت التسجيل (<code>@Module</code>) عن المسار (<code>@Get</code>) عن النص (الخدمة). ثلاثة ملفات لسطر Express واحد، وهذا مقصود: العادة تُبنى والبرنامج صغير، حتى لا تُكتشف الحدود أول مرة عند الملف الضخم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>إقلاع هذا المثال:</p>
+<ol>
+<li>Node يحمّل <code>main.ts</code> بعد الترجمة.</li>
+<li>تحميل الأصناف يشغّل Decorators، فتُلصق Metadata على <code>AppModule</code> و <code>AppController</code> و <code>AppService</code>.</li>
+<li><code>NestFactory.create</code> يقرأ Metadata الوحدة الجذر.</li>
+<li>يسجّل <code>AppService</code> في الحاوية وينشئها. لا اعتماديات في بنائها، فالإنشاء مباشر.</li>
+<li>ينشئ <code>AppController</code> ويحقن النسخة نفسها من الخدمة.</li>
+<li>المحوّل يسجّل <code>GET /</code> نحو <code>getHello</code> على Express.</li>
+<li><code>listen</code> يفتح المنفذ.</li>
+</ol>
+<p>طلب <code>GET /</code>:</p>
+<ol>
+<li>Express يستقبل الاتصال، كما في دروس Express.</li>
+<li>لا Middleware إضافي في المثال، ولا Guard، ولا Pipe على معاملات. المحطات الفارغة لا تغيّر الرد.</li>
+<li>تُستدعى <code>getHello</code>.</li>
+<li>الدالة تنادي <code>appService.getHello()</code> على النسخة المحقونة.</li>
+<li>النص يرجع إلى Nest، فتكتبه على الرد بحالة نجاح.</li>
+<li>المتصفح يستقبل الجسم.</li>
+</ol>
+<p>لا قاعدة بيانات، ولا صلاحية، ولا JSON. الخريطة أهم من الميزات هنا.</p>
+<p>مصطلحات ستُعاد، بمعنى ضيق يكفي للخريطة:</p>
+<table>
+<thead>
+<tr>
+<th>المصطلح</th>
+<th>جملة واحدة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Application context</td>
+<td>التطبيق وهو يعمل، حتى من غير HTTP في بعض أشكال Standalone. هنا السياق يشمل خادم HTTP</td>
+</tr>
+<tr>
+<td>Dependency graph</td>
+<td>من يعتمد على من داخل الحاوية. في المثال: المتحكم يعتمد على الخدمة، والخدمة لا تعتمد على أحد</td>
+</tr>
+<tr>
+<td>Singleton</td>
+<td>النسخة الواحدة من <code>AppService</code> تُخدم كل الطلبات. هذا الافتراضي المسمى DEFAULT scope</td>
+</tr>
+<tr>
+<td>HTTP Adapter</td>
+<td>الجسر الذي سجل <code>GET /</code> على Express</td>
+</tr>
+</tbody></table>
+<h2>مثال عملي</h2>
+<p>طلب <code>POST /orders</code> على تطبيق نما بعد هذا القالب، كتمرين تتبع لا كتنفيذ:</p>
+<pre><code class="language-text">Client
+  POST /orders   JSON
+      |
+      v
+Express يستقبل
+      |
+      v
+Middleware: تحليل JSON إن كان مسجّلًا عند الحافة
+      |
+      v
+Guard: هل الطلب يحمل هوية مقبولة؟
+      |  إن رفض: يرد 401/403 والمسار يتوقف
+      v
+Interceptor قبل: يبدأ قياس الزمن
+      |
+      v
+Pipe: يتحقق من DTO الكمية والكتاب
+      |  إن فشل: 400 والمسار يتوقف
+      v
+OrdersController.create
+      |
+      v
+OrdersService تنفّذ القاعدة وتنادي طبقة البيانات
+      |
+      v
+Interceptor بعد: يضيف زمن الاستجابة
+      |
+      v
+201 و JSON
+</code></pre>
+<p>إذا رمت الخدمة خطأ لم يُمسك، يقفز التنفيذ إلى Exception Filter الأخص المتاح، ويرجع شكل خطأ متفق عليه بدل إسقاط الاتصال.</p>
+<p>لاحظ ما لا تعرفه الخدمة: لا طريقة HTTP، ولا Express. تعرف كتابًا وكمية ومستخدمًا مُرّروا إليها. هذا هو loosely coupled الذي وعد به التوثيق، مترجمًا إلى حدود دالة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حفظ ترتيب المحطات من مقالات قديمة. المصدر الذي نعتمده هو صفحة Request Lifecycle الحالية، والترتيب فيها: Middleware، ثم Guards، ثم Interceptors، ثم Pipes، ثم المتحكم، ثم Interceptors في طريق العودة، والفلاتر عند الاستثناء.</li>
+<li>وضع SQL أو حساب السعر داخل <code>getHello</code> لأن المثال صغير. المثال صغير ليُظهر الحدود، لا ليبرر إلغاءها.</li>
+<li>نسيان تسجيل المتحكم أو المزوّد في <code>@Module</code> والاكتفاء بوجود الملف.</li>
+<li>إرجاع <code>res.send</code> من Express داخل كل دالة لأنك ترتاح له. ذلك Library-specific style ستتعلم متى تحتاجه. العادة الافتراضية: أرجع قيمة.</li>
+<li>اعتبار Service والـ Provider كلمتين مترادفتين دائمًا. الخدمة مزوّد. المزوّد قد يكون قيمة أو مصنعًا أو صنفًا آخر. فصل Providers يفتح هذا.</li>
+</ul>
+<h2>متى نستخدم هذه الخريطة؟</h2>
+<p>في كل مرة تسأل &quot;أين أضع هذا الكود؟&quot; قبل فتح محرر. إذا كان الجواب غير واضح، الكود غالبًا يخلط طبقتين.</p>
+<h2>متى لا نضخ كل المحطات؟</h2>
+<p>مثال <code>Hello World</code> لا يحتاج Guard ولا Pipe. المحطة تُضاف عندما توجد مسؤولية. إطار ذو رأي يحدد المكان، وأنت تحدد إن كانت المسؤولية موجودة. إضافة كل الزينة من أول ملف هي Overengineering مبكر.</p>
+<h2>مقارنة مع Express</h2>
+<pre><code class="language-text">Express                         Nest
+app.get(&#39;/users&#39;, handler)      @Controller(&#39;users&#39;) + @Get()
+middleware قبل المعالج          Middleware في أول مسار الطلب
+if داخل المعالج للصلاحية        Guard في محطته
+if داخل المعالج للشكل           Pipe في محطته
+منطق و SQL داخل المعالج         Service وطبقة بيانات
+new داخل المعالج                تسجيل في providers وحقن
+شكل خطأ مختلف لكل مسار          Exception Filter
+res.send في المعالج             إرجاع قيمة، والإطار يكتب الرد
+</code></pre>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>رتب هذه الأسماء كما في مسار الطلب الناجح: Pipe، Controller، Middleware، Guard، Interceptor قبل المتحكم.</p>
+<details>
+<summary>الحل</summary>
+
+<p>Middleware، ثم Guard، ثم Interceptor قبل المتحكم، ثم Pipe، ثم Controller.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>في معاينة الكود، ماذا يحدث لو حذفت <code>AppService</code> من <code>providers</code> وأبقيت المعامل في constructor؟ صف النتيجة المتوقعة بلغة الحاوية، لا بنص الاستثناء الحرفي.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحاوية لا تجد مزوّدًا مسجّلًا يطابق اعتماد المتحكم، فتفشل عملية إنشاء التطبيق قبل أن يخدم الطلب. وجود الملف والاستيراد في TypeScript لا يغنيان عن التسجيل في الوحدة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>استثناء رُمي من Middleware عام، واستثناء رُمي من Service بعد أن اختير المسار. أي فلاتر يحق لها رؤية كل منهما حسب التوثيق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استثناء Middleware تراه الفلاتر العامة فقط، لأن معالج المسار لم يُختر بعد. استثناء الخدمة، إن بقي غير ممسوك، يدخل ترتيب الفلاتر من الأخص: Route ثم Controller ثم Global، ويمسكه أول فلتر منطبق ولا يُمرَّر إلى الذي بعده.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يبدأ application graph؟</li>
+<li>ما الفرق بين تسجيل Controller في الملف وتسجيله داخل <code>@Module</code>؟</li>
+<li>لماذا تُرجع <code>getHello</code> نصًا بدل أن تنادي <code>res.send</code>؟</li>
+<li>ما اتجاه اختيار Exception Filter مقارنة بـ Guard؟</li>
+<li>أين تعيش قاعدة العمل في الخريطة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإقلاع يبني رسم وحدات وحاوية ثم يربط HTTP. الطلب يمر بـ Middleware ثم Guard ثم Interceptor ثم Pipe ثم Controller ثم Service، ويعود عبر Interceptors، وتدخل الفلاتر عند الاستثناء من الأخص إلى الأعم. Controller يستقبل، و Service تعمل، و Module يرسم الحدود.</p>
+<h2>ماذا بعد؟</h2>
+<p>الخريطة تكفي للأسماء. في <a href="./examples.html">الأمثلة</a> نطبقها على متجر صغير من غير بناء مشروع، ثم <a href="./exercises.html">تمارين الفصل</a>، ثم <a href="./next-step.html">التمهيد لـ TypeScript</a> حيث نفك <code>constructor(private readonly ...)</code> قبل أن ننشئ مشروعًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Introduction: <a href="https://docs.nestjs.com/">https://docs.nestjs.com/</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+<li>NestJS — Platform agnosticism: <a href="https://docs.nestjs.com/fundamentals/platform-agnosticism">https://docs.nestjs.com/fundamentals/platform-agnosticism</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

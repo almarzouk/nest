@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أفضل الممارسات</title>
+<link rel="stylesheet" href="../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="best-practice.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أفضل الممارسات</h1>
+<p>مقارنة بين ما يُنسخ كثيرًا في المشاريع وما يُفضَّل في NestJS 12. الاسم التقني يبقى بالإنجليزية. التفصيل في درس كل موضوع، وهذا الملف للقرار السريع.</p>
+<p>عندما يظهر صفان رسميان معًا، مثل <code>ValidationPipe</code> و <code>StandardSchemaValidationPipe</code>، الاثنان صالحان. الأفضل هو أن تختار واحدًا للعقد نفسه وتثبّت عليه.</p>
+<h2>الرد على HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>res.send</code> و <code>res.json</code> داخل كل مسار</td>
+<td><code>return</code> القيمة وتترك Nest تكتب JSON</td>
+<td>المعترض والتسلسل ورمز الحالة يبقون على المسار القياسي</td>
+</tr>
+<tr>
+<td><code>@Res()</code> مع <code>return</code></td>
+<td><code>@Res({ passthrough: true })</code> حين تحتاج cookie أو رأسًا ثم <code>return</code></td>
+<td>من غير <code>passthrough</code> أنت من يُنهي الرد، والقيمة المعادة لا تُرسل كما تتوقع</td>
+</tr>
+<tr>
+<td><code>POST</code> يرجع <code>200</code></td>
+<td><code>POST</code> الذي ينشئ موردًا يرجع <code>201</code>، وتغيّره بـ <code>@HttpCode</code> إن لزم</td>
+<td>هذا افتراض Controllers في التوثيق. باقي النجاح <code>200</code></td>
+</tr>
+<tr>
+<td>قائمة فارغة ترجع <code>404</code></td>
+<td><code>200</code> مع <code>[]</code> أو <code>{ data: [] }</code></td>
+<td>غياب العناصر نتيجة صحيحة. <code>404</code> لعنوان مورد غير موجود</td>
+</tr>
+<tr>
+<td><code>employeeId</code> أو <code>tenantId</code> من الجسم</td>
+<td>المعرّف من الرمز أو من عضوية وقّعتها</td>
+<td>الجسم يقدر يغيّره صاحب الطلب من أدوات المتصفح</td>
+</tr>
+</tbody></table>
+<pre><code class="language-ts">@Post()
+create(@Body() body: CreateNoteDto) {
+  return this.notes.create(body);
+}
+</code></pre>
+<h2>الدخل والتحقق</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>interface</code> كشكل لجسم الطلب</td>
+<td>صنف <code>class</code> مع <code>class-validator</code>، أو مخطط Zod مع <code>StandardSchemaValidationPipe</code></td>
+<td>الواجهة تُمحى قبل التشغيل، فلا يوجد ما يفحصه الأنبوب</td>
+</tr>
+<tr>
+<td><code>ValidationPipe</code> بلا خيارات</td>
+<td><code>whitelist</code> و <code>forbidNonWhitelisted</code> و <code>transform</code></td>
+<td>الحقل الزائد مثل <code>isAdmin</code> يمر إن بقيت الخيارات مطفأة</td>
+</tr>
+<tr>
+<td>فحص يدوي مبعثر في كل دالة</td>
+<td>أنبوب عام على حدود HTTP، والقاعدة التي تحتاج قاعدة البيانات في الخدمة</td>
+<td>شكل JSON يُرفض قبل المتحكم. «هل يتداخل الوقت؟» قرار خدمة</td>
+</tr>
+<tr>
+<td><code>JSON.parse</code> ثم الثقة بالنوع</td>
+<td>الأنبوب يتحقق من المعنى لا من أن النص JSON فقط</td>
+<td>JSON الصالح قد يحمل نوعًا خاطئًا أو حقلًا ناقصًا</td>
+</tr>
+</tbody></table>
+<p><code>class-validator</code> ليست مهملة. <code>StandardSchemaValidationPipe</code> للمشاريع التي عقدها Zod أو Valibot أو ArkType. يمكن تسجيل الأنبوبين معًا: كل واحد يمرر ما لا يفهمه.</p>
+<h2>الحقن والوحدات</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>new UsersService()</code> داخل المتحكم</td>
+<td><code>constructor(private readonly users: UsersService) {}</code> مع تسجيل في <code>providers</code></td>
+<td><code>new</code> يخفي الشبكة ويمنع الاختبار من استبدال النسخة</td>
+</tr>
+<tr>
+<td><code>import type</code> للخدمة المحقونة</td>
+<td>استيراد قيمة عادي</td>
+<td><code>import type</code> يمسح المعامل من <code>design:paramtypes</code> فينكسر الحقن</td>
+</tr>
+<tr>
+<td>نسخ الصنف في <code>providers</code> كل وحدة</td>
+<td>تسجيل واحد، و <code>exports</code> ثم <code>imports</code></td>
+<td>إعادة التسجيل تصنع نسخة ثانية في النطاق الافتراضي</td>
+</tr>
+<tr>
+<td><code>@Global()</code> على كل ميزة</td>
+<td>استيراد صريح. <code>@Global()</code> للإعداد العابر بعد تسجيله مرة في الجذر</td>
+<td>العالمي يخفي الرسم. ما زال يحتاج <code>exports</code></td>
+</tr>
+<tr>
+<td><code>forwardRef</code> كأول علاج للدورة</td>
+<td>إعادة رسم الحد. <code>forwardRef</code> على الطرفين إن بقيت الدورة مؤقتًا</td>
+<td>الدورة علامة تصميم. مع <code>REQUEST</code> قد يبقى الطرف <code>undefined</code></td>
+</tr>
+<tr>
+<td><code>Scope.REQUEST</code> لتمرير <code>user</code></td>
+<td>الحارس يضع المستخدم، والدالة تستلمه وسيطًا</td>
+<td><code>REQUEST</code> يُعدي كل من يحقن الخدمة ويُنشئ شجرة لكل طلب</td>
+</tr>
+</tbody></table>
+<h2>الهوية والصلاحية</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حفظ كلمة المرور كما كُتبت، أو SHA عارٍ</td>
+<td>تجزئة مخصصة لكلمات المرور مثل argon2 أو bcrypt</td>
+<td>SHA سريع عن قصد، فيصلح للتخمين الجماعي</td>
+</tr>
+<tr>
+<td>رد مختلف لـ «البريد غير موجود» و «كلمة خاطئة»</td>
+<td><code>401</code> بنفس النص في الحالتين</td>
+<td>الرد المختلف يخبر المهاجم أي البريد مسجّل</td>
+</tr>
+<tr>
+<td>إرجاع <code>passwordHash</code> مع المستخدم</td>
+<td>DTO خرج أو <code>@Exclude</code> عبر <code>ClassSerializerInterceptor</code></td>
+<td>التجزئة سر رغم أنها ليست الكلمة الأصلية</td>
+</tr>
+<tr>
+<td>حارس يفحص الدور داخل كل مسار بمنطق منسوخ</td>
+<td>هوية في Guard، وإذن في Policy</td>
+<td><code>401</code> لمن لا نعرفه. <code>403</code> لمن نعرفه وممنوع من هذا الفعل</td>
+</tr>
+<tr>
+<td>تشغيل Passport و <code>@nestjs/authentication</code> على نفس الموارد</td>
+<td>مسار واحد في المشروع</td>
+<td>الاثنان رسميان. Passport وصفة Recipes وليست ملغاة. الحزمة <code>@nestjs/authentication</code> مسار قسم Security الحالي، و <code>@nestjs/authorization</code> يُركَّب معها</td>
+</tr>
+</tbody></table>
+<h2>البيانات</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>synchronize: true</code> أو تحديث المخطط مباشرة على الإنتاج</td>
+<td>ترحيل Prisma أو Doctrine، و <code>migrate</code> في النشر</td>
+<td>التحديث المباشر قد يسقط أعمدة فيها بيانات</td>
+</tr>
+<tr>
+<td><code>new PrismaClient()</code> داخل كل خدمة</td>
+<td><code>PrismaService</code> واحدة تُصدَّر من وحدتها، تتصل عند الإقلاع وتُغلق عند الإيقاف</td>
+<td>مجمع اتصالات واحد، وإغلاق نظيف</td>
+</tr>
+<tr>
+<td>قراءة ثم كتابة من غير معاملة</td>
+<td><code>$transaction</code> مع شرط على الحالة المتوقعة</td>
+<td>طلبان متوازيان على آخر قطعة أو على نفس الاعتماد يمران معًا</td>
+</tr>
+<tr>
+<td>إرجاع الجدول كله ثم القص في الذاكرة</td>
+<td><code>limit</code> وفهرس وفرز من قائمة بيضاء</td>
+<td>القص بعد السحب يكلف القاعدة والشبكة</td>
+</tr>
+<tr>
+<td><code>LIKE &#39;%نص%&#39;</code> بلا سقف</td>
+<td>حد 20 أو ما يتفق عليه العقد، ومفتاح تعادل فريد مثل <code>id</code></td>
+<td>من غير مفتاح فريد تتكرر الصفوف بين الصفحات</td>
+</tr>
+<tr>
+<td>استعلام مشروع لكل صف تسجيل</td>
+<td><code>join</code> أو <code>include</code> أو DataLoader</td>
+<td>هذا N+1. الكاش يأتي بعد جمع الاستعلام، ومع إبطال واضح</td>
+</tr>
+</tbody></table>
+<h2>العمل المؤجل والتكامل</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@nestjs/bull</code> في مشروع جديد</td>
+<td><code>@nestjs/bullmq</code></td>
+<td>التوثيق يضع Bull في الصيانة و BullMQ في التطوير النشط. شكل الاتصال مختلف: <code>connection</code> هناك و <code>redis</code> هنا</td>
+</tr>
+<tr>
+<td>تمرير كيان Prisma داخل وظيفة الطابور</td>
+<td>تمرير <code>userId</code> أو <code>orderId</code></td>
+<td>الكيان الحي يفسد بعد انتهاء الطلب، وقد يحمل حقولًا سرية</td>
+</tr>
+<tr>
+<td>انتظار PDF أو بريد قبل رد <code>201</code></td>
+<td>رد سريع ثم عامل. في Symfony نفس الدور لـ Messenger، والرد <code>202</code> حين تقبل المهمة فقط</td>
+<td>مهلة الوكيل تقتل الطلب الطويل</td>
+</tr>
+<tr>
+<td>تفعيل الاشتراك من صفحة <code>success</code></td>
+<td>الحالة تتغير من ويب هوك موقّع على الجسم الخام</td>
+<td>المتصفح يصل لصفحة النجاح حتى لو تأخر الدفع أو أُعيد تحميلها</td>
+</tr>
+<tr>
+<td>إعادة نفس <code>POST</code> تنشئ صفًا ثانيًا</td>
+<td><code>Idempotency-Key</code> بقيد فريد، ونفس المفتاح مع جسم مختلف <code>409</code></td>
+<td>انقطاع الشبكة يجعل العميل يعيد الإرسال</td>
+</tr>
+<tr>
+<td><code>JSON.stringify</code> ثم توقيع ناتج جديد</td>
+<td>HMAC على البايتات الأصلية <code>rawBody</code></td>
+<td>إعادة التسلسل تغيّر المسافات وترتيب المفاتيح فيفشل التوقيع</td>
+</tr>
+<tr>
+<td><code>emit</code> ثم الحفظ، أو الحفظ ثم أمل أن الحدث يصل</td>
+<td>صف الصندوق الصادر في نفس معاملة الحفظ، والشبكة بعد الالتزام</td>
+<td>الحدث قبل الحفظ يعلن شيئًا لم يُكتب. الحدث بعده من غير جدول يضيع عند سقوط العملية</td>
+</tr>
+</tbody></table>
+<h2>الاختبار والتشغيل</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>jest.fn</code> في مشروع <code>nest new</code> الحديث</td>
+<td>Vitest مع <code>vi.fn</code> لقالب ESM. Jest يبقى لقالب CommonJS</td>
+<td>المولّد يختار المشغّل مع نظام الوحدات. لا تثبّت الاثنين معًا</td>
+</tr>
+<tr>
+<td>اختبار يتصل بقاعدة التطوير</td>
+<td>قاعدة تُرمى في CI، أو وهم للمستودع في اختبار الوحدة</td>
+<td>الاختبار يمسح بياناتك أو يفشل على آلة الزميل</td>
+</tr>
+<tr>
+<td><code>npm run start:dev</code> داخل صورة الإنتاج</td>
+<td><code>npm run build</code> ثم <code>node dist/main.js</code></td>
+<td>وضع التطوير يراقب الملفات ولا يناسب الصورة</td>
+</tr>
+<tr>
+<td><code>localhost</code> لـ Postgres داخل Compose</td>
+<td>اسم الخدمة، مثل <code>postgres</code></td>
+<td><code>localhost</code> داخل الحاوية هو الحاوية نفسها</td>
+</tr>
+<tr>
+<td>ESLint لأن مقالًا قديمًا ذكره</td>
+<td>oxlint و Prettier كما يولّدهما Nest CLI 12</td>
+<td>هذا ما يضعه <code>nest new</code></td>
+</tr>
+<tr>
+<td>webpack كافتراض لمونوريبو جديد</td>
+<td>Rspack. أعلام webpack على هذا المسار قديمة</td>
+<td>مولّد المساحات الحالية يختار Rspack</td>
+</tr>
+<tr>
+<td>قراءة <code>process.env</code> في كل ملف</td>
+<td><code>ConfigModule</code> وفحص المفاتيح عند الإقلاع</td>
+<td>الناقص يوقف التشغيل برسالة واحدة، والاختبار يستبدل الخدمة</td>
+</tr>
+</tbody></table>
+<h2>واجهة React حين تلمسها</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>div</code> عليه <code>onClick</code> لأنه يشبه الزر في Figma</td>
+<td>عنصر <code>button</code> و <code>label</code> مربوط بـ <code>input</code></td>
+<td>الإعلان يذكر HTML5. الاختبار بـ <code>getByRole</code> يفشل على <code>div</code></td>
+</tr>
+<tr>
+<td>نسخ نتيجة <code>useQuery</code> إلى <code>useState</code></td>
+<td>Apollo يبقى حالة الخادم. حالة الحوار تبقى محلية</td>
+<td>النسختان تفترقان بعد أول mutation</td>
+</tr>
+<tr>
+<td><code>memo</code> على كل مكوّن قبل القياس</td>
+<td>مفاتيح قائمة ثابتة بمعرّف الصف، واستعلام يجلب حقول الشاشة فقط</td>
+<td>التغليف المبكر يخفي الاستعلام الثقيل</td>
+</tr>
+<tr>
+<td>اختبار الصنف الداخلي أو لقطة الشاشة كلها</td>
+<td>React Testing Library على النص والدور: حقل، حفظ، رسالة <code>409</code></td>
+<td>إعادة التصميم تكسر اللقطة رغم أن السلوك سليم</td>
+</tr>
+</tbody></table>
+<h2>Symfony حين يكون المحور PHP</h2>
+<table>
+<thead>
+<tr>
+<th>ما يُنسخ كثيرًا</th>
+<th>الأفضل</th>
+<th>لماذا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>SQL وحساب المدة داخل Action</td>
+<td>خدمة تُحقن في البنّاء. PHP 8 يدعم constructor promotion</td>
+<td>نفس حد المتحكم الرفيع في Nest</td>
+</tr>
+<tr>
+<td><code>schema:update</code> على الإنتاج</td>
+<td>ترحيل Doctrine ثم <code>doctrine:migrations:migrate</code></td>
+<td>الفرق المباشر على الإنتاج لا يُراجع في Git</td>
+</tr>
+<tr>
+<td><code>if</code> على الدور في كل Action</td>
+<td>Voter مثل <code>TIME_APPROVE</code> ثم <code>isGranted</code></td>
+<td>يقابل Policy. <code>401</code> قبل الدخول و <code>403</code> بعده</td>
+</tr>
+<tr>
+<td>كيان Doctrine كامل داخل رسالة Messenger</td>
+<td>معرّفات فقط، والمعالج يعيد التحميل</td>
+<td>الكيان بعد نهاية الطلب لا يبقى صالحًا للإرسال</td>
+</tr>
+</tbody></table>
+<h2>قرار سريع</h2>
+<ol>
+<li>الحدود أولًا: متحكم رفيع، خدمة تملك القاعدة، وحدة تصدّر واجهتها فقط.</li>
+<li>العقد ثانيًا: رمز HTTP، وحقول مسموحة، ومعرّف لا يأتي من الجسم.</li>
+<li>البيانات ثالثًا: ترحيل، معاملة، فهرس، حد للقائمة.</li>
+<li>التشغيل أخيرًا: بيئة مُفحوصة، صورة تشغّل <code>dist</code>، وجاهزية منفصلة عن الحياة.</li>
+</ol>
+
+</article>
+</main>
+<script src="../assets/learn.js"></script>
+</body>
+</html>

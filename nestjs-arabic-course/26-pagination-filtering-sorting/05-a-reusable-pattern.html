@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>نمط قابل لإعادة الاستخدام</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-a-reusable-pattern.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>نمط قابل لإعادة الاستخدام</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جمع الصفحة والمرشح والفرز في أنواع صغيرة تستخدمها المقالات والتعليقات من غير نسخ DTO في كل متحكم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>ListPostsQueryDto</code> في الفصل 19 صحيحة لمورد واحد. نسخها إلى التعليقات ثم إلى القروض لاحقًا تغيّر السقف في نسخة وتنسى <code>forbidNonWhitelisted</code> في أخرى. غلاف JSON مرة <code>items</code> ومرة <code>results</code>. Swagger يوثّق كل غلاف يدويًا بشكل مختلف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>قاعدة استعلام مشتركة: <code>page</code> و <code>pageSize</code>. كل مورد يمدها بمرشحاته ومفاتيح فرزه. دالة <code>toSkipTake</code> ودالة <code>pageOf</code> تبنيان الغلاف. التعليقات الطويلة تستخدم نوع مؤشر منفصل <code>CursorQuery</code> حتى لا يختلط <code>page</code> مع <code>cursor</code> على المسار نفسه. التوثيق يستخدم <code>ApiPaginatedResponse</code> من فصل OpenAPI.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Type } from &quot;class-transformer&quot;;
+import { IsInt, IsOptional, Max, Min } from &quot;class-validator&quot;;
+
+export class PageQueryDto {
+  @IsOptional() @Type(() =&gt; Number) @IsInt() @Min(1)
+  page = 1;
+
+  @IsOptional() @Type(() =&gt; Number) @IsInt() @Min(1) @Max(50)
+  pageSize = 20;
+}
+
+export function toSkipTake(query: PageQueryDto) {
+  return {
+    skip: (query.page - 1) * query.pageSize,
+    take: query.pageSize,
+  };
+}
+
+export function pageOf&lt;T&gt;(query: PageQueryDto, items: T[], total: number) {
+  return {
+    items,
+    page: query.page,
+    pageSize: query.pageSize,
+    total,
+  };
+}
+</code></pre>
+<p>مقالات:</p>
+<pre><code class="language-ts">export class ListPostsQueryDto extends PageQueryDto {
+  @IsOptional()
+  @IsIn(POST_SORTS)
+  sort: (typeof POST_SORTS)[number] = &quot;id&quot;;
+
+  @IsOptional()
+  @IsIn([&quot;asc&quot;, &quot;desc&quot;])
+  order: &quot;asc&quot; | &quot;desc&quot; = &quot;asc&quot;;
+}
+</code></pre>
+<p>أضف <code>published</code> بمحلّل صريح، لا بتحويل ضمني. التعليقات على الإزاحة تستطيع وراثة <code>PageQueryDto</code> فقط، مع <code>postId</code> من المسار. خيط المؤشر صنف آخر:</p>
+<pre><code class="language-ts">export class CommentCursorQueryDto {
+  @IsOptional() @IsString()
+  cursor?: string;
+
+  @IsOptional() @Type(() =&gt; Number) @IsInt() @Min(1) @Max(50)
+  limit = 20;
+}
+</code></pre>
+<p>الخدمة تبني <code>where</code> من <code>visibility</code> ثم <code>orderByPosts</code> ثم <code>toSkipTake</code>، وتجمع <code>findMany</code> مع <code>count</code> على الكائن نفسه، وتمرّر الصفوف على <code>toPostResponse</code> قبل <code>pageOf</code>. المتحكم يوثّق الناتج بـ <code>@ApiPaginatedResponse(PostResponse)</code>.</p>
+<p><code>ValidationPipe</code> مع <code>transform</code> و <code>whitelist</code> و <code>forbidNonWhitelisted</code> يطبّق على الصنف الوريث. حقل المقالات على مسار التعليقات يُرفض لأن DTO التعليق لا تعرفه. الصنف الوريث هو الذي يوثّق مفاتيح الفرز في OpenAPI.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">PageQueryDto مشترك
+  صنف مورد: مرشح + فرز
+  toSkipTake + pageOf
+  toResponse لكل عنصر
+مسار المؤشر صنف ثانٍ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">return pageOf(query, items, total);
+</code></pre>
+<h2>شرح المثال</h2>
+<p>كل القوائم المرقّمة تمر من هنا فيصبح المفتاح <code>items</code> مضمونًا. اختبار <code>page=2</code> و <code>pageSize=20</code> يتوقع <code>skip=20</code>. وراثة الصنف تبقي مزخرفات الأب، والقيم الافتراضية تُورَّث مع الابن.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأنبوب يبني <code>ListPostsQueryDto</code> ويملأ الافتراض. الخدمة لا تعيد قراءة <code>req.query</code>. <code>@Type</code> يحوّل الأرقام قبل Prisma. الغلاف كائن عادي. عناصره تأتي من <code>toPostResponse</code>. <code>ApiPaginatedResponse</code> يسجّل الغلاف بعنوان يتضمن اسم العنصر، وحقوله <code>items</code> كما في درس الاستجابات.</p>
+<h2>مثال عملي</h2>
+<p>انقل منطق <code>GET /posts</code> من DTO الفصل 19 إلى هذه الأنواع بلا تغيير أسماء الاستعلام، حتى لا تنكسر الواجهة. أضف <code>GET /posts/:postId/comments</code> بـ <code>PageQueryDto</code> أو بمؤشر، لا بالاثنين. اختبار e2e واحد يتوقع المفاتيح <code>items</code> و <code>page</code> و <code>pageSize</code> و <code>total</code> على المقالات. مسار المؤشر يتوقع <code>nextCursor</code> ولا يتوقع <code>page</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ DTO مع <code>@Max(100)</code> في مورد واحد.</li>
+<li>جمع <code>cursor</code> و <code>page</code> في صنف واحد.</li>
+<li><code>pageOf</code> على صف Prisma قبل <code>toPostResponse</code>.</li>
+<li>قراءة <code>req.query.page</code> بعد الأنبوب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>ابتداءً من المورد الثاني الذي يعيد قائمة، وعند لمس قائمة المقالات مرة أخرى.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإجبار المؤشر على شكل الصفحة المرقّمة. المساران نوعان. ولا كطبقة تخفي <code>where</code> الخام الذي يمر من العميل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>PageQueryDto</code> أب</th>
+<th>DTO منسوخ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السقف في مكان واحد</td>
+<td>السقف ينحرف</td>
+</tr>
+<tr>
+<td><code>pageOf</code> شكل واحد</td>
+<td>مفاتيح مختلفة</td>
+</tr>
+<tr>
+<td>الابن يضيف مرشح المورد</td>
+<td>كل ملف يعيد المحلّل المنطقي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعيد <code>toSkipTake</code> للصفحة <code>1</code> والحجم <code>20</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>skip: 0</code> و <code>take: 20</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يرث <code>CommentCursorQueryDto</code> من <code>PageQueryDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العقدان مختلفان: رقم صفحة مقابل مؤشر. جمعها في صنف واحد يجعل الاستعلام غامضًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>كيف تبقى عناصر الغلاف بلا <code>passwordHash</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>toPostResponse</code> أو <code>UserResponse</code> قبل <code>pageOf</code>، مع <code>select</code> ضيق. الغلاف لا ينظّف صفوفًا خامًا وحده.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يعيش <code>@Max(50)</code>؟</li>
+<li>أي دالة تبني <code>items</code> و <code>total</code>؟</li>
+<li>ماذا يوثّق قائمة المقالات في Swagger؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>أب للاستعلام المرقّم، وابن لمرشحات المورد، و<code>pageOf</code> للغلاف، وصنف مؤشر منفصل للخيط الطويل. العناصر أصناف استجابة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./06-database-consequences.html">أثر النمط على الاستعلام</a> الفهارس وعمق الإزاحة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — OpenAPI operations: <a href="https://docs.nestjs.com/openapi/operations">https://docs.nestjs.com/openapi/operations</a></li>
+<li>Prisma — Pagination: <a href="https://www.prisma.io/docs/orm/prisma-client/queries/pagination">https://www.prisma.io/docs/orm/prisma-client/queries/pagination</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

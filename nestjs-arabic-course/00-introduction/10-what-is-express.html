@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Express</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-what-is-express.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Express</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة أصغر تطبيق Express كما في توثيقه، ومعرفة ماذا أضاف فوق <code>node:http</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مثال <code>createServer</code> في Node يرد الرد نفسه على كل طلب. تطبيق حقيقي يحتاج:</p>
+<ul>
+<li>مسارًا مختلفًا لكل مورد.</li>
+<li>طريقة HTTP مختلفة.</li>
+<li>مكانًا يضيف رأسًا أو يقرأ الجسم قبل الدالة النهائية.</li>
+<li>دوالًا صغيرة تتراكم بدل <code>if</code> عملاق على <code>req.url</code>.</li>
+</ul>
+<p>Express يعطي هذا التوجيه مع بقاء <code>req</code> و <code>res</code> قريبين من Node.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Express إطار ويب خفيف لـ Node.js. تنشئ تطبيقًا، تسجّل مسارات، وتستدعي <code>listen</code>. هو يطابق الطلب الوارد إلى الدالة التي سجّلتها.</p>
+<p>توثيق Nest يسميه minimalist web framework، مجرّبًا في الإنتاج، وبمجموعة كبيرة من الـ middleware المتوافقة. Nest تستخدمه افتراضيًا عبر الحزمة <code>@nestjs/platform-express</code>.</p>
+<h2>التعريف التقني</h2>
+<p>تطبيق Express دالة/كائن يمثّل سلسلة معالجة. كل قطعة في السلسلة middleware أو معالج مسار. القطعة تقرأ الطلب، وقد تعدّل الرد، ثم إما تنهي الرد أو تمرر التحكم إلى القطعة التالية.</p>
+<p>التوثيق الرسمي لمثال Hello World يقول صراحة: <code>req</code> و <code>res</code> هما الكائنان اللذان يعطيهما Node، وتقدر أن تستخدم <code>req.pipe()</code> و <code>req.on(&#39;data&#39;, ...)</code> كما تفعل من غير Express.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب وارد
+   |
+   v
+سلسلة Express
+   |-- middleware عام (مثل تحليل JSON) إن سجّلته
+   |-- مسارات app.get / app.post / ...
+   |-- إن لم يطابق شيء: 404 من Express
+   v
+الاستجابة على res
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>من توثيق Express، نسخة TypeScript لأنها الأقرب لما ستكتبه مع Nest:</p>
+<pre><code class="language-ts">import express, { type Express, type Request, type Response } from &#39;express&#39;;
+
+const app: Express = express();
+const port = 3000;
+
+app.get(&#39;/&#39;, (req: Request, res: Response) =&gt; {
+  res.send(&#39;Hello World!&#39;);
+});
+
+app.listen(port, () =&gt; {
+  console.log(`Example app listening on port ${port}`);
+});
+</code></pre>
+<p>التوثيق يعرض أيضًا <code>index.cjs</code> بـ <code>require</code> و <code>index.mjs</code> بـ <code>import</code>. المعنى واحد. مشاريع NestJS 12 الجديدة تسأل عند الإنشاء: ESM هو الافتراضي ويستخدم Vitest، أو CommonJS ويستخدم Jest. ستختار بوعي في الفصل <code>02</code>. المثال هنا ESM لأنه الشكل الذي يعرضه توثيق Express الحديث إلى جانب CommonJS.</p>
+<p>تشغيل المثال، كما في التوثيق: مجلد، ثم <code>npm init</code>، ثم تثبيت <code>express</code>، ثم <code>node</code> على الملف الناتج. مع TypeScript تحتاج ترجمة أو مشغّلًا. لا تبنِ مشروع Nest في هذا الدرس.</p>
+<p>بعد التشغيل، المتصفح على <code>http://localhost:3000/</code> يرى <code>Hello World!</code>. أي مسار آخر يأخذ <code>404 Not Found</code> من Express. هذه جملة التوثيق، لا إضافة منا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>import express from &#39;express&#39;</code> يستورد دالة المصنع. استدعاؤها يبني التطبيق.</li>
+<li><code>Express</code> و <code>Request</code> و <code>Response</code> أنواع TypeScript فقط. <code>import type</code> و <code>type</code> داخل القوس يعني أنها تُمحى عند الترجمة ولا توجد وقت التشغيل.</li>
+<li><code>const app = express()</code> التطبيق. ليس خادمًا يستمع بعد. هو مكان تسجيل المسارات.</li>
+<li><code>port</code> رقم المنفذ الذي ستمرره إلى <code>listen</code>.</li>
+<li><code>app.get(&#39;/&#39;, handler)</code> يسجّل معالجًا لطريقة <code>GET</code> على المسار <code>/</code> بالضبط. أنت لا تنادي <code>handler</code> هنا.</li>
+<li><code>req</code> الطلب. غير مستخدم لأن الرد ثابت. وجوده في المعاملات لأن Express ينادي المعالج بهذا الشكل دائمًا: <code>(req, res, next)</code> و <code>next</code> اختياري في الكتابة إذا لن تمرر التحكم.</li>
+<li><code>res.send(&#39;Hello World!&#39;)</code> يكتب الجسم وينهي الاستجابة. Express يضبط بعض الرؤوس، منها نوع المحتوى المناسب للنص. هي راحة فوق <code>res.end</code>.</li>
+<li><code>app.listen(port, callback)</code> يبدأ الاستماع. تحت الغطاء Express ينشئ خادم <code>node:http</code> ويناديه بـ <code>listen</code>. الـ callback تعمل بعد نجاح الاستماع، مثل مثال Node.</li>
+<li>القوس في <code>console.log</code> قالب نص يدرج <code>port</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>express()</code> يبني تطبيقًا فيه مكدس طبقات (stack) فارغ تقريبًا من مساراتك، مع سلوك افتراضي للإطار.</li>
+<li><code>app.get</code> يضيف طبقة تعرف الطريقة <code>GET</code> والمسار <code>/</code>.</li>
+<li><code>listen</code> يحجز المنفذ عبر خادم HTTP الخاص بـ Node.</li>
+<li>عند طلب، Express يمر على الطبقات بالترتيب.</li>
+<li>الطبقة التي تطابق الطريقة والمسار تُستدعى.</li>
+<li><code>res.send</code> ينهي الرد.</li>
+<li>إذا لم تطابق طبقة، Express ينهي الرد بـ <code>404</code>.</li>
+</ol>
+<p>لا يوجد في هذا المثال تحليل JSON، ولا مسارات بمعاملات، ولا فصل ملفات. الإطار لا يفرض مجلد <code>controllers</code>. هذه حرية، وهي نفسها أصل الفوضى عندما يكبر الفريق.</p>
+<h2>مثال عملي</h2>
+<p>كتابان في الذاكرة، لنرى أن Express ما زال قريبًا من HTTP:</p>
+<pre><code class="language-ts">import express, { type Express, type Request, type Response } from &#39;express&#39;;
+
+const app: Express = express();
+
+const books = [
+  { id: &#39;1&#39;, title: &#39;Clean Code&#39; },
+  { id: &#39;2&#39;, title: &#39;Refactoring&#39; },
+];
+
+app.get(&#39;/books&#39;, (_req: Request, res: Response) =&gt; {
+  res.json(books);
+});
+
+app.get(&#39;/books/:id&#39;, (req: Request, res: Response) =&gt; {
+  const book = books.find((item) =&gt; item.id === req.params.id);
+  if (!book) {
+    res.status(404).json({ message: &#39;Book not found&#39; });
+    return;
+  }
+  res.json(book);
+});
+
+app.listen(3000);
+</code></pre>
+<ul>
+<li><code>res.json</code> يرسل JSON ويضبط <code>Content-Type</code> المناسب. هي <code>stringify</code> مضافًا إليها إنهاء الرد.</li>
+<li><code>:id</code> قطعة مسار يلتقطها Express ويضع النص في <code>req.params.id</code>. في REST هذا معرّف المورد.</li>
+<li><code>_req</code> تسمية تعني أن المعامل غير مستخدم. المعالج الثاني يستخدم <code>req</code>.</li>
+<li><code>return</code> بعد <code>404</code> يمنع إرسال رد ثانٍ. إرسال ردين على الاتصال نفسه يسبب خطأ.</li>
+<li>البيانات في مصفوفة داخل الملف. هذا مقبول لمثال، وغير مقبول كتصميم: إعادة تشغيل العملية تمسح الكتب، وكل المسارات ترى المصفوفة مباشرة.</li>
+</ul>
+<p>المقابل الذي ستكتبه لاحقًا في Nest، من غير شرح زائد:</p>
+<pre><code class="language-ts">@Get()
+findAll() {
+  return books;
+}
+
+@Get(&#39;:id&#39;)
+findOne() {
+  return book;
+}
+</code></pre>
+<p>الفرق الظاهر: Nest تستطيع إرجاع القيمة، والإطار يكتب الاستجابة. في Express أنت تنادي <code>res.json</code> بنفسك. اسم هذا الفرق في توثيق Nest: Standard response handling مقابل التحكم المباشر بكائن الرد. سنفصله في Controllers. المعاينة هنا حتى تربط ما تعرفه بما سيأتي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>app.listen</code> ثم استغراب أن المنفذ مغلق. التسجيل وحده لا يفتح مقبسًا.</li>
+<li>استدعاء <code>res.send</code> مرتين في المسار نفسه.</li>
+<li>توقع أن <code>req.body</code> موجود في مثال Hello World. تحليل JSON طبقة تسجّلها أنت، غالبًا <code>express.json()</code>، وليست سحرًا في كل تطبيق. سنضعها في الدرس التالي.</li>
+<li>كتابة كل التطبيق في معالج واحد فيه <code>if (req.url === ...)</code>. هذا رجوع إلى Node الخام مع خطوات إضافية.</li>
+</ul>
+<h2>متى نستخدم Express مباشرة؟</h2>
+<p>خدمة صغيرة، أو طبقة رقيقة، أو عندما تريد قرارًا كاملًا على شكل الملفات. كثير من الإنتاج يعمل على Express منذ سنوات. Nest لا تلغي هذا؛ التوثيق يقول إن Nest تعرض لك APIs الخاصة بالمنصة عندما تحتاجها.</p>
+<h2>متى ننتقل إلى طبقة ذات رأي؟</h2>
+<p>عندما يتكرر عندك: أين أضع القاعدة، كيف أختبر مسارًا من غير تشغيل الشبكة كلها، كيف أمنع مسارًا من نسيان فحص الصلاحية، وكيف يعرف مطور جديد أين يضيف موردًا. الدرس 12 يجمع هذه الآلام. لا تنتقل لأن Express &quot;قديم&quot;. انتقل لأن هيكل الفريق صار المشكلة.</p>
+<h2>مقارنة مع node:http</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>node:http</code></th>
+<th>Express</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مطابقة Method والمسار</td>
+<td>تكتبها</td>
+<td><code>app.get</code> و <code>app.post</code></td>
+</tr>
+<tr>
+<td>معاملات المسار</td>
+<td>تكتبها</td>
+<td><code>:id</code></td>
+</tr>
+<tr>
+<td>إرسال JSON</td>
+<td><code>JSON.stringify</code> و <code>end</code></td>
+<td><code>res.json</code></td>
+</tr>
+<tr>
+<td>كائن الطلب</td>
+<td>IncomingMessage</td>
+<td>نفسه مع إضافات Express</td>
+</tr>
+<tr>
+<td>هيكل تطبيق</td>
+<td>لا يقترح</td>
+<td>لا يقترح مجلدات Nest</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في مثال Hello World، ماذا يحدث لطلب <code>POST /</code> وطلب <code>GET /books</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كلاهما <code>404</code>. المسجّل فقط <code>GET</code> على <code>/</code>. الطريقة الأخرى والمسار الآخر لا يطابقان الطبقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أضف إلى مثال الكتب سلوك REST الناقص: <code>POST /books</code> غير موجود. صف، من غير بناء Nest، ماذا تحتاج تسجيله حتى يُنشأ كتاب من جسم <code>{ &quot;title&quot;: &quot;...&quot; }</code> ويُعاد <code>201</code>. اذكر الطبقة التي تنقص مثالنا لقراءة JSON.</p>
+<details>
+<summary>الحل</summary>
+
+<p>تسجيل <code>app.post(&#39;/books&#39;, handler)</code> يقرأ العنوان، يضيف كتابًا بمعرّف يولّده الخادم، ويرسل <code>res.status(201).json(book)</code>. قبل ذلك نحتاج <code>app.use(express.json())</code> حتى يُملأ <code>req.body</code>. من غير هذه الطبقة يبقى الجسم بايتات غير محللة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يستطيع مسار Express أن يستدعي <code>req.on(&#39;data&#39;, ...)</code> رغم أنك لم تنشئ الخادم بـ <code>createServer</code> بنفسك؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>req</code> هو IncomingMessage القادم من Node. <code>app.listen</code> ينشئ خادم HTTP تحته، و Express يمرر كائنات Node إلى الطبقات مع توسيعها. التوثيق يذكر هذا حتى لا تظن أن Express استبدل بروتوكولًا آخر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يسجّل <code>app.get</code>، ومتى تُستدعى الدالة؟</li>
+<li>ما الفرق بين إنشاء <code>app</code> واستدعاء <code>listen</code>؟</li>
+<li>ماذا يعيد Express لمسار غير مسجّل؟</li>
+<li>ما العلاقة بين <code>req</code> في Express و <code>node:http</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Express تطبيق تسجّل عليه المسارات، وهو يطابق الطلب ويستدعي دالتك، و <code>req</code> و <code>res</code> ما زالا كائني Node. الإطار رقيق: يحل التوجيه، ويترك هيكل المنتج قرارًا بشريًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>المثال أخفى السلسلة التي تمر قبل المعالج النهائي. الدرس التالي يفتحها: Middleware، و <code>next</code>، ولماذا الترتيب يغيّر السلوك.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Express — Hello world: <a href="https://expressjs.com/en/starter/hello-world.html">https://expressjs.com/en/starter/hello-world.html</a></li>
+<li>Express — Routing: <a href="https://expressjs.com/en/guide/routing.html">https://expressjs.com/en/guide/routing.html</a></li>
+<li>Express — Writing middleware: <a href="https://expressjs.com/en/guide/writing-middleware.html">https://expressjs.com/en/guide/writing-middleware.html</a></li>
+<li>NestJS — First steps (منصة Express الافتراضية): <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Performance (Fastify) للمقارنة لاحقًا في هذا الفصل: <a href="https://docs.nestjs.com/http/performance">https://docs.nestjs.com/http/performance</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Schema First</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-schema-first.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Schema First</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة الباب الثاني: ملفات SDL هي المصدر، وNest تقرأها من <code>typePaths</code> وتستطيع توليد TypeScript منها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق الواجهة أو شريك خارجي يسلّم <code>catalog.graphql</code> كعقد. إعادة كتابته زينة TypeScript ثم توليد ملف آخر تعكس اتجاه الملكية. Schema-first يبقي SDL الذي اتفقتم عليه هو ما ينفّذه الخادم.</p>
+<p>هذه الدورة تكتب الميزات code-first. هذا الدرس يمنع خلط البابين، ويعرّفك على الأسماء إن رأيتها في مستودع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>typePaths</code> عنوين ملفات <code>.graphql</code>. Nest تجمعها في مخطط واحد في الذاكرة. المحللات ما زالت أصنافًا بأسماء الحقول. خيار <code>definitions</code> يولّد واجهات أو أصناف TypeScript من تلك الملفات حتى لا تكتب النوع مرتين في الاتجاه المعاكس لـ code-first.</p>
+<h2>التعريف التقني</h2>
+<p>من الصفحة:</p>
+<pre><code class="language-ts">GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  typePaths: [&#39;./**/*.graphql&#39;],
+});
+</code></pre>
+<p>توليد التعريفات عند الإقلاع:</p>
+<pre><code class="language-ts">definitions: {
+  path: join(process.cwd(), &#39;src/graphql.ts&#39;),
+  outputAs: &#39;class&#39;,
+},
+</code></pre>
+<p>الافتراض واجهات. <code>outputAs: &#39;class&#39;</code> يولّد أصنافًا. التوليد عند كل إقلاع قد يزعج التطوير. الصفحة تعرض أيضًا <code>GraphQLDefinitionsFactory</code> في سكربت <code>generate-typings.ts</code> تشغّله عند الطلب، مع خيار <code>watch</code> إن أردت إعادة التوليد عند حفظ <code>.graphql</code>.</p>
+<p>لا تضبط <code>autoSchemaFile</code> و <code>typePaths</code> معًا. المصدران سيتعاركان على شكل <code>Book</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">src/**/*.graphql     مصدر العقد
+  typePaths يجمعها
+    resolvers تطابق الأسماء
+      definitions تولّد graphql.ts للنوع فقط
+</code></pre>
+<p>في code-first السهم معكوس: الصنف يولّد SDL.</p>
+<h2>أبسط مثال</h2>
+<p>ملف بجانب الميزة:</p>
+<pre><code class="language-graphql">type Query {
+  book(id: ID!): Book
+}
+
+type Book {
+  id: ID!
+  title: String!
+}
+</code></pre>
+<p>والجذر:</p>
+<pre><code class="language-ts">GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+  driver: ApolloDriver,
+  typePaths: [&#39;./src/**/*.graphql&#39;],
+});
+</code></pre>
+<p>محلل <code>book</code> ما زال لازمًا. الملف لا يجلب صفًا من القاعدة. هو يعلن أن الحقل موجود.</p>
+<h2>شرح المثال</h2>
+<p>النمط <code>./src/**/*.graphql</code> يجمع مخطط الكتالوج مع مخطط لاحق إن أضفت ملفًا ثانيًا، بشرط ألا يعيد الاثنان تعريف <code>Query</code> بشكل يتعارض. التقسيم مفيد عندما يملك فريق ملف المؤلف وآخر ملف الكتاب، ثم يُدمجان في الذاكرة كما تقول الصفحة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تُقرأ الملفات وتُبنى AST ثم مخطط تنفيذي. إن وُجد <code>definitions</code> تُكتب أنواع TypeScript إلى المسار المحدد. المحلل الذي يعيد شكلًا يخالف SDL يفشل وقت التنفيذ أو وقت التوليد حسب الخلاف. سكربت التوليد المنفصل يناسب CI: العقد يتغير فقط عندما يشغّل أحد <code>generate</code>، لا في كل <code>nest start</code>.</p>
+<p>الصفحة تذكر <code>ts-node generate-typings</code> كمثال تشغيل. في مشروع ESM قد يكون التشغيل عبر <code>tsx</code> أو عبر ناتج <code>tsc</code>. المهم أن السكربت يستدعي <code>GraphQLDefinitionsFactory</code> لا أن تحرر <code>graphql.ts</code> يدويًا ثم تولّد فوقه.</p>
+<h2>مثال عملي</h2>
+<p>متى ترفض schema-first في متجر هذه الدورة: إن كان الفريق نفسه يكتب المحلل والصنف، فـ <code>autoSchemaFile</code> أقصر. متى تقبله: مستودع <code>schema/</code> ينشره فريق المنصة، وتطبيق Nest ينفّذ جزء الكتب فقط. عندها ملفات SDL في <code>typePaths</code>، والمحللات تملأ الحقول التي التزمت بها، و <code>definitions</code> تمنع كتابة <code>interface Book</code> يدويًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الإبقاء على <code>autoSchemaFile</code> «للمعاينة» مع <code>typePaths</code>.</li>
+<li>تعديل <code>src/graphql.ts</code> المولَّد والاعتقاد أنه مصدر.</li>
+<li>ملف SDL بلا محلل لحقل جذر، فيفشل التنفيذ عند طلبه.</li>
+<li>نمط <code>typePaths</code> لا يصل إلى الملفات بعد البناء لأن المسار نسبي لمجلد مختلف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يكون SDL عقدًا مسلَّمًا من خارج أصناف Nest.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بالتوازي مع code-first على الميزة نفسها. اختر مصدرًا واحدًا. مسار الدروس القادمة في هذا الفصل يكتب الزينة على الأصناف.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Code first</th>
+<th>Schema first</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تكتب أولًا</td>
+<td><code>@ObjectType()</code></td>
+<td>ملف <code>.graphql</code></td>
+</tr>
+<tr>
+<td>الناتج</td>
+<td><code>schema.gql</code></td>
+<td><code>graphql.ts</code> إن فعّلت <code>definitions</code></td>
+</tr>
+<tr>
+<td>خيار الجذر</td>
+<td><code>autoSchemaFile</code></td>
+<td><code>typePaths</code></td>
+</tr>
+<tr>
+<td>مسار الدورة</td>
+<td>نعم</td>
+<td>معرفة بالباب فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي خيار يدل Nest على ملفات SDL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>typePaths</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يولّد <code>definitions.path</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ملف TypeScript من المخطط، واجهات افتراضيًا أو أصنافًا مع <code>outputAs: &#39;class&#39;</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تترك التوليد عند كل إقلاع في تطبيق كبير؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يعيد كتابة الملف في كل تشغيل. سكربت <code>GraphQLDefinitionsFactory</code> عند تغيير SDL يجعل الناتج متعمدًا وقابلًا للمراجعة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما اتجاه التوليد مقارنة بـ code-first؟</li>
+<li>هل ملف SDL يستدعي القاعدة؟</li>
+<li>أي خيارين لا يجتمعان؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Schema-first يجعل SDL المصدر و <code>typePaths</code> باب القراءة. الدورة تكمل على code-first. لا تشغّل البابين معًا.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>@Resolver</code> و <code>@Query</code> و <code>@Mutation</code> و <code>@Args</code> على مسار code-first.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Quick start (Schema first): <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

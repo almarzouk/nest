@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@CurrentUser</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-current-user.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@CurrentUser</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمرير المستخدم الذي لُصق على الطلب إلى معامل الدالة، مع اختيار حقل واحد عند الحاجة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>refund</code> و <code>list</code> و <code>audit</code> تكرر <code>request.user</code> وقد تنسى أن الحقل قد يكون غائبًا. التوقيع لا يقول إن العملية تعمل باسم شباك. زينة المعامل تجعل الوسيط هو المستخدم لا الطلب.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@CurrentUser()</code> ترجع كائن المستخدم. <code>@CurrentUser(&#39;name&#39;)</code> ترجع الحقل <code>name</code>. المصنع <code>createParamDecorator</code> يقرأ <code>request.user</code> الذي وضعه حارس الهوية قبل بناء الوسائط. الزينة لا تُسجّل أحدًا.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تبني <code>@User()</code> هكذا، ونسميها <code>@CurrentUser</code> في الشباك:</p>
+<pre><code class="language-ts">export const CurrentUser = createParamDecorator(
+  (data: string | undefined, ctx: ExecutionContext) =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ user?: DeskUser }&gt;();
+    const user = request.user;
+    return data ? user?.[data as keyof DeskUser] : user;
+  },
+);
+</code></pre>
+<p><code>data</code> هو النص داخل القوس. من غيره ترجع الكائن. الصفحة تستخدم <code>user?.[data]</code> حتى لا يرمي الوصول إن سبق الحارس ورفض، أو إن استُدعيت الزينة على مسار بلا لصق.</p>
+<p>نوع <code>DeskUser</code> في هذا الدرس:</p>
+<pre><code class="language-ts">export type DeskUser = { name: string; roles: string[] };
+</code></pre>
+<p>الحارس <code>IdentifyDeskGuard</code> من فصل الحراس يضع <code>{ name }</code> على الأقل. توسيع اللصق ليشمل <code>roles</code> يتم هناك أو في حارس لاحق، لا داخل الزينة.</p>
+<p><code>ValidationPipe</code> لا يفحص هذا المعامل إلا مع <code>validateCustomDecorators</code>. لا نضع DTO المستخدم على الزينة. المستخدم ناتج بوابتكم لا جسم العميل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">IdentifyDeskGuard يلصق request.user
+بعدها تُبنى الوسائط
+@CurrentUser()      → الكائن
+@CurrentUser(&#39;name&#39;) → النص
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { createParamDecorator, type ExecutionContext } from &#39;@nestjs/common&#39;;
+
+export type DeskUser = { name: string; roles: string[] };
+
+export const CurrentUser = createParamDecorator(
+  (data: keyof DeskUser | undefined, ctx: ExecutionContext) =&gt; {
+    const request = ctx.switchToHttp().getRequest&lt;{ user?: DeskUser }&gt;();
+    const user = request.user;
+    if (!data) {
+      return user;
+    }
+    return user?.[data];
+  },
+);
+</code></pre>
+<pre><code class="language-ts">@Post(&#39;refund&#39;)
+refund(@CurrentUser() user: DeskUser): { by: string } {
+  return { by: user.name };
+}
+</code></pre>
+<pre><code class="language-ts">@Get(&#39;mine&#39;)
+mine(@CurrentUser(&#39;name&#39;) name: string): { name: string } {
+  return { name };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>keyof DeskUser</code> يقيّد <code>&#39;name&#39;</code> و <code>&#39;roles&#39;</code> في المترجم.</li>
+<li><code>user?.[data]</code> يعيد <code>undefined</code> إن لم يُلصق شيء، بدل رمي داخل الزينة.</li>
+<li><code>refund</code> تطلب الكائن لأن العملية قد تسجّل الاسم والأدوار معًا.</li>
+<li><code>mine</code> تطلب الاسم فقط حتى لا تصل مصفوفة الأدوار إلى دالة لا تحتاجها.</li>
+<li>الدالة لا تستدعي <code>switchToHttp</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الحارس يعمل أولًا. إن رمى <code>401</code> لا تُبنى الوسائط ولا تُستدعى الزينة. إن رجع <code>true</code> بعد اللصق، Nest تستدعي المصنع عند تجهيز معامل <code>refund</code>. القيمة تذهب إلى الدالة كما يخرج <code>@Body</code> بعد الأنبوب. لا أنبوب في المثال، فالقيمة هي مرجع الكائن على الطلب. لا تنسخ الزينة الكائن. تعديل <code>user.name</code> داخل الدالة يعدّل كائن الطلب نفسه. إن كان ذلك غير مرغوب فانسخ في الخدمة الحقول التي ستخزنها.</p>
+<p>معترض بعد الحارس وقبل الأنبوب لا يزيل <code>request.user</code>. المعامل يُبنى قرب الدالة بعد الأنابيب الخاصة به. اللصق ما زال موجودًا.</p>
+<p>اختبار المصنع: ابنِ سياقًا مزيفًا <code>switchToHttp().getRequest()</code> يرجع <code>{ user: { name: &#39;lead&#39;, roles: [&#39;refund&#39;] } }</code> واستدعِ منطق القراءة. <code>@CurrentUser(&#39;name&#39;)</code> يعطي <code>lead</code>.</p>
+<h2>مثال عملي</h2>
+<p>سجل الاسترداد كان يكتب <code>request.user.name</code> وينكسر حين يكون الحقل <code>fullName</code> في خدمة أخرى. <code>@CurrentUser(&#39;name&#39;)</code> يحصر الاسم في نوع <code>DeskUser</code>. تغيير الحقل إلى <code>fullName</code> يفشل <code>tsc</code> في الزينة وفي الدوال التي استخدمت <code>&#39;name&#39;</code>. هذا أقوى من بحث نصي عن <code>request.user</code>. مسار الصحة بلا حارس لصق لا يستخدم الزينة. إن وُضعت سهوًا فالمعامل <code>undefined</code> ويجب ألا تُستدعى الخدمة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>بناء المستخدم من الترويسة داخل الزينة بينما الحارس يلصق شكلًا مختلفًا. مصدر واحد للّصق.</li>
+<li>افتراض أن <code>user</code> دائمًا معرّف لأن النوع في التوقيع ليس اختياريًا. النوع كذبة إن غاب اللصق. الحارس يضمن ذلك على المسارات المحمية، لا المترجم.</li>
+<li>تخزين <code>user</code> في متغير وحدة أثناء أول طلب.</li>
+<li>فحص دور الاسترداد داخل <code>@CurrentUser</code>. الدور لحارس <code>@Roles</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل دالة محمية تحتاج اسم الشباك أو كائن المستخدم في الجسم أو في السجل، بعد حارس يلصق <code>request.user</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على الصحة والمسار العام حيث لا لصق. وعلى قرار المنع. الزينة لا ترجع <code>false</code>. إن غاب المستخدم على مسار محمي فأصلح الحارس لا الزينة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستخدام</th>
+<th>الوسيط</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@CurrentUser()</code></td>
+<td><code>DeskUser</code> أو <code>undefined</code></td>
+</tr>
+<tr>
+<td><code>@CurrentUser(&#39;name&#39;)</code></td>
+<td><code>string</code> أو <code>undefined</code></td>
+</tr>
+<tr>
+<td><code>@Req()</code></td>
+<td>الطلب كله</td>
+</tr>
+<tr>
+<td><code>@Body()</code></td>
+<td>JSON العميل لا المستخدم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا ترجع <code>@CurrentUser(&#39;roles&#39;)</code> إن كان المستخدم <code>{ name: &#39;lead&#39;, roles: [&#39;refund&#39;] }</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المصفوفة <code>[&#39;refund&#39;]</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُستدعى الزينة حين يرمي حارس الهوية <code>UnauthorizedException</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بناء الوسائط بعد نجاح الحراس. الرمي يوقف الدورة قبل المعامل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الدالة تعدّل <code>user.roles.push(&#39;audit&#39;)</code> ثم طلب لاحق على الاتصال نفسه يرى الدور الزائد. ما سبب المشاركة، وما العادة الأنسب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الزينة أعادت مرجع كائن الطلب. التعديل يغيّر الحالة المشتركة لبقية الدورة. انسخ الحقول التي ستُخزن في سجل الاسترداد ولا تعدّل <code>roles</code> على الكائن الأصلي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يلصق <code>request.user</code>؟</li>
+<li>ماذا يفعل الوسيط <code>data</code>؟</li>
+<li>هل الزينة ترمي <code>401</code>؟</li>
+<li>لماذا النوع في التوقيع لا يكفي إن غاب الحارس؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@CurrentUser</code> تقرأ ما لصقه الحارس. بلا وسيط ترجع الكائن، ومع اسم حقل ترجع ذلك الحقل. المنع والفحص ليسا عملها. لا تعدّل المرجع إن كانت بقية الطلب تشاركه.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>@Roles</code>: زينة الأدوار على الدالة وحارس يطابقها مع <code>user.roles</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

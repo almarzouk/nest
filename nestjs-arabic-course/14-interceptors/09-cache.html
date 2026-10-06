@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cache</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-cache.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Cache</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معاينة معترض يتخطى المعالج ويرجع قيمة محفوظة عبر <code>of</code>، من غير بناء نظام تخزين كامل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قائمة العروض تتغير كل دقيقة، و <code>GET /shows</code> يضرب المخزن في كل طلب لوحة. الصفحة تذكر التخزين كسبب لاستبدال تنفيذ الدالة. الحزمة <code>cache-manager</code> وفصل التخزين لاحقان. هنا الفكرة: إن وُجدت قيمة، لا تنادِ <code>handle</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>خريطة في الذاكرة من مسار القراءة إلى القيمة. عند الإصابة أرجع <code>of(cached)</code> ولا تستدعِ <code>handle</code>. عند الغياب استدعِ <code>handle</code> واحفظ الإصدار في <code>tap</code>. الكتابة <code>POST</code> لا تُخزَّن في هذه المعاينة.</p>
+<h2>التعريف التقني</h2>
+<p>مثال الصفحة يرجّع <code>of([])</code> حين يكون العلم <code>isCached</code> صحيحًا، وإلا <code>next.handle()</code>. الغرض أن تيار <code>of</code> لا يشغّل المعالج.</p>
+<p>المعاينة هنا أصدق قليلًا من علم ثابت، وما زالت ناقصة عن الإنتاج: لا مدة صلاحية، ولا حد لحجم الخريطة، ولا إبطال عند <code>POST /shows</code>. الصفحة تقول إن TTL والإبطال والحجم خارج ذلك المثال. نكرر الحد حتى لا يُشحن هذا الصنف إلى الإنتاج كما هو.</p>
+<p><code>of</code> من <code>rxjs</code> تيار يصدر القيمة فور الاشتراك ثم يكتمل.</p>
+<p>مفتاح الخريطة في المعاينة <code>GET</code> مع <code>url</code>. طلبان مختلفان في الاستعلام مفتاحان مختلفان. <code>POST</code> يرجع <code>next.handle()</code> دائمًا.</p>
+<p>الخريطة على الصنف تعني حالة مشتركة بين الطلبات. هذا مقصود للتخزين ومقبول في معاينة عملية واحدة. عدة نسخ من التطبيق لا ترى الخريطة نفسها. ذلك سبب وجود مخزن خارجي لاحقًا.</p>
+<p>لا تخزّن ردودًا فيها بيانات زائر. القائمة العامة للعروض فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /shows موجود في الخريطة → of(value) → الدالة لا تعمل
+GET /shows غائب → handle → tap تحفظ → القيمة للعميل
+POST /shows → handle دائمًا، والخريطة قد تبقى قديمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type CallHandler, type ExecutionContext, Injectable, type NestInterceptor } from &#39;@nestjs/common&#39;;
+import { type Observable, of } from &#39;rxjs&#39;;
+import { tap } from &#39;rxjs/operators&#39;;
+
+@Injectable()
+export class ShowListCacheInterceptor implements NestInterceptor {
+  private readonly hits = new Map&lt;string, unknown&gt;();
+
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const request = context.switchToHttp().getRequest&lt;{ method: string; url: string }&gt;();
+    if (request.method !== &#39;GET&#39;) {
+      return next.handle();
+    }
+    const key = request.url;
+    const cached = this.hits.get(key);
+    if (cached !== undefined) {
+      return of(cached);
+    }
+    return next.handle().pipe(tap((value) =&gt; this.hits.set(key, value)));
+  }
+}
+</code></pre>
+<p>أول <code>GET /shows</code> يشغّل الدالة ويحفظ. الثاني يرجع النسخة المحفوظة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>of(cached)</code> لا ينادي <code>handle</code>. لا أنبوب ولا خدمة على طريق تلك القيمة المحفوظة. الأنابيب التي تسبق المعالج في الدورة تكون قد عملت قبل المعترض في طريق الدخول فقط إن كان ترتيبها كذلك. في الدورة الأنبوب بعد المعترض في الدخول، فتخطي <code>handle</code> يتخطى الأنبوب والدالة معًا إن كان المعترض يلفهما. على <code>GET</code> بلا جسم هذا مقبول. لا تستخدم التخطي على <code>POST</code> يحتاج فحص DTO.</li>
+<li><code>tap</code> تحفظ بعد النجاح فقط. الخطأ لا يُخزَّن.</li>
+<li><code>cached !== undefined</code> يسمح بحفظ مصفوفة فارغة. الإصابة بالمصفوفة الفارغة تبقى إصابة.</li>
+<li>الخريطة بلا حذف. هذا حد المعاينة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإصابة يشترك Nest في <code>of</code>. القيمة تصدر من غير <code>ShowsService</code>. معترضات خارجية ما زالت ترى القيمة في عوامل خروجها، مثل غلاف <code>{ data }</code> إن كان خارج هذا المعترض. معترض داخلي لا يعمل لأن <code>handle</code> لم يُستدعَ.</p>
+<p>عند الغياب السلسلة كاملة تعمل، ثم <code>tap</code> يكتب الخريطة. الطلب الموازي الثاني قد يدخل قبل <code>tap</code> الأول فيُستدعى المخزن مرتين. المعاينة لا تقفل المفتاح. الإنتاج يحتاج قفلًا أو مخزنًا جاهزًا.</p>
+<p><code>POST</code> لا يمسح <code>GET /shows</code>. اللوحة قد تعرض قائمة قديمة حتى إعادة التشغيل. اذكر ذلك في التعليق فوق الصنف إن أبقته في فرع تجريبي.</p>
+<h2>مثال عملي</h2>
+<p>لوحة العروض العامة على <code>ShowsController</code> فقط. اختبار أول <code>GET</code> يتوقع نداء خدمة واحدًا. اختبار ثانٍ فورًا يتوقع ألا تُستدعى الخدمة. <code>POST /shows</code> ما زال ينادي الخدمة. بعده <code>GET</code> في هذه المعاينة قد يرجع القائمة القديمة. الاختبار الثالث يوثّق هذا القصور بدل أن يصلحه بمكتبة كاملة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>علم <code>isCached = true</code> دائمًا كما في المقتطف التعليمي المبسط، فيصبح كل رد مصفوفة فارغة إن نسخت المثال حرفيًا.</li>
+<li>تخزين <code>POST</code> فيرجع الحجز القديم لعميل آخر.</li>
+<li>حفظ جسم فيه اسم زائر على مفتاح URL عام.</li>
+<li>اعتبار الخريطة بديلًا عن فصل التخزين و <code>cache-manager</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كمعاينة لفكرة «تيار جاهز بدل <code>handle</code>» على قراءة عامة رخيصة التغيير، ومع اختبار يوثّق غياب الإبطال.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>في الإنتاج على بيانات خاصة أو على كتابة. ولا كبوابة إذن. ولا لتخزين أخطاء <code>500</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>return of(cached)</code></th>
+<th><code>return next.handle()</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الخدمة</td>
+<td>لا تُستدعى</td>
+<td>تُستدعى عند الاشتراك</td>
+</tr>
+<tr>
+<td>الأنبوب داخل السلسلة</td>
+<td>لا يعمل</td>
+<td>يعمل</td>
+</tr>
+<tr>
+<td>مصدر القيمة</td>
+<td>الخريطة</td>
+<td>الدالة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة RxJS تبني تيارًا من قيمة محفوظة من غير المعالج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>of(cached)</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المصفوفة الفارغة المحفوظة يجب ألا تُعامل كغياب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن القائمة العامة قد تكون فارغة فعلًا. فحص <code>undefined</code> فقط يبقي الإصابة. غياب المفتاح هو الغياب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بعد <code>POST /shows</code> ما زال <code>GET /shows</code> يرجع قائمة بلا العرض الجديد. ما الحد الذي قبلته المعاينة، وما الذي لا نضيفه في هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا يوجد إبطال. المعاينة توثّق القصور. مدة الصلاحية والحذف عند الكتابة ومخزن مشترك بين العمليات درس التخزين لاحقًا، لا خريطة أكبر في هذا الملف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى لا يُستدعى <code>handle</code>؟</li>
+<li>لماذا <code>POST</code> خارج الخريطة؟</li>
+<li>ماذا ينقص المعاينة حتى تكون إنتاجًا؟</li>
+<li>هل معترض خارجي ما زال يرى القيمة المخزنة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>تخطي المعالج يتم بإرجاع <code>of(value)</code> بدل <code>handle</code>. المعاينة خريطة لقراءة عامة وتوثّق أنها بلا صلاحية ولا إبطال. التخزين الحقيقي فصل لاحق، والفكرة هنا هي التيار البديل فقط.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي مستويات الربط وترتيب المراقبات: من يدخل أولًا ومن يرى الرد أولًا على طريق الخروج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

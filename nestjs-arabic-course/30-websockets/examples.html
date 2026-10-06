@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>تعليقات كتاب: الحفظ HTTP، والحضور مقبس Socket.IO على فضاء <code>comments</code>.</p>
+<h2>مثال 1 — البوابة</h2>
+<pre><code class="language-ts">import { UseFilters, UsePipes, ValidationPipe } from &#39;@nestjs/common&#39;;
+import {
+  ConnectedSocket,
+  MessageBody,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from &#39;@nestjs/websockets&#39;;
+import type { Server, Socket } from &#39;socket.io&#39;;
+import { JoinBookDto } from &#39;./join-book.dto.js&#39;;
+import { CommentsWsFilter } from &#39;./comments-ws.filter.js&#39;;
+
+@UseFilters(CommentsWsFilter)
+@WebSocketGateway({
+  namespace: &#39;comments&#39;,
+  cors: { origin: [&#39;http://localhost:5173&#39;] },
+})
+export class CommentsGateway implements OnGatewayDisconnect {
+  @WebSocketServer()
+  server: Server;
+
+  @SubscribeMessage(&#39;join&#39;)
+  @UsePipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
+  join(@MessageBody() body: JoinBookDto, @ConnectedSocket() client: Socket) {
+    client.join(body.bookId);
+    return { joined: body.bookId };
+  }
+
+  announce(bookId: string, comment: { id: string; text: string }) {
+    this.server.to(bookId).emit(&#39;comment&#39;, comment);
+  }
+
+  handleDisconnect(client: Socket) {
+    client.data.userId = undefined;
+  }
+}
+</code></pre>
+<h2>مثال 2 — المتحكم بعد الحفظ</h2>
+<pre><code class="language-ts">@Post(&#39;:id/comments&#39;)
+create(@Param(&#39;id&#39;) bookId: string, @Body() body: CreateCommentDto) {
+  const saved = this.comments.create(bookId, body);
+  this.gateway.announce(bookId, { id: saved.id, text: saved.text });
+  return saved;
+}
+</code></pre>
+<p><code>CommentsModule</code> يصدّر البوابة أو يسجّل المتحكم معها حتى يُحقن <code>CommentsGateway</code> في اتجاه واحد.</p>
+<h2>مثال 3 — عميل الصفحة</h2>
+<pre><code class="language-ts">import { io } from &#39;socket.io-client&#39;;
+
+const socket = io(&#39;http://localhost:3000/comments&#39;);
+socket.emit(&#39;join&#39;, { bookId }, (ack: { joined: string }) =&gt; {
+  console.log(ack.joined);
+});
+socket.on(&#39;comment&#39;, (comment: { id: string; text: string }) =&gt; {
+  console.log(comment.id);
+});
+</code></pre>
+<p>عند مغادرة الصفحة: <code>socket.emit(&#39;leave&#39;, { bookId })</code> ثم <code>socket.disconnect()</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>عميل <code>WebSocket</code> الخام لا يكمل المصافحة.</li>
+<li><code>POST</code> وحده يحفظ. <code>join</code> لا يكتب صفًا.</li>
+<li>قارئ لم ينضم لا يستلم <code>comment</code>.</li>
+<li>جسم <code>{ bookId, userId }</code> يرفضه الأنبوب.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

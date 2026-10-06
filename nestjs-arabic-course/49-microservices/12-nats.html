@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NATS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-nats.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>NATS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استعمال NATS عندما تريد طلب-ردًا خفيفًا بين العمليات، لأن الناقل يوفّر مسار الرد من غير أن يركّبه Nest فوق قناة ثانية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>TCP لا يتوسع على عدة مشتركين. Kafka ثقيل لسؤال «أصدر فاتورة وأعد المعرف». التوثيق يذكر NATS كمثال لناقل فيه دعم الطلب-الرد جاهز. <code>Transport.NATS</code> مع حزمة <code>nats</code> يربط <code>send</code> و <code>@MessagePattern</code> بمسار رد طبيعي، و <code>emit</code> للنشر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الخيار المركزي <code>servers: [&#39;nats://nats:4222&#39;]</code> في Compose و <code>nats://127.0.0.1:4222</code> على الجهاز. المستمع <code>createMicroservice</code> والعميل <code>ClientsModule</code> بنفس النقل. الأنماط كما في بقية الفصل. لا تشغّل NATS ثم تستعمل <code>localhost</code> من حاوية التطبيق.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">{
+  transport: Transport.NATS,
+  options: {
+    servers: [process.env.NATS_URL ?? &#39;nats://127.0.0.1:4222&#39;],
+  },
+}
+</code></pre>
+<p>ثبّت حزمة <code>nats</code> التي تتوافق مع إصدار <code>@nestjs/microservices</code> في الصفحة الرسمية.</p>
+<pre><code class="language-ts">@MessagePattern({ cmd: &#39;invoice.issue&#39; })
+issue(@Payload() data: { orderId: string }): Promise&lt;{ invoiceId: string }&gt; {
+  return this.invoices.issue(data.orderId);
+}
+</code></pre>
+<p>العميل <code>lastValueFrom(this.nats.send({ cmd: &#39;invoice.issue&#39; }, { orderId }))</code>.</p>
+<p>النشر <code>emit(&#39;invoice.issued&#39;, payload)</code> لمن اشترك. في NATS الأساسي الرسالة لا تُخزن لمن كان غير متصل إلا إذا استعملت JetStream، وهو وضع احتفاظ منفصل. لا تفترض JetStream لأنك كتبت <code>Transport.NATS</code> فقط. اقرأ خيار التدفقات في توثيق الناقل قبل وعدك بإعادة المعالجة.</p>
+<p>مهلة <code>send</code> تبقى مسؤوليتك على الـ Observable (<code>timeout</code> من <code>rxjs</code>) حتى لا يعلق طلب HTTP إن غابت الفوترة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">send -&gt; NATS request -&gt; MessagePattern -&gt; رد على نفس الأسلوب
+emit -&gt; مشتركون حاضرون
+JetStream ليس الافتراض الضمني
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>عملية فوترة على <code>nats://nats:4222</code> ومعالج الإصدار. الكتالوج يرسل <code>send</code> بمهلة ثانيتين. إن غابت الفوترة يفشل الوعد وترد الواجهة بتعذر الدفع من غير إسقاط عملية الكتالوج.</p>
+<h2>شرح المثال</h2>
+<p>هذا طلب-رد صادق: الناتج جزء من العقد والناقل يعيد الجواب. الحدث الجانبي للبحث إما <code>emit</code> إن كان الغياب مقبولًا أو ناقل يخزن إن لم يكن. لا تخفِ التخزين داخل افتراض NATS الأساسي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العميل يتصل بعناوين <code>servers</code>.</li>
+<li><code>send</code> ينشر طلبًا بعلبة رد.</li>
+<li>مستمع النمط يرد.</li>
+<li>الـ Observable يكمل بالقيمة أو بالخطأ.</li>
+<li><code>emit</code> يسلم للحاضرين على الموضوع.</li>
+<li>انقطاع NATS يفشل الطرفين كما انقطاع أي وسيط مشترك.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>شبكة خاصة: خدمة <code>nats</code> في Compose، <code>NATS_URL=nats://nats:4222</code>. لا مستخدم افتراضي على الإنترنت. مراقبة اتصال <code>connect()</code> في <code>onApplicationBootstrap</code> للكتالوج إن كان الدفع لا يعمل بلا الفوترة. إن كان الكتالوج يعمل والقراءة فقط تتأثر، اترك الاتصال كسولًا حتى أول <code>send</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>افتراض طابور دائم بلا JetStream.</li>
+<li><code>localhost</code> بين الحاويات.</li>
+<li><code>send</code> بلا مهلة فيعلق العامل.</li>
+<li>وضع كل الأحداث التحليلية على NATS الأساسي ثم استغراب الضياع.</li>
+<li>خلط منفذ <code>4222</code> مع Redis <code>6379</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>طلب-رد بين خدمات في شبكة خاصة، وحجم رسائل تشغيلي لا سجل تحليل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>تاريخ يُعاد قراءته. Kafka. ومهمة تُخزن وتُعاد بلا إعداد JetStream صريح. Rabbit أو طابور.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>NATS الأساسي هنا</th>
+<th>Kafka</th>
+<th>Rabbit</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الطلب-الرد</td>
+<td>مسار جاهز</td>
+<td>غير طبيعي</td>
+<td>عبر Nest</td>
+</tr>
+<tr>
+<td>الاحتفاظ</td>
+<td>ليس الافتراض</td>
+<td>نعم</td>
+<td>طابور</td>
+</tr>
+<tr>
+<td>التشغيل</td>
+<td>خفيف</td>
+<td>ثقيل</td>
+<td>متوسط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة عميل لمسار <code>@MessagePattern</code> على NATS؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>send</code>، ثم اشتراك أو <code>lastValueFrom</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المهلة على <code>send</code> جزء من تصميم الصفحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يبقى طلب المتصفح معلقًا إن لم ترد الفوترة. الفشل أصدق من انتظار بلا حد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى لا يكفي <code>Transport.NATS</code> وحده لوعد «سنعالج الإلغاء غدًا إن كانت العملية نائمة»؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عندما تحتاج احتفاظًا. الأساسي يسلم للحاضر. JetStream أو Rabbit أو Kafka هو مكان الوعد، بعد قراءته صراحة لا من اسم NATS فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تضع في <code>servers</code> داخل Compose؟</li>
+<li>أي حزمة تُثبت؟</li>
+<li>ماذا لا يفعله الاتصال الأساسي تلقائيًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>NATS في Nest طلب-رد خفيف عبر <code>Transport.NATS</code>. ضع مهلة على <code>send</code>، واستعمل اسم الخدمة في العنوان، ولا تعد باحتفاظ لم تفعّله.</p>
+<h2>ماذا بعد؟</h2>
+<p>gRPC و MQTT ونواقل أخرى، و <code>RpcException</code> عندما يعبر الخطأ أيًا منها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — NATS: <a href="https://docs.nestjs.com/microservices/nats">https://docs.nestjs.com/microservices/nats</a></li>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>07 — بطاقات دراسة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>07 — بطاقات دراسة</h1>
+<p><strong>المستوى:</strong> مبتدئ<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new study-cards</code></p>
+<h2>ماذا تبني</h2>
+<p>بطاقة فيها وجه وظهر. المراجعة تنقلها إلى صندوق أعلى وتؤجل موعدها. قائمة اليوم هي المستحق فقط.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>القاعدة ليست حفظ صف. القاعدة موعد وحالة تتغير بعد فعل المستخدم.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>تصفية بالتاريخ</li>
+<li>فعل review غير CRUD العام</li>
+<li>صناديق 1 و 2 و 3</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>خوارزمية SM-2 كاملة</li>
+<li>حسابات طلاب</li>
+<li>مزامنة أجهزة</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>دفتر العناوين.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/06-providers/README.html">06-providers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الصندوق يبدأ عند 1 والموعد الآن.</li>
+<li>مراجعة ناجحة ترفع الصندوق حتى 3 وتضاعف التأجيل بالأيام.</li>
+<li>فشل المراجعة يعيد الصندوق إلى 1 والموعد إلى الآن.</li>
+<li>GET /cards يعيد الكل. GET /cards/due يعيد المستحق.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/cards</code></td>
+<td>201</td>
+<td>وجه وظهر</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/cards/due</code></td>
+<td>200</td>
+<td>dueAt &lt;= الآن</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/cards/:id/reviews</code></td>
+<td>200</td>
+<td>جسم { remembered: boolean }</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new study-cards</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>خزّن dueAt كسلسلة ISO.</li>
+<li>قارن بـ Date.parse لا بنص خام.</li>
+<li>ارفض وجهًا فارغًا.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/cards/cards.service.ts
+src/cards/cards.controller.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">review(id: string, remembered: boolean) {
+  const card = this.findOne(id);
+  if (remembered) {
+    card.box = Math.min(3, card.box + 1);
+    const days = card.box;
+    card.dueAt = new Date(Date.now() + days * 86400000).toISOString();
+  } else {
+    card.box = 1;
+    card.dueAt = new Date().toISOString();
+  }
+  return card;
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>وضع due داخل مسار GET فيغيّر البطاقة.</li>
+<li>مقارنة تواريخ كنصوص بترتيبات مختلفة.</li>
+<li>صندوق رابع بلا سبب.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>بطاقة جديدة تظهر في due.</li>
+<li>مراجعة ناجحة تخرجها من due حتى يحين الموعد.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف حدًا 20 بطاقة مستحقة في الرد حتى لا يثقل اليوم.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 7» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../06-address-book/README.html">6. دفتر عناوين</a></li>
+<li>التالي: <a href="../08-link-shortener/README.html">8. مختصر روابط</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

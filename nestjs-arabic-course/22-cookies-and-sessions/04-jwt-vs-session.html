@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JWT مقابل Session</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-jwt-vs-session.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>JWT مقابل Session</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار دليل المتصفح ودليل الجوال في المكتبة من غير خلط إبطال الجلسة بعمر الرمز.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق يضع JWT داخل كعكة <code>localStorage</code> ثم يسمّيها جلسة. فريق آخر يلغي الجلسات «لأن JWT بلا حالة» فيفقد سحب الجهاز المسروق. العمر والتخزين والمكان الذي يُخزَّن فيه السر تختلف، والاسم التسويقي لا يوحّدها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الجلسة: حالة على الخادم، كعكة <code>HttpOnly</code>، الإبطال حذف. JWT وصول: حمولة موقّعة يحملها العميل، الخادم يتحقق من التوقيع حتى <code>exp</code> من غير سجل لكل رمز. التحديث الدوار في الحزمة يعيد حالة على الخادم لعائلة الرموز. «بلا حالة» تصف الوصول القصير فقط إن لم تخزّن التحديث.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>جلسة <code>__Host-sid</code></th>
+<th>Access JWT</th>
+<th>Refresh في الحزمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين السر</td>
+<td>كعكة HttpOnly</td>
+<td>ترويسة Bearer أو مخزن الجوال</td>
+<td>مخزن الجوال، وتجزئة على الخادم</td>
+</tr>
+<tr>
+<td>حالة الخادم</td>
+<td>سجل جلسة</td>
+<td>لا سجل لكل وصول</td>
+<td>سجل العائلة</td>
+</tr>
+<tr>
+<td>الإبطال</td>
+<td>حذف السجل فورًا</td>
+<td>حتى <code>exp</code> إلا بقائمة</td>
+<td>إلغاء العائلة</td>
+</tr>
+<tr>
+<td>المتصفح نفس الموقع</td>
+<td>مناسب</td>
+<td><code>localStorage</code> سطح XSS أوسع</td>
+<td>لا تضعه في سكربت الصفحة</td>
+</tr>
+<tr>
+<td>الجوال</td>
+<td>الكعكة أقل طبيعية</td>
+<td>مناسب</td>
+<td>مناسب مع استخدام واحد</td>
+</tr>
+</tbody></table>
+<p>وصفة Passport تصدر JWT بعد دخول محلي ولا تبني تحديثًا دوارًا في مثالها الأساسي. حزمة Security تبني الاثنين. مشروع الدورة: متصفح بجلسة، جوال بوصول وتحديث، كما في فصل المصادقة. هذا الدرس يبرر القسمة ولا يفتح حزمة جديدة.</p>
+<p>لا تضع الوصول في كعكة تقرأها الصفحة، ولا الجلسة في <code>Authorization</code> من غير أن تفحصها كجلسة. كل دليل له مزوّد: <code>SessionAuth</code> ثم <code>JwtAuth</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">متصفح المكتبة -&gt; كعكة جلسة -&gt; سجل
+جوال المكتبة -&gt; Bearer قصير + refresh دوار
+لا JWT في localStorage للواجهة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">POST /auth/sign-in     -&gt; Set-Cookie __Host-sid
+GET /posts             -&gt; Cookie تُرسل وحدها
+
+POST /auth/token       -&gt; { accessToken, refreshToken }
+GET /posts             -&gt; Authorization: Bearer
+POST /auth/token/refresh
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المسار <code>GET /posts</code> واحد. الحارس يجرّب الجلسة أولًا ثم الحامل. الواجهة لا تخزّن الوصول في JavaScript. الجوال لا يزرع كعكة على نطاق API من تطبيق أصلي بالطريقة نفسها، فيستخدم الترويسة.</p>
+<p>خروج المتصفح <code>signOut</code> يمسح الكعكة والسجل. خروج الجوال يلغي عائلة التحديث. «كل الأجهزة» في الحزمة يغطي المخزنين إن سجّلت الاثنين.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>سرقة كعكة <code>HttpOnly</code> تحتاج وسيطًا على الجهاز أو على الشبكة قبل TLS، لا قراءة سكربت. سرقة JWT من <code>localStorage</code> تكفي فيها ثغرة XSS تقرأ المخزن. لذلك واجهة نفس الموقع تبقى على الجلسة حتى لو أعجبك شكل الرمز. الجوال الذي يخزّن التحديث في مخزن النظام الآمن لا يمر بهذا السكربت.</p>
+<p>الوصول المسروق يعيش دقائق إن كان <code>ttl</code> قصيرًا. الجلسة المسروقة تعيش حتى الحذف أو <code>idleTtl</code>. الاثنان يحتاجان TLS.</p>
+<h2>مثال عملي</h2>
+<p>Ada على الموقع و على التطبيق. تغيّر كلمة المرور. الجلسات الأخرى يمكن إنهاؤها بحذف سجلات المستخدم، وعائلات التحديث تُلغى بند الحزمة <code>revokeUserRefreshTokens</code> في المخزن. رمز وصول صدر قبل التغيير يبقى حتى <code>exp</code> إن لم تفحص إصدار كلمة المرور في <code>validate</code>. إن كان هذا الخطر مهمًا، اجعل <code>validate</code> يرفض الرمز الأقدم من تدوير الكلمة. الجلسة تموت فور حذفها من غير انتظار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تسمية أي JWT جلسة.</li>
+<li>وضع الوصول في <code>localStorage</code> لموقع يقدر على كعكة <code>HttpOnly</code>.</li>
+<li>إلغاء مخزن الجلسات والاعتماد على وصول بعمر أسبوع.</li>
+<li>مخزنان للهوية في المتصفح: كعكة وجلسة Express مع رمز في السكربت.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>الجلسة لواجهة المتصفح على موقعك. الوصول مع التحديث لعميل يحفظ الأسرار خارج JavaScript الصفحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>JWT في كعكة يقرأها السكربت كحل وسط. اختر جلسة أو حاملًا، لا نسخة ضعيفة من الاثنين.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>تحتاج</th>
+<th>اختر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>خروج فوري من المتصفح</td>
+<td>جلسة</td>
+</tr>
+<tr>
+<td>تطبيق جوال</td>
+<td>Bearer + refresh</td>
+</tr>
+<tr>
+<td>واجهة نفس الأصل</td>
+<td>كعكة HttpOnly</td>
+</tr>
+<tr>
+<td>خدمة بلا مستخدم بشري</td>
+<td>مفتاح API لا جلسة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُخزَّن رمز كعكة الجلسة وأين تُخزَّن تجزئته؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الرمز في كعكة المتصفح. التجزئة في سجل الخادم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا واجهة المكتبة لا تضع <code>accessToken</code> في <code>localStorage</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أي سكربت على الصفحة يقرأه. كعكة الجلسة <code>HttpOnly</code> لا تظهر لـ <code>document.cookie</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>بعد تغيير كلمة المرور، متى يموت وصول مسروق، ومتى تموت الجلسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الوصول يموت عند <code>exp</code> إلا إن رفضته <code>validate</code> بشرط إضافي مثل وقت تدوير الكلمة. الجلسة تموت عند حذف سجلها فورًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني «بلا حالة» هنا، وماذا لا يشمل؟</li>
+<li>أي دليل للمتصفح في الدورة؟</li>
+<li>أي دليل للجوال؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الجلسة حالة قابلة للحذف في كعكة محمية. JWT وصول موقّع قصير، والتحديث يعيد حالة عند الحاجة للإبطال. المكتبة تقسمها بين المتصفح والجوال ولا تخلط التخزين.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./05-nestjs-cookies.html">Cookies في NestJS</a> قراءة وكتابة الكعكة بواجهة الإطار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Cookies: <a href="https://docs.nestjs.com/http/cookies">https://docs.nestjs.com/http/cookies</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

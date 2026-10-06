@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Depth Limiting</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-depth-limiting.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Depth Limiting</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>منع استعلام رف الذي يغرق في سلسلة علاقات أطول مما يسمح به المخطط، بقاعدة تحقق على المستند، منفصلة عن حساب التعقيد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عميل، أو أداة تولّد استعلامات، يكتب <code>book { reviews { user { reviews { user { reviews { user } } } } } }</code>. كل مستوى رخيص في جدول التعقيد إن كانت التكلفة 1 والعدد صغيرًا، لكن العمق يضاعف العمل ويضغط المحلل. تريد رفض الشكل قبل الـ Resolver.</p>
+<h2>الفكرة ببساطة</h2>
+<p>قس طول أطول سلسلة حقول في المستند. إن تجاوزت حدًا (مثل 5) ارفض المستند. هذا لا يقيس <code>limit</code> العريض. هو يقيس القعر فقط. لذلك يعيش بجانب التعقيد لا مكانه.</p>
+<h2>التعريف التقني</h2>
+<p><code>@nestjs/graphql</code> لا يقدّم <code>@Depth(5)</code> كجزء من الإطار. القاعدة الشائعة مكتبة تحقق مثل <code>graphql-depth-limit</code> تُمرَّر في <code>validationRules</code> عند إعداد <code>GraphQLModule.forRoot</code>. القواعد تعمل عند التحقق من المستند في Apollo. البديل كتابة <code>ValidationRule</code> تمشي على AST وتعد التداخل. كلاهما كود إضافة. لا تقل إن Nest «يشحن تحديد العمق» لأن صفحة Complexity موجودة؛ تلك الصفحة تكلفة لا عمق. Federation والحمولات المحفوظة أيضًا أدوات غير هذا الخيار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">query { books { author { name } } }     عمق صغير
+query { books { author { books { author { books { title } } } } } }  يرفض عند الحد
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { GraphQLDefinitionsFactory } from &#39;@nestjs/graphql&#39;;
+import depthLimit from &#39;graphql-depth-limit&#39;;
+
+export const validationRules = [depthLimit(5)];
+</code></pre>
+<p>تمرير <code>validationRules</code> يتم في كائن إعداد GraphQL الذي يستخدمه تطبيقك (Apollo driver). الأسطر أعلاه تثبت نية الحد: 5 مستويات. راجع توقيع <code>forRoot</code> في إصدار الحزمة عند التوصيل حتى يبقى المفتاح في المكان الذي يقرأه المحول.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الرقم 5 قرار منتج: أعمق مسار شرعي في رف (كتاب → مراجعة → مستخدم) زائد هامش، لا رقمًا من مقال.</li>
+<li>الاستعلام الشرعي يجب أن يمر في الاختبار قبل رفع الحد إلى الإنتاج.</li>
+<li>الحد يرفض المستند كله. لا يقص الحقول الزائدة بصمت.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>يصل نص الاستعلام.</li>
+<li>Apollo يبني AST ويشغّل <code>validationRules</code> قبل التنفيذ.</li>
+<li>قاعدة العمق تعد سلسلة الاختيار.</li>
+<li>التجاوز يعيد خطأ GraphQL ولا يستدعي <code>BooksResolver</code>.</li>
+<li>استعلام عريض وضحيل يمر من هنا وقد يوقفه حساب التعقيد. الاستعلام العميق الضيق يمر من تعقيد متساهل ويوقفه العمق.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختبر الحد على سلسلة تعرفها:</p>
+<pre><code class="language-text">عمق مقبول: books → author → name
+عمق مرفوض: books → author → books → author → books → author → name
+</code></pre>
+<p>اكتب الاختبارين معًا. إن رفض الأول، فالحد أضيق من المخطط الذي وثّقته للواجهة. إن قبل الثاني، فالقاعدة غير موصولة و <code>validationRules</code> لم تصل إلى الخادم الذي يشغّل الاختبار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتماد على التعقيد وحده بتكاليف 1 فيمر العمق.</li>
+<li>حد 2 يكسر الواجهة التي تطلب كتابًا ومؤلفًا ومراجعة في جولة مشروعة.</li>
+<li>حساب العمق بعد <code>await prisma</code> فلا يوفر الرحلة.</li>
+<li>توثيق أن «Nest يحد العمق افتراضيًا». الافتراضي بلا هذه القاعدة أن المحرك ينفذ ما يُطلب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مخطط فيه علاقات يمكن المشي عليها في حلقة (كتاب ومؤلفه وكتبه). الحد يحمي من التولد الآلي للاستعلامات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كمقياس وحيد للقائمة العريضة. وكمخطط داخلي لا يغادر خدمتك؛ هناك استعلامات محفوظة تغلق المجموعة أصلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Depth</th>
+<th>Complexity</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يقيس</td>
+<td>طول السلسلة</td>
+<td>مجموع الأوزان</td>
+</tr>
+<tr>
+<td>قائمة <code>limit: 500</code> ضحلة</td>
+<td>قد تمر</td>
+<td>تُرفض إن ضُرب الوزن</td>
+</tr>
+<tr>
+<td>سلسلة طولها 12 بتكلفة 1</td>
+<td>تُرفض</td>
+<td>قد تمر</td>
+</tr>
+<tr>
+<td>من يشحنها</td>
+<td>قاعدة تحقق تضيفها</td>
+<td>صفحة Complexity عبر إضافة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>@Field({ complexity: 1 })</code> يحد العمق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. هو وزن حقل لحساب التعقيد. العمق قاعدة أخرى على طول السلسلة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>أعمق استعلام في واجهة رف هو كتاب → مراجعات → مستخدم. أي حد يبدأ منطقيًا، وماذا تختبر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حد أعلى بقليل من 3، مثل 5، حتى لا يكسر الواجهة هامش fragment. اختبر نجاح المسار الشرعي وفشل سلسلة تعيد الدخول إلى <code>books</code> مرات إضافية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>استعلام عمقه 4 و <code>limit</code> 200 مرّ من depth limit وأسقط القاعدة. أي طبقة كانت ناقصة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التعقيد الذي يضرب تكلفة القائمة في <code>limit</code>، وحد <code>limit</code> في الوسائط. العمق عمل عمله ولم يَعِد بوزن العرض.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا العمق والتعقيد قاعدتان لا قاعدة واحدة؟</li>
+<li>هل الإطار يرفض العمق بلا مكتبة أو قاعدة تكتبها؟</li>
+<li>متى يُرفض المستند نسبة إلى الـ Resolver؟</li>
+<li>ماذا يحدث للواجهة إن كان الحد أضيق من أعمق شاشة مشروعة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>تحديد العمق يرفض سلسلة حقول أطول من الحد عبر قاعدة تحقق تضيفها إلى GraphQL. Nest لا يختصره في ديكور جاهز، وصفحة التعقيد لا تغني عنه.</p>
+<h2>ماذا بعد؟</h2>
+<p>حتى العمق والتعقيد يسمحان بأي نص تحت السقف. الدرس التالي يقصر التنفيذ على استعلامات عرفتها الواجهة مسبقًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>GraphQL — Validation: <a href="https://graphql.org/learn/validation/">https://graphql.org/learn/validation/</a></li>
+<li>NestJS — Complexity (أداة مجاورة لا بديل العمق): <a href="https://docs.nestjs.com/graphql/complexity">https://docs.nestjs.com/graphql/complexity</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

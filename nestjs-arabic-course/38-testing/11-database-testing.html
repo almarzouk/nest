@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>اختبار قاعدة البيانات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-database-testing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>اختبار قاعدة البيانات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>عزل قاعدة الاختبار عن الإنتاج، وجعل كل حالة تبدأ من بيانات تعرفها وتنتهي بلا أثر على التالية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>DATABASE_URL</code> واحد للتطوير والاختبار يمسح كتبًا حقيقية أو يجعل الاختبار يعتمد على صف أضفته يدويًا. تشغيل التكامل على الإنتاج خطأ تشغيلي لا تفصيل إعداد. والاختبارات التي تنجح منفردة وتفشل معًا تشارك صفوفًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عنوان ثانٍ، اسمه واضح مثل <code>bookstore_test</code>. الهجرات تُطبَّق عليه لا على قاعدة العمل. كل حالة تنظّف الجداول التي تلمسها، أو تعمل داخل معاملة تُلغى. الاختبارات الوحدوية لا تفتح هذا العنوان أصلًا. الرحلات التي لا تحتاج SQL تستبدل Prisma.</p>
+<h2>التعريف التقني</h2>
+<p>قواعد المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>النوع</th>
+<th>القاعدة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وحدة خدمة</td>
+<td>وهم، بلا عنوان</td>
+</tr>
+<tr>
+<td>تكامل Prisma</td>
+<td><code>bookstore_test</code> فقط</td>
+</tr>
+<tr>
+<td>رحلة HTTP</td>
+<td>القاعدة الاختبارية أو وهم</td>
+</tr>
+<tr>
+<td>الإنتاج</td>
+<td>ممنوع في <code>*.spec.ts</code></td>
+</tr>
+</tbody></table>
+<p>تطبيق الهجرات على الاختبار من سكربت CI يشير إلى العنوان الثاني. لا تشغّل <code>migrate reset</code> على عنوان بلا لاحقة <code>_test</code> في الاسم. إن غاب المتغير، افشل الإقلاع:</p>
+<pre><code class="language-ts">const url = process.env.DATABASE_URL ?? &#39;&#39;;
+if (!url.includes(&#39;bookstore_test&#39;)) {
+  throw new Error(&#39;refusing to test without bookstore_test&#39;);
+}
+</code></pre>
+<p>هذا الحارس رخيص ويمنع حادثًا. ليس بديلًا عن مستخدم قاعدة بلا صلاحية على الإنتاج.</p>
+<p>التنظيف:</p>
+<pre><code class="language-ts">afterEach(async () =&gt; {
+  await prisma.book.deleteMany();
+});
+</code></pre>
+<p><code>deleteMany</code> مقبول والجداول صغيرة. إن وُجدت مفاتيح أجنبية فاحذف الأبناء أولًا أو استخدم <code>TRUNCATE ... CASCADE</code> في قاعدة الاختبار فقط. معاملة تُفتح في <code>beforeEach</code> وتُلغى في <code>afterEach</code> تترك القاعدة فارغة بلا حذف يدوي، بشرط أن الخدمة تستعمل العميل نفسه داخل المعاملة. Prisma تحتاج تمرير عميل المعاملة إلى الخدمة، وإلا فالكتابة خارج المعاملة تبقى بعد التراجع. إن صعب ذلك، التنظيف الصريح أوضح.</p>
+<p>لا تشارك صف <code>id: 42</code> بين ملفات بلا تنظيف. ولّد معرفًا لكل حالة أو ابدأ من جداول فارغة.</p>
+<p>Redis الاختباري، إن لزم لتكامل طابور نادر، مثيل أو قاعدة منطقية أخرى. لا <code>FLUSHALL</code> على Redis التطوير الذي فيه مهامك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وحدة: بلا SQL
+تكامل: bookstore_test -&gt; فعل -&gt; قراءة -&gt; تنظيف
+إنتاج: لا يدخل الأمر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">beforeEach(async () =&gt; {
+  await prisma.book.deleteMany();
+  await prisma.book.create({ data: { id: &#39;42&#39;, title: &#39;NestJS&#39;, status: &#39;DRAFT&#39; } });
+});
+</code></pre>
+<p>الحالة تعرف أن 42 مسودة. لا تعتمد على بذرة عامة سحرية في المشروع.</p>
+<h2>شرح المثال</h2>
+<p>الترتيب: امسح ثم ازرع ثم نفّذ ثم اقرأ. المسح في <code>beforeEach</code> يصلح أيضًا إن سقطت الحالة السابقة قبل <code>afterEach</code>. اجمع الاثنين إن كان الإنشاء ثقيلًا، ولا تترك الفشل يلوث التالي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Prisma يتصل بالعنوان في البيئة التي يمررها المشغّل. في CI المتغير يُضبط في الخطوة لا في <code>.env</code> المطور. ملف <code>.env</code> الذي يحمّله الاختبار قد يعيد عنوان التطوير بالصمت. اطبع في الحارس اسم القاعدة لا كلمة السر، أو افحص اللاحقة كما سبق. الاتصال يُغلق في <code>afterAll</code> حتى لا يبقى Jest أو Vitest منتظرًا مقابض.</p>
+<p>اختبار يفتح معاملة ثم يستدعي خدمة بعميل عام يرى بيانات غير ملتزمة أو لا يرى صفوف المعاملة حسب العزل. لذلك تمرير العميل نفسه جزء من التصميم إن اخترت التراجع. التنظيف أبسط حتى تكبر البيانات.</p>
+<h2>مثال عملي</h2>
+<p>طبقات المتجر في CI:</p>
+<ol>
+<li><code>npm test</code> للوحدة بلا Docker قاعدة.</li>
+<li>خطوة تكامل تشغّل Postgres خدمة وتضبط <code>DATABASE_URL</code> على <code>bookstore_test</code> وتهجّر ثم تشغّل <code>*.integration.spec.ts</code>.</li>
+<li>لا خطوة تتصل بإنتاج.</li>
+</ol>
+<p>إن لم يوجد Postgres في التمرين المحلي، لا تضعّف الحارس. شغّل الوحدة فقط. التكامل يعمل حيث توجد الخدمة.</p>
+<p>بذور عشوائية من الإنترنت لا تدخل الجدول. البيانات سطر <code>create</code> في الاختبار أو مصنع صغير <code>{ title: &#39;NestJS&#39; }</code> في المستودع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>عنوان الإنتاج في <code>.env</code> يحمّله المشغّل.</li>
+<li><code>deleteMany</code> على قاعدة العمل لأن الاسم لم يُفحص.</li>
+<li>حالة تعتمد على صف من حالة سابقة.</li>
+<li><code>FLUSHALL</code> على Redis المشترك.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لتكامل الخدمة مع الجدول ولرحلة تحتاج قيدًا حقيقيًا. ليس لكل فرع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>داخل اختبار الخريطة أو المتحكم الرقيق. الوهم أسرع وأأمن. ولا تستخدم قاعدة الإنتاج «لأنها فيها بيانات جاهزة».</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>العزل</th>
+<th>الصعوبة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وهم Prisma</td>
+<td>تام</td>
+<td>منخفض</td>
+</tr>
+<tr>
+<td><code>bookstore_test</code> + حذف</td>
+<td>جيد</td>
+<td>متوسط</td>
+</tr>
+<tr>
+<td>معاملة ملغاة</td>
+<td>جيد إن مر العميل نفسه</td>
+<td>أعلى</td>
+</tr>
+<tr>
+<td>قاعدة الإنتاج</td>
+<td>معدوم</td>
+<td>ممنوع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما العلامة في عنوان الاختبار التي يرفض الحارس غيابها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>وجود <code>bookstore_test</code> في <code>DATABASE_URL</code>، أو قاعدة اسمها واضح أنها للاختبار لا للعمل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المسح في <code>beforeEach</code> لا يكفي إن كانت الخدمة تكتب بعميل خارج معاملة ظننت أنك ألغيتها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الكتابة خارج المعاملة تُثبَّت. التراجع لا يراها. إمّا تمرر عميل المعاملة إلى الخدمة وإما تمسح الجداول صراحة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار تكامل طابور استعمل Redis التطوير ثم <code>FLUSHALL</code>. ما الضرر وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يمسح مهام القص ومفاتيح المخبأ المحلية. استعمل قاعدة Redis منطقية أو مثيلًا للاختبار، ونظّف مفاتيح الطابور الاختباري فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي أنواع اختبار لا تفتح SQL؟</li>
+<li>متى تُطبَّق الهجرات؟</li>
+<li>لماذا معرف ثابت بين ملفات خطر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>قاعدة باسم اختبار، هجرات عليها، تنظيف كل حالة، وحارس يرفض عنوان العمل. الوحدة لا تصل إلى هذا العنوان، والإنتاج لا يصل إلى المشغّل.</p>
+<h2>ماذا بعد؟</h2>
+<p>دورة حياة التطبيق: ماذا يجري عند الإقلاع والإيقاف بعد أن صارت الاختبارات تغلق ما تفتحه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+<li>Prisma — Testing: <a href="https://www.prisma.io/docs/orm/prisma-client/testing">https://www.prisma.io/docs/orm/prisma-client/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

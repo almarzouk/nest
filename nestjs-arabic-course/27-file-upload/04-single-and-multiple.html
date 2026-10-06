@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ملف واحد وملفات متعددة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-single-and-multiple.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ملف واحد وملفات متعددة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار المعترض حسب شكل النموذج: ملف واحد، مصفوفة باسم واحد، حقول مسماة، أي حقل، أو نموذج بلا ملفات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>FileInterceptor</code> يمسك حقلًا واحدًا وملفًا واحدًا. نموذج «صور المعرض» يكرر الاسم <code>photos</code>. نموذج الكتاب يرسل <code>cover</code> و <code>sample</code> معًا. معترض الحقل الواحد يترك الباقي خارج العقد أو يرفضه بشكل يصعب شرحه للعميل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الاسم في الزينة يصف شكل الأجزاء، لا نوع الملف. بعد الاختيار، <code>@UploadedFile</code> للواحد و <code>@UploadedFiles</code> للباقي. كل معترض يقبل خيارات Multer نفسها: قرص، وحد حجم، حتى لا ترجع المصفوفة الكبيرة إلى <code>buffer</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من <code>@nestjs/platform-express</code>، كما في صفحة الرفع:</p>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>شكل النموذج</th>
+<th>الاستخراج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>FileInterceptor(field)</code></td>
+<td>ملف واحد في حقل</td>
+<td><code>@UploadedFile()</code></td>
+</tr>
+<tr>
+<td><code>FilesInterceptor(field, maxCount?, options?)</code></td>
+<td>عدة ملفات بالاسم نفسه</td>
+<td><code>@UploadedFiles()</code> مصفوفة</td>
+</tr>
+<tr>
+<td><code>FileFieldsInterceptor([{ name, maxCount? }], options?)</code></td>
+<td>حقول مختلفة</td>
+<td><code>@UploadedFiles()</code> كائن مفاتيحه أسماء الحقول</td>
+</tr>
+<tr>
+<td><code>AnyFilesInterceptor(options?)</code></td>
+<td>أي أسماء حقول</td>
+<td><code>@UploadedFiles()</code> مصفوفة، وكل عنصر فيه <code>fieldname</code></td>
+</tr>
+<tr>
+<td><code>NoFilesInterceptor(options?)</code></td>
+<td>نص multipart فقط</td>
+<td><code>@Body()</code>، وأي ملف يرفض بـ <code>BadRequestException</code></td>
+</tr>
+</tbody></table>
+<p><code>maxCount</code> سقف الحقل. <code>limits.files</code> سقف الطلب كله من جهة Multer.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">غلاف واحد          FileInterceptor(&#39;cover&#39;)
+معرض 1..6          FilesInterceptor(&#39;photos&#39;, 6)
+غلاف + عينة PDF    FileFieldsInterceptor([{ name:&#39;cover&#39;, maxCount:1 }, { name:&#39;sample&#39;, maxCount:1 }])
+صندوق بلا عقد      AnyFilesInterceptor  — نادر، لأن الأسماء تصبح بيانات عميل
+نموذج بلا ملف      NoFilesInterceptor
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>غلاف وصورة خلفية، كل منهما ملف واحد على القرص:</p>
+<pre><code class="language-ts">import { Controller, Post, UploadedFiles, UseInterceptors } from &#39;@nestjs/common&#39;;
+import { FileFieldsInterceptor } from &#39;@nestjs/platform-express&#39;;
+import { coverLimits } from &#39;./cover-limits.js&#39;;
+
+@Controller(&#39;books&#39;)
+export class GalleryController {
+  @Post(&#39;:id/images&#39;)
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: &#39;cover&#39;, maxCount: 1 },
+    { name: &#39;sample&#39;, maxCount: 1 },
+  ], coverLimits))
+  save(@UploadedFiles() files: {
+    cover?: Express.Multer.File[];
+    sample?: Express.Multer.File[];
+  }) {
+    return {
+      coverKey: files.cover?.[0]?.filename ?? null,
+      sampleKey: files.sample?.[0]?.filename ?? null,
+    };
+  }
+}
+</code></pre>
+<p><code>FileFieldsInterceptor</code> يعيد مصفوفة حتى لو كان <code>maxCount</code> واحدًا. أول عنصر هو الملف.</p>
+<h2>شرح المثال</h2>
+<p>الخيارات المشتركة <code>coverLimits</code> تطبَّق على الحقلين: القرص وحد الحجم. المفتاح <code>cover</code> قد يغيب إن لم يرسل العميل الجزء، لذلك <code>?.</code> و <code>null</code> في العقد أوضح من رمي استثناء داخل التعبير. إن أرسل العميل ملفين في <code>cover</code>، <code>maxCount: 1</code> يوقف الزيادة.</p>
+<p>معرض بالاسم نفسه يبدّل الزينة فقط:</p>
+<pre><code class="language-ts">@UseInterceptors(FilesInterceptor(&#39;photos&#39;, 6, coverLimits))
+add(@UploadedFiles() photos: Express.Multer.File[]) {
+  return { keys: photos.map((photo) =&gt; photo.filename) };
+}
+</code></pre>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل زينة تبني وسيط Multer بشكل مختلف. <code>FilesInterceptor</code> يجمع الأجزاء ذات <code>fieldname</code> الواحد في قائمة ويقطع عند <code>maxCount</code>. <code>FileFieldsInterceptor</code> يوزع الأجزاء على خريطة بالاسم، والحقول غير المذكورة لا تدخل الخريطة. <code>AnyFilesInterceptor</code> يجمع كل جزء ملف في قائمة واحدة، فيصبح اسم الحقل جزءًا من بيانات العميل يجب ألا يُستخدم مسارًا. <code>NoFilesInterceptor</code> يملأ <code>@Body()</code> من الحقول النصية ويرفض إن ظهر جزء فيه <code>filename</code>.</p>
+<p>التحليل ما زال يكتمل قبل الدالة على Express. ستة ملفات في الذاكرة تعني ستة <code>buffer</code>. مرّر <code>storage</code> هنا كما في الملف الواحد.</p>
+<h2>مثال عملي</h2>
+<p>عقد إنشاء كتاب: عنوان نصي، وغلاف إجباري، وعينة اختيارية.</p>
+<pre><code class="language-text">title   نص     @Body(&#39;title&#39;)
+cover   1 ملف  files.cover[0]
+sample  0..1   files.sample?.[0]
+</code></pre>
+<p>الخدمة ترمي <code>BadRequestException</code> إن غاب <code>cover</code>. <code>AnyFilesInterceptor</code> يضعف العقد لأن العميل يسمّي حقلًا ثالثًا فيُخزَّن مع الكتاب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استخدام <code>@UploadedFile</code> مع <code>FilesInterceptor</code>. الناتج مصفوفة، والزينة المفردة لا تطابقها.</li>
+<li>نسيان أن <code>FileFieldsInterceptor</code> يعيد <code>File[]</code> لا <code>File</code>.</li>
+<li><code>AnyFilesInterceptor</code> ثم <code>join(uploadDir, file.fieldname)</code>.</li>
+<li>رفع السقف إلى عشرات الملفات مع تخزين في الذاكرة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p><code>FileFieldsInterceptor</code> حين تكون الأسماء جزءًا من تصميمك. <code>FilesInterceptor</code> لمعرض. <code>NoFilesInterceptor</code> لنموذج غني بلا مرفقات حتى لا يمر ملف صامت إلى <code>@Body()</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p><code>AnyFilesInterceptor</code> كاختصار دائم. الأسماء الحرة تصعّب الحد والاختبار. حوّلها إلى حقول معلنة عندما يستقر المنتج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحاجة</th>
+<th>الزينة</th>
+<th>شكل القيمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>غلاف فقط</td>
+<td><code>FileInterceptor</code></td>
+<td>ملف أو <code>undefined</code></td>
+</tr>
+<tr>
+<td>حتى 6 صور</td>
+<td><code>FilesInterceptor(&#39;photos&#39;, 6)</code></td>
+<td><code>File[]</code></td>
+</tr>
+<tr>
+<td>غلاف وعينة</td>
+<td><code>FileFieldsInterceptor</code></td>
+<td><code>{ cover?: File[]; sample?: File[] }</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة لمعرض حقوله كلها باسم <code>photos</code>؟</p>
+<details>
+<summary>الحل</summary>
+`FilesInterceptor('photos', maxCount, options)` مع `@UploadedFiles()`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>files.cover</code> مصفوفة رغم <code>maxCount: 1</code>؟</p>
+<details>
+<summary>الحل</summary>
+لأن `FileFieldsInterceptor` يجمّع كل حقل في قائمة. السقف يحد الطول، ولا يغيّر النوع إلى ملف مفرد.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تختار <code>NoFilesInterceptor</code> بدل ترك المسار على <code>FileInterceptor</code>؟</p>
+<details>
+<summary>الحل</summary>
+عندما يكون العقد حقولًا نصية بصيغة multipart، وتريد رفض أي جزء ملف بـ `400` بدل تخزينه صامتًا.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما فرق <code>maxCount</code> عن <code>limits.files</code>؟</li>
+<li>أي زينة ترفض وجود ملف؟</li>
+<li>لماذا الحقول المعلنة أوضح من <code>AnyFilesInterceptor</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>اختر المعترض من شكل النموذج. الواحد مع <code>@UploadedFile</code>، والبقية مع <code>@UploadedFiles</code>، والقرص والحد يبقيان على الخيارات مهما كثر العدد.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحجم و MIME: رفض المحتوى بعد أن صار شكل الحقول معروفًا، ومن غير الاكتفاء بالامتداد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — File upload: <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

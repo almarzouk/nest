@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ORM Repository</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-orm-repository.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ORM Repository</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تمييز <code>Repository</code> الذي يقدّمه ORM، خصوصًا TypeORM، عن مستودع الدومين: الأول مساعد وصول للجدول، والثاني عقد مجموعة للجذر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>توثيق TypeORM يحقن <code>Repository&lt;User&gt;</code> وفيه <code>find</code> و <code>save</code> و <code>createQueryBuilder</code>. الاسم يطابق النمط فيُظن أن حقن هذا الصنف يحقق العزل. الصنف يعرف كيان ORM والأعمدة، ويعيد كائنات مرتبطة بالجلسة أو بالجدول. خدمة الدومين التي تستقبله تظل مرتبطة بالأداة. ذلك مفيد كطبقة بيانات داخل Nest. هو ليس المنفذ الذي يمنع Prisma أو TypeORM من الظهور في السياسة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@InjectRepository(BookEntity)</code> يعطيك أدوات الجدول <code>book</code>. استعمله في محول أو في خدمة وحدة صغيرة قررت عدم العزل. لا تمرره إلى <code>PlaceOrder</code> التي يُفترض أنها أعمى، ولا تعِد كيان TypeORM من واجهة تسميها منفذ دومين. Prisma ليس فيه الصنف نفسه، وعميل <code>PrismaClient</code> يلعب دور المساعد نفسه إن استُعمل مباشرًا: وصول بيانات قوي، لا مجموعة دومين.</p>
+<h2>التعريف التقني</h2>
+<p>شكل Nest مع TypeORM، كما في توثيق قاعدة البيانات للأداة:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { InjectRepository } from &#39;@nestjs/typeorm&#39;;
+import { Repository } from &#39;typeorm&#39;;
+import { BookEntity } from &#39;./book.entity.js&#39;;
+
+@Injectable()
+export class BooksStore {
+  constructor(
+    @InjectRepository(BookEntity)
+    private readonly books: Repository&lt;BookEntity&gt;,
+  ) {}
+
+  findEntity(id: string): Promise&lt;BookEntity | null&gt; {
+    return this.books.findOne({ where: { id } });
+  }
+}
+</code></pre>
+<p><code>Repository&lt;BookEntity&gt;</code> هنا تفصيل. <code>BooksStore</code> اسم صادق. إن سمّيته <code>BooksRepository</code> فوثّق أنه مستودع ORM لا منفذ الدومين، أو حوّله في الدرس التالي إلى محول يركّب كيانًا خاصًا بك.</p>
+<p>العمليات <code>find({ where, relations, take })</code> استعلامات. <code>save(entity)</code> يحفظ صف الكيان كما يعرّفه ORM، وقد يكتب أعمدة لم تمر بدوال جذر. هذا يختلف عن <code>save(order)</code> الذي يفترض أن <code>order</code> حُمي مسبقًا.</p>
+<p>Prisma:</p>
+<pre><code class="language-ts">this.prisma.book.findUnique({ where: { id } });
+</code></pre>
+<p>نفس الدور: مساعد. وضعه خلف منفذ قرار إضافي. حقنه في خدمة الكتالوج البسيطة متوافق مع «ما لا تستورده» حتى يظهر الألم.</p>
+<p>لا تبنِ <code>class GenericRepository&lt;T&gt;</code> يلف كل الجداول. التوثيق والألم اليومي في الاستعلامات المختلفة، والتجريد العام يخفيها خلف <code>any</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Repository&lt;BookEntity&gt;  -&gt; جدول book عبر TypeORM
+PrismaClient.book       -&gt; جدول book عبر Prisma
+OrdersRepository الدومين -&gt; مجموعة Order بلا أداة
+</code></pre>
+<p>الأولان يُحقنان حيث قبلت التفصيل. الثالث يُحقن في السياسة.</p>
+<h2>أبسط مثال</h2>
+<p><code>BooksStore.findEntity</code> أعلاه داخل <code>CatalogModule</code>. المتحكم ينادي خدمة تنادي <code>BooksStore</code>. لا واجهة <code>BooksPort</code> بعد. الاسم لا يقول دومين. عند اختبار HTTP يمكنك قاعدة اختبار أو مزيف لـ <code>BooksStore</code> إن غطيت الدوال التي يناديها المسار.</p>
+<h2>شرح المثال</h2>
+<p><code>InjectRepository</code> تسجيل من <code>TypeOrmModule.forFeature([BookEntity])</code>. هذا Dynamic Module من فصل سابق: <code>forFeature</code> شريحة على اتصال <code>forRoot</code>. الصنف الذي تستلمه يعرف TypeORM. إبقاؤه في طبقة البيانات صدق معماري. تمريره إلى ملف <code>domain/</code> يسحب TypeORM إلى الداخل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>forRoot</code> يفتح الاتصال مرة.</li>
+<li><code>forFeature</code> يسجل <code>Repository&lt;BookEntity&gt;</code> في الوحدة.</li>
+<li><code>BooksStore</code> يستدعي <code>findOne</code>.</li>
+<li>الناتج كيان ORM فيه أعمدة وربما علاقات محمّلة.</li>
+<li>إرجاعه من Controller يسرّب الشكل إن لم تعِد DTO.</li>
+<li>استبدال هذا المستودع في اختبار Nest ممكن لأنه مزود، لكن المزيف ما زال يحاكي كيان ORM لا الجذر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تقرير مبيعات يستعمل <code>createQueryBuilder</code> على <code>Repository&lt;OrderEntity&gt;</code>. هذا مكانه <code>SalesQuery</code> في وحدة التقارير، لا دالة على منفذ <code>Order</code> التجميعي. القراءة هنا أعمدة ومجاميع. كتابتها عبر <code>Repository.save</code> من التقرير تتجاوز جذر الطلب. اترك الكتابة لمالك التجميع حتى لو استعمل هو أيضًا TypeORM داخل المحول.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار <code>Repository&lt;Entity&gt;</code> منفذ Clean تلقائيًا.</li>
+<li>إرجاع <code>BookEntity</code> في JSON.</li>
+<li>مستودع عام مولَّد لكل الكيانات.</li>
+<li><code>forFeature</code> في الجذر لكل كيانات التطبيق بدل وحدة الميزة.</li>
+<li>تسمية صنف Prisma <code>DomainRepository</code> وهو يعيد نوع العميل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>وصول جدول داخل محول أو خدمة وحدة لم تعزل الدومين، خصوصًا مع TypeORM كما يوثّقه Nest.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كعقد لسياسة يجب ألا تستورد الأداة. هناك واجهة تملكها السياسة، والتنفيذ يستعمل مستودع ORM أو Prisma من الداخل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>مستودع ORM</th>
+<th>مستودع الدومين</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>النوع المعاد</td>
+<td>كيان الأداة غالبًا</td>
+<td>كيانك أو DTO الدومين</td>
+</tr>
+<tr>
+<td>من يستورده</td>
+<td>طبقة البيانات</td>
+<td>السياسة عبر رمز</td>
+</tr>
+<tr>
+<td>الاستعلام الحر</td>
+<td>متاح</td>
+<td>خارج المجموعة</td>
+</tr>
+<tr>
+<td>Prisma</td>
+<td>العميل نفسه في هذا الدور</td>
+<td>يقف خلف المنفذ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحقن <code>@InjectRepository(BookEntity)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>Repository&lt;BookEntity&gt;</code> من TypeORM، مساعد الجدول لا عقد الدومين تلقائيًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تقرير <code>createQueryBuilder</code> لا يُضاف إلى <code>save(order)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن التقرير قراءة أعمدة، بينما <code>save</code> يحفظ جذرًا بعد قواعده. الخلط يجعل المجموعة مساعد استعلام عام.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمة كتالوج صغيرة تستدعي <code>prisma.book.findMany</code>. متى تتركها ومتى تلفها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>اتركها ما دام لا جذر ولا اختبار يومي بلا قاعدة. لفها بمنفذ عندما تصبح السياسة أوسع من الاستعلام أو عندما تريد مزيفًا على عمليات المجموعة لا على العميل كله.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما دور <code>forFeature</code> هنا؟</li>
+<li>لماذا الاسم المشترك يضلل؟</li>
+<li>أين يقف <code>PrismaClient</code> من هذا التصنيف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>مستودع ORM أداة جدول يوثّقها TypeORM ويلعب Prisma دورها عند الاستدعاء المباشر. استعمله في الحافة أو في وحدة بسيطة، ولا تعتبره عزل الدومين إلا إذا أخفيت كيانه خلف عقد تملكه السياسة.</p>
+<h2>ماذا بعد؟</h2>
+<p>Domain Repository: الواجهة في الدومين وعميل Prisma خلفها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Database: <a href="https://docs.nestjs.com/techniques/database">https://docs.nestjs.com/techniques/database</a></li>
+<li>TypeORM — Repository API (عبر دليل Nest لقاعدة البيانات)</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

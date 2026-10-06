@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>الحجم و MIME Type</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-validation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>الحجم و MIME Type</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رفض ملف الغلاف قبل حفظه في المجال: سقف بايتات، ونوع محتوى يُستنتج من البايتات لا من اسم الملف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>diskStorage</code> يحفظ ما وصله ما دام تحت حد Multer. العميل يسمّي <code>cover.exe</code> إلى <code>cover.png</code> ويضع <code>Content-Type: image/png</code>. الامتداد الذي ألصقته في <code>filename</code> نسخة من هذا الادعاء. المجال يخزّن مفتاحًا سيعامَل لاحقًا كصورة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>حدّان متتاليان. <code>limits.fileSize</code> في Multer يقطع القراءة. ثم <code>ParseFilePipe</code> يشغّل <code>MaxFileSizeValidator</code> و <code>FileTypeValidator</code> على الملف الذي نجا. <code>FileTypeValidator</code> يطابق النوع من الرقم السحري في المحتوى افتراضيًا، لا من الترويسة وحدها.</p>
+<h2>التعريف التقني</h2>
+<p>الأنبوب المدمج <code>ParseFilePipe</code> يأخذ <code>validators</code>. كل مدقق يطبّق <code>FileValidator</code>: <code>isValid</code> و <code>buildErrorMessage</code>. المدققان الجاهزان:</p>
+<ul>
+<li><code>MaxFileSizeValidator({ maxSize })</code> بالبايت.</li>
+<li><code>FileTypeValidator({ fileType })</code> نص أو تعبير. الافتراضي فحص magic number. <code>skipMagicNumbersValidation: true</code> يقارن النوع الذي أعلنه العميل فقط، فتجنّبه للأغلفة.</li>
+</ul>
+<p>الخيار <code>errorHttpStatusCode</code> افتراضه <code>400</code>. <code>exceptionFactory</code> إن أردت شكل خطأ واحدًا مع بقية API. الملف مطلوب افتراضيًا. لجعله اختياريًا: <code>fileIsRequired: false</code> داخل <code>build()</code> في <code>ParseFilePipeBuilder</code>.</p>
+<p>الأنبوب يُربَط على <code>@UploadedFile(...)</code>. مع المصفوفات، الأنابيب على <code>@UploadedFiles()</code> تجري لكل عنصر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Multer limits.fileSize     يوقف التيار المبكر
+ParseFilePipe
+  MaxFileSizeValidator     سقف ثانٍ للعقد (بايت)
+  FileTypeValidator        magic number للصورة
+الخدمة                     لا ترى إلا ما عبر
+</code></pre>
+<p>الأنبوب يعمل بعد اكتمال قبضة Multer. لذلك السقف الكبير يبقى على <code>limits</code> حتى لا يُكتب ملف ضخم ثم يُحذف.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import {
+  FileTypeValidator,
+  MaxFileSizeValidator,
+  ParseFilePipe,
+} from &#39;@nestjs/common&#39;;
+
+export const coverPipe = new ParseFilePipe({
+  validators: [
+    new MaxFileSizeValidator({ maxSize: 2 * 1024 * 1024 }),
+    new FileTypeValidator({ fileType: /^image\/(png|jpeg)$/ }),
+  ],
+});
+</code></pre>
+<p>على المسار:</p>
+<pre><code class="language-ts">@Post(&#39;:id/cover&#39;)
+@UseInterceptors(FileInterceptor(&#39;cover&#39;, coverLimits))
+replace(
+  @Param(&#39;id&#39;) bookId: string,
+  @UploadedFile(coverPipe) file: Express.Multer.File,
+) {
+  return this.covers.replace(bookId, file.filename);
+}
+</code></pre>
+<p><code>coverPipe</code> يفترض وجود الملف. غيابه فشل تحقق، لا فرع <code>undefined</code>.</p>
+<h2>شرح المثال</h2>
+<p>التعبير يقبل PNG و JPEG كما يستنتجها الفاحص من المحتوى. <code>image/png</code> الذي كتبه المتصفح لا يكفي وحده. <code>maxSize</code> هنا يساوي حد Multer حتى تبقى رسالة العقد واحدة. إن أردت <code>422</code> بدل <code>400</code>:</p>
+<pre><code class="language-ts">new ParseFilePipeBuilder()
+  .addMaxSizeValidator({ maxSize: 2 * 1024 * 1024 })
+  .addFileTypeValidator({ fileType: /^image\/(png|jpeg)$/ })
+  .build({ errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY });
+</code></pre>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد التخزين على القرص، <code>FileTypeValidator</code> يقرأ الرقم السحري من بداية الملف. عدم التطابق يرمي استثناء قبل الخدمة، لكن <code>diskStorage</code> قد يكون كتب الملف. انقل من مجلد مؤقت بعد النجاح، أو احذف اليتيم. الرقم السحري يرفض التنكر الشائع، ولا يثبت أن الصورة سليمة حتى آخر بايت.</p>
+<h2>مثال عملي</h2>
+<p>سياسة غلاف المتجر:</p>
+<table>
+<thead>
+<tr>
+<th>القاعدة</th>
+<th>الأداة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>لا أكبر من 2 ميغابايت</td>
+<td><code>limits.fileSize</code> ثم <code>MaxFileSizeValidator</code></td>
+</tr>
+<tr>
+<td>PNG أو JPEG فقط</td>
+<td><code>FileTypeValidator</code> بالرقم السحري</td>
+</tr>
+<tr>
+<td>الاسم على القرص</td>
+<td><code>randomUUID</code> من درس Multer</td>
+</tr>
+<tr>
+<td>المفتاح في الجدول</td>
+<td><code>filename</code> بعد نجاح الأنبوب</td>
+</tr>
+</tbody></table>
+<p>عينة PDF على حقل <code>sample</code> تستخدم أنبوبًا ثانيًا بتعبير <code>application/pdf</code>. لا تعِد استعمال <code>coverPipe</code> على الحقلين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قبول الملف لأن الامتداد <code>.png</code>.</li>
+<li><code>skipMagicNumbersValidation: true</code> في مسار عام.</li>
+<li>سقف الأنبوب 2 ميغابايت وسقف Multer غائب، فيُخزَّن ملف أكبر ثم يُرفض.</li>
+<li>ترك ملف القرص بعد فشل الأنبوب بلا سياسة حذف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل مسار رفع يغيّر مجالًا: غلاف، مرفق، شعار. المدققات في ثابت مسمّى إن طالت القائمة، كما تقترح الصفحة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن حد Multer. وكفحص وحيد لملف سيُنفَّذ أو يُفك ضغطه. ذلك مسار عزل مختلف عن مطابقة الصورة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الإشارة</th>
+<th>من يكتبها</th>
+<th>قوتها</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الامتداد</td>
+<td>العميل</td>
+<td>ضعيفة</td>
+</tr>
+<tr>
+<td><code>mimetype</code> في الجزء</td>
+<td>العميل</td>
+<td>ضعيفة</td>
+</tr>
+<tr>
+<td>magic number</td>
+<td><code>FileTypeValidator</code></td>
+<td>مناسبة للصورة الشائعة</td>
+</tr>
+<tr>
+<td><code>limits.fileSize</code></td>
+<td>Multer أثناء القراءة</td>
+<td>تمنع التخزين الزائد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما وحدة <code>maxSize</code> في <code>MaxFileSizeValidator</code>؟</p>
+<details>
+<summary>الحل</summary>
+البايت. `2 * 1024 * 1024` يعني 2 ميغابايت.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي أن يطابق <code>file.mimetype</code> القيمة <code>image/png</code>؟</p>
+<details>
+<summary>الحل</summary>
+لأن العميل يضع الترويسة. `FileTypeValidator` ينظر إلى محتوى الملف ما لم تُعطّل فحص الرقم السحري.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>نجح Multer في الكتابة ثم فشل <code>FileTypeValidator</code>. أين الملف، وما الذي لم يحدث؟</p>
+<details>
+<summary>الحل</summary>
+الملف على المسار الذي اختاره `diskStorage`. الخدمة لم تُستدعَ. تحتاج حذفًا أو كتابة مؤقتة ثم نقلًا بعد نجاح الأنبوب.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُربَط <code>ParseFilePipe</code>؟</li>
+<li>ماذا يفعل <code>fileIsRequired: false</code>؟</li>
+<li>لماذا يبقى <code>limits.fileSize</code> حتى مع وجود <code>MaxFileSizeValidator</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحجم يُقطع في Multer ويُعاد التحقق في الأنبوب. النوع للصورة يُستنتج من البايتات. الامتداد ادّعاء عميل.</p>
+<h2>ماذا بعد؟</h2>
+<p>إرسال ملف إلى العميل بتيار، من غير تحميله كله في الذاكرة ومن غير إغلاق باب المعترضات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — File upload: <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

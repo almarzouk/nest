@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Clean Architecture</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-clean-architecture.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Clean Architecture</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة قاعدة الاعتماد نحو الداخل: سياسة العمل لا تستورد تفاصيل HTTP أو Prisma، والحكم متى تطبقها في Nest ومتى تبقى الطبقات الثلاث كافية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خدمة «تطبيق» تستورد <code>@nestjs/common</code> و <code>PrismaClient</code> معًا ليست مستقلة عن الإطار ولا عن القاعدة. نقلها إلى عامل أو اختبار بلا Nest مكلف. Clean Architecture، كما صاغها Robert C. Martin، تجعل الكيانات وحالات الاستخدام في الداخل، وتجعل الواجهات والبنية في الخارج. الداخل لا يعرف الخارج. الخارج يحقن تنفيذًا يطبّق منفذًا يعرفه الداخل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>دوائر: كيانات في القلب، ثم حالات استخدام، ثم محولات. السهم يشير إلى الداخل فقط. في Nest المحول الخارجي متحكم. حالة الاستخدام خدمة بلا ديكور HTTP. المنفذ واجهة أو رمز حقن. Prisma محول في الدائرة الخارجية يطبّق المنفذ. الإطار يوصل المحول بالمنفذ عبر <code>provide</code> و <code>useClass</code>.</p>
+<h2>التعريف التقني</h2>
+<p>لا حزمة <code>@nestjs/clean</code>. القرار هيكلي.</p>
+<p>كيان <code>Book</code>: حقول وقواعد لا تعرف SQL، مثل رفض سعر سالب. قد يكون صنفًا بلا <code>@Injectable</code> إن لم يحتج الحاوية.</p>
+<p>حالة استخدام <code>CreateBook</code>: تنادي <code>BooksPort.save</code>. لا تستورد <code>@prisma/client</code>.</p>
+<p>منفذ <code>BooksPort</code> في الداخل. محول <code>PrismaBooksAdapter</code> في مجلد بنية يستورد المنفذ وينفذه.</p>
+<p>الرمز من فصل المزودات المخصصة:</p>
+<pre><code class="language-ts">{ provide: BOOKS, useClass: PrismaBooksAdapter }
+</code></pre>
+<p><code>CreateBook</code> يحقن <code>BOOKS</code>. المتحكم يحقن <code>CreateBook</code> فقط.</p>
+<p>قاعدة الاعتماد: ملف حالة الاستخدام لا يظهر في <code>import</code> له مسار <code>prisma</code> أو <code>express</code>. ملف المحول يجوز أن يستورد الاثنين.</p>
+<p>في تطبيق CRUD صغير، كيان بلا سلوك وواجهة تعيد تمرير Prisma تزيد ملفاتًا بلا حماية. طبّق الدوائر عندما السياسة ستعيش أطول من القاعدة أو من HTTP، أو عندما الاختبار يجب أن يشغّل الحالة بلا Docker. غير ذلك الطبقات داخل الوحدة النمطية تكفي، وهذا ما يقوله درس «ما لا تستورده».</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreateBook  -&gt;  BooksPort  &lt;-  PrismaBooksAdapter
+     ^
+BooksController
+</code></pre>
+<p>السهمان نحو المنفذ. المتحكم لا يقفز إلى المحول.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface BooksPort {
+  save(input: { title: string; priceMinor: number }): Promise&lt;{ id: string }&gt;;
+}
+
+export const BOOKS = Symbol(&#39;BOOKS&#39;);
+</code></pre>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { BOOKS, type BooksPort } from &#39;./books.port.js&#39;;
+
+@Injectable()
+export class CreateBook {
+  constructor(@Inject(BOOKS) private readonly books: BooksPort) {}
+
+  execute(input: { title: string; priceMinor: number }) {
+    if (input.priceMinor &lt; 0) {
+      throw new Error(&#39;السعر السالب مرفوض&#39;);
+    }
+    return this.books.save(input);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>execute</code> سياسة. الفحص بلا Prisma. <code>Error</code> هنا تعليمي؛ في المشروع استثناء دومين يترجمه Filter. المحول لاحقًا يحوّل الصف إلى <code>{ id }</code>. تغيير Prisma إلى استعلام آخر يمس المحول والربط في الوحدة، لا <code>CreateBook</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المتحكم يستقبل DTO وينادي <code>execute</code>.</li>
+<li>الحاوية تمرر المحول خلف <code>BOOKS</code>.</li>
+<li>السياسة تفحص ثم تطلب <code>save</code>.</li>
+<li>المحول يكتب SQL أو استدعاء Prisma.</li>
+<li>الناتج يصعد كائنًا plain.</li>
+<li>اختبار <code>CreateBook</code> يمرر <code>{ save: async () =&gt; ({ id: &#39;1&#39; }) }</code> بـ <code>useValue</code> على <code>BOOKS</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>نقل <code>CreateBook</code> إلى عامل طابور: العامل يستدعي <code>execute</code> بعد أن تبني الوحدة المحول نفسه أو محولًا يتصل بقاعدة العامل. لا تنسخ فحص السعر في معالج الطابور. إن كان الفحص في المتحكم ضاع عند النقل. هذا ربح الدائرة الداخلية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>واجهة <code>save</code> تعيد نوع <code>Book</code> من Prisma فيتسرب العميل إلى السياسة.</li>
+<li>كيان فيه <code>@Inject</code> لـ Prisma.</li>
+<li>مجلد <code>domain</code> يستورد <code>PrismaService</code>.</li>
+<li>تطبيق الدوائر على <code>GET /health</code>.</li>
+<li>تسمية كل خدمة <code>UseCase</code> من غير منفذ، فتبقى الخدمة تستورد Prisma والاسم فقط نظيف.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>سياسة ستُختبر بلا قاعدة، أو أكثر من محول دخول (HTTP وطابور) لنفس القاعدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>CRUD يقرأ جدولًا ويعرضه. طبقة خدمة داخل <code>BooksModule</code> أوضح حتى يظهر ألم حقيقي: اختبار بطيء أو محول ثانٍ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>الداخل يعرف Prisma؟</th>
+<th>كلفة الملفات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>طبقات بسيطة</td>
+<td>الخدمة تعرف العميل</td>
+<td>منخفضة</td>
+</tr>
+<tr>
+<td>Clean</td>
+<td>حالة الاستخدام تعرف المنفذ</td>
+<td>منفذ ومحول لكل حالة تستحق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>إلى أين يشير سهم الاعتماد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نحو الداخل: المحول يطبّق منفذًا يعرفه الداخل، والسياسة لا تستورد المحول.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا إعادة نوع Prisma من <code>BooksPort</code> تكسر القاعدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن السياسة التي تستعمل الناتج تستورد تفاصيل القاعدة. المنفذ يعيد أشكالًا يملكها الداخل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>GET</code> الصحة يفحص العملية فقط. لماذا لا تضع له منفذ <code>HealthPort</code> في القلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا سياسة عمل فيه. متحكم وIndicator من Terminus في الحافة يكفيان. الدوائر تحمي سياسة تتغير، لا كل ملف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما دور <code>Symbol</code> هنا؟</li>
+<li>ماذا يُختبَر بـ <code>useValue</code>؟</li>
+<li>متى الطبقات الثلاث أصدق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Clean Architecture تعني أن السياسة لا تستورد الإطار ولا القاعدة، والمحولات في الحافة تطبّق منافذ. طبّقها حيث يوجد ألم نقل أو اختبار، لا كقالب لكل مسار.</p>
+<h2>ماذا بعد؟</h2>
+<p>Hexagonal Architecture: الأسماء Ports و Adapters لنفس اتجاه الاعتماد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+<li>Robert C. Martin، Clean Architecture (الكتاب مصدر الفكرة، والتطبيق هنا على وحدات Nest)</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

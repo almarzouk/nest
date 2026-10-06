@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>العناوين التي ضبطتها، <code>billing</code> و <code>redis</code> و <code>nats</code>، لا تعمل على جهازك كما تعمل داخل شبكة الحاويات. <code>localhost</code> من صورة التطبيق هو الحاوية نفسها. الفصل التالي يضع Nest و PostgreSQL و Redis في Docker: صورة متعددة المراحل، وأمر تشغيل <code>node dist/main.js</code> لا <code>start:dev</code>، و Compose يسمي الخدمات التي تصبح مضيفات.</p>
+<p>ستحتاج Node 20.19 أو أحدث، أو 22.12 أو أحدث، في الصورة. البناء <code>npm run build</code> ثم تشغيل الناتج. قاعدة البيانات مضيفها اسم الخدمة <code>postgres</code> داخل <code>DATABASE_URL</code>.</p>
+<p><a href="../50-docker/README.html">Docker</a></p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

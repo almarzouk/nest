@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@nestjs/terminus</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-terminus.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@nestjs/terminus</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تركيب <code>@nestjs/terminus</code> بحيث يجمع مؤشرات الجاهزية في <code>HealthCheckResult</code>، ويرد <code>503</code> عند العطل، و <code>shutting_down</code> عند الإيقاف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كتابة <code>try/catch</code> حول <code>SELECT 1</code> في كل مشروع تعيد اختراع شكل الرد والمهلة والرمز. Terminus يعرّف <code>status</code> و <code>info</code> و <code>error</code> و <code>details</code>، وينفّذ المحاولات، ويحوّل الفشل إلى حالة صحية لا إلى استثناء <code>500</code> إن استعملت الواجهة المخصصة لذلك.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>TerminusModule</code> في وحدة الصحة. متحكم عليه <code>@HealthCheck()</code> يستدعي <code>HealthCheckService.check</code> بمصفوفة دوال. كل دالة مؤشر. إن نجح الجميع فـ <code>status</code> هو <code>ok</code> و HTTP <code>200</code>. إن نزل واحد فـ <code>error</code> و <code>503</code>. مؤشر <code>degraded</code> لا يفشل الفحص ويُبقي <code>200</code> مع حالة عامة <code>degraded</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm install --save @nestjs/terminus
+</code></pre>
+<p><code>HttpHealthIndicator</code> يحتاج أيضًا <code>@nestjs/axios</code> و <code>axios</code> إن فحصت عنوانًا خارجيًا. قاعدة البيانات و الذاكرة والقرص لا تحتاجه.</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { TerminusModule } from &#39;@nestjs/terminus&#39;;
+import { HealthController } from &#39;./health.controller.js&#39;;
+
+@Module({
+  imports: [
+    TerminusModule.forRoot({
+      gracefulShutdownTimeoutMs: 1000,
+    }),
+  ],
+  controllers: [HealthController],
+})
+export class HealthModule {}
+</code></pre>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { HealthCheck, HealthCheckService } from &#39;@nestjs/terminus&#39;;
+import { PrismaHealthIndicator } from &#39;@nestjs/terminus&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+
+@Controller(&#39;health&#39;)
+export class HealthController {
+  constructor(
+    private readonly health: HealthCheckService,
+    private readonly prisma: PrismaHealthIndicator,
+    private readonly db: PrismaService,
+  ) {}
+
+  @Get(&#39;ready&#39;)
+  @HealthCheck()
+  ready() {
+    return this.health.check([
+      () =&gt; this.prisma.pingCheck(&#39;database&#39;, this.db).withTimeout(1000),
+    ]);
+  }
+}
+</code></pre>
+<p><code>PrismaHealthIndicator.pingCheck</code> ينفّذ <code>SELECT 1</code> عبر <code>$queryRawUnsafe</code>، أو أمر ping إن كان العميل Mongo. المهلة الافتراضية نحو 1000 مللي ثانية، و <code>.withTimeout()</code> أوضح من خيار <code>timeout</code> القديم الذي صار مهملًا. <code>cacheFor(5000)</code> يمنع ضرب القاعدة في كل مسبار إن كانت الفترة أقصر من اللازم.</p>
+<p>مع <code>enableShutdownHooks()</code>، بعد <code>SIGTERM</code> يصير <code>status</code> القيمة <code>shutting_down</code> و HTTP <code>503</code>. <code>gracefulShutdownTimeoutMs</code> يؤخر الإغلاق على <code>SIGTERM</code> فقط حتى يسحب المنسّق المرور. <code>SIGINT</code> يعلّم الحالة ثم يغلق فورًا. بلا خطافات الإيقاف لا يرى Terminus الإشارة.</p>
+<p>رمي خطأ من مؤشر مبني بـ <code>up()</code> و <code>down()</code> يُعد عيبًا ويعيد <code>500</code>. <code>attempt()</code> يحوّل الرمي إلى <code>down</code>.</p>
+<h2>Mental Model</h2>
+<p><code>health.check</code> يعيد <code>ok</code> مع 200، أو <code>error</code> مع 503، أو <code>degraded</code> مع 200، أو <code>shutting_down</code> مع 503 بعد <code>SIGTERM</code>.</p>
+<h2>أبسط مثال</h2>
+<p>المتحكم أعلاه على <code>GET /health/ready</code>. <code>pingCheck</code> يعيد محاولة، و <code>withTimeout(1000)</code> يحدها، و <code>check</code> يبني <code>HealthCheckResult</code>. الحياة لا تمر من <code>check</code>.</p>
+<h2>شرح المثال</h2>
+<p>المفتاح <code>&#39;database&#39;</code> يظهر تحت <code>info</code> عند الصعود وتحت <code>error</code> عند النزول. الحياة تبقى الدالة الرخيصة من الدرس السابق.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المزخرف يمرر النتيجة إلى مرشح Terminus.</li>
+<li>المؤشر الناجح يذهب إلى <code>info</code> و <code>details</code>.</li>
+<li>المؤشر النازل يذهب إلى <code>error</code> و <code>details</code> ويقلب <code>status</code> إلى <code>error</code>.</li>
+<li>المهلة تُجهض الإشارة الممررة إلى العملية.</li>
+<li><code>cacheFor</code> يعيد النتيجة نفسها ويضع <code>cachedResponse: true</code>.</li>
+<li>عند الإغلاق تُستبدل الحالة العامة بـ <code>shutting_down</code> قبل قطع الاتصالات.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>جاهزية المتجر: Prisma بمهلة ثانية وكاش خمس ثوانٍ. قرص <code>checkStorage(&#39;storage&#39;, { path: &#39;/&#39;, thresholdPercent: 0.9 })</code> على مسار تشخيص لا على الحياة. الذاكرة <code>checkHeap</code> تقارن <code>heapUsed</code> بالبايت. لا تضع عتبة منخفضة على مسبار يقتل الحاوية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فحص وثائق Nest عبر HTTP داخل كل جاهزية.</li>
+<li>خيار <code>timeout</code> القديم بدل <code>withTimeout()</code>.</li>
+<li>نسيان <code>enableShutdownHooks()</code> فتبقى الجاهزية <code>ok</code> أثناء القتل.</li>
+<li><code>gracefulShutdownTimeoutMs</code> مع توقع التأخير على Ctrl+C.</li>
+<li>حارس على المتحكم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يسأل منسق عن الجاهزية بشكل موحّد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تلف كل مسار عمل بـ <code>@HealthCheck()</code>. هو لمسبار البنية. ولا تستعمل مؤشر HTTP على خدمتك نفسها فتصنع حلقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>HTTP</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>ok</code></td>
+<td>200</td>
+<td>المؤشرات صاعدة</td>
+</tr>
+<tr>
+<td><code>degraded</code></td>
+<td>200</td>
+<td>تدهور لا يوقف الخدمة</td>
+</tr>
+<tr>
+<td><code>error</code></td>
+<td>503</td>
+<td>مؤشر نازل</td>
+</tr>
+<tr>
+<td><code>shutting_down</code></td>
+<td>503</td>
+<td>الإشارة وصلت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مزخرف يضع نتيجة <code>health.check</code> في رد الصحة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@HealthCheck()</code> على دالة المتحكم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>gracefulShutdownTimeoutMs</code> لا يؤخر Ctrl+C؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التأخير على <code>SIGTERM</code> الذي يرسله المنسّق. <code>SIGINT</code> يعلّم <code>shutting_down</code> ثم يغلق فورًا. الخطافات يجب أن تكون مفعّلة في الحالتين.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مؤشر يرمي <code>Error</code> من دالة تستدعي <code>down()</code> بعد <code>throw</code>. أي رمز يرى المنسّق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>500</code> لأن الرمي خارج <code>attempt()</code> عيب لا حالة <code>down</code>. لف العملية في <code>attempt()</code> ليصبح <code>503</code> مع <code>status: error</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يثبت الحزمة قبل المؤشرات؟</li>
+<li>أين تُضبط مهلة الإغلاق اللطيف؟</li>
+<li>ماذا يفعل <code>cacheFor</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Terminus يجمع محاولات المؤشرات في رد واحد: <code>200</code> للصعود والتدهور، و <code>503</code> للنزول وللإغلاق. فعّل خطافات الإيقاف، وحدّ المهلة بـ <code>withTimeout</code>، وأبقِ الحياة خارج <code>check</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>مؤشرات القاعدة و Redis: ماذا يفشل الجاهزية وماذا يبقى متدهورًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Terminus: <a href="https://docs.nestjs.com/recipes/terminus">https://docs.nestjs.com/recipes/terminus</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

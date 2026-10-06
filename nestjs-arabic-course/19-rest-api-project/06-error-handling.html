@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Error Handling</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-error-handling.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Error Handling</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ترجمة فشل مورد المنشورات إلى رموز HTTP مفهومة: <code>400</code> و <code>404</code> و <code>409</code>، من غير تسريب أخطاء Prisma إلى العميل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خطأ قيد فريد يخرج كـ <code>500</code> مع تتبع فيه اسم الجدول. غياب المقال يخرج <code>200</code> مع <code>null</code>. العميل لا يفرّق بين «البريد مستخدم» و«القاعدة سقطت». كل متحكم يخترع شكل JSON مختلفًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الخدمات ترمي استثناءات HTTP من <code>@nestjs/common</code> للحالات المتوقعة. مرشح الاستثناءات المدمج يبني الجسم <code>{ statusCode, message, error }</code>. ما ليس متوقعًا، مثل انقطاع PostgreSQL، يبقى <code>500</code> بلا تفاصيل داخلية في الإنتاج. ترجمة رموز Prisma تحدث في الخدمة أو في مرشح ضيق يعرف <code>PrismaClientKnownRequestError</code>.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>الاستثناء</th>
+<th>مثال في المشروع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>جسم غير صالح</td>
+<td>يرميه <code>ValidationPipe</code></td>
+<td>عنوان فارغ</td>
+</tr>
+<tr>
+<td>معامل غير عددي</td>
+<td><code>ParseIntPipe</code></td>
+<td><code>/posts/abc</code></td>
+</tr>
+<tr>
+<td>صف غائب</td>
+<td><code>NotFoundException</code></td>
+<td>مستخدم أو مقال أو أب التعليق</td>
+</tr>
+<tr>
+<td>قيد فرادة</td>
+<td><code>ConflictException</code></td>
+<td>بريد مكرر <code>P2002</code></td>
+</tr>
+<tr>
+<td>عطل غير متوقع</td>
+<td>لا تمسكه كـ <code>400</code></td>
+<td>القاعدة متوقفة</td>
+</tr>
+</tbody></table>
+<pre><code class="language-ts">throw new NotFoundException(&quot;Post not found&quot;);
+</code></pre>
+<p>لا تبنِ <code>res.status(404).json(...)</code> في كل مسار. الاستثناء يمر في المرشح نفسه الذي يمر فيه فشل الأنبوب، فيبقى الشكل واحدًا.</p>
+<p>رمز Prisma <code>P2002</code> تكرار، و <code>P2003</code> مفتاح أجنبي، و <code>P2025</code> تحديث أو حذف صف غير موجود. ترجم ما وعدت به في العقد، واترك الباقي يسقط كـ <code>500</code> حتى تراه في السجل.</p>
+<p>رسالة العميل ثابتة مثل <code>&quot;Email already registered&quot;</code>. لا تضمّن SQL ولا قيمة البريد كاملة إن كان ذلك يكشف حسابات في مسار عام. في هذا الفصل المسار مفتوح أصلًا، والعادة تبقى.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">فشل متوقع في الخدمة -&gt; HttpException -&gt; مرشح مدمج -&gt; JSON ورمز
+فشل Prisma معروف   -&gt; ترجمة في الخدمة -&gt; نفس المرشح
+فشل مجهول          -&gt; 500 وسجل على الخادم
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { ArgumentsHost, Catch, ExceptionFilter, HttpStatus } from &quot;@nestjs/common&quot;;
+import { Prisma } from &quot;../generated/prisma/client.js&quot;;
+import { Response } from &quot;express&quot;;
+
+@Catch(Prisma.PrismaClientKnownRequestError)
+export class PrismaExceptionFilter implements ExceptionFilter {
+  catch(exception: Prisma.PrismaClientKnownRequestError, host: ArgumentsHost) {
+    const response = host.switchToHttp().getResponse&lt;Response&gt;();
+    if (exception.code === &quot;P2002&quot;) {
+      response.status(HttpStatus.CONFLICT).json({
+        statusCode: HttpStatus.CONFLICT,
+        message: &quot;Unique value already exists&quot;,
+        error: &quot;Conflict&quot;,
+      });
+      return;
+    }
+    response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+      message: &quot;Internal server error&quot;,
+      error: &quot;Internal Server Error&quot;,
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الفلتر شبكة أمان للرمز الذي نسيته الخدمة. الأفضل ترجمة <code>P2002</code> بجانب إنشاء المستخدم حيث تعرف أن الحقل هو البريد، والرسالة أدق. الفلتر العام يقول «قيمة فريدة موجودة» فقط. سجّل <code>exception.code</code> على الخادم، لا في JSON.</p>
+<p>تسجيل الفلتر بـ <code>@Catch</code> على متحكم يضيّقه. تسجيله عامًا يغطّي كل الموارد. أبقِ الرسائل الخاصة في الخدمات.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الاستثناء غير الممسوك في المسار يصل إلى طبقة الفلاتر، الأخص أولًا ثم الأعم. <code>HttpException</code> يعرفه الفلتر المدمج ويستخرج <code>getStatus()</code> و <code>getResponse()</code>. فلترك إن مسك الخطأ أولًا فهو المسؤول عن الجسم. لا تكتب الرأس مرتين.</p>
+<p>انقطاع الاتصال ليس <code>KnownRequestError</code> بالضرورة. دعه <code>500</code>. أعد المحاولة ليست مسؤولية المتحكم.</p>
+<h2>مثال عملي</h2>
+<p>جدول قصير تختبره يدويًا:</p>
+<ul>
+<li><code>POST /users</code> ببريد مستخدم: <code>409</code> ورسالتك.</li>
+<li><code>GET /posts/999</code>: <code>404</code> و <code>Post not found</code>.</li>
+<li><code>POST /posts</code> بعنوان فارغ: <code>400</code> من الأنبوب.</li>
+<li>أوقف PostgreSQL ثم <code>GET /posts/1</code>: <code>500</code> بلا مضيف القاعدة في الجسم.</li>
+</ul>
+<p>اختبار e2e يثبت الرموز الثلاثة الأولى. لا تحتاج إلى إطفاء القاعدة في كل تشغيل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>try/catch</code> فارغ يحوّل كل شيء إلى <code>200</code>.</li>
+<li>إرجاع تتبع Prisma للعميل.</li>
+<li><code>404</code> لخطأ تحقق.</li>
+<li>شكل JSON مختلف في كل متحكم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل فشل تعرفه عند كتابة المورد: غياب، تكرار، جسم سيئ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإخفاء عطل البنية تحت <code>400</code>. إن كانت القاعدة متوقفة فالرمز <code>500</code> حتى يتنبّه المشغّل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>استثناء HTTP في الخدمة</th>
+<th><code>res.status</code> في المتحكم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يمر بالفلتر الموحّد</td>
+<td>شكل لكل مسار</td>
+</tr>
+<tr>
+<td>يُختبر برمي الدالة</td>
+<td>يحتاج HTTP كاملًا</td>
+</tr>
+<tr>
+<td>يناسب <code>404</code> و <code>409</code></td>
+<td>يسهل نسيان مسار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي رمز لبريد مكرر، وأي رمز لمقال غائب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>409</code> للتكرار، و <code>404</code> للغياب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي فلتر عام يقول «قيمة فريدة» عند إنشاء المستخدم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العميل لا يعرف إن كان البريد أو حقلًا آخر. الترجمة بجانب <code>UsersService.create</code> تسمي البريد. الفلتر العام يبقى احتياطًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>P2003</code> ظهر عند إنشاء تعليق. ماذا حدث، وما الرمز المناسب إن وعدت أن مسار أب غير موجود هو <code>404</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المفتاح الأجنبي رفض <code>postId</code>، غالبًا لأن المقال حُذف بعد الفحص أو لم يُفحص. إن كان العقد <code>404</code> للمقال الغائب، ترجم <code>P2003</code> على هذا المسار إلى <code>NotFoundException</code>. لا تتركه <code>500</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يبني جسم <code>HttpException</code> افتراضيًا؟</li>
+<li>ماذا يُسجَّل على الخادم ولا يُرسل؟</li>
+<li>أي رمز لانقطاع القاعدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأخطاء المتوقعة استثناءات HTTP برموز ثابتة. رموز Prisma تُترجم حيث تعرف المعنى. العطل غير المتوقع <code>500</code> بلا تسريب.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./07-pagination.html">Pagination</a> يقطع قائمة المنشورات إلى صفحات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

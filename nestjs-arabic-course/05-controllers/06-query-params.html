@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Query Params</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-query-params.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Query Params</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة معاملات الاستعلام بـ <code>@Query</code>: مفتاح واحد أو الكائن كاملًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تصفية الفهرس بالصفحة والموضوع تغيّر نتيجة <code>GET /catalog</code> من غير أن تغيّر هوية المورد. وضع <code>page</code> داخل المسار يصنع عنوانًا جديدًا لكل صفحة. الاستعلام وُجد لهذا التضييق.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>GET /catalog?topic=history&amp;page=2</code> يطابق <code>@Get()</code> على بادئة <code>catalog</code>. <code>@Query(&#39;topic&#39;)</code> يعيد <code>&quot;history&quot;</code>. <code>@Query()</code> يعيد كل المفاتيح.</p>
+<h2>التعريف التقني</h2>
+<p><code>@Query(key)</code> يقرأ <code>req.query[key]</code>. <code>@Query()</code> يقرأ <code>req.query</code>. القيم نصوص. النوع <code>number</code> على الوسيط لا يحوّل <code>&quot;2&quot;</code>. التحويل Pipe مثل <code>ParseIntPipe</code>، وفصله لاحق. إلى ذلك الحين حوّل في الخدمة تحويلًا ظاهرًا أو أبقِ النص.</p>
+<p>الاستعلام المعشّق والمصفوفات:</p>
+<pre><code class="language-text">?filter[where][topic]=history
+?tag[]=atlas&amp;tag[]=map
+</code></pre>
+<p>تحتاج محلّل استعلام يفهم التداخل. على Express:</p>
+<pre><code class="language-ts">const app = await NestFactory.create&lt;NestExpressApplication&gt;(AppModule);
+app.set(&#39;query parser&#39;, &#39;extended&#39;);
+</code></pre>
+<p>على Fastify يُمرَّر <code>querystringParser</code> إلى <code>FastifyAdapter</code>، وحزمة <code>qs</code> تحلّل التداخل بعد <code>npm install qs</code>. من غير هذا تبقى المفاتيح نصوصًا مسطحة.</p>
+<p><code>@Query</code> غير <code>@QueryMethod</code>. الثاني طريقة HTTP نادرة، والأول معامل <code>?</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /catalog/maps?page=2&amp;topic=history
+  المسار يختار @Get(&#39;maps&#39;)
+  @Query(&#39;page&#39;)  -&gt; &quot;2&quot;
+  @Query(&#39;topic&#39;) -&gt; &quot;history&quot;
+</code></pre>
+<p>غياب <code>topic</code> يجعل <code>@Query(&#39;topic&#39;)</code> قيمة <code>undefined</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Query } from &#39;@nestjs/common&#39;;
+import { CatalogService } from &#39;./catalog.service.js&#39;;
+
+@Controller(&#39;catalog&#39;)
+export class CatalogController {
+  constructor(private readonly catalog: CatalogService) {}
+
+  @Get()
+  findAll(@Query(&#39;topic&#39;) topic?: string, @Query(&#39;page&#39;) page?: string) {
+    return this.catalog.search(topic, page);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المسار ثابت: <code>GET /catalog</code>. التصفية كلها في الاستعلام.</li>
+<li><code>page</code> يصل نصًا حتى لو كتب العميل <code>page=2</code>.</li>
+<li>العلامتان <code>?</code> على نوع TypeScript تصفان الغياب للمترجم. وقت التشغيل القيمة <code>undefined</code> عند غياب المفتاح، وهذا مستقل عن الـ Decorator.</li>
+<li>الخدمة تقرر الصفحة الافتراضية عندما يكون <code>page</code> غائبًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المحوّل يملأ <code>req.query</code> قبل المعالج. Nest تمرر الحقل المطلوب أو الكائن. ترتيب الوسائط في الدالة حر؛ الاسم داخل <code>@Query(&#39;page&#39;)</code> هو المفتاح.</p>
+<p>كائن كامل:</p>
+<pre><code class="language-ts">@Get()
+findAll(@Query() query: { topic?: string; page?: string }) {
+  return this.catalog.search(query.topic, query.page);
+}
+</code></pre>
+<p>المفاتيح الزائدة تبقى على الكائن. Pipe لاحق يمكن أن يقصر الشكل. هذا الدرس لا يرفض مفتاحًا مجهولًا.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, Param, Query } from &#39;@nestjs/common&#39;;
+import { CatalogService } from &#39;./catalog.service.js&#39;;
+
+@Controller(&#39;catalog&#39;)
+export class StacksController {
+  constructor(private readonly catalog: CatalogService) {}
+
+  @Get(&#39;:stack/items&#39;)
+  items(
+    @Param(&#39;stack&#39;) stack: string,
+    @Query(&#39;page&#39;) page = &#39;1&#39;,
+  ) {
+    return this.catalog.page(stack, page);
+  }
+}
+</code></pre>
+<p><code>GET /catalog/maps/items?page=2</code>: المسار يثبت الرف <code>maps</code>، والاستعلام يثبت الصفحة. القيمة الافتراضية <code>&#39;1&#39;</code> في الوسيط تعمل لأن <code>@Query</code> يعيد <code>undefined</code> عند الغياب، فيأخذ المعامل الافتراضي في JavaScript دوره. إن وصل <code>page</code> فارغًا كنص <code>&quot;&quot;</code> فالافتراضي لا يعمل لأن النص الفارغ قيمة موجودة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مقارنة <code>page === 2</code></td>
+<td>القيمة <code>&quot;2&quot;</code> والمقارنة لا تنجح</td>
+</tr>
+<tr>
+<td>قراءة <code>req.query</code> يدويًا بجانب <code>@Query</code> من غير سبب</td>
+<td>مصدران للحقيقة نفسها في الدالة</td>
+</tr>
+<tr>
+<td>توقع <code>filter[where][topic]</code> ككائن من غير محلّل <code>extended</code></td>
+<td>المفتاح يصل مسطحًا أو يضيع حسب المحول</td>
+</tr>
+<tr>
+<td>وضع معرف المورد الوحيد في الاستعلام</td>
+<td><code>GET /catalog?id=9</code> يخفي هوية العنصر خارج المسار</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>للتصفية والفرز والترقيم على مسار ثابت أو على مجموعة محددة بمعامل مسار: <code>topic</code> و <code>page</code> و <code>sort</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لهوية عنصر واحد تعاد زيارتها. تلك <code>:id</code> في المسار. ولجسم إنشاء JSON. ذلك <code>@Body</code> على <code>@Post</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المدخل</th>
+<th>مكانه في الطلب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Param(&#39;stack&#39;)</code></td>
+<td>قطعة من المسار</td>
+</tr>
+<tr>
+<td><code>@Query(&#39;page&#39;)</code></td>
+<td>مفتاح بعد <code>?</code></td>
+</tr>
+<tr>
+<td><code>@Body()</code></td>
+<td>جسم الطلب، غالبًا JSON</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعيد <code>@Query(&#39;topic&#39;)</code> لـ <code>GET /catalog?topic=history</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>النص <code>&quot;history&quot;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>page: number</code> على الوسيط لا يكفي لجمع <code>page + 1</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>القيمة وقت التشغيل نص. <code>&quot;2&quot; + 1</code> يلصق إلى <code>&quot;21&quot;</code>. التحويل يتم بـ Pipe لاحق أو بدالة ظاهرة مثل <code>Number(page)</code> بعد التحقق من الغياب.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>GET /catalog/maps/items</code> من غير <code>page</code> يدخل الفرع الافتراضي، بينما <code>?page=</code> لا يفعل. ما السبب في مثال الرفوف؟</p>
+<details><summary>الحل</summary>
+
+<p>الغياب يعطي <code>undefined</code> فيأخذ المعامل الافتراضي <code>&#39;1&#39;</code>. <code>?page=</code> يمرر نصًا فارغًا، والنص الفارغ لا يستدعي الافتراضي في توقيع JavaScript.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق بين <code>@Query(&#39;page&#39;)</code> و <code>@Query()</code>؟</li>
+<li>ما نوع قيمة الاستعلام قبل أي Pipe؟</li>
+<li>متى تحتاج <code>query parser</code> بقيمة <code>extended</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Query</code> يقرأ ما بعد <code>?</code> كنصوص. المسار يختار المعالج، والاستعلام يضيّق النتيجة، والتحويل والتحقق يأتيان مع Pipes.</p>
+<h2>ماذا بعد؟</h2>
+<p>جسم الطلب: Body.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Query parameters: <a href="https://docs.nestjs.com/controllers#query-parameters">https://docs.nestjs.com/controllers#query-parameters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multi-stage Build</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-multi-stage-build.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Multi-stage Build</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل مرحلة التجميع عن مرحلة التشغيل حتى لا يدخل المترجم ولا <code>devDependencies</code> إلى الصورة التي تُشغَّل في الإنتاج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الصورة الأحادية بعد <code>npm ci</code> و <code>npm run build</code> ما زالت تحتوي TypeScript و Nest CLI ومصدر <code>src</code>. سطح الهجوم أكبر والصورة أثقل. المراحل تبني في صورة وترميها، وتنسخ <code>dist</code> و <code>node_modules</code> الإنتاج فقط إلى أساس نظيف.</p>
+<h2>الفكرة ببساطة</h2>
+<p>مرحلة <code>deps</code> أو <code>build</code> تثبّت وتبني. مرحلة <code>runner</code> أساس Node نفسه، <code>npm ci --omit=dev</code>، نسخ <code>dist</code>، مستخدم <code>node</code>، و <code>CMD [&quot;node&quot;, &quot;dist/main.js&quot;]</code>. لا نسخة من <code>src</code> إلا إذا احتجت ملفًا وقت التشغيل مثل <code>schema.prisma</code> لأمر هجرة منفصل، فانسحبه صراحة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-dockerfile">FROM node:22.14-bookworm-slim AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:22.14-bookworm-slim AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY --from=build /app/dist ./dist
+USER node
+CMD [&quot;node&quot;, &quot;dist/main.js&quot;]
+</code></pre>
+<p><code>--omit=dev</code> يثبّت ما يحتاجه التشغيل. إن كان <code>prisma</code> عميلًا مولَّدًا في <code>node_modules/.prisma</code> أثناء البناء، انسخه أيضًا أو أعد <code>prisma generate</code> في مرحلة التشغيل باعتماد الإنتاج الذي تحتاجه. لا تفترض أن <code>dist</code> وحده يكفي إن كان العميل خارج <code>dist</code>.</p>
+<p>المرحلة الأولى لا تُشحن. <code>docker build</code> الناتج المرحلة الأخيرة افتراضيًا.</p>
+<p>نفس حد الإصدار: الوسم 22.14 يلبي 22.12، أو استعمل وسم 20 لا يقل عن 20.19. لا تخلط أساس بناء 22 مع تشغيل 18.</p>
+<p><code>.dockerignore</code> ما زال يمنع <code>.env</code>. الأسرار التي تحتاجها <code>npm ci</code> لمستودع خاص تأتي من بناء BuildKit السري لا من طبقة <code>ENV</code> تبقى في التاريخ.</p>
+<p>لا <code>npm run start:dev</code> في <code>runner</code>. لا تنسخ <code>node_modules</code> من <code>build</code> إن كانت تتضمن dev، إلا إذا حذفتها بخطوة صريحة. <code>npm ci --omit=dev</code> أوضح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">build:  ci كامل + tsc -&gt; dist
+runner: ci بلا dev + dist فقط -&gt; node dist/main.js
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الملف أعلاه. <code>docker build -t shop-api .</code> ثم <code>docker image history shop-api</code> لا يظهر مرحلة <code>build</code> كطبقات نهائية قابلة للتشغيل مع المصدر. حجم الصورة أصغر من الأحادية التي أبقت CLI.</p>
+<h2>شرح المثال</h2>
+<p><code>COPY --from=build</code> يسحب الناتج عبر المراحل لا من جهازك. لذلك البناء قابل للتكرار على CI. <code>USER node</code> بعد النسخ الذي تم كجذر في الطبقات السابقة شائع، بشرط أن <code>dist</code> مقروء للجميع. إن فشل القراءة اضبط الملكية قبل التبديل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المرحلة الأولى تنتج نظام ملفات فيه <code>dist</code>.</li>
+<li>المرحلة الثانية تبدأ من أساس نظيف بلا ذلك النظام إلا ما نسخته.</li>
+<li><code>npm ci --omit=dev</code> يكتب اعتماديات التشغيل.</li>
+<li>الأمر الافتراضي <code>node</code>.</li>
+<li>طبقات المرحلة الأولى تبقى في الكاش المحلي لتسريع البناء التالي ولا تُرفع إن رفعت الناتج فقط.</li>
+<li><code>SIGTERM</code> يصل إلى <code>node</code> بفضل صيغة exec.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>أضف نسخ مخطط Prisma إن هجرتك داخل الصورة:</p>
+<pre><code class="language-dockerfile">COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=build /app/prisma ./prisma
+</code></pre>
+<p>الأفضل توليد العميل في مرحلة <code>runner</code> بعد <code>npm ci</code> إن كانت حزمة <code>prisma</code> ضمن dependencies لا devDependencies. اختر طريقًا واحدًا وجربه بحاوية فارغة لا تعتمد على <code>node_modules</code> جهازك.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تشغيل مرحلة <code>build</code> بالخطأ عبر <code>--target build</code> في الإنتاج.</li>
+<li>نسيان <code>.prisma</code> فتفشل الإقلاع رغم وجود <code>dist</code>.</li>
+<li><code>omit=dev</code> ثم بناء TypeScript في المرحلة الثانية بلا مترجم.</li>
+<li>أساس تشغيل أقدم من حد Node.</li>
+<li>نسخ <code>.env</code> في أي مرحلة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل صورة إنتاج بعد أن يفهم الفريق المرحلة الواحدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>صورة أداة تطوير محلية تريد CLI والمصدر. ملف <code>compose</code> للتطوير يمكن أن يبني هدف <code>build</code> أو يركب المجلد. لا تخلط الهدفين في <code>CMD</code> واحد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المرحلة</th>
+<th>فيها src</th>
+<th>فيها CLI</th>
+<th>تُشغَّل في الإنتاج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>build</td>
+<td>نعم</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>runner</td>
+<td>لا</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفعل <code>--omit=dev</code> في مرحلة التشغيل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يثبّت اعتماديات الإنتاج فقط، بلا TypeScript وأدوات الاختبار إن كانت في devDependencies.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تنسخ <code>node_modules</code> من مرحلة البناء كما هي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنها تتضمن اعتماديات التطوير. مرحلة التشغيل تثبّت مجموعة الإنتاج أو تحذف الزائد صراحة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الإقلاع يرمي أن عميل Prisma غير مولَّد رغم نسخ <code>dist</code>. ماذا نقص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ناتج التوليد في <code>node_modules/.prisma</code> أو خطوة <code>prisma generate</code> في مرحلة التشغيل. <code>dist</code> وحده لا يحوي العميل المولَّد إن بقي خارجها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مرحلة تحتوي <code>CMD</code>؟</li>
+<li>لماذا الأساس يتكرر في المرحلتين؟</li>
+<li>ماذا لا يُنسخ من <code>build</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>البناء ينتج <code>dist</code> ثم يُرمى من صورة التشغيل. التشغيل <code>npm ci --omit=dev</code> و <code>node dist/main.js</code> على Node حديث، مع عميل Prisma إن كان خارج <code>dist</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>docker-compose: تشغيل هذه الصورة مع Postgres و Redis بأسمائها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Docker — Multi-stage builds: <a href="https://docs.docker.com/build/building/multi-stage/">https://docs.docker.com/build/building/multi-stage/</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

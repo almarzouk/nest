@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة عمليات على الكتالوج. الجذر يستخدم code-first و Apollo. الاستيراد المحلي ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — الإقلاع والمخطط</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { join } from &#39;node:path&#39;;
+import { ApolloDriver, ApolloDriverConfig } from &#39;@nestjs/apollo&#39;;
+import { GraphQLModule } from &#39;@nestjs/graphql&#39;;
+import { BooksModule } from &#39;./books/books.module.js&#39;;
+
+@Module({
+  imports: [
+    GraphQLModule.forRoot&lt;ApolloDriverConfig&gt;({
+      driver: ApolloDriver,
+      autoSchemaFile: join(process.cwd(), &#39;src/schema.gql&#39;),
+      sortSchema: true,
+      context: ({ req, res }) =&gt; ({ req, res }),
+      subscriptions: { &#39;graphql-ws&#39;: true },
+    }),
+    BooksModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>لا <code>typePaths</code> هنا. لا مفتاح <code>playground</code>. GraphiQL يعمل خارج <code>production</code> وحده.</p>
+<h2>مثال 2 — قراءة وكتابة</h2>
+<p><code>book.model.ts</code> و <code>create-book.input.ts</code> كما في درس الأنواع. المحلل:</p>
+<pre><code class="language-ts">@Resolver(() =&gt; Book)
+export class BooksResolver {
+  constructor(
+    private readonly books: BooksService,
+    private readonly authors: AuthorsService,
+  ) {}
+
+  @Query(() =&gt; [Book])
+  books() {
+    return this.books.findPublished();
+  }
+
+  @Mutation(() =&gt; Book)
+  @UseGuards(GqlAuthGuard)
+  createBook(
+    @Args(&#39;input&#39;) input: CreateBookInput,
+    @Context(&#39;req&#39;) req: { userId: string },
+  ) {
+    return this.books.create(input, req.userId);
+  }
+
+  @ResolveField(() =&gt; Author)
+  author(@Parent() book: { authorId: string }) {
+    return this.authors.findById(book.authorId);
+  }
+}
+</code></pre>
+<p>عملية البطاقة لا تطلب <code>author</code> فلا يُستدعى الحقل. عملية التفاصيل تطلبه وتكشف N+1 على القائمة، وذلك قياس لا محمّل عام.</p>
+<h2>مثال 3 — اشتراك بعد الحفظ</h2>
+<pre><code class="language-ts">@Subscription(() =&gt; Book)
+bookPublished() {
+  return this.events.asyncIterator(&#39;book.published&#39;);
+}
+</code></pre>
+<p>بعد <code>books.create</code> الناجح:</p>
+<pre><code class="language-ts">await this.events.publish(&#39;book.published&#39;, { bookPublished: saved });
+</code></pre>
+<p>العميل يفتح الاستعلام أولًا ثم يترك الاشتراك مفتوحًا في GraphiQL.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>schema.gql</code> يتغير فقط عندما تتغير الزينة، وبترتيب ثابت مع <code>sortSchema</code>.</li>
+<li><code>CreateBookInput</code> بلا <code>userId</code>.</li>
+<li>ملف الغلاف ما زال على REST.</li>
+<li>حمولة النشر شكل <code>Book</code> لا كيان Prisma.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

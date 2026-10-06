@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Roles</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-roles.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Roles</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية دور المستخدم كصفة ثابتة على الهوية، مثل <code>reader</code> و <code>editor</code>، قبل بناء جداول صلاحيات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فحص <code>email === &quot;ada@example.com&quot;</code> للسماح بالنشر يربط القاعدة بشخص. حين يغادر Ada أو يأتي محرر ثانٍ، الشرط يتكرر في <code>PostsService</code> و <code>CommentsService</code>. الدور اسم يمكن تغييره على الصف من غير تعديل كل المسارات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الدور تسمية مجموعة أشخاص. <code>reader</code> يقرأ المنشور. <code>editor</code> ينشر ويعدّل. القيمة تعيش على المستخدم الذي رجعه <code>validate</code>، مثل حقل <code>roles</code> في مثال الحزمة: مصفوفة لا نص سحري مبعثر. هذا الدرس لا يبني الحارس بعد. يثبّت الأسماء التي ستُفحص لاحقًا.</p>
+<h2>التعريف التقني</h2>
+<p>في صفحة <code>@nestjs/authentication</code> الدور نوع ضيق:</p>
+<pre><code class="language-ts">export type Role = &quot;reader&quot; | &quot;editor&quot;;
+</code></pre>
+<p>مثال المتجر في التوثيق يستخدم <code>customer</code> و <code>staff</code> و <code>admin</code>. مكتبة الدورة تستخدم <code>reader</code> و <code>editor</code> حتى لا تختلط أمثلة المنشورات بأمثلة المتجر. اختر قائمة واحدة في المشروع والزمها.</p>
+<p>الحقل على الشخص العام:</p>
+<pre><code class="language-ts">export interface PublicUser {
+  id: number;
+  email: string;
+  name: string;
+  roles: Role[];
+}
+</code></pre>
+<p>مصفوفة تسمح بأكثر من دور لاحقًا. إن بدأ المشروع بدور واحد، المصفوفة ذات عنصر أوضح من عمود يتغيّر نوعه فيما بعد.</p>
+<p>لا تضع الدور داخل JWT كمصدر وحيد. <code>validate</code> يقرأ الأدوار من الصف عند كل طلب، كما في درس الرموز، حتى يسري التغيير فورًا.</p>
+<p>الدور ليس السياسة. «editor ينشر» قاعدة ستُكتب في مكان واحد. هنا نكتفي بأن الشخص يحمل التسمية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">صف User.roles = [&quot;editor&quot;]
+        |
+ validate تنسخها إلى PublicUser
+        |
+ السؤال التالي: هل هذا الدور يكفي لهذا الفعل؟
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function isEditor(user: { roles: string[] } | null): boolean {
+  return !!user?.roles.includes(&quot;editor&quot;);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>null</code> ضيف بلا جلسة. الدالة ترجع <code>false</code> ولا ترمي. الرمي قرار الحارس أو السياسة. الإبقاء على القيمة المنطقية يجعل الاختبار جدولًا: ضيف، قارئ، محرر.</p>
+<p>لا تفحص البريد داخل <code>isEditor</code>. إن احتاج Ada صلاحية، أضف <code>editor</code> إلى صفها.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>العمود في PostgreSQL يمكن أن يكون مصفوفة نص أو جدول ربط <code>user_roles</code>. للتمرين، مصفوفة أو عمود نص واحد يكفيان. القيد أن القيمة من المجموعة المغلقة في النوع، لا أي نص يرسله <code>POST /users</code>. العميل لا يختار <code>roles</code> في DTO التسجيل. الخدمة تضع <code>reader</code> عند الإنشاء، ومسار إدارة لاحق يرقّي إلى <code>editor</code>.</p>
+<p>حارس المصادقة لا يقرأ الدور. هو يثبت الشخص. خلطهما يعيد <code>401</code> لمن هو محرر بكلمة خاطئة ولمن هو قارئ بكلمة صحيحة على مسار الحذف، فتختفي الإشارة.</p>
+<h2>مثال عملي</h2>
+<p>Ada تُنشأ <code>reader</code>. طلب نشرها سيُرفض حين نصل إلى السياسة، لا لأن الهوية فشلت. تمنحها أداة إدارة دور <code>editor</code> في الجدول. الطلب التالي يحمّل الأدوار الجديدة من <code>validate</code> فتُقبل. لا حاجة لإعادة إصدار جلسة إن كانت القراءة من القاعدة كل مرة. إن كان الدور منسوخًا في رمز لساعات، الترقية تتأخر. لذلك التحميل من الصف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>قائمة أدوار مختلفة في كل ملف: <code>admin</code> هنا و <code>editor</code> هناك.</li>
+<li>قبول <code>roles</code> من جسم التسجيل.</li>
+<li>تخزين الدور فقط داخل رمز طويل العمر.</li>
+<li>اعتبار الدور بديلًا عن ملكية المقال. المحرر غير مالك كل المسودات بالضرورة، وهذا يُفصَل في السياسة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين ينقسم الناس إلى فئات قليلة وثابتة على مستوى المنتج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>حين القاعدة «صاحب هذا الصف فقط». الدور لا يعرف <code>post.authorId</code>. تلك مقارنة بالسجل في السياسة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>دور على المستخدم</th>
+<th>معرّف شخص في الشرط</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يتغير صف واحد</td>
+<td>يتغير الكود</td>
+</tr>
+<tr>
+<td>فئة</td>
+<td>استثناء بشري</td>
+</tr>
+<tr>
+<td>يُحمَّل مع الهوية</td>
+<td>يتكاثر في الخدمات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يضع <code>reader</code> عند التسجيل، العميل أم الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الخدمة. DTO التسجيل لا يحتوي <code>roles</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مصفوفة <code>roles</code> حتى لو بدأ كل مستخدم بدور واحد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يتغير شكل <code>PublicUser</code> حين يجتمع <code>reader</code> و <code>editor</code>، أو حين تطابق نوع الحزمة الذي يعرض الأدوار كمصفوفة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رقّيت مستخدمًا إلى <code>editor</code> وما زال الرمز القديم يمنعه ساعة. أين كان الدور يُقرأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من نسخة داخل الرمز لا من الصف في <code>validate</code>. انقل القراءة إلى القاعدة عند كل طلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يسمي الدور؟</li>
+<li>لماذا لا يأتي من جسم <code>POST /users</code>؟</li>
+<li>أي سؤال لا يجيب عنه الدور وحده؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الدور صفة على الهوية بقائمة مغلقة، تضعها الخدمة، وتُقرأ من القاعدة مع الشخص. السماح والمنع يُبنيان عليها لاحقًا لا داخلها.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-rbac.html">RBAC</a> يربط كل دور بقائمة أفعال.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

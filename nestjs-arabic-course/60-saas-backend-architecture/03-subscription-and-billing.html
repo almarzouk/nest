@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Subscription و Billing</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-subscription-and-billing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Subscription و Billing</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رسم حد الاشتراك في رف: حالة المكتبة (<code>trial</code>, <code>active</code>, <code>past_due</code>) تقرر ماذا يُسمح به في API، والفاتورة تعيش عند مزود الدفع لا في جداول الكتب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يخزّن رقم البطاقة «مؤقتًا» في <code>Organization</code>. أو يفتح النشر لأن الواجهة وصلت إلى صفحة نجاح الدفع. أو يخلط سعر الخطة مع سعر الكتاب على الرف. عند فشل التحصيل تبقى المكتبة تنشر بلا سياسة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المنظمة لها اشتراك: معرّف عميل لدى Stripe، معرّف اشتراك، وخطة، وحالة تنسخونها من أحداث المزود. مسار الكتب يسأل الحالة المحلية. لا يستدعي Stripe في كل <code>GET</code>. تفاصيل Checkout والويب هوك في فصل لاحق؛ هنا الحد المعماري: الفوترة وحدة، والكتالوج وحدة، والرابط بينهما حالة مكتوبة في قاعدتكم بعد إشعار موقّع.</p>
+<h2>التعريف التقني</h2>
+<p>جدول <code>Subscription</code> بمفتاح <code>organizationId</code>. الحقول: <code>plan</code>, <code>status</code>, <code>providerCustomerId</code>, <code>providerSubscriptionId</code>. ممنوع PAN أو CVC. الحارس <code>BillingGuard</code> يرفض <code>books.publish</code> عندما الحالة <code>past_due</code> إن كان هذا عقد المنتج، ويسمح بالقراءة. التحديث لا يأتي من <code>POST /billing/success</code> الذي يزوره المتصفح. يأتي من معالجة حدث لاحقًا، وتُذكر هنا كحد فقط. التجربة <code>trial</code> لها <code>trialEndsAt</code> محلي يُفحص في الحارس حتى لا تعتمدوا على ساعة المتصفح.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الكتالوج يسأل: status محلية
+Stripe يملك البطاقة والفاتورة
+حدث موقّع يحدّث status
+صفحة النجاح لا تحدّث status
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-prisma">model Subscription {
+  organizationId         String @id
+  plan                   String
+  status                 String
+  providerCustomerId     String
+  providerSubscriptionId String @unique
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>مفتاح المنظمة: اشتراك تشغيلي واحد في هذا التصميم.</li>
+<li>معرّف المزود فريد حتى لا تُربط فاتورتان بنفس الصف عن طريق الخطأ.</li>
+<li>لا حقل <code>cardNumber</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>إنشاء المنظمة ينشئ اشتراك <code>trial</code> بلا استدعاء شبكة داخل نفس معاملة الصف إن أمكن، أو بحالة <code>incomplete</code> حتى يعود المعرّف.</li>
+<li>طلب النشر يقرأ <code>status</code> من الجدول.</li>
+<li><code>past_due</code> يمنع الأثر ويسمح بالقراءة.</li>
+<li>عندما يصل إشعار المزود (فصل الويب هوك) تُحدَّث الحالة في معاملة.</li>
+<li>الواجهة التي فتحت success URL تعرض «جارٍ التأكيد» إلى أن تصبح الحالة <code>active</code> من القراءة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Injectable()
+export class PlanPolicy {
+  assertCanPublish(status: string) {
+    if (status === &#39;active&#39; || status === &#39;trial&#39;) return;
+    throw new ForbiddenException(&#39;plan does not allow publish&#39;);
+  }
+}
+</code></pre>
+<p>الرسالة للعميل بلا مبلغ الفاتورة الداخلي. 403 لأن الهوية صحيحة والخطة تمنع الفعل. لا 402 إلا إن وثّقتموه في عقد الأخطاء؛ الثبات أهم من رمز «ألطف».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تفعيل الخطة في مسار <code>GET /billing/success</code>.</li>
+<li>استدعاء Stripe من <code>BooksService</code> لمعرفة إن كانت البطاقة حيّة.</li>
+<li>خلط <code>Book.priceCents</code> مع سعر الخطة.</li>
+<li>حذف الاشتراك عند إلغاء الخطة فيختفي تاريخ الفاتورة. أبقوا <code>canceled</code> كحالة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يتوقف فعل منتجي على الدفع. اربطوا أفعالًا قليلة (<code>publish</code>, دعوة فوق الحد) لا كل <code>GET</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضعوا منطق الضريبة داخل خدمة الكتب. ولا تستبدلوا سجل التدقيق بجدول الاشتراك؛ تغيير الخطة حدث يُسجَّل هناك أيضًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>قراءة الكتب</th>
+<th>نشر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>trial</code> / <code>active</code></td>
+<td>نعم</td>
+<td>نعم ضمن الحد</td>
+</tr>
+<tr>
+<td><code>past_due</code></td>
+<td>نعم</td>
+<td>لا إن هكذا كتبتم العقد</td>
+</tr>
+<tr>
+<td><code>canceled</code></td>
+<td>حسب مدة السماح</td>
+<td>لا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُخزَّن رقم البطاقة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عند مزود الدفع. عندكم معرّفات العميل والاشتراك والحالة فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>المتصفح فتح <code>/billing/success</code> بينما الويب هوك لم يصل. ما حالة النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ما زالت الحالة السابقة (<code>trial</code> أو <code>incomplete</code>). النجاح في المتصفح لا يكتب <code>active</code>. الواجهة تنتظر الحالة من API.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حد الخطة عشرون كتابًا منشورًا. أين يُفرض الحد ولماذا ليس في الواجهة فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>BooksService.publish</code> داخل معاملة تعد الصفوف <code>where organizationId</code> ثم ترفض بـ 409 أو 403 حسب العقد. الواجهة تعرض العدد، والخادم يمنع السباق بين موظفين.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يُنسخ محليًا من المزود؟</li>
+<li>أي مسار لا يفعّل الاشتراك؟</li>
+<li>لماذا الفوترة ليست داخل <code>BooksService</code>؟</li>
+<li>ماذا يرى طلب النشر عند <code>past_due</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاشتراك حالة محلية على المنظمة تُحدَّث من إشعارات المزود. الكتالوج يسأل الحالة. البطاقة لا تُخزَّن، وصفحة النجاح ليست مصدر الحقيقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>تغيير الدور والخطة والنشر يحتاج أثرًا يُراجع. الدرس التالي سجل التدقيق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>Stripe — Subscriptions (حد المزود، والتفصيل لاحقًا): <a href="https://docs.stripe.com/billing/subscriptions/overview">https://docs.stripe.com/billing/subscriptions/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

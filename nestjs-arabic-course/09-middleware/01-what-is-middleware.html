@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Middleware</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-middleware.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Middleware</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف Middleware في Nest: دالة تصل إلى الطلب والرد وتُستدعى قبل معالج المسار، وموضعها في دورة الطلب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعض العمل يخص الطلب كله قبل أن يُختار المعالج: ختم وقت الوصول، أو نسخ ترويسة تتبع. تكرار هذا السطر داخل كل دالة في المتحكم يبعثر قاعدة واحدة على عشرات الملفات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Middleware دالة <code>(req, res, next)</code>. تعمل على كائن الطلب وكائن الرد. إن لم تُنهِ الدورة بنفسها تنادي <code>next()</code> لتمرير التحكم إلى التالي.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق يعرّف Middleware بأنه دالة تُستدعى قبل route handler. لها الطلب والرد ودالة <code>next</code>. تستطيع تنفيذ كود، وتعديل الطلب أو الرد، وإنهاء الدورة، أو استدعاء <code>next()</code>. إن لم تُنه الدورة ولم تنادِ <code>next()</code> يبقى الطلب معلّقًا.</p>
+<p>في Nest تُكتب هذه الدالة كدالة عادية أو كصنف <code>@Injectable()</code> يطبّق <code>NestMiddleware</code>. شكل الكتابة درسان لاحقان. هنا العقد نفسه.</p>
+<p>موضعها في دورة الطلب، حسب صفحة Request lifecycle في توثيق NestJS 12: بعد وصول الطلب، وقبل Guards. أولًا ما رُبط عالميًا بـ <code>app.use()</code>، ثم ما رُبط داخل الوحدات.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">طلب داخل
+  Middleware   ← هذا الدرس: req, res, next
+  Guards
+  Interceptors قبل المعالج
+  Pipes
+  Controller
+  Service
+  Interceptors بعد المعالج
+  Exception filters عند استثناء غير ممسوك
+رد خارج
+</code></pre>
+<p>Middleware لا يستلم <code>ExecutionContext</code>. لا يعرف الدالة التي ستُنفَّذ بالطريقة التي يعرفها Guard. يعرف الطلب كما وصل.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import type { NextFunction, Request, Response } from &#39;express&#39;;
+
+export function stampArrival(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  res.setHeader(&#39;x-arrived-at&#39;, new Date().toISOString());
+  next();
+}
+</code></pre>
+<p>الدالة تكتب ترويسة على الرد ثم تسلّم التحكم. لا تقرأ قاعدة بيانات ولا تقرر صلاحية مسار.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>req</code> الطلب كما يقدّمه محوّل HTTP. مع Express هذا كائن Express.</li>
+<li><code>res.setHeader</code> يغيّر الرد قبل أن يكتب المعالج الجسم.</li>
+<li><code>next()</code> بلا وسيطة تعني أن السلسلة تكمل.</li>
+<li>الإطار لا يعتمد على قيمة تُرجعها الدالة. الإشارة هي <code>next</code> أو إنهاء الرد.</li>
+</ul>
+<p>لو حذفت <code>next()</code> ولم تستدعِ <code>res.end()</code>، العميل ينتظر حتى انتهاء المهلة. هذا التعليق أشهر عطل في هذه الطبقة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>يصل HTTP request إلى المنصة.</li>
+<li>المنصة تشغّل Middleware المسجّل قبل أن يدخل الطلب منطقة Guards.</li>
+<li>كل دالة إما تنهي الرد أو تنادي <code>next()</code>.</li>
+<li>بعد السلسلة يبدأ Guard، ثم Interceptor، ثم Pipe، ثم المتحكم.</li>
+<li>إن رمت الدالة استثناء، طبقة الاستثناءات تراه. فلاتر المسار والمتحكم لا تُستدعى لأن المعالج لم يُختر بعد. الفلاتر العامة فقط.</li>
+</ol>
+<p><code>try/catch</code> داخل المتحكم موضوع آخر: الفلتر لا يرى استثناءً أمسكته أنت. Middleware أصلًا يسبق المتحكم.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة تعير كتبًا. كل طلب يحتاج وقت وصول في السجلات حتى تُرتَّب الشكاوى. <code>stampArrival</code> يضع <code>x-arrived-at</code>. المعالج <code>GET /loans</code> يعيد قائمة الإعارات ولا يعرف شكل الختم. تعديل الختم يبقى في دالة واحدة، وكل مسار رُبطت به الدالة يتبع التعديل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>next()</code> وترك الاتصال معلقًا.</li>
+<li>كتابة قرار «هل هذا المسار للمشرف» هنا. القرار يحتاج الدالة المختارة وبياناتها، وهذا عمل Guard.</li>
+<li>افتراض أن جسم JSON لم يُحلَّل بعد. محوّل Express يسجّل <code>express.json()</code> و <code>express.urlencoded()</code> افتراضيًا. تخصيص المحللات يمر بإيقاف <code>bodyParser</code> عند <code>NestFactory.create</code>، وذلك في درس الربط.</li>
+<li>توقع أن <code>@UseFilters()</code> على صنف Middleware يلتقط خطأ هذه الطبقة. التوثيق يقول إن هذا الربط غير مدعوم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يكون العمل عن الطلب كطلب: ختم وقت، معرّف تتبع، بداية قياس، أو دالة قديمة ما زالت تتحدث <code>req, res, next</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يعتمد القرار على الدالة التي ستُنفَّذ: دور مكتوب على المسار، شكل DTO، أو شكل JSON الراجع. تلك Guards و Pipes و Interceptors، بالترتيب الذي في الصورة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Middleware</th>
+<th>Guard</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>متى</td>
+<td>قبل اختيار المعالج بالكامل</td>
+<td>بعد Middleware وقبل Interceptor</td>
+</tr>
+<tr>
+<td>ما يراه</td>
+<td><code>req</code> و <code>res</code> و <code>next</code></td>
+<td><code>ExecutionContext</code></td>
+</tr>
+<tr>
+<td>سؤال مناسب</td>
+<td>ماذا ألصق على هذا الطلب؟</td>
+<td>هل يُسمح لهذه الدالة أن تعمل؟</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الذي يجب أن تفعله دالة Middleware إن لم تكتب الرد بنفسها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تنادي <code>next()</code> حتى تنتقل السلسلة إلى الدالة التالية ثم إلى بقية دورة الطلب. من غير ذلك يبقى العميل معلقًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>طلب <code>GET /loans</code> علّق حتى انتهت مهلة العميل، ولا يوجد استثناء في السجل. أين تنظر أولًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في Middleware المرتبط بهذا المسار: دالة لم تنادِ <code>next()</code> ولم تنهِ الرد. Guard الذي يرجع <code>false</code> ينتج <code>403</code>، والتعليق الصامت علامة هذه الطبقة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد رفض طلب بلا ترويسة <code>authorization</code> برمز <code>401</code> من داخل Middleware، وتريد أن يشكّل عميل الواجهة الرسالة. أي الفلاتر تستطيع تغيير شكل هذا الخطأ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الفلاتر العامة فقط، المسجّلة بـ <code>app.useGlobalFilters()</code> أو الرمز <code>APP_FILTER</code>. فلتر على المتحكم أو على الدالة لا يُستدعى. رمي <code>UnauthorizedException</code> أو تمرير الخطأ إلى <code>next(error)</code> يصل إلى طبقة الاستثناءات ضمن هذا القيد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما المعاملات الثلاثة التي يراها Middleware؟</li>
+<li>أين يقع في دورة الطلب بالنسبة إلى Guard؟</li>
+<li>ماذا يحدث إن لم تُستدعَ <code>next()</code> ولم يُنهَ الرد؟</li>
+<li>أي فلاتر ترى استثناءً رُمي من هذه الطبقة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Middleware دالة قبل المعالج، بعقد Express: نفّذ، أو عدّل الطلب والرد، أو أنه الدورة، أو نادِ <code>next()</code>. Nest يشغّلها قبل Guards. قرار الصلاحية المرتبط بالدالة المختارة عمل طبقة لاحقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يقارن هذا العقد بما تعرفه من Express: ماذا يبقى كما هو، وما الذي يغيّره التسجيل داخل الوحدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

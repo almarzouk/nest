@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>الأخطاء غير المتوقعة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-unexpected-errors.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>الأخطاء غير المتوقعة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>عزل العطل الذي لا يملك صنف مجال في متجر رف: العميل يرى 500 بلا أحشاء القاعدة، والسجل يرى السبب وسلسلة الاستدعاء.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>انقطع Postgres أثناء <code>publish</code>. الفلتر كتب رسالة <code>ECONNREFUSED</code> وكود Prisma في JSON. أو العكس: التقط المتحكم الاستثناء وابتلعَه وأعاد <code>{ ok: true }</code>. في الحالتين لا تعرف ماذا تصلح، والعميل إما رأى سرًا أو ظن أن الكتاب نُشر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>غير المتوقع يعني: العملية لم تكتمل، والعميل لا يستطيع إصلاح الجسم. الرد 500 عام. التفاصيل تذهب إلى السجل مع معرّف طلب. لا تُعد المحاولة من داخل <code>catch</code> يصمت.</p>
+<h2>التعريف التقني</h2>
+<p>فلتر <code>@Catch()</code> بلا وسائط يلتقط ما لم يلتقطه فلتر أخص. أول سطر فيه: إن كان <code>exception instanceof HttpException</code> فاكتب <code>getStatus()</code> و <code>getResponse()</code> وتوقف. ما تبقى يُسجَّل بمستوى error عبر <code>Logger</code> من <code>@nestjs/common</code>، ثم تُكتب استجابة 500 بجسم ثابت مثل <code>{ statusCode: 500, message: &#39;Internal server error&#39; }</code>. لا تمرر <code>exception</code> إلى <code>json</code>. صفحة Exception filters هي مكان <code>BaseExceptionFilter</code> إن أردت السلوك المدمج ثم تضيف السجل. معرّف الارتباط، إن وُجد لاحقًا في فصل المراقبة، يُضاف إلى سطر السجل لا إلى سر الاتصال.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">HttpException      → اترك رمزه
+صنف مجال مُلتقط    → فلتر المجال سبقك
+أي شيء آخر         → log + 500 ثابت
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, HttpStatus, Logger } from &#39;@nestjs/common&#39;;
+import type { Response } from &#39;express&#39;;
+
+@Catch()
+export class UnknownErrorFilter implements ExceptionFilter {
+  private readonly logger = new Logger(UnknownErrorFilter.name);
+
+  catch(exception: unknown, host: ArgumentsHost) {
+    if (exception instanceof HttpException) {
+      const res = host.switchToHttp().getResponse&lt;Response&gt;();
+      res.status(exception.getStatus()).json(exception.getResponse());
+      return;
+    }
+    this.logger.error(exception instanceof Error ? exception.stack : exception);
+    host.switchToHttp().getResponse&lt;Response&gt;().status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+      statusCode: 500,
+      message: &#39;Internal server error&#39;,
+    });
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الفرع الأول هو الحارس ضد تحويل 404 إلى 500.</li>
+<li><code>stack</code> في السجل لا في الجسم.</li>
+<li>الرسالة الثابتة لا تتضمن اسم الجدول ولا سلسلة الاتصال التي قد تظهر في <code>Error.message</code> لمشغلات بعض القواعد.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Prisma يرفض الوعد بخطأ تشغيل.</li>
+<li>لا فلتر مجال يطابق النوع، فيصل إلى <code>@Catch()</code>.</li>
+<li><code>logger.error</code> يكتب أثناء معالجة الاستثناء. لا تنتظر <code>await</code> شبكة تسجيل إن كانت قد تسقط هي أيضًا؛ السجل المحلي يكفي هنا.</li>
+<li>الاستجابة تُغلق بـ 500. الأثر الذي لم يُلتزم في المعاملة يجب أن يتراجع داخل الخدمة (المعاملة) لا في الفلتر.</li>
+<li>العميل يعيد المحاولة فقط إن كانت العملية آمنة للإعادة. 500 ليس إذنًا عامًا بإعادة الدفع.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>اختبار الفلتر يمرر خطأً عاديًا ويتأكد أن الجسم لا يحتوي كلمة <code>prisma</code>:</p>
+<pre><code class="language-ts">import { HttpException } from &#39;@nestjs/common&#39;;
+
+export function publicBody(exception: unknown) {
+  if (exception instanceof HttpException) {
+    return { status: exception.getStatus(), body: exception.getResponse() };
+  }
+  return { status: 500, body: { statusCode: 500, message: &#39;Internal server error&#39; } };
+}
+</code></pre>
+<p>استدعِ <code>publicBody(new HttpException(&#39;Book not found&#39;, 404))</code> وتوقع 404. استدعِ <code>publicBody(new Error(&#39;prisma://user:pass@host&#39;))</code> وتوقع الجسم الثابت. هذا يثبت فرع الحماية وفرع العتمة معًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>res.status(500).json({ message: exception.message })</code> فيفضح SQL.</li>
+<li><code>catch</code> فارغ في الخدمة يعيد الكتاب القديم كأنه التحديث نجح.</li>
+<li>تسجيل <code>error</code> لكل 404 بعد أن عطلت فحص <code>HttpException</code>.</li>
+<li>إرجاع 200 مع <code>{ error: &#39;failed&#39; }</code> لأن الواجهة «لا تحب» 500.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كشبكة أخيرة بعد فلاتر الأنواع المعروفة. كل مسار يمر منها إن سقط شيء لم تسمِّه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>بدل أنواع المجال. إن صار كل فشل 500، فالجدول في الدرس السابق غير موصول. ولا كمكان لإعادة محاولة الدفع تلقائيًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>العميل</th>
+<th>السجل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>HttpException</code></td>
+<td>الوضع الأصلي</td>
+<td>بلا ضجيج error إن كان 4xx متوقعًا</td>
+</tr>
+<tr>
+<td>صنف مجال</td>
+<td>حسب جدول الترجمة</td>
+<td>info أو warn حسب المنتج</td>
+</tr>
+<tr>
+<td>غير متوقع</td>
+<td>500 ثابت</td>
+<td>error مع stack</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>رسالة الخطأ <code>password authentication failed</code>. هل تظهر في JSON؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. تظهر في السجل فقط. الجسم <code>{ statusCode: 500, message: &#39;Internal server error&#39; }</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الفلتر العام سجّل كل <code>NotFoundException</code> كـ error وحوّل بعضها إلى 500. أي شرط ناقص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>instanceof HttpException</code> في أول <code>catch</code>، ثم إرجاع <code>getStatus()</code> و <code>getResponse()</code> من غير <code>Logger.error</code> لهذه الحالات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>النشر يكتب صف الكتاب ثم يرسل بريدًا، والبريد يرمي. ماذا يثبت في القاعدة، وماذا يرى العميل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إن كان البريد بعد الالتزام، فالكتاب منشور والعميل قد يرى 500 رغم النجاح. إما تُدخل الأثر الجانبي بعد الرد عبر مهمة، أو تكون المعاملة لم تُلتزم بعد والفشل يتراجع. الفلتر لا يلغي <code>UPDATE</code> نُفّذ. هذا حد الفلتر: هو شكل الرد والسجل، لا تعويض العمل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يرى العميل عند انقطاع القاعدة؟</li>
+<li>أين يذهب <code>stack</code>؟</li>
+<li>كيف تحمي <code>HttpException</code> داخل <code>@Catch()</code> العام؟</li>
+<li>لماذا ابتلاع الخطأ وإرجاع نجاح أسوأ من 500؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>غير المتوقع 500 بجسم ثابت وسجل كامل. <code>HttpException</code> لا تدخل هذا المسار. الفلتر لا يصلح الأثر الذي التزم به في القاعدة.</p>
+<h2>ماذا بعد؟</h2>
+<p>القطع الثلاث — تصنيف، أصناف، ترجمة، وعطل — تحتاج ترتيبًا واحدًا يلتزمه كل مسار. الدرس التالي يجمعها في استراتيجية لا في فلاتر متنافسة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/application/logger">https://docs.nestjs.com/application/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

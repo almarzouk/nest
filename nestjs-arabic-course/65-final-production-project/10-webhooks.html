@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Webhooks</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-webhooks.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Webhooks</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>توصيل وارد Stripe وصادر <code>project.published</code> في رف: جسم خام، توقيع، رد بعد الحفظ، ومعرّف ثابت.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>صفحة النجاح ما زالت مغرية لكتابة <code>active</code>. أو الصادر يُرسل داخل <code>publish</code> فينتظر الشريك. أو كل إعادة ترسل معرّفًا جديدًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>POST /webhooks/stripe</code> عام يتحقق بـ <code>constructEvent(rawBody, signature, secret)</code> ثم يدرج <code>event.id</code> ويحدّث الاشتراك. <code>publish</code> بعد الالتزام يدرج تسليمًا صادرًا بنفس أسلوب الصندوق المبسط: صف <code>pending</code> لا <code>fetch</code> متزامن. التوقيع الصادر على البايتات. 200 للوارد بعد الحفظ. المكرر 200 بلا أثر ثانٍ.</p>
+<h2>التعريف التقني</h2>
+<p><code>rawBody: true</code> في <code>bootstrap</code>. سر الويب هوك غير مفتاح API. المنظمة من <code>providerCustomerId</code> لا من جسم حر. الصادر: <code>WebhookDelivery</code> بمعرّف حدث ثابت و <code>organizationId</code>. لا تفعيل من <code>GET /billing/success</code>. التفاصيل المعمارية سُبقت في فصلي الويب هوك و Stripe؛ هنا مكانها في مسار رف فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Stripe → rawBody → حدث مرة واحدة → status
+publish → صف delivery → عامل يوقّع ويرسل
+success → قراءة فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const event = this.stripe.webhooks.constructEvent(req.rawBody!, signature, secret);
+</code></pre>
+<p>بعد فحص <code>rawBody</code> ووجود الترويسة. الفشل 400.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>لا <code>JSON.stringify(req.body)</code>.</li>
+<li>النوع يُعالج في الخدمة لا في المتحكم الطويل.</li>
+<li>الرد بعد الإدراج.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>حدث <code>customer.subscription.updated</code> يمر <code>constructEvent</code>.</li>
+<li><code>markEvent</code> إما يطبّق <code>mapStripeStatus</code> أو يعود كمكرر.</li>
+<li><code>publish</code> يلتزم المشروع والتدقيق ثم صف التسليم <code>project.published</code>.</li>
+<li>العامل يرسل HMAC و <code>X-Raf-Event-Id</code>.</li>
+<li>503 من الشريك يؤجل نفس المعرّف. 400 توقيع يتوقف.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">await tx.webhookDelivery.create({
+  data: { id: eventId, organizationId, type: &#39;project.published&#39;, status: &#39;pending&#39; },
+});
+</code></pre>
+<p>داخل معاملة النشر إن أردتم ألا يضيع التبليغ، وهذا صندوق مبسّط. العامل خارج المعاملة. لا تضعوا هذا الإدراج في مسار success.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة <code>active</code> في success لأن الويب هوك «سيأتي لاحقًا» ثم نسيان المسار.</li>
+<li>صادر بلا منظمة في الجدول.</li>
+<li>رد 200 قبل INSERT.</li>
+<li>معرّف جديد لكل محاولة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تعمل مفاتيح Stripe وعندما تسجّل مكتبة عنوان شريك. الاختبار يحاكي Buffer موقّعًا بلا شبكة إن أمكن.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستقبلوا Stripe على مسار الجلسة. ولا ترسلوا الصادر قبل وجود مشروع <code>published</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>يكتب active</th>
+<th>يرسل للشريك</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>success</td>
+<td>لا</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>ويب هوك Stripe</td>
+<td>حسب الحالة الموقّعة</td>
+<td>لا</td>
+</tr>
+<tr>
+<td>publish</td>
+<td>لا</td>
+<td>يدرج تسليمًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يُمرَّر إلى <code>constructEvent</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>rawBody</code> و <code>Stripe-Signature</code> وسر الوجهة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>إعادة نفس <code>evt_1</code> بعد تحديث ناجح. كم مرة تتغير الخطة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مرة. الثانية قيد فريد و 200 بلا <code>update</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا صف التسليم داخل معاملة النشر أقرب من <code>fetch</code> بعدها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصف يُخلق مع الحقيقة. <code>fetch</code> قد لا يحدث إن قُتلت العملية، وإن حدث قبل الالتزام فقد يبلّغ عن نشر تراجع. العامل يسلّم الصف لاحقًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مسار يكتب حالة الخطة؟</li>
+<li>ماذا يُدرج عند النشر للشريك؟</li>
+<li>لماذا المعرّف ثابت؟</li>
+<li>أين <code>rawBody</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>وارد Stripe على الجسم الخام ومعرّف مرة واحدة. صادر النشر صف داخل المعاملة يسلّمه عامل. صفحة النجاح لا تكتب ولا ترسل.</p>
+<h2>ماذا بعد؟</h2>
+<p>شخص منصة يرى المكتبات للمشاكل لا عبر ترويسة عميل. الدرس التالي الإدارة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Raw body: <a href="https://docs.nestjs.com/faq/raw-body">https://docs.nestjs.com/faq/raw-body</a></li>
+<li>Stripe — Webhooks: <a href="https://docs.stripe.com/webhooks">https://docs.stripe.com/webhooks</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

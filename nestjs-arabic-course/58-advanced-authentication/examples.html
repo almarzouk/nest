@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>مسار Google في رف ثم عائلة رموز للجوال. المساران لا يشتركان في سر.</p>
+<h2>المثال 1 — زر ثم عودة</h2>
+<p>الواجهة:</p>
+<pre><code class="language-text">GET /auth/oidc/google/login?redirectTo=/shelf
+</code></pre>
+<p>الخادم فيه <code>google({ clientId, clientSecret })</code> و <code>callbackUrl</code> على <code>/auth/oidc/:provider/callback</code>. العودة الناجحة جلسة. <code>redirectTo</code> النسبي فقط هو الذي يُتبع.</p>
+<h2>المثال 2 — ربط لا إنشاء</h2>
+<p>قارئ داخل الجلسة يفتح:</p>
+<pre><code class="language-text">GET /auth/oidc/google/login?link=true
+</code></pre>
+<p><code>resolveUser</code> يرى <code>linkTo</code>. إن كان <code>sub</code> لقارئ آخر فـ 409. إن كان البريد المحلي غير مثبت وحاول الدخول من الصفر بلا جلسة، المعالج يعيد <code>null</code> ولا يدمج الحسابين.</p>
+<h2>المثال 3 — جهاز يضيع</h2>
+<pre><code class="language-ts">await tokenService.revoke(lostPhoneRefreshToken);
+</code></pre>
+<p>العائلة تتوقف عن التجديد. access الذي صدر قبل دقائق يعيش حتى <code>ttl</code> (مثل <code>15m</code>) ما لم تضيفوا فحصًا أشد. جلسة المتصفح على حاسوب آخر تبقى إلى أن تُستدعى <code>sessionService.revoke</code> لذلك المعرّف مع <code>userId</code> الجلسة، أو خروج الكل.</p>
+<p>لا تضعوا <code>AuthGuard(&#39;google&#39;)</code> من Passport بجانب <code>OidcController</code> في هذا المسار. الوصفة الرسمية تبقى لمن يبني المشروع عليها وحدها.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

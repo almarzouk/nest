@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تتبع Request كامل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-walking-a-request.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تتبع Request كامل</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اتباع <code>POST /posts</code> من وصول البايتات حتى JSON الاستجابة، وتسمية الطبقة التي تملك كل قرار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد عشر ملفات يبدو أن «Nest حفظ المقال». عند العطل لا تعرف أين تتوقف: الأنبوب، الخدمة، القيد، أم المرشح. التتبع مرة واحدة يجعل الدروس السابقة خريطة لا قائمة مصطلحات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الطلب جسم JSON بعنوان وبريد مؤلف ومعرّف. المنصة تمرّره إلى Nest. الأنبوب يبني <code>CreatePostDto</code> أو يرفض. المتحكم يستدعي الخدمة. الخدمة تفحص المؤلف ثم تدرج صفًا بحالة مسودة. الاستثناء إن رُمي يصل إلى المرشح. القيمة العائدة تُسلسَل JSON. لا حارس هوية في هذا المسار بعد.</p>
+<h2>التعريف التقني</h2>
+<p>دورة الطلب التي درستها سابقًا، مطبّقة على هذا المسار:</p>
+<ol>
+<li>وسيط عام، إن وُجد، مثل سجل طلب.</li>
+<li>الحراس. لا شيء على <code>PostsController</code> في هذا الفصل، فيمر الطلب.</li>
+<li>المعترضة قبل التنفيذ، إن وُجدت.</li>
+<li><code>ValidationPipe</code> على <code>@Body</code>.</li>
+<li><code>PostsController.create</code>.</li>
+<li><code>PostsService.create</code> ثم Prisma.</li>
+<li>المعترضة بعد الإرجاع.</li>
+<li>مرشح الاستثناءات فقط عند الرمي.</li>
+</ol>
+<p>رمز النجاح لإنشاء <code>@Post()</code> هو <code>201</code> افتراضيًا في Nest ما لم تغيّره <code>@HttpCode</code>.</p>
+<p>الجسم الصالح:</p>
+<pre><code class="language-json">{ &quot;title&quot;: &quot;حدود الوحدة&quot;, &quot;body&quot;: &quot;الشرح&quot;, &quot;authorId&quot;: 1 }
+</code></pre>
+<h2>Mental Model</h2>
+<pre><code class="language-text">HTTP
+ -&gt; Middleware
+ -&gt; Guard (لا يوجد)
+ -&gt; Interceptor قبل
+ -&gt; Pipe DTO
+ -&gt; Controller
+ -&gt; Service
+ -&gt; UsersService ثم prisma.post.create
+ -&gt; Interceptor بعد
+ -&gt; 201 JSON
+</code></pre>
+<p>عند الرمي يُختصر الباقي إلى الفلتر.</p>
+<h2>أبسط مثال</h2>
+<p>تتبع نجاح:</p>
+<pre><code class="language-text">POST /posts
+body.title طولها كافٍ
+authorId = 1 موجود
+INSERT published=false
+الاستجابة 201
+{ id: 8, title, body, published: false, authorId: 1 }
+</code></pre>
+<p>تتبع فشل تحقق:</p>
+<pre><code class="language-text">title = &quot;&quot;
+ValidationPipe يرمي
+PostsService لا تُستدعى
+400
+</code></pre>
+<p>تتبع مؤلف غائب:</p>
+<pre><code class="language-text">DTO صالح
+UsersService.findOne(404040) يرمي NotFoundException
+لا INSERT
+404
+</code></pre>
+<h2>شرح المثال</h2>
+<p>ثلاث نتائج ثلاث طبقات. هذا ما تبحث عنه في السجل: هل ظهرت رسالة الأنبوب، أم رسالة «User not found»، أم خطأ PostgreSQL. إن رأيت <code>INSERT</code> ثم <code>500</code> فالمشكلة بعد قرار الخدمة، لا في شكل الجسم.</p>
+<p>المتحكم لا يفتح معاملة ولا يترجم <code>P2002</code>. هو سطر استدعاء. إن امتلأ بشرط، أعد الشرط إلى الخدمة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>Parse</code> للجسم يتم في وسيط المنصة قبل الأنبوب، لأن JSON يجب أن يصبح كائنًا. جسم ليس JSON أصلًا يفشل قبل DTO برمز من المنصة. ثم الأنبوب ينسخ الحقول المسموحة إلى نسخة الصنف. الخدمة ترى تلك النسخة. Prisma يرسل معاملات مربوطة. المشغّل يرجع الصف. Nest يمرّر الكائن إلى <code>JSON.stringify</code> عبر طبقة الاستجابة. <code>passwordHash</code> غير موجود في <code>select</code> فلا يدخل الكائن أصلًا.</p>
+<p>معترضة التسلسل في فصل لاحق قد تحذف حقولًا إضافية. اليوم الحذف في <code>select</code>.</p>
+<h2>مثال عملي</h2>
+<p>أضف سجلًا مؤقتًا في أول المتحكم وأول الخدمة ثم احذفه. أرسل الطلبات الثلاثة من المثال. طابق كل رمز بطبقة. ثم أرسل <code>published: true</code> الزائد وتأكد أن الخدمة لم تُسجَّل. هذا اختبار فهم لا ميزة تبقى في الكود.</p>
+<p>ارسم الجدول نفسه لـ <code>GET /posts?page=2&amp;published=true&amp;sort=title&amp;order=asc</code>: الأنبوب على <code>@Query</code>، ثم <code>list</code> تبني <code>where</code> و <code>orderBy</code> و <code>skip</code>، ثم معاملة قراءة. لا <code>create</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>البحث عن العطل في Prisma بينما الأنبوب رفض الطلب.</li>
+<li>وضع فحص المؤلف في المتحكم «لأن التتبع مرّ من هناك».</li>
+<li>اعتبار <code>201</code> قرار Prisma. هو قرار إطار على <code>@Post</code>.</li>
+<li>تتبع واحد ثم نسيان أن <code>GET</code> قائمة لا تمر بـ <code>create</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند أول مسار يعمل، وعند أي عطل لا تعرف طبقته. أعد الرسم إن أضفت حارسًا في فصل المصادقة: سيظهر بين الوسيط والأنبوب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كتصميم يومي لكل سطر. بعد أن تستقر الخريطة، ارجع إليها عند المفاجأة فقط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>طبقة</th>
+<th>قرار هذا الطلب</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Pipe</td>
+<td>شكل الحقول</td>
+</tr>
+<tr>
+<td>Controller</td>
+<td>ربط المسار بالدالة</td>
+</tr>
+<tr>
+<td>UsersService</td>
+<td>وجود المؤلف</td>
+</tr>
+<tr>
+<td>PostsService</td>
+<td>المسودة والإدراج</td>
+</tr>
+<tr>
+<td>Filter</td>
+<td>شكل الخطأ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما رمز النجاح لـ <code>POST /posts</code> الصالح، ومن يختاره؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>201</code>. Nest يضعه لـ <code>@Post()</code> ما لم يوجد <code>@HttpCode</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>في أي نقطة تتوقف رحلة <code>title</code> الفارغ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عند <code>ValidationPipe</code> قبل <code>PostsController</code> إن رُمي الاستثناء هناك، والخدمة لا تُستدعى.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أضفت <code>AuthGuard</code> في فصل لاحق على <code>POST /posts</code>. أين يقع في هذا الرسم نسبة إلى فحص المؤلف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الحارس قبل الأنبوب في دورة Nest المعتادة: من لا يملك هوية لا يصل إلى فحص DTO ولا إلى <code>UsersService</code>. فحص <code>authorId</code> يبقى في الخدمة بعد أن يمر الحارس، إلى أن يربط الفصل التالي المؤلف بالهوية بدل رقم في الجسم.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب الأنبوب والمتحكم والخدمة؟</li>
+<li>لماذا لا ترى الاستجابة <code>passwordHash</code>؟</li>
+<li>ماذا يتغيّر في الرسم عند الاستثناء؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>طلب المقال يعبر أنبوبًا ثم متحكمًا رقيقًا ثم خدمة تملك القاعدة ثم Prisma. كل فشل له طبقة. هذه خريطة الفصول التالية حين نضيف هوية على المسار نفسه.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> تجمع إنشاء مستخدم ومقال وتعليق وقائمة مضيّقة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Request lifecycle: <a href="https://docs.nestjs.com/faq/request-lifecycle">https://docs.nestjs.com/faq/request-lifecycle</a></li>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — Exception filters: <a href="https://docs.nestjs.com/exception-filters">https://docs.nestjs.com/exception-filters</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

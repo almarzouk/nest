@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Filtering</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-filtering.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Filtering</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تضييق <code>GET /posts</code> بشرط اختياري يعرّفه العقد، مثل المقالات المنشورة أو مقالات مؤلف، من غير تمرير كائن <code>where</code> خام.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قائمة الصفحات ما زالت تعيد المسودات مع المنشور. العميل الذي يريد مقالات مؤلف واحد يسحب الصفحات كلها ويرشّح في المتصفح. فتح <code>where</code> كـ JSON في الاستعلام يتيح للعميل اختيار أي عمود، ومنها حقول لاحقًا حساسة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>أضف حقولًا اختيارية إلى <code>ListPostsQueryDto</code>: <code>published</code> و <code>authorId</code>. الخدمة تبني <code>where</code> من هذه الحقول فقط. قيمة غائبة تعني «لا تضيّق هذا الشرط». قيمة حاضرة تُضاف. الصفحة تُحسب بعد التضييق، والعدد الكلي هو عدد المطابق لا عدد الجدول كله.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@IsOptional()
+@Type(() =&gt; Boolean)
+@IsBoolean()
+published?: boolean;
+
+@IsOptional()
+@Type(() =&gt; Number)
+@IsInt()
+@Min(1)
+authorId?: number;
+</code></pre>
+<p>تحويل <code>published</code> من الاستعلام حساس: النص <code>&quot;false&quot;</code> قد يصبح حقيقة في تحويل ساذج لأن أي نص غير فارغ حقيقة في JavaScript. لا تعتمد على <code>enableImplicitConversion</code> لهذا الحقل. حوّله صراحة:</p>
+<pre><code class="language-ts">function parsePublished(value: unknown): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value === &quot;true&quot; || value === true) return true;
+  if (value === &quot;false&quot; || value === false) return false;
+  throw new BadRequestException(&quot;published must be true or false&quot;);
+}
+</code></pre>
+<p>أو استخدم أنبوبًا صغيرًا على المعامل. المهم أن <code>&quot;false&quot;</code> لا يمر كـ <code>true</code>.</p>
+<p>في الخدمة:</p>
+<pre><code class="language-ts">const where = {
+  ...(query.published !== undefined ? { published: query.published } : {}),
+  ...(query.authorId !== undefined ? { authorId: query.authorId } : {}),
+};
+</code></pre>
+<p>ثم <code>findMany({ where, skip, take, orderBy })</code> و <code>count({ where })</code>.</p>
+<p>لا تبنِ تصفية عامة بكل أعمدة <code>Post</code>. الفصل <code>26</code> يناقش قائمة الأعمدة المسموحة كعقد قابل لإعادة الاستخدام.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">?published=true&amp;authorId=4&amp;page=1
+        |
+ where { published: true, authorId: 4 }
+        |
+ صفحة من المطابق فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-http">GET /posts?published=true&amp;authorId=4&amp;page=1&amp;pageSize=20 HTTP/1.1
+</code></pre>
+<p>المسودات لا تدخل <code>items</code> ولا <code>total</code>. مقالات المؤلف <code>5</code> لا تدخل. الصفحة <code>1</code> أول عشرين منشورًا مطابقًا حسب الترتيب الحالي <code>id</code>.</p>
+<h2>شرح المثال</h2>
+<p>الشرطان معًا يعنيان AND، وهو ما يفعله كائن <code>where</code> في Prisma عند وضع الحقول جنبًا إلى جنب. إن غاب <code>authorId</code> يبقى شرط النشر فقط. إن غاب الاثنان تعود القائمة كما في درس الترقيم.</p>
+<p>مؤلف غير موجود يعيد صفحة فارغة و <code>total: 0</code>، لا <code>404</code>. المسار قائمة مرشّحة، والفلتر الذي لا يطابق شيئًا نتيجة فارغة صحيحة. <code>404</code> يبقى لـ <code>GET /posts/:id</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Prisma يضيف <code>WHERE</code> بمعاملات مربوطة. اسم العمود ثابت في الكود لأنك كتبته <code>published</code> لا من نص العميل. هذا الفرق بين فلتر مسموح و SQL يُبنى من اسم عمود يرسله الطلب.</p>
+<p>فهرس على <code>(authorId, published)</code> يجعل الشرط رخيصًا حين يكبر الجدول. ليس مطلوبًا للتمرين، ويُذكر الآن حتى لا تُفاجأ في الفصل <code>26</code>.</p>
+<h2>مثال عملي</h2>
+<p>انشر مقالين للمؤلف <code>4</code> واترك ثالثًا مسودة. <code>published=true</code> يعيد اثنين. <code>published=false&amp;authorId=4</code> يعيد المسودة. <code>published=maybe</code> يعيد <code>400</code>. أرسل <code>passwordHash=x</code> في الاستعلام: الحقل ليس في DTO، و <code>forbidNonWhitelisted</code> يرفضه إن فُعّل على الاستعلام أيضًا. الأنبوب العالمي يفعل ذلك إن كان <code>validateCustomDecorators</code> ليس شرطًا لـ <code>@Query</code> على صنف. تأكد بالتجربة أن الزائد مرفوض.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اعتبار النص <code>&quot;false&quot;</code> قيمة منطقية كاذبة عبر <code>Boolean(&quot;false&quot;)</code>، وهي <code>true</code>.</li>
+<li><code>count()</code> بلا <code>where</code> مع <code>findMany</code> مضيّق، فيكذب شريط الصفحات.</li>
+<li>تمرير <code>req.query</code> إلى Prisma.</li>
+<li><code>404</code> عندما لا توجد نتائج.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين للعميل سؤال متكرر ضيّق: منشور، أو مؤلف، أو الاثنان.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لبحث نصي حر في <code>body</code> قبل أن تقرر لغة البحث. <code>contains</code> ممكن لاحقًا كحقل مسمّى <code>q</code>، ليس في هذا الدرس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>فلتر في المتصفح</th>
+<th><code>where</code> من DTO</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يسحب كل الصفحات</td>
+<td>يضيّق في القاعدة</td>
+</tr>
+<tr>
+<td>يرى المسودات إن أرسلتها</td>
+<td>يقدر أن يخفيها</td>
+</tr>
+<tr>
+<td>لا فهرس يساعده</td>
+<td>الشرط عمود حقيقي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعني غياب <code>published</code> في الاستعلام؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا تضف حقل <code>published</code> إلى <code>where</code>. المسودات والمنشورات كلاهما مؤهّل إن لم يوجد شرط آخر.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>Boolean(&quot;false&quot;)</code> لا يصلح هنا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أي نص غير فارغ في JavaScript يتحوّل إلى <code>true</code>، ومنها <code>&quot;false&quot;</code>. الحل مقارنة صريحة بالنصين <code>true</code> و <code>false</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>العميل يريد استبعاد مؤلف. لماذا لا نضيف <code>authorIdNot</code> في اليوم نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل عامل جديد عقد. ابدأ بالمساواة التي يحتاجها المنتج. النفي والقوائم يأتيان حين يتكرر الطلب، ويُسمّيان في DTO لا ككائن حر. الفصل <code>26</code> يوسّع الأنماط بعد ثبات الحاجة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>كيف يُجمع شرطان في <code>where</code>؟</li>
+<li>لماذا <code>total</code> يستخدم الشرط نفسه؟</li>
+<li>ماذا يرجع فلتر بلا نتائج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التصفية حقول اختيارية مسمّاة تُترجم إلى <code>where</code> ثابت الأعمدة. الصفحة والعدد يتبعان الشرط. اسم العمود لا يأتي من العميل.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./09-sorting.html">Sorting</a> يسمح بترتيب القائمة بحقول من قائمة بيضاء.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

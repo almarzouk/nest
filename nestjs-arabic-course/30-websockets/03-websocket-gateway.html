@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@WebSocketGateway</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-websocket-gateway.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@WebSocketGateway</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ضبط الزينة: المنفذ، وفضاء الاسم، وCORS للمتصفح، والوصول إلى خادم المقبس.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بوابة بلا خيارات تسمع على منفذ التطبيق وفضاء الاسم الافتراضي. الواجهة على <code>localhost:5173</code> يرفضها المتصفح لأن مصافحة المقبس تخضع لـ CORS. وفصل المقبس على منفذ آخر بلا قصد يكسر عنوانًا افترضه العميل على <code>/socket.io</code> بجانب API.</p>
+<h2>الفكرة ببساطة</h2>
+<p>وسيط الزينة الأول رقم منفذ اختياري. الوسيط الآخر كائن خيارات يصل إلى مكتبة المقبس. للتطوير المحلي مع واجهة منفصلة ضع <code>cors.origin</code> على أصل الواجهة. <code>@WebSocketServer()</code> يعطيك الخادم لبث لاحق لا يخص مرسلًا واحدًا.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة: المنفذ الافتراضي هو منفذ HTTP. <code>@WebSocketGateway(80)</code> يغيّره. فضاء الاسم:</p>
+<pre><code class="language-ts">@WebSocketGateway({ namespace: &#39;comments&#39; })
+</code></pre>
+<p>CORS في كائن الخيارات لأن Socket.IO يتحقق منه أثناء المصافحة:</p>
+<pre><code class="language-ts">@WebSocketGateway({
+  namespace: &#39;comments&#39;,
+  cors: { origin: [&#39;http://localhost:5173&#39;], credentials: true },
+})
+</code></pre>
+<p><code>credentials</code> إن كان العميل يرسل ملف تعريف ارتباط. لا تفتح <code>origin: &#39;*&#39;</code> مع <code>credentials</code>. في الإنتاج الأصل نطاق الواجهة الحقيقي لا لوكال المضيف.</p>
+<p><code>@WebSocketServer()</code> خاصية تمتلئ بالخادم بعد الإقلاع. نوعها من <code>socket.io</code> عندما يكون المحول الافتراضي: <code>Server</code>.</p>
+<pre><code class="language-ts">import { WebSocketServer } from &#39;@nestjs/websockets&#39;;
+import type { Server } from &#39;socket.io&#39;;
+
+@WebSocketServer()
+server: Server;
+</code></pre>
+<p>لا تستخدم الخاصية في الباني. هي جاهزة بعد تهيئة البوابة، أي في الخطاف <code>afterInit</code> أو عند أول رسالة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تطبيق Nest على :3000
+  namespace /comments
+    CORS origin الواجهة
+      server.emit أو server.to(room)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { WebSocketGateway, WebSocketServer } from &#39;@nestjs/websockets&#39;;
+import type { Server } from &#39;socket.io&#39;;
+
+@WebSocketGateway({
+  namespace: &#39;comments&#39;,
+  cors: { origin: [&#39;http://localhost:5173&#39;] },
+})
+export class CommentsGateway {
+  @WebSocketServer()
+  server: Server;
+
+  announce(bookId: string, body: string) {
+    this.server.to(bookId).emit(&#39;comment&#39;, { bookId, body });
+  }
+}
+</code></pre>
+<p><code>announce</code> دالة عادية يستدعيها المتحكم بعد الحفظ. <code>to(bookId)</code> غرفة. الانضمام إليها رسالة لاحقة، لا أثر لهذه الدالة وحدها.</p>
+<h2>شرح المثال</h2>
+<p>الواجهة تتصل بمساحة <code>comments</code> على أصل الخادم، مثل <code>http://localhost:3000/comments</code> حسب عميل Socket.IO. <code>cors.origin</code> يجب أن يطابق أصل الصفحة بما فيه المنفذ. <code>announce</code> لا تعرف HTTP. هي تبث إلى غرفة باسم معرف الكتاب. من لم ينضم لا يسمع، وهذا مقصود.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أثناء الإقلاع يبني المحول خادم Socket.IO ويمرر خيارات الزينة، ومنها CORS وفضاء الاسم. <code>@WebSocketServer</code> يربط الخاصية بتلك النسخة. <code>server.to(room).emit</code> يكتب إطارًا لكل مقبس في الغرفة على هذه العملية. الغرفة فارغة حتى ينادي عميل <code>join</code>. المنفذ المختلف عن HTTP يعني أن العميل لا يفترض عنوان REST نفسه، وأن الجدار الناري يفتح المنفذين.</p>
+<h2>مثال عملي</h2>
+<p>إنتاج خلف نطاق واحد <code>https://books.example</code> يخدم الواجهة والـ API. عندها قد لا تحتاج أصلًا مختلفًا. إن بقيت الواجهة على نطاق آخر، عدّل <code>origin</code> من إعداد لا من نص ثابت في المستودع:</p>
+<pre><code class="language-ts">cors: { origin: [process.env.WEB_ORIGIN ?? &#39;http://localhost:5173&#39;] },
+</code></pre>
+<p>تحقق في المتصفح من خطأ CORS على طلب المصافحة قبل أن تلوم <code>@SubscribeMessage</code>. المصافحة تفشل قبل أي رسالة تطبيق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>origin: &#39;*&#39;</code> مع اعتماد على ملفات الارتباط.</li>
+<li>قراءة <code>this.server</code> من الباني.</li>
+<li>بث <code>server.emit</code> إلى كل الفضاء بدل <code>to(bookId)</code>.</li>
+<li>تغيير المنفذ في الزينة وإبقاء عميل الواجهة على منفذ REST.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل بوابة سيصلها متصفح من أصل آخر، ومع أي بث خارج معالج الرسالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفصل المنفذ بلا سبب تشغيلي. المنفذ المشترك مع HTTP أبسط خلف وكيل واحد. ولا تضع أسرار CORS في كود يُنشر لكل البيئات إن كان الأصل يختلف.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الخيار</th>
+<th>إن نُسي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>namespace</code></td>
+<td>تختلط الأحداث مع بوابة أخرى على الجذر</td>
+</tr>
+<tr>
+<td><code>cors.origin</code></td>
+<td>المتصفح يوقف المصافحة</td>
+</tr>
+<tr>
+<td><code>@WebSocketServer</code></td>
+<td>لا بث إلا لمن أعاد الدالة ردًا له وحده</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة تحصل على كائن <code>Server</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@WebSocketServer()</code> على خاصية في البوابة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تفشل الواجهة على منفذ 5173 قبل إرسال تعليق؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مصافحة Socket.IO ترفض أصل الصفحة إن لم يكن في <code>cors.origin</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تستدعي <code>announce</code> نسبة إلى حفظ الصف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعد نجاح الحفظ. البث قبل الحفظ يُظهر تعليقًا لا يعيده الجلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما منفذ البوابة الافتراضي؟</li>
+<li>ماذا يفعل <code>server.to(bookId)</code>؟</li>
+<li>لماذا لا تُقرأ <code>server</code> في الباني؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@WebSocketGateway</code> يحدد الفضاء وCORS والمنفذ. <code>@WebSocketServer</code> للبث إلى غرفة بعد أن تكون الخاصية جاهزة.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>@SubscribeMessage</code>: استقبال <code>join</code> و <code>comment</code> من العميل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Gateways: <a href="https://docs.nestjs.com/websockets/gateways">https://docs.nestjs.com/websockets/gateways</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

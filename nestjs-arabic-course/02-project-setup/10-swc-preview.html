@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لمحة عن SWC</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-swc-preview.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لمحة عن SWC</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة متى تسرّع البناء من غير أن تفقد Metadata التي يحتاجها الحقن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مترجم TypeScript الكامل دقيق ومهم في <code>build</code>، وقد يكون أبطأ أثناء حلقة الحفظ في مشروع كبر. SWC مترجم سريع مكتوب بلغة أنظمة، والتوثيق يعرضه كبنّاء.</p>
+<h2>الفكرة ببساطة</h2>
+<p>أضف <code>-b swc</code> إلى أمر البدء أثناء التطوير إن أردت بناءً أسرع. لا تفقد <code>emitDecoratorMetadata</code>.</p>
+<h2>التعريف التقني</h2>
+<p>First steps: <code>npm run start -- -b swc</code>. وصفة SWC في التوثيق تشرح التثبيت والتكامل. Vitest في قوالب Nest الحديثة يستخدم مسارًا يدعم Metadata التصميم (مثل SWC) لأن مترجمًا لا يصدرها يكسر الحقن في الاختبارات. هذا تفصيل واجهناه في فصل TypeScript.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حفظ الملف -&gt; SWC يترجم بسرعة -&gt; Node يشغّل الناتج مع Metadata
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">npm run start -- -b swc
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>--</code> يمرر العلم إلى السكربت. <code>-b swc</code> يختار البنّاء. إن لم تكن الحزم مثبتة، وصفة التوثيق تذكر ما يضاف. لا تعتبر العلم سحرًا يعمل بلا إعداد إن رفضه CLI.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>SWC يحوّل TypeScript إلى JavaScript ويستطيع إصدار زينة التصميم التي تقرأها <code>reflect-metadata</code>. أداة تترجم الأنواع بحذف الزينة تجعل المسارات أو الحقن يفشلان رغم أن الكود يبدو صحيحًا في المحرر.</p>
+<h2>مثال عملي</h2>
+<p>ابدأ بمترجم القالب الافتراضي حتى ترى أول مشروع يعمل. انتقل إلى SWC عندما تصبح إعادة التشغيل بطيئة. أبقِ <code>nest build</code> الذي تستخدمه للإنتاج قادرًا على إصدار Metadata نفسها.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تشغيل الاختبارات بمترجم يتجاهل الزينة ثم اتهام الحقن بأنه مكسور.</li>
+<li>خلط أعلام webpack القديمة مع SWC من دروس متفرقة.</li>
+<li>اعتبار SWC بديلًا عن فهم الأنواع. هو يسرّع الترجمة لا التصميم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يبطؤ <code>start:dev</code> في مشروع متعدد الوحدات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>ليس مطلوبًا لفهم Hello World.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>tsc عبر المسار الافتراضي</th>
+<th>SWC</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السرعة في الحفظ</td>
+<td>أبطأ غالبًا</td>
+<td>أسرع</td>
+</tr>
+<tr>
+<td>Metadata</td>
+<td>مطلوبة</td>
+<td>يجب أن تبقى مفعلة</td>
+</tr>
+<tr>
+<td>دورك الآن</td>
+<td>الافتراضي</td>
+<td>اختياري</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما العلم الذي يمرر SWC لأمر البدء كما في First steps؟</p>
+<details><summary>الحل</summary>
+
+<p><code>-b swc</code> بعد <code>--</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يفشل الحقن إذا ترجم الاختبار الأنواع وحذف Metadata؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن <code>design:paramtypes</code> لا يُكتب، والحاوية لا ترى صنف المعامل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الفرق بين اختيار SWC للتطوير واختيار Rspack في monorepo؟</p>
+<details><summary>الحل</summary>
+
+<p>SWC مسار ترجمة سريع للتطبيق. Rspack في CLI 12 بنّاء الحزم الافتراضي لمساحات العمل متعددة المشاريع، بديلًا عن webpack الذي أصبح deprecated في ذلك السياق. تطبيقنا الأول لا يحتاج قرار monorepo.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تجرب SWC؟</li>
+<li>ماذا يجب ألا تضيع عند تغيير المترجم؟</li>
+<li>هل SWC مطلوبة للفصل التالي؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>SWC يسرّع الترجمة بشرط إبقاء Metadata الزينة. الافتراضي يكفي حتى يكبر المشروع.</p>
+<h2>ماذا بعد؟</h2>
+<p>ملف الأمثلة يثبت أول تشغيل، ثم التمارين، ثم نقرأ <code>bootstrap</code> سطرًا سطرًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+<li>NestJS — SWC: <a href="https://docs.nestjs.com/recipes/swc">https://docs.nestjs.com/recipes/swc</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

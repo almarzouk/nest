@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو ORM</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-what-is-an-orm.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو ORM</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف طبقة تربط الجداول بكائنات TypeScript، وحدّ ما لا تغطيه: القيود، والترحيل، وقرار أي أداة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>جمل SQL المكررة في كل خدمة تعيد أسماء الأعمدة كنصوص. خطأ إملائي في <code>titl</code> يظهر عند التشغيل. تحويل صف <code>{ published: true }</code> إلى معنى المكتبة يتكرر. الفريق يريد أن يرى <code>book.title</code> لا <code>row[&quot;title&quot;]</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ORM يصف الجداول في كود أو في ملف مخطط، ويولّد دوال قراءة وكتابة تعيد كائنات. أنت تستدعي <code>findUnique</code> أو <code>save</code>. الأداة تبني SQL مربوطًا. ما زلت تحتاج أن تفهم الجدول والمفتاح الأجنبي، لأن الاستعلام السيئ يبقى بطيئًا بعد تغليفه.</p>
+<h2>التعريف التقني</h2>
+<p>Object-Relational Mapping: مطابقة بين صف علائقي وكائن. ليست قاعدة بيانات، وليست بديلًا عن PostgreSQL في هذه الدورة.</p>
+<p>توثيق Nest الحالي في قسم Data يذكر تكاملات يحافظ عليها الفريق أو يوثّقها:</p>
+<ul>
+<li>TypeORM عبر <code>@nestjs/typeorm</code>: كيانات بزينة ومستودعات.</li>
+<li>Drizzle عبر <code>@nestjs/drizzle</code>: جداول دوال TypeScript ومنشئ استعلام.</li>
+<li>Prisma: عميل يُولَّد من <code>schema.prisma</code>، بلا حزمة Nest خاصة. تكشفه بمزوّد.</li>
+<li>MongoDB عبر <code>@nestjs/mongoose</code>، و Sequelize عبر <code>@nestjs/sequelize</code>، و MikroORM عبر <code>@mikro-orm/nestjs</code>.</li>
+</ul>
+<p>هذه الدورة تشرح الفكرة ثم تكمل التطبيق على Prisma. TypeORM و Drizzle درسان لأن Nest يوثّقهما كمسارين. MongoDB و Sequelize و MikroORM خيارات موجودة في التوثيق، بلا فصول مستقلة هنا، حتى لا تتفرع قبل إتقان مسار واحد.</p>
+<p><code>synchronize</code> الذي يعدّل الجداول من الكيانات عند الإقلاع ليس ترحيلًا آمنًا للإنتاج. الترحيل ملف SQL محفوظ يُعاد على كل بيئة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نموذج Book في الكود  -&gt;  ORM  -&gt;  SQL  -&gt;  جدول books
+        ^                                      |
+        |______________ كائن Book _____________|
+</code></pre>
+<p>النموذج ليس الصف. الصف في القرص. الكائن في الذاكرة بعد القراءة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">type BookRow = { id: number; title: string; published: boolean };
+
+function toBook(row: BookRow) {
+  return { id: row.id, title: row.title, published: row.published };
+}
+</code></pre>
+<p>هذا أصغر mapper تكتبه بيدك. ORM يولّد مثله مع دوال <code>create</code> و <code>update</code> واستعلامات العلاقات، ويواكب تغيير الأعمدة إن أعدت التوليد أو أعدت الترجمة.</p>
+<h2>شرح المثال</h2>
+<p>الدالة لا تفتح اتصالًا. هي الحد الذي يمنع بقية التطبيق من اعتماد شكل المشغّل. Prisma يضع هذا الحد في العميل المولَّد: نوع <code>Book</code> وحقل <code>prisma.book</code>. TypeORM يضعه في صنف كيان ومستودع. Drizzle يضعه في <code>pgTable</code> وأنواع <code>$inferSelect</code>.</p>
+<p>إن تغيّر اسم العمود في SQL ولم يتغيّر النموذج، القراءة تنكسر. الترحيل والنموذج يتحركان معًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأداة تبني جملة <code>INSERT</code> أو <code>SELECT</code> بمعاملات، لا بلصق النصوص، ما دمت تستخدم واجهتها العادية. الاستعلام الخام الذي يلصق مدخلًا يعيد خطر الحقن. N+1 يحدث حين تجلب قائمة كتب ثم تنفّذ استعلام مؤلف لكل كتاب داخل حلقة. ORM لا يمنع ذلك تلقائيًا. التحميل في استعلام واحد، أو <code>include</code> في Prisma، قرار تكتبه.</p>
+<p>الهوية: صفان بنفس المفتاح هما الشيء نفسه في القاعدة حتى لو نسخت الكائن مرتين في الذاكرة.</p>
+<h2>مثال عملي</h2>
+<p>خدمة تعرض كتابًا ومؤلفه. بلا ORM تكتب <code>join</code> وتمرّر صفًا مسطحًا. مع ORM تطلب الكتاب ومعه علاقة المؤلف وتستلم شجرة. الفصل العملي يكتب ذلك في Prisma. إن احتجت تقريرًا بإحصاء لا يشبه كيانًا، SQL الصريح عبر العميل ما زال متاحًا، بمعاملات مربوطة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>ظن أن ORM يلغي الحاجة إلى مفتاح أجنبي.</li>
+<li>تشغيل مزامنة المخطط على الإنتاج.</li>
+<li>إرجاع كيان ORM كامل إلى JSON وفيه حقول داخلية.</li>
+<li>فتح ثلاثة ORMs على الجدول نفسه.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تتكرر عمليات الصفوف والعلاقات وتريد أنواعًا تواكب المخطط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستعلام تحليلي طويل أسهل كـ SQL واحد واضح، أو لمثال من عشر دقائق لا جدول له أصلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>SQL في الخدمة</th>
+<th>ORM</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الجملة ظاهرة</td>
+<td>الجملة تُبنى من استدعاء</td>
+</tr>
+<tr>
+<td>الأنواع يدوية</td>
+<td>أنواع من المخطط أو الكيان</td>
+</tr>
+<tr>
+<td>الترحيل ما زال مطلوبًا</td>
+<td>الترحيل ما زال مطلوبًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل ORM يستبدل PostgreSQL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. هو طبقة في التطبيق تتحدث إلى القاعدة. الجداول تبقى في PostgreSQL.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي تشغيل التطبيق ليحدّث جدول الإنتاج من الكيانات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المزامنة التلقائية قد تضيف أو تسقط أعمدة بلا أثر يُراجع. الترحيل ملف محفوظ يُطبَّق بترتيب معروف.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>قائمة عشرين كتابًا نفّذت واحدًا وعشرين استعلامًا. ماذا حدث؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استعلام للقائمة ثم استعلام لكل علاقة داخل حلقة. اطلب العلاقة مع القائمة في استعلام واحد أو بعدد ثابت، لا بعدد الصفوف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يطابق ORM بين العالمين؟</li>
+<li>أي أدوات يوثّقها Nest في قسم Data؟</li>
+<li>أي أداة ستكمل عليها الدورة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>ORM يولّد وصولًا ذا نوع إلى جداول تعرفها أصلًا. Prisma مسارنا التطبيقي. TypeORM و Drizzle بديلان موثّقان. البقية تُذكر حتى تعرف أنها موجودة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-prisma-connection.html">Prisma: الاتصال</a> يفتح العميل عبر <code>PrismaService</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Databases: <a href="https://docs.nestjs.com/data/overview">https://docs.nestjs.com/data/overview</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

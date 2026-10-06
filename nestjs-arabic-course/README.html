@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>دورة NestJS بالعربية</title>
+<style>
+  :root { --bg:#f3efe6; --paper:#fffdf8; --ink:#1c2430; --muted:#5c6570; --line:#e4dccf; --teal:#0e6b66; --soft:#e5f3f1; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; }
+  main { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:28px 0 64px; }
+  header.bar { width:min(860px, calc(100% - 32px)); margin:0 auto; padding:16px 0 0; color:var(--muted); font-size:14px; }
+  header.bar a { color:var(--teal); }
+  article { background:var(--paper); border:1px solid var(--line); padding:22px 26px 32px; }
+  h1 { font-size:28px; line-height:1.35; margin:0 0 12px; }
+  h2 { font-size:22px; margin:28px 0 8px; }
+  h3 { font-size:18px; margin:22px 0 8px; }
+  a { color:var(--teal); }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:.92em; background:var(--soft); padding:0 4px; }
+  pre { background:#1c2430; color:#f4f1ea; padding:14px 16px; overflow:auto; direction:ltr; text-align:left; }
+  pre code { background:transparent; color:inherit; padding:0; }
+  table { width:100%; border-collapse:collapse; margin:12px 0; }
+  th, td { border-bottom:1px solid var(--line); text-align:right; padding:8px; vertical-align:top; }
+  th { color:var(--muted); }
+  blockquote { margin:12px 0; padding:8px 14px; border-right:3px solid var(--teal); background:var(--soft); }
+  img { max-width:100%; }
+  ul, ol { padding-right:1.2em; }
+  details { background:var(--soft); padding:8px 12px; margin:10px 0; }
+  summary { cursor:pointer; }
+</style>
+</head>
+<body>
+<header class="bar"><span>nestjs-arabic-course/README.md</span> · <a href="README.md">ملف Markdown الأصلي</a></header>
+<main>
+<article>
+<h1>دورة NestJS بالعربية</h1>
+<p>مسار تعليمي عملي من الصفر حتى بناء Backend بمستوى إنتاجي. كل مفهوم كبير يعيش في مجلده، والشرح بالعربية، وأسماء NestJS تبقى كما هي في التوثيق الرسمي.</p>
+<h2>لمن هذه الدورة؟</h2>
+<p>لك إذا كنت تكتب JavaScript و TypeScript وتفهم أن المتصفح يرسل طلبًا والخادم يرد، لكنك لم تبنِ تطبيق NestJS من قبل. لا تفترض الدورة أنك تعرف Modules أو Dependency Injection أو Decorators الخاصة بالإطار.</p>
+<h2>كيف تدرسها؟</h2>
+<ol>
+<li>افتح <a href="./ROADMAP.html"><code>ROADMAP.md</code></a> مرة واحدة لترى المسار كاملًا.</li>
+<li>ادخل مجلد الفصل الحالي فقط. ابدأ من <a href="./00-introduction/README.html"><code>00-introduction</code></a>.</li>
+<li>اقرأ الدروس بالترتيب الرقمي. كل ملف يمهّد للذي بعده.</li>
+<li>نفّذ التمارين قبل فتح الحل. الحل داخل <code>&lt;details&gt;</code> في آخر التمرين.</li>
+<li>أجب عن أسئلة المراجعة بصوت عالٍ أو كتابة، من غير النظر إلى الدرس.</li>
+<li>علّم المربع في <a href="./PROGRESS.html"><code>PROGRESS.md</code></a> بعد أن تستطيع شرح الفكرة، لا بعد أن تصل إلى آخر سطر.</li>
+<li>عندما يختم الفصل بملف <code>next-step.md</code>، اقرأه ثم انتقل إلى المجلد التالي.</li>
+</ol>
+<p>لا تقفز إلى Modules أو Controllers قبل إنهاء المقدمة و TypeScript والتثبيت. الكود الذي ستراه هناك يفترض هذه الأرضية.</p>
+<h2>لغة الشرح</h2>
+<p>الشرح، والتعليقات التعليمية، والتمارين بالعربية.</p>
+<p>تبقى بالإنجليزية، كما في التوثيق:</p>
+<ul>
+<li>أسماء التقنيات والحزم</li>
+<li>أسماء Classes و Decorators و Methods و Interfaces و Types</li>
+<li>الأوامر والكود</li>
+<li>أسماء الملفات والمجلدات</li>
+</ul>
+<p>المصطلح يُكتب بالإنجليزية ثم يُشرح معناه. لا تُترجم <code>Provider</code> إلى كلمة عربية غامضة.</p>
+<h2>مرجع الإصدار</h2>
+<p>المادة مبنية على <a href="https://docs.nestjs.com/">توثيق NestJS الرسمي</a> كما نُشر في <strong>5 أكتوبر 2026</strong>، للإصدار الرئيسي <strong>NestJS 12</strong>.</p>
+<p>عند اختلاف الذاكرة عن الصفحة الرسمية، الصفحة هي المرجع. كل درس مكتوب يختم بقسم <strong>المصادر الرسمية</strong> وروابط مباشرة.</p>
+<p>تشغيل تطبيق Nest يتطلب Node.js بإصدار <strong>20.19 أو أحدث</strong>، أو <strong>22.12 أو أحدث</strong> على خط 22. مولّدات Nest CLI تتطلب <strong>22.22.3 أو أحدث</strong>، أو <strong>24.15 أو أحدث</strong>، أو <strong>26</strong>. التفاصيل والأوامر في الفصل <code>02</code>، بعد أن تصبح قراءة الملفات المولَّدة ممكنة.</p>
+<h2>ماذا يوجد في الجذر؟</h2>
+<table>
+<thead>
+<tr>
+<th>الملف</th>
+<th>وظيفته</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><a href="./ROADMAP.html"><code>ROADMAP.md</code></a></td>
+<td>ترتيب الفصول وسبب هذا الترتيب</td>
+</tr>
+<tr>
+<td><a href="./PROGRESS.html"><code>PROGRESS.md</code></a></td>
+<td>قائمة الدروس وحالة كتابة المادة</td>
+</tr>
+<tr>
+<td><a href="./GLOSSARY.html"><code>GLOSSARY.md</code></a></td>
+<td>مصطلحات مختصرة، وتنمو مع كل فصل</td>
+</tr>
+<tr>
+<td><a href="./CHEATSHEET.html"><code>CHEATSHEET.md</code></a></td>
+<td>مرجع سريع، وينمو مع كل فصل</td>
+</tr>
+<tr>
+<td><a href="./COMMON-MISTAKES.html"><code>COMMON-MISTAKES.md</code></a></td>
+<td>أخطاء تتكرر، مجمّعة من الدروس</td>
+</tr>
+<tr>
+<td><a href="./INTERVIEW-QUESTIONS.html"><code>INTERVIEW-QUESTIONS.md</code></a></td>
+<td>أسئلة مقابلة تُضاف من كل مرحلة</td>
+</tr>
+<tr>
+<td><a href="./best-practice.html"><code>best-practice.md</code></a></td>
+<td>مقارنة بين الأسلوب الشائع والأفضل في NestJS 12</td>
+</tr>
+</tbody></table>
+<h2>حالة المادة</h2>
+<p>الفصول من <code>00</code> حتى <code>68</code> مكتوبة. ابدأ بالترتيب من المقدمة، ولا تفتح فصلًا متقدمًا قبل أن تشرح حدود الفصل الذي قبله. <a href="./PROGRESS.html"><code>PROGRESS.md</code></a> للتعليم بعد أن تفهم الدرس، لا عند إنشاء الملف.</p>
+<h2>شكل الدرس</h2>
+<p>عندما يناسب الموضوع، يمر الدرس بهذه المحطات: المشكلة، التعريف، الصورة الذهنية، أصغر مثال، شرحه سطرًا بسطر، ما يحدث داخليًا، مثال عملي، أخطاء شائعة، متى يُستخدم، مقارنة، تمارين، أسئلة مراجعة، خلاصة، تمهيد، ثم المصادر.</p>
+<p>السؤال الذي يتكرر في الدورة: <strong>لماذا صُممت NestJS بهذا الشكل؟</strong> حفظ الـ Decorator وحده لا يكفي.</p>
+<h2>ماذا بعد المقدمة؟</h2>
+<p>الفصل التالي هو TypeScript الذي ستحتاجه لقراءة هذا السطر عندما يصل:</p>
+<pre><code class="language-ts">constructor(private readonly usersService: UsersService) {}
+</code></pre>
+<p>لا تبحث عن معناه الآن. <a href="./00-introduction/next-step.html"><code>00-introduction/next-step.md</code></a> يشرح لماذا نبدأ به.</p>
+
+</article>
+</main>
+</body>
+</html>

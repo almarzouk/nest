@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CORS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-cors.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>CORS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>السماح لواجهة على أصل آخر بقراءة استجابة المكتبة، من غير فتح كل الأصول مع الكعكات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>المتصفح يمنع سكربت <code>http://localhost:4200</code> من قراءة استجابة <code>http://localhost:3000</code> إن لم يسمح الخادم. فريق يضع <code>origin: true</code> مع <code>credentials</code> في الإنتاج فتقدر أي صفحة على طلبات بهوية الزائر إن اجتمعت أخطاء أخرى. على Fastify، <code>PUT</code> و <code>PATCH</code> و <code>DELETE</code> تُرفض في الطلب التمهيدي إن لم تُذكر الطرق.</p>
+<h2>الفكرة ببساطة</h2>
+<p>CORS اتفاق متصفح لا حماية لـ <code>curl</code>. الخادم يعلن أصولًا وطرقًا ورؤوسًا مسموحة عبر رؤوس <code>Access-Control-*</code>. الواجهة ترسل طلبًا تمهيديًا <code>OPTIONS</code> للطرق غير البسيطة. إن غاب الأصل من القائمة، المتصفح يخفي الاستجابة عن السكربت حتى لو وصل الطلب إلى Nest.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">app.enableCors({
+  origin: [&quot;http://localhost:4200&quot;],
+  credentials: true,
+  methods: [&quot;GET&quot;, &quot;HEAD&quot;, &quot;PUT&quot;, &quot;PATCH&quot;, &quot;POST&quot;, &quot;DELETE&quot;],
+});
+</code></pre>
+<p>أو <code>NestFactory.create(AppModule, { cors: { ... } })</code>. من غير خيارات، <code>enableCors()</code> يفعّل الافتراضي. الصفحة تذكر أن حزمة Express cors تعلن <code>GET,HEAD,PUT,PATCH,POST,DELETE</code> بينما <code>@fastify/cors</code> يعلن الطرق الآمنة فقط <code>GET,HEAD,POST</code>. لذلك اكتب <code>methods</code> صراحة متى كان العميل على أصل آخر ويستعمل <code>PATCH</code> أو <code>DELETE</code>. الخيار نفسه في <code>enableCors</code> وفي <code>cors</code> داخل <code>create</code>.</p>
+<p><code>credentials: true</code> لازم إن أرسلت الواجهة كعكة <code>fetch</code> مع <code>credentials: &quot;include&quot;</code>. عندها لا تستخدم أصلًا <code>*</code> . سمِّ الأصل كاملًا: مخطط ومضيف ومنفذ.</p>
+<p>CORS لا يوقف خادمًا آخر ينادي API. لا تغني عن المصادقة. أصل مسموح في CORS ليس تلقائيًا <code>trustedOrigins</code> لـ CSRF، والصفحة تقول ذلك في فصل CSRF.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سكربت على :4200
+  -&gt; OPTIONS ثم GET إلى :3000
+  -&gt; المتصفح يقرأ Access-Control-Allow-Origin
+  -&gt; إن طابق، يسلّم JSON للسكربت
+curl يتخطى هذا الفحص
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+app.enableCors({
+  origin: [&quot;http://localhost:4200&quot;],
+  methods: [&quot;GET&quot;, &quot;HEAD&quot;, &quot;PUT&quot;, &quot;PATCH&quot;, &quot;POST&quot;, &quot;DELETE&quot;],
+  credentials: true,
+});
+await app.listen(3000);
+</code></pre>
+<h2>شرح المثال</h2>
+<p>واجهة التطوير على <code>4200</code> و API على <code>3000</code> أصلان مختلفان رغم <code>localhost</code>. القائمة لا تحتوي نطاق الإنتاج. أضف <code>https://library.example</code> من الإعداد عبر <code>ConfigService</code> لا بكتابة النطاقين في الكود فقط. <code>credentials</code> يسمح بإرسال <code>__Host-sid</code> مع الطلبات عبر الأصل إن كانت صفات الكعكة تسمح بذلك أصلًا. <code>SameSite=Lax</code> قد يمنع إرفاق الكعكة على بعض الطلبات عبر المواقع. إن كانت الواجهة على أصل آخر وتحتاج الكعكة، راجع <code>SameSite</code> و <code>trustedOrigins</code> معًا لا CORS وحده.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المتصفح يرسل <code>Origin</code>. الخادم يرد بـ <code>Access-Control-Allow-Origin</code> بذلك الأصل أو يرفض. الطلب التمهيدي يسأل عن الطريقة والرؤوس. فشل التمهيدي يظهر في المتصفح كخطأ CORS وقد لا يظهر كـ <code>404</code> من مسارك. السجل على الخادم قد يرى <code>OPTIONS</code> من غير أن يرى <code>PATCH</code>.</p>
+<p>Fastify بلا <code>methods</code> يفشل تمهيد <code>PATCH /posts/3</code> حتى لو كان Express يعمل بالكود نفسه. ثبّت القائمة.</p>
+<h2>مثال عملي</h2>
+<p>من صفحة الواجهة اطلب <code>GET /posts</code>. إن نسيت <code>enableCors</code>، الكونسول يقول إن الأصل غير مسموح والاستجابة لا تصل إلى <code>fetch</code> رغم <code>200</code> في شبكة الخادم أحيانًا. بعد السماح، <code>PATCH</code> ينجح فقط إن كانت الطريقة معلنة. <code>curl</code> كان ينجح قبل السماح وبعده. لا تختبر CORS بـ <code>curl</code> وحده.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>origin: &quot;*&quot;</code> مع كعكات.</li>
+<li>اختبار CORS من <code>curl</code> فقط.</li>
+<li>نسيان <code>PATCH</code> و <code>DELETE</code> على Fastify.</li>
+<li>اعتبار CORS بديلًا عن <code>@Can</code> أو عن المصادقة.</li>
+<li>وضع أصل الواجهة في CORS من غير <code>trustedOrigins</code> حين يلزم CSRF.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يقرأ سكربت متصفح على أصل مختلف استجابة API.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لحماية API من برامج خارج المتصفح. تلك مصادقة ومعدل ومفاتيح. ولتطبيق جوال أصلي لا يطبّق CORS كالمتصفح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>CORS مضبوط</th>
+<th>CORS مفتوح</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أصول معروفة</td>
+<td>أي صفحة تقرأ الاستجابة</td>
+</tr>
+<tr>
+<td><code>credentials</code> مع قائمة</td>
+<td><code>*</code> لا يجتمع مع الكعكة</td>
+</tr>
+<tr>
+<td>الطرق مكتوبة</td>
+<td>Fastify قد يرفض <code>PATCH</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل يمنع CORS استدعاء <code>curl</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. القيد في المتصفح عند قراءة الاستجابة من سكربت على أصل آخر.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تفشل <code>PATCH</code> من الواجهة على Fastify رغم نجاحها على Express بالكود <code>enableCors()</code> الفارغ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الافتراضي على Fastify لا يعلن <code>PATCH</code>. أضف <code>methods</code> صراحة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الواجهة على أصل آخر وترسل الكعكة. ماذا تضبط غير <code>origin</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>credentials: true</code> وقائمة أصول بلا <code>*</code>، وصفات الكعكة، و <code>trustedOrigins</code> في حماية CSRF للطلبات التي تغيّر حالة، لأن سماح CORS لا يضيف الأصل الموثوق تلقائيًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من يفرض CORS؟</li>
+<li>لماذا لا يُستخدم <code>*</code> مع الكعكات؟</li>
+<li>أي طرق تكتبها صراحة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>CORS يفتح قراءة المتصفح لأصول سمّيتها، مع الطرق والاعتمادات صريحة. ليس جدارًا أمام عميل غير المتصفح ولا بديلًا عن الهوية.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-security-headers-and-helmet.html">Security Headers و Helmet</a> رؤوس تحمي صفحة المتصفح.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CORS: <a href="https://docs.nestjs.com/security/cors">https://docs.nestjs.com/security/cors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

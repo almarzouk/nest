@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل</h2>
+<p>ما حدود Node لتشغيل Nest 12 على الخط 20، وما أمر معرفة نسختك؟</p>
+<details><summary>الحل</summary>
+
+<p>20.19 أو أحدث. الأمر <code>node -v</code>.</p>
+</details>
+
+<h2>تمرين متوسط</h2>
+<p>ولّدت خدمة <code>nest g service health</code> ولم تُستدعَ. ما أول مكان تفحصه في الوحدة؟</p>
+<details><summary>الحل</summary>
+
+<p>مصفوفة <code>providers</code> في الوحدة التي ولّد داخلها CLI. إن أنشأت الملف يدويًا فقد يكون غائبًا عن المصفوفة.</p>
+</details>
+
+<h2>تمرين متقدم</h2>
+<p>مشروع ESM يفشل على <code>Cannot find module &#39;./app.module&#39;</code> بعد حذف الامتداد. ما التعديل، ولماذا القالب يكتب <code>.js</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>أرجع <code>./app.module.js</code>. ESM يحمّل مسار الناتج، و TypeScript يربط الامتداد <code>.js</code> بالمصدر <code>.ts</code>.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

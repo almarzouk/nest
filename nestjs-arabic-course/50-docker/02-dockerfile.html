@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dockerfile</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-dockerfile.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Dockerfile</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة صورة تشغّل Nest مبنيًا: اعتماديات إنتاج، ناتج <code>dist</code>، مستخدم غير جذر، وأمر <code>node dist/main.js</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ مجلد التطوير كله مع <code>node_modules</code> من جهازك يجر أدوات البناء وأسرارك ويختلف بين المعماريات. Dockerfile يصف البناء من مصدر نظيف. الصورة الناتجة تشغّل الناتج فقط. الدرس التالي يفصل مرحلة البناء عن مرحلة التشغيل. هنا شكل الملف والقرارات التي تبقى في الحالتين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>أساس <code>node:22.14-bookworm-slim</code> أو صورة 20 تلبي 20.19 على الأقل. مجلد العمل <code>/app</code>. انسخ بيان الحزم أولًا حتى تُخزن طبقة <code>npm ci</code>. ثم انسخ المصدر. ابنِ. شغّل <code>node dist/main.js</code>. لا <code>CMD npm run start:dev</code>.</p>
+<h2>التعريف التقني</h2>
+<p>صورة أحادية المرحلة للتعلم، قبل التصغير:</p>
+<pre><code class="language-dockerfile">FROM node:22.14-bookworm-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+ENV NODE_ENV=production
+USER node
+CMD [&quot;node&quot;, &quot;dist/main.js&quot;]
+</code></pre>
+<p><code>npm ci</code> يحترم القفل. <code>npm install</code> داخل الصورة قد يغيّر الإصدارات. <code>.dockerignore</code> يستبعد <code>node_modules</code> و <code>dist</code> و <code>.env</code> و <code>.git</code> حتى لا تُنسخ من جهازك فوق تثبيت نظيف.</p>
+<p><code>USER node</code> موجود في صورة Node الرسمية. التشغيل كجذر يجعل ثغرة في العملية ثغرة على صلاحيات عالية. إن احتجت كتابة ملفات، امنح مجلدًا محددًا لا الجذر.</p>
+<p><code>EXPOSE 3000</code> توثيق. النشر الفعلي في Compose عبر <code>ports</code>.</p>
+<p>Prisma: ولّد العميل قبل <code>nest build</code> إن كان السكربت لا يفعل ذلك (<code>npx prisma generate</code>). ملفات <code>schema.prisma</code> يجب أن تكون داخل سياق البناء. لا تشغّل migrations تلقائيًا بلا قرار: غالبًا خطوة نشر منفصلة لا كل بدء حاوية تتسابق عليها النسخ.</p>
+<p>الاستماع: التطبيق على <code>0.0.0.0</code> إن كان <code>listen</code> مربوطًا بواجهة محلية فقط فلن يراك نشر المنفذ. <code>app.listen(port, &#39;0.0.0.0&#39;)</code> عندما تقيد الواجهة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">package*.json -&gt; npm ci -&gt; مصدر -&gt; build -&gt; node dist/main.js
+.dockerignore يمنع .env و node_modules المحلية
+USER node
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الملف أعلاه مع <code>.dockerignore</code>:</p>
+<pre><code class="language-text">node_modules
+dist
+.git
+.env
+coverage
+</code></pre>
+<p><code>docker build -t shop-api .</code> ثم <code>docker run --rm -p 3000:3000 -e DATABASE_URL=... shop-api</code>. المتغير عند التشغيل لا في <code>COPY .env</code>.</p>
+<h2>شرح المثال</h2>
+<p>طبقة الحزم تُعاد فقط عندما يتغير القفل. طبقة المصدر تتغير مع الكود. <code>NODE_ENV=production</code> بعد التثبيت في هذه الصورة الأحادية قد يزيل حاجة devDependencies قبل البناء إن ضبطته مبكرًا. لذلك المرحلة الواحدة حرجة الترتيب: ثبّت كل شيء، ابنِ، ثم صورة التشغيل في الدرس التالي تحذف أدوات البناء. لا تضع <code>NODE_ENV=production</code> قبل <code>npm ci</code> إن كان البناء يحتاج أدوات التطوير، إلا إذا فصلت المراحل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الأساس يجلب Node بالإصدار المحدد.</li>
+<li><code>npm ci</code> يكتب <code>node_modules</code> في طبقة.</li>
+<li><code>nest build</code> أو <code>npm run build</code> يكتب <code>dist</code>.</li>
+<li>عند التشغيل الأمر الافتراضي هو شكل exec في <code>CMD</code> فيستلم الإشارات. شكل shell قد لا يمرر <code>SIGTERM</code> إلى Node فلا تعمل خطافات الإيقاف.</li>
+<li><code>USER node</code> يحد الصلاحيات.</li>
+<li>تغيير سطر مصدر يلغي كاش الطبقات بعده لا طبقات الحزم إن بقي الترتيب.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p><code>package.json</code> فيه <code>&quot;start:prod&quot;: &quot;node dist/main.js&quot;</code> ويمكن <code>CMD [&quot;npm&quot;, &quot;run&quot;, &quot;start:prod&quot;]</code>. استدعاء <code>node</code> مباشرة أوضح وأقل عملية وسطى. لا تستخدم <code>start:dev</code> ولا <code>start:debug</code>. أضف <code>dumb-init</code> فقط إن وجدت أن إشارات صورتك لا تصل إلى Node. صورة Node الرسمية مع <code>CMD</code> بصيغة JSON تمرر الإشارات إلى العملية الأولى.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>CMD npm run start:dev</code>.</li>
+<li>نسخ <code>.env</code>.</li>
+<li>نسيان <code>.dockerignore</code> فيُرسل سياق ضخم.</li>
+<li><code>NODE_ENV=production</code> قبل تثبيت أدوات البناء في مرحلة واحدة فيفشل <code>nest build</code>.</li>
+<li>التشغيل كجذر بلا سبب.</li>
+<li><code>latest</code> بدل وسم Node الذي يطابق 22.12+ أو 20.19+.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل نشر حاوية للتطبيق. ملف واحد في جذر المستودع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تبنِ الصورة لتشغيل اختبار وحدة. الاختبار على الجهاز أو خطوة CI من غير أن يصبح Dockerfile أداة الاختبار الوحيدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأمر</th>
+<th>أين</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>npm run start:dev</code></td>
+<td>جهازك</td>
+</tr>
+<tr>
+<td><code>npm run build</code></td>
+<td>أثناء بناء الصورة</td>
+</tr>
+<tr>
+<td><code>node dist/main.js</code></td>
+<td><code>CMD</code> الإنتاج</td>
+</tr>
+<tr>
+<td><code>npm ci</code></td>
+<td>طبقة الحزم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>package.json</code> يُنسخ قبل المصدر كله؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تُخزن طبقة <code>npm ci</code> ولا تُعاد عند كل تغيير سطر في <code>src</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا صيغة <code>CMD [&quot;node&quot;, &quot;dist/main.js&quot;]</code> أنسب من shell لخطافات الإيقاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صيغة exec تجعل Node العملية الأولى فتستلم <code>SIGTERM</code>. غلاف shell قد يبتلع الإشارة فلا يعمل <code>enableShutdownHooks</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين تضع <code>prisma generate</code> نسبة إلى <code>npm run build</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قبل البناء حتى توجد الأنواع والعميل أثناء التجميع، داخل الصورة لا على جهازك فقط. الهجرة خطوة نشر منفصلة عن بدء كل نسخة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يستبعد <code>.dockerignore</code>؟</li>
+<li>أي مستخدم يشغّل العملية؟</li>
+<li>أي أمر يُمنع في الإنتاج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Dockerfile يثبّت بالقفل، يبني <code>dist</code>، ويشغّل <code>node dist/main.js</code> كمستخدم <code>node</code> بصيغة exec. لا أسرار في السياق، ولا <code>start:dev</code>، وإصدار Node يطابق حد Nest.</p>
+<h2>ماذا بعد؟</h2>
+<p>Multi-stage Build: صورة تشغيل بلا مترجم ولا اعتماديات تطوير.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Docker — Dockerfile reference: <a href="https://docs.docker.com/reference/dockerfile/">https://docs.docker.com/reference/dockerfile/</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

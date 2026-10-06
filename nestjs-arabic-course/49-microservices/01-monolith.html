@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Monolith</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-monolith.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Monolith</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية ما تبنيه الآن: تطبيق واحد في عملية نشر واحدة، فيه كل السياقات، قبل الحديث عن عملية ثانية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تسمية «خدمة» لكل وحدة Nest تدفع فريقًا صغيرًا إلى مستودعات وحاويات متعددة بينما الفشل ما زال مشتركًا في قاعدة واحدة. الـ Monolith هنا عملية Node واحدة تشغّل <code>NestFactory.create</code> وتفتح HTTP. كل الميزات في هذا البناء. النشر نسخة واحدة. هذا ليس عيبًا. هو شكل التوثيق عندما لا تختار نقلًا آخر، وشكل هذه الدورة حتى يثبت حد الفشل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>مستودع واحد، أمر تشغيل واحد، قاعدة واحدة غالبًا، وحد وحدات داخل العملية. مستخدم واحد يرى API واحدًا. فريق واحد ينشر الكل معًا. التعطل يعطل المسارات معًا، والتتبع داخل عملية أسهل من تتبع رسالة بين خمس خدمات.</p>
+<h2>التعريف التقني</h2>
+<p><code>main.ts</code> يستدعي <code>NestFactory.create(AppModule)</code> ثم <code>listen</code>. لا <code>createMicroservice</code> بعد. <code>AppModule</code> يستورد وحدات الكتالوج والفوترة. التواصل دالة وحقن لا شبكة. <code>EventBus</code> من CQRS إن وُجد يبقى داخل العملية.</p>
+<p>النشر: صورة واحدة أو عملية <code>node dist/main.js</code> واحدة. التوسيع الأفقي لاحقًا يعني عدة نسخ من هذا الـ Monolith خلف موزع، لا استخراج فوترة في مستودع آخر. النسخ المتعددة تحتاج جلسة خارج الذاكرة إن كانت الحالة على العملية، وذلك في فصل الإنتاج.</p>
+<p>حد هذا الشكل: دورة إصدار الفوترة تنتظر الكتالوج، وعطل بحث ثقيل يزاحم حلقة الأحداث لكل المسارات. هذه كلفة مقبولة حتى يبررها قياس أو فريقان يتعارضان على النشر.</p>
+<p>Nest يسمي التطبيق التقليدي monolithic في مدخل الخدمات الصغيرة، ثم يبني النقل كطبقة أخرى. لا تحوّل التسمية إلى خطة تقسيم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">عملية Node
+  HTTP
+  CatalogModule
+  BillingModule
+  Prisma
+نشر واحد
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p><code>AppModule</code> يستورد الميزتين. إلغاء الطلب دالة داخلية لا <code>@MessagePattern</code>.</p>
+<h2>شرح المثال</h2>
+<p>عملية واحدة تستمع على منفذ. الإيقاف الذي بنيته في دورة الحياة يغلق هذه العملية. لا ناقل تعرّف عليه المنسّق. هذا ملف إنتاج الـ Monolith حتى فصل Docker.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>بناء واحد يحمّل كل الوحدات الساخنة.</li>
+<li>طلب HTTP يبقى في العملية.</li>
+<li>قاعدة البيانات اتصال مشترك من <code>PrismaService</code>.</li>
+<li>نشر نسخة جديدة يبدّل كل المسارات معًا.</li>
+<li>سجل الأخطاء في مكان واحد.</li>
+<li>لا <code>ClientProxy</code> ولا تسلسل رسالة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>متجر الفريق الصغير يبقى هذا الملف. قياس بطء البحث يُعالج بفهرس أو قارئ، لا بخدمة شبكة. عندما تنشر الفوترة أسبوعيًا والكتالوج يوميًا ويتوقف أحدهما عن الآخر، اكتب الحد الذي تريد استقلاله. حتى ذلك الحين الـ Monolith هو المنتج.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مستودع Git لكل وحدة مع عملية واحدة.</li>
+<li>تسمية الوحدة Microservice في التعليقات.</li>
+<li>مشاركة قاعدة بلا حدود وحدات ثم لوم الـ Monolith.</li>
+<li>تقسيم مبكر ثم استدعاءات HTTP دائرية.</li>
+<li>تجاهل <code>enableShutdownHooks</code> لأن الشكل «بسيط».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>طوال ما كان النشر والفشل والفريق على إيقاع واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تحتاج جزءًا أن يسقط أو يُنشر من غير إيقاف الباقي، وحد السياق جاهز من فصل المعمارية. عندها تدرس الخدمة الصغيرة لا قبل ذلك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Monolith</th>
+<th>ما ليس هو</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العمليات</td>
+<td>واحدة</td>
+<td>عملية لكل سياق</td>
+</tr>
+<tr>
+<td>النشر</td>
+<td>نسخة واحدة</td>
+<td>إصدارات مستقلة</td>
+</tr>
+<tr>
+<td>النداء الداخلي</td>
+<td>حقن دالة</td>
+<td>رسالة أو HTTP داخلي</td>
+</tr>
+<tr>
+<td>التوسيع الأول</td>
+<td>نسخ من الكل</td>
+<td>استخراج خدمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>كم عملية Node في الـ Monolith كما في هذا الدرس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>واحدة تشغّل التطبيق كله عبر <code>NestFactory.create</code> و <code>listen</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا نسخ الـ Monolith خلف موزع ليست خدمات صغيرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل نسخة ما زالت التطبيق كله. الاستقلال يكون بنشر جزء وحد فشل خاص به، لا بتكرار الكل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>البحث البطيء يزاحم الدفع. ما الذي تجربه قبل استخراج خدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فهرسًا أو قارئًا أو عزل عمل ثقيل عن حلقة الأحداث داخل العملية. استخراج شبكة قبل حد سياق واضح ينقل البطء إلى مهلة رسالة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يستدعي <code>main.ts</code>؟</li>
+<li>أين يعيش <code>EventBus</code> نسبة إلى الشبكة؟</li>
+<li>ما كلفة النشر الواحد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الـ Monolith عملية ونشر واحد لكل السياقات، والنداء داخلي. أبقِه حتى يستقل الإيقاع أو الفشل، وحسّن الحدود داخله أولًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>Modular monolith: نفس العملية مع وحدات صارمة كتحضير لأي فصل لاحق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Microservices overview: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — صنّفوا</h2>
+<ol>
+<li>صنف <code>BookPublished</code> لمستمع تدقيق في نفس العملية.</li>
+<li>JSON <code>book.published</code> v1 إلى شريك.</li>
+<li><code>EventEmitter2</code> بعد إعادة التشغيل.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 حدث نطاق على ناقل ذاكرة. 2 حدث تكامل. 3 لا يصل ما لم يُخزَّن؛ الذاكرة لا تعيد التسليم.</p>
+</details>
+
+<h2>تمرين متوسط — رد 200</h2>
+<p>الفهرس لم يُحدَّث والشريك أعاد 503. ماذا يقول <code>GET /books/:id</code> ولماذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يعيد الكتاب المنشور من الجدول. 200 كان على الالتزام لا على الإسقاط. الشريك يُعاد تسليمه، والفهرس يُبنى من الصف لاحقًا.</p>
+</details>
+
+<h2>تمرين متقدم — نافذة الضياع</h2>
+<p>الرسم الحالي: <code>COMMIT</code> ثم <code>emit</code> في الذاكرة للشريك. ما الصف الذي تضيفونه وأين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>صف <code>outbox</code> بحمولة حدث التكامل داخل نفس معاملة <code>UPDATE</code>. عامل خارجي يرسل. لا تعتمدوا على <code>emit</code> بعد الالتزام لتبليغ الشريك. المستهلك يبقي قيد المعرّف.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

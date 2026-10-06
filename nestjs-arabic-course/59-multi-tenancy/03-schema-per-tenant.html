@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Single DB / Schema per Tenant</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-schema-per-tenant.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Single DB / Schema per Tenant</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>عزل مكتبة رف في schema خاصة داخل Postgres واحدة، بحيث تُبنى الجداول لكل مستأجر ولا يعتمد العزل على تذكر <code>where tenantId</code> في كل سطر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عميل يشترط أن جداوله لا تختلط فيزيائيًا مع جداول جاره داخل نفس العلاقة، لكنه لا يريد قاعدة واتصالًا مستقلين. نموذج العمود يخيف مراجعهم لأن نسيان <code>where</code> يسرب. تريدون حدًا عند اسم الـ schema.</p>
+<h2>الفكرة ببساطة</h2>
+<p>لكل مكتبة schema مثل <code>tenant_lib_a</code> فيها جدول <code>books</code> بلا عمود مستأجر، أو مع العمود دفاعًا إضافيًا. الطلب يضبط مسار البحث أو الاتصال إلى هذه الـ schema قبل أي استعلام. الترحيل يتكرر لكل schema. هذا نموذج الجسر (bridge): قاعدة واحدة وحد أقوى من العمود وأضعف من قاعدة كاملة.</p>
+<h2>التعريف التقني</h2>
+<p>Postgres يسمح بعدة schemas في قاعدة. <code>search_path</code> يحدد أين يُحل اسم <code>books</code>. إن بقي المسار على <code>public</code> فالاستعلام يضرب الجدول الخطأ. Prisma لا يبدّل الـ schema لكل طلب من إعداد واحد بشكل سحري؛ تحتاجون مصدر بيانات يضبط المسار عند فتح الاتصال أو يستخدم اسم schema مؤهلًا. الترحيلات: أداة تشغّل نفس SQL على كل schema عند النشر. إنشاء مكتبة جديدة يعني إنشاء schema ثم تطبيق الترحيل لا إدراج صف في <code>tenants</code> فقط. عدد المخططات الكبير يثقل أدوات الإدارة والنسخ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">database raf
+  schema tenant_lib_a / books
+  schema tenant_lib_b / books
+الاتصال في الطلب يشير إلى schema واحدة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function schemaName(tenantId: string) {
+  if (!/^lib_[a-z0-9]+$/.test(tenantId)) throw new Error(&#39;unsafe tenant id&#39;);
+  return `tenant_${tenantId}`;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>اسم الـ schema يُشتق من معرّف ضيق. لصق <code>tenantId</code> الخام في SQL يعيد حقنًا.</li>
+<li>المعرّف ما زال من السياق الموثوق لا من الجسم.</li>
+<li>الفشل في التطابق يرفض الطلب قبل <code>SET search_path</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>يُحل المستأجر ويُفحص نمط المعرّف.</li>
+<li>يُؤخذ اتصال وتُضبط الـ schema لهذه الجلسة.</li>
+<li>استعلامات Prisma اللاحقة على هذا الاتصال ترى جداول المكتبة.</li>
+<li>إعادة الاتصال إلى المجمع من غير إعادة ضبط المسار تسرّب مكتبة إلى الطلب التالي. لذلك لا تُعاد الجلسة إلى المجمع وهي ما زالت على schema مستأجر، أو يُضبط المسار في كل استعارة.</li>
+<li>الترحيل الناقص على schema واحدة يترك مكتبة على نسخة مخطط قديمة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export async function withTenantSchema(sql: { unsafe: (q: string) =&gt; Promise&lt;void&gt; }, tenantId: string, run: () =&gt; Promise&lt;void&gt;) {
+  const schema = schemaName(tenantId);
+  await sql.unsafe(`set search_path to ${schema}`);
+  try {
+    await run();
+  } finally {
+    await sql.unsafe(&#39;set search_path to public&#39;);
+  }
+}
+</code></pre>
+<p><code>schema</code> هنا من معرّف طُهر في <code>schemaName</code> لا من سلسلة الطلب. <code>finally</code> يعيد المسار حتى لا يرث الطلب التالي schema الجار على نفس الاتصال. في الإنتاج فضّلوا واجهة معاملات Postgres على بناء SQL إن وُجدت، وأبقوا التطهير.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>search_path</code> من نص الترويسة مباشرة.</li>
+<li>مجمع اتصالات يعيد جلسة ملوثة.</li>
+<li>ترحيل يُطبَّق على <code>public</code> فقط وتُنسى schemas المكتبات.</li>
+<li>عشرات الآلاف من المخططات على قاعدة واحدة ثم تعطل النسخ الاحتياطي.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عدد مكتبات محدود نسبيًا، ومطلب عزل جداول داخل خادم واحد، مع قدرة على ترحيل متكرر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لآلاف المكتبات الصغيرة المتشابهة؛ العمود أرخص. ولعميل يشترط محركًا أو منطقة جغرافية مستقلة؛ ذلك قاعدة منفصلة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>عمود في public</th>
+<th>schema لكل مستأجر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نسيان القيد</td>
+<td>تسريب صفوف</td>
+<td>غالبًا جدول فارغ أو خطأ إن ضُبط المسار</td>
+</tr>
+<tr>
+<td>النشر</td>
+<td>ترحيل واحد</td>
+<td>ترحيل × عدد المكتبات</td>
+</tr>
+<tr>
+<td>إنشاء مكتبة</td>
+<td>صف</td>
+<td>schema + ترحيل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يُبنى اسم الـ schema من <code>body.tenantId</code> كما وصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الجسم غير موثوق وقد يحتوي مسافات أو فواصل SQL. الاسم يُشتق من معرّف طُهر بعد حل المستأجر من المصدر الموثوق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يحدث إن أُعيد الاتصال إلى المجمع و <code>search_path</code> ما زال على <code>tenant_lib_a</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طلب مكتبة أخرى قد ينفّذ SQL على جداول <code>lib_a</code>. أعيدوا المسار إلى <code>public</code> قبل الإرجاع، أو اضبطوه في بداية كل طلب على الاتصال المستعار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مكتبة جديدة في الإنتاج. ما ترتيب الخطوات حتى ترى <code>GET /books</code> جدولها لا جدول public؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إنشاء schema بالاسم المطهر، تطبيق نفس الترحيلات عليها، ثم ربط الطلبات القادمة بهذه الـ schema. إدراج صف المستأجر وحده يترك المسار بلا جداول أو يوقعه على public.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يغيّر الطلب: العمود أم مسار الـ schema؟</li>
+<li>لماذا الترحيل يتكرر؟</li>
+<li>ما خطر المجمع مع <code>search_path</code>؟</li>
+<li>متى يبقى نموذج العمود أنسب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Schema لكل مستأجر تعزل الجداول داخل قاعدة واحدة. الاسم مطهر، والمسار يُضبط لكل استعارة اتصال ويُعاد، والترحيل يطال كل schema. هذا جسر بين العمود المشترك وقاعدة كاملة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أقوى حد تشغيلي: قاعدة مستقلة لكل مكتبة. الدرس التالي متى يستحق ذلك.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>PostgreSQL — Schemas: <a href="https://www.postgresql.org/docs/current/ddl-schemas.html">https://www.postgresql.org/docs/current/ddl-schemas.html</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

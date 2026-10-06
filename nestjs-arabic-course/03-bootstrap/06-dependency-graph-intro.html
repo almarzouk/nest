@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dependency Graph</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-dependency-graph-intro.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Dependency Graph</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية الاعتماديات كرسم يُبنى عند الإقلاع: من يحتاج من، وأي حلقة تكسر البناء.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>قائمة <code>providers</code> مسطحة لا تُظهر أن المتحكم يحتاج خدمة وأن الخدمة تحتاج مستودعًا. عندما تفشل الإقلاع، الرسالة تتحدث عن رمز لا يمكن حله. الرسم هو الصورة التي تبحث عنها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل معامل constructor حافة من الصنف إلى اعتماد. Nest تبني هذا الرسم من التسجيل وMetadata ثم تنشئ الأوراق أولًا.</p>
+<h2>التعريف التقني</h2>
+<p>Application graph في فصل Modules هو تركيب العلاقات بين الوحدات والمزوّدات. Dependency graph هنا مستوى المزوّدات داخل ذلك التركيب: عقد هي المزودات، وحواف هي طلبات constructor. الدورة حلقة في هذا الرسم، ولها فصل لاحق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppController -&gt; AppService -&gt; (لا شيء)
+</code></pre>
+<p>إن أصبحت:</p>
+<pre><code class="language-text">OrdersService -&gt; BooksService -&gt; OrdersService
+</code></pre>
+<p>فالحلقة تحتاج كسرًا بالتصميم أو <code>forwardRef</code> لاحقًا.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">UsersController
+    constructor(usersService)
+        -&gt; UsersService
+            constructor()  بلا اعتماد
+</code></pre>
+<p>الحاوية تنشئ <code>UsersService</code> ثم <code>UsersController</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>اتجاه السهم &quot;يحتاج&quot;.</li>
+<li>الورقة تُنشأ أولًا.</li>
+<li>الرأس (المتحكم) آخر من يُنشأ بين الاثنين.</li>
+<li>الطلب HTTP لا يعيد بناء الرسم.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تُجمع الحواف. إن وُجدت عقدة مطلوبة غير مسجّلة يتوقف البناء. إن وُجدت حلقة قد يتوقف البناء أو تُمرَّر نسخة غير مكتملة حسب الحالة. لا تعالج الحلقة الآن. ارسمها عندما تراها وارجع إلى فصل Circular Dependency.</p>
+<p>الأدوات: Nest Devtools لاحقًا تعرض الرسم. حتى ذلك الحين ورقة وقلم تكفي على مشروع صغير.</p>
+<h2>مثال عملي</h2>
+<p>ميزة طلبات وكتب:</p>
+<pre><code class="language-text">OrdersController -&gt; OrdersService -&gt; BooksService
+</code></pre>
+<p><code>BooksService</code> تُسجَّل في <code>BooksModule</code> وتُصدَّر، و <code>OrdersModule</code> يستورد <code>BooksModule</code>. الحافة لا تكفي إن لم تعبر حدود الوحدة. الرسم الناجح = حواف constructor + تصدير واستيراد. هذا سبب أن DI وحدها لا تتخطى تغليف الوحدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سهم معكوس في رأسك: الخدمة لا تحتاج المتحكم في التصميم السليم. إن احتاجت، فالحدود انقلبت.</li>
+<li>حلقة بين وحدتين لأن كل واحدة استوردت الأخرى لتستدعي خدمة. أعد رسم الميزة.</li>
+<li>محاولة قراءة الرسم من ترتيب الأسطر في الملف. الترتيب المهم هو معاملات constructor والتسجيل.</li>
+</ul>
+<h2>متى نرسمه؟</h2>
+<p>عند إضافة خدمة رابعة، أو عند أول فشل إقلاع يتحدث عن dependency.</p>
+<h2>متى لا تعقّده؟</h2>
+<p>لا تدخل أحداثًا وواجهات مجردة في الرسم قبل وجود الحافة البسيطة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>رسم</th>
+<th>عقده</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Application graph</td>
+<td>وحدات ومزوّدات كما يصف التوثيق</td>
+</tr>
+<tr>
+<td>Dependency graph للمزوّدات</td>
+<td>من يحقن من</td>
+</tr>
+<tr>
+<td>مسار الطلب</td>
+<td>Middleware و Guard و Pipe، وليس إنشاء الكائنات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يُنشأ أولًا: خدمة بلا constructor أم متحكم يطلبها؟</p>
+<details><summary>الحل</summary>
+
+<p>الخدمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ارسم حواف <code>CommentsController</code> يحتاج <code>CommentsService</code> و <code>CommentsService</code> تحتاج <code>PostsService</code>.</p>
+<details><summary>الحل</summary>
+
+<p><code>CommentsController -&gt; CommentsService -&gt; PostsService</code>. الورقة <code>PostsService</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الحواف صحيحة داخل الملفات، والإقلاع يقول إن <code>PostsService</code> غير موجودة في سياق التعليقات. ماذا ينقص غير constructor؟</p>
+<details><summary>الحل</summary>
+
+<p>عبور حدود الوحدة: تصدير <code>PostsService</code> من وحدتها واستيراد تلك الوحدة في وحدة التعليقات. الرسم داخل الملف لا يتخطى التغليف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تمثّل الحافة؟</li>
+<li>متى يُبنى الرسم؟</li>
+<li>لماذا تصدير الوحدة جزء من الرسم لا تفصيل ملفات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الرسم يربط طلبات constructor بالتسجيل داخل حدود الوحدات. الإقلاع ينشئ الأوراق ثم من يعتمد عليها. الحلقة والفشل مادتان لاحقتان، والصورة تبدأ هنا.</p>
+<h2>ماذا بعد؟</h2>
+<p>تحت الرسم توجد منصة HTTP يربطها المحوّل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — Circular dependency: <a href="https://docs.nestjs.com/fundamentals/circular-dependency">https://docs.nestjs.com/fundamentals/circular-dependency</a></li>
+<li>NestJS — Devtools: <a href="https://docs.nestjs.com/devtools/overview">https://docs.nestjs.com/devtools/overview</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

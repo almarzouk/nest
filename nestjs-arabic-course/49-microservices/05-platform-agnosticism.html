@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Platform Agnosticism</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-platform-agnosticism.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Platform Agnosticism</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إبقاء معالج الرسالة والخدمة جاهلين بتفاصيل Express أو ناقل بعينه، عبر أنواع Nest و <code>ExecutionContext</code> لا عبر كائنات المنصة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خدمة تستورد <code>Request</code> من Express ثم تُنقل إلى <code>createMicroservice</code> فينكسر المعالج لأن لا طلب HTTP. التوثيق يبني Nest فوق محول منصة: HTTP قد يكون Express أو Fastify، والخدمة الصغيرة ناقلًا. الكود المشترك يتعامل مع تجريد الإطار. هذا حياد المنصة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المتحكم يأخذ الحمولة كمعامل الدالة أو <code>@Payload()</code>. الحارس الذي يعيش على HTTP و RPC يسأل <code>getType()</code> قبل <code>switchToHttp</code> أو <code>switchToRpc</code>. الخدمة تستقبل <code>orderId: string</code>. لا <code>ClientKafka</code> داخل الدومين. تبديل TCP إلى NATS يمس <code>main.ts</code> وخيارات العميل لا قاعدة الإلغاء.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Platform agnosticism تشرح أن المكونات نفسها تعمل عبر HTTP و WebSockets والخدمات الصغيرة قدر الإمكان، لأن التفاصيل خلف محول. عمليًا:</p>
+<ul>
+<li>لا تستورد <code>express</code> في ملف خدمة.</li>
+<li>DTO للحمولة كما لجسم HTTP.</li>
+<li><code>RpcException</code> عندما يجب أن يفهم العميل البعيد الخطأ، لا <code>BadRequestException</code> وحدها على مسار رسالة.</li>
+<li><code>ExecutionContext.switchToRpc().getData()</code> في حارس مشترك.</li>
+<li>اختبار المعالج بنداء <code>execute</code> أو الدالة مباشرة بلا خادم.</li>
+</ul>
+<pre><code class="language-ts">import { Controller } from &#39;@nestjs/common&#39;;
+import { MessagePattern, Payload } from &#39;@nestjs/microservices&#39;;
+
+@Controller()
+export class InvoiceController {
+  constructor(private readonly invoices: InvoiceService) {}
+
+  @MessagePattern({ cmd: &#39;invoice.issue&#39; })
+  issue(@Payload() data: { orderId: string }) {
+    return this.invoices.issue(data.orderId);
+  }
+}
+</code></pre>
+<p><code>InvoiceService.issue</code> بلا نقل. نفس الدالة قد يناديها متحكم HTTP أثناء هجرة تدريجية إن مررت <code>orderId</code> فقط. بعد الهجرة يبقى المسار الرسائلي.</p>
+<p>تغيير <code>Transport.TCP</code> إلى <code>Transport.NATS</code> في خيارات التطبيق والعميل لا يغيّر <code>issue</code> إن بقي النمط والحمولة. الاختلافات الحقيقية في الضمان والمهلة تُعالج في الخيارات لا في <code>if (kafka)</code> داخل الخدمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Transport في main والعميل
+@Payload في المتحكم
+InvoiceService بلا منصة
+حارس: getType ثم switchTo*
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>المقطع أعلاه. وحدة الاختبار تبني <code>InvoiceService</code> مع مستودع ذاكرة وتنادي <code>issue(&#39;o1&#39;)</code>. لا تستورد <code>@nestjs/microservices</code> في ملف الاختبار هذا.</p>
+<h2>شرح المثال</h2>
+<p><code>@Payload()</code> أوضح من أخذ البيانات كأول معامل عندما تضيف <code>@Ctx()</code> ثانيًا لسياق الناقل مثل إقرار Rabbit. الخدمة لا ترى السياق. المتحكم يقر الرسالة بعد نجاح <code>issue</code> إن كان الناقل يتطلب ذلك في المحول، وتبقى السياسة في الخدمة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المحول يفك التسلسل إلى حمولة.</li>
+<li>الإطار يطابق النمط ويمرر الحمولة إلى الدالة.</li>
+<li>Pipes يمكن أن تتحقق من الشكل على المعاملات المعلّمة.</li>
+<li>الاستثناء إن بقي HTTP-only لا يُسلسل كما يتوقع عميل الناقل.</li>
+<li>تبديل المحول يبدّل الخطوة 1 و 4 لا جسم <code>issue</code>.</li>
+<li>هجين HTTP+ناقل يشترك في الخدمة نفسها خلف مدخلين رقيقين.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>حارس هوية: على HTTP يقرأ <code>request.user.id</code>، وعلى RPC يقرأ <code>userId</code> من الحمولة التي وضعها البوابة بعد التحقق. الخدمة ترى <code>userId</code> في وسيط <code>issue(orderId, userId)</code>. لا تكرر فحص JWT داخل الفوترة إن البوابة تحققته. الوثوق بالحمولة الداخلية قرار شبكة: الناقل ليس عامًا على الإنترنت بلا حدود.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>import { Request } from &#39;express&#39;</code> في الخدمة.</li>
+<li>فرع <code>if (process.env.TRANSPORT)</code> داخل الدومين.</li>
+<li>رمي <code>HttpException</code> فقط على <code>@MessagePattern</code>.</li>
+<li>تمرير كائن المقبس إلى المستودع.</li>
+<li>اختبار يحتاج وسيط Kafka لقاعدة الإلغاء.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في كل معالج رسالة وخدمة مشتركة بين مدخلين.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>خيارات الاتصال (منفذ، وسطاء، مجموعة مستهلك) مكانها تكوين الناقل في <code>main</code> والعميل، وهي منصة عن قصد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>تعرف الناقل؟</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>main.ts</code> والعميل</td>
+<td>نعم، <code>Transport</code> والخيارات</td>
+</tr>
+<tr>
+<td>المتحكم</td>
+<td>النمط والحمولة و <code>@Ctx</code> عند الحاجة</td>
+</tr>
+<tr>
+<td>الخدمة والمستودع</td>
+<td>معرفات وقيم فقط</td>
+</tr>
+<tr>
+<td>الحارس المشترك</td>
+<td><code>getType()</code> ثم المضيف المناسب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تستقبل <code>InvoiceService</code> من المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>orderId</code> نصًا، لا طلب Express ولا سياق الناقل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يتغير عند الانتقال من TCP إلى NATS إن التزمت بالحياد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خيارات النقل في المستمع والعميل. النمط والحمولة و <code>issue</code> يبقون.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>BadRequestException</code> وحدها على مسار رسالة قد لا تكفي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العميل البعيد يتوقع خطأ نقل مثل <code>RpcException</code> يُسلسل عبر الناقل. استثناء HTTP مفهومه جسم متصفح.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُستورد <code>Transport</code>؟</li>
+<li>ماذا يفعل <code>@Payload</code>؟</li>
+<li>لماذا اختبار السياسة بلا ناقل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>حياد المنصة يعني سياسة بلا Express وبلا عميل ناقل. المدخل يفك الحمولة، والخيارات تعيش في الإقلاع، و <code>RpcException</code> عندما يعبر الخطأ العملية.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>@MessagePattern</code> و <code>@EventPattern</code> بالتفصيل على المتحكم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Platform agnosticism: <a href="https://docs.nestjs.com/fundamentals/platform-agnosticism">https://docs.nestjs.com/fundamentals/platform-agnosticism</a></li>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة ملفات باختصار. القالب ESM فيستعمل <code>vi</code> من <code>vitest</code>. على CommonJS استبدل <code>jest.fn</code> واترك <code>TestingModule</code>.</p>
+<h2>مثال 1 — وحدة نشر</h2>
+<pre><code class="language-ts">const update = vi.fn(async () =&gt; ({ id: &#39;42&#39;, status: &#39;PUBLISHED&#39; }));
+const emitAsync = vi.fn(async () =&gt; []);
+const service = new BooksService({ book: { update } } as never, { emitAsync } as never);
+await service.publish(&#39;42&#39;);
+expect(emitAsync).toHaveBeenCalledWith(bookPublished, { bookId: &#39;42&#39; });
+</code></pre>
+<p>حالة ثانية: <code>update</code> يرمي و <code>emitAsync</code> لا يُنادى.</p>
+<h2>مثال 2 — رحلة 400</h2>
+<pre><code class="language-ts">const app = moduleRef.createNestApplication();
+app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+await app.init();
+await request(app.getHttpServer()).post(&#39;/books&#39;).send({}).expect(400);
+await app.close();
+</code></pre>
+<p>الخدمة وهم <code>create</code> و <code>expect(create).not.toHaveBeenCalled()</code>.</p>
+<h2>مثال 3 — قاعدة اختبار</h2>
+<pre><code class="language-ts">if (!process.env.DATABASE_URL?.includes(&#39;bookstore_test&#39;)) {
+  throw new Error(&#39;refusing to test without bookstore_test&#39;);
+}
+await prisma.book.deleteMany();
+</code></pre>
+<p>ثم <code>publish</code> الحقيقي وقراءة <code>PUBLISHED</code>. الطابور يبقى وهم <code>add</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا Jest و Vitest معًا.</li>
+<li><code>overrideProvider</code> قبل <code>compile</code>.</li>
+<li>الحمولة إلى <code>add</code> فيها <code>bookId</code> لا نموذج Prisma.</li>
+<li>لا <code>listen(3000)</code> ولا عنوان إنتاج.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

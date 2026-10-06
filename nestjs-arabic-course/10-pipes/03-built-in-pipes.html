@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Built-in Pipes</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-built-in-pipes.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Built-in Pipes</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة قائمة الأنابيب المدمجة في <code>@nestjs/common</code> ومتى تختار اسمًا منها بدل كتابة صنف.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل مشروع يعيد كتابة تحويل العدد والمنطق والقيمة الافتراضية. الأسماء المدمجة موحّدة الرسالة والرمز، والفريق يقرأها في توقيع الدالة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>القائمة جاهزة. هذا الدرس خريطة. الدرس التالي يفتح أربعة أنابيب تحليل بالتفصيل. <code>ValidationPipe</code> له مقدمة بعده ثم فصل كامل. <code>DefaultValuePipe</code> يُذكر هنا لأنه يسبق أنبوب التحليل على المعامل نفسه.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تسرد ما يُصدَّر من <code>@nestjs/common</code>:</p>
+<ul>
+<li><code>ValidationPipe</code> و <code>StandardSchemaValidationPipe</code> للتحقق من كائن أو مخطط.</li>
+<li><code>ParseIntPipe</code> و <code>ParseFloatPipe</code> و <code>ParseBoolPipe</code> و <code>ParseArrayPipe</code> و <code>ParseUUIDPipe</code> و <code>ParseEnumPipe</code> و <code>ParseDatePipe</code> للتحليل.</li>
+<li><code>DefaultValuePipe</code> يضع قيمة حين يكون المعامل <code>null</code> أو <code>undefined</code>.</li>
+<li><code>ParseFilePipe</code> لملفات، وفصله مع الرفع لاحقًا.</li>
+</ul>
+<p>أنابيب <code>Parse*</code> تتوقع قيمة معرّفة. <code>null</code> أو <code>undefined</code> يرميان إلا إذا ضبطت <code>optional: true</code> على أنبوب التحليل. لذلك تأتي <code>DefaultValuePipe</code> قبلها في قائمة الزينة حين يكون الاستعلام اختياريًا.</p>
+<p>تمرير الصنف <code>ParseIntPipe</code> يترك البناء للإطار. <code>new ParseIntPipe({ errorHttpStatusCode })</code> حين تريد رمزًا غير <code>400</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قيمة ناقصة؟     DefaultValuePipe ثم Parse*
+نص عدد صحيح؟    ParseIntPipe
+نص منطقي؟       ParseBoolPipe
+UUID؟           ParseUUIDPipe
+قائمة؟          ParseArrayPipe
+كائن بزينة؟     ValidationPipe لاحقًا
+مخطط Zod؟       StandardSchemaValidationPipe في فصل التحقق
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { DefaultValuePipe, ParseIntPipe } from &#39;@nestjs/common&#39;;
+
+@Get()
+list(
+  @Query(&#39;page&#39;, new DefaultValuePipe(1), ParseIntPipe) page: number,
+): { page: number } {
+  return { page };
+}
+</code></pre>
+<p><code>GET /invoices</code> بلا <code>page</code> يجعل <code>page</code> العدد <code>1</code>. <code>GET /invoices?page=3</code> يجعله <code>3</code>. <code>GET /invoices?page=abc</code> يرمي قبل الدالة برسالة أن سلسلة رقمية مطلوبة، والرمز <code>400</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الترتيب داخل المعامل من اليسار إلى اليمين: الافتراضي أولًا ثم التحليل. الصفحة تضع <code>DefaultValuePipe</code> قبل <code>Parse*</code> حتى تُملأ القيمة الناقصة قبل أن يرفضها التحليل.</li>
+<li>الرقم <code>1</code> هنا اختيار واجهة الفواتير، لا ثابت في الإطار. مثال الصفحة يستخدم <code>0</code> في مسار آخر. المعنى أنك أنت صاحب الافتراضي.</li>
+<li>لا صنف محلي. السلوك موثّق ورسالته معروفة.</li>
+<li><code>ParseFloatPipe</code> و <code>ParseEnumPipe</code> و <code>ParseDatePipe</code> تُربَط بالطريقة نفسها حين يكون المعامل عددًا عشريًا أو قيمة تعداد أو تاريخًا. لا تُفتح بالتفصيل في الدرس التالي لأن عنوانه أربعة أنابيب محددة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>القيمة الاستعلام تصل نصًا. <code>DefaultValuePipe</code> إن رأت <code>undefined</code> أو <code>null</code> ترجع القيمة التي بنيتها بها. وإلا ترجع النص كما هو. <code>ParseIntPipe</code> يحوّل النص الصالح إلى عدد صحيح ويرمي إن فشل.</p>
+<p>الأنبوب المدمج يرمي داخل منطقة الاستثناءات، فالمعالج لا يعمل. ربط الصنف يمكّن الحقن إن احتاجه أنبوب مخصص، أما <code>new DefaultValuePipe(1)</code> فنسخة لأن الخيار في البناء.</p>
+<p><code>ValidationPipe</code> و <code>StandardSchemaValidationPipe</code> في القائمة لأنهما مدمجان، لكن قواعدهما تعيش على صنف DTO أو على مخطط. هذا الدرس لا يضبط <code>whitelist</code> ولا <code>schema</code>.</p>
+<p><code>ParseFilePipe</code> اسم في القائمة حتى لا تكتبه بنفسك عند رفع ملف لاحقًا.</p>
+<h2>مثال عملي</h2>
+<p>قائمة فواتير: <code>page</code> عبر <code>DefaultValuePipe</code> و <code>ParseIntPipe</code>. رمز الفاتورة في مسار آخر عبر <code>ParseUUIDPipe</code> إن كان المعرّف UUID. علم <code>paid</code> عبر <code>ParseBoolPipe</code>. لا تكتب ثلاثة أصناف محلية لهذه الثلاث. محلل تاريخ الاستحقاق، إن احتجته، <code>ParseDatePipe</code> بالربط نفسه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع <code>ParseIntPipe</code> قبل <code>DefaultValuePipe</code> على معامل ناقص. التحليل يرى الفراغ ويرمي قبل أن يُملأ الافتراضي.</li>
+<li>نسيان <code>optional: true</code> حين يكون الحقل غائبًا ولا تريد افتراضيًا ولا رفضًا.</li>
+<li>إعادة تنفيذ <code>ParseIntPipe</code> في ملف محلي «لأن القائمة طويلة». الاسم المدمج جزء من عقد القراءة.</li>
+<li>فتح خيارات <code>ValidationPipe</code> في هذا الدرس. الخريطة هنا، والخيارات في فصلها.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما طابق المعامل اسمًا في القائمة: عدد، منطق، UUID، مصفوفة، افتراضي، أو لاحقًا كائن بزينة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقاعدة خاصة بنطاقك مثل <code>INV-18</code>. ذلك أنبوب مخصص في درس لاحق. ولشكل الرد. ولختم الطلب.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاسم</th>
+<th>أثر مختصر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DefaultValuePipe</code></td>
+<td>يملأ <code>null</code> و <code>undefined</code></td>
+</tr>
+<tr>
+<td><code>ParseIntPipe</code></td>
+<td>نص إلى عدد صحيح أو <code>400</code></td>
+</tr>
+<tr>
+<td><code>ParseBoolPipe</code></td>
+<td>نص إلى <code>boolean</code></td>
+</tr>
+<tr>
+<td><code>ParseUUIDPipe</code></td>
+<td>يتأكد أن النص UUID</td>
+</tr>
+<tr>
+<td><code>ParseArrayPipe</code></td>
+<td>يفك قائمة</td>
+</tr>
+<tr>
+<td><code>ValidationPipe</code></td>
+<td>يفحص صنفًا مزينًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة تستورد <code>ParseIntPipe</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/common</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>paid</code> استعلام اختياري، وغيابه يعني <code>false</code>. أي أنبوبين، وبأي ترتيب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>new DefaultValuePipe(false)</code> ثم <code>ParseBoolPipe</code> على <code>@Query(&#39;paid&#39;, ...)</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تبقى <code>ParseFilePipe</code> و <code>StandardSchemaValidationPipe</code> في الخريطة رغم أن هذا الفصل لا يشرحهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنهما من القائمة المدمجة نفسها. معرفتهما تمنع كتابة بديل محلي. رفع الملفات له فصل، والمخططات فصل التحقق. الخريطة تشير، والتفصيل في عنوانه.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحدث لـ <code>ParseIntPipe</code> حين تصل القيمة <code>undefined</code> بلا <code>optional</code>؟</li>
+<li>لماذا يسبق <code>DefaultValuePipe</code> أنبوب التحليل؟</li>
+<li>اذكر ثلاثة أنابيب <code>Parse*</code> غير الأربعة التي سيشرحها الدرس التالي.</li>
+<li>أين تعيش خيارات <code>whitelist</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/common</code> يصدّر أنابيب تحليل وافتراضي وتحقق. اختر الاسم المدمج حين يطابق القاعدة. الافتراضي يسبق التحليل على المعامل نفسه. القواعد الخاصة بالنطاق تُكتب صنفًا لاحقًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفتح <code>ParseIntPipe</code> و <code>ParseBoolPipe</code> و <code>ParseUUIDPipe</code> و <code>ParseArrayPipe</code>: الخيارات والرسائل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

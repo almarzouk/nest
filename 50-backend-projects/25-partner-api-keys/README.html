@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>25 — مفاتيح الشركاء</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>25 — مفاتيح الشركاء</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new partner-api-keys</code></p>
+<h2>ماذا تبني</h2>
+<p>شريك يُنشأ مرة، وترى مفتاحه في رد الإنشاء فقط. بعد ذلك يُخزَّن هاش. الطلبات إلى كتالوج الشريك تحمل المفتاح.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>ليست كل هوية مستخدمًا بكلمة مرور. المفتاح سر يُعرض مرة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>عرض مرة واحدة</li>
+<li>هاش للمفتاح</li>
+<li>حارس مستقل عن جلسة المتصفح</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>تدوير معقد</li>
+<li>نطاقات صلاحيات كثيرة</li>
+<li>فوترة حسب النداء</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الغلاف. الكتالوج هنا يمكن أن يكون قائمة طلبات وهمية للشريك.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/20-authentication/README.html">20-authentication</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>المفتاح العشوائي لا يُعاد في GET.</li>
+<li>التخزين هاش.</li>
+<li>غياب المفتاح أو خطؤه 401.</li>
+<li>مفتاح ملغى 401.</li>
+<li>لا تسجّل المفتاح في اللوج.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/partners</code></td>
+<td>201</td>
+<td>يعيد المفتاح مرة</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/partners</code></td>
+<td>200</td>
+<td>بلا أسرار</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/partner/orders</code></td>
+<td>200</td>
+<td>بمفتاح صالح</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new partner-api-keys</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ولّد المفتاح بـ randomBytes وأظهره مرة.</li>
+<li>الحارس يقرأ x-api-key ويطابق الهاش.</li>
+<li>أضف revokedAt. إن وُجد فالمفتاح ميت.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/partners/api-key.guard.ts
+src/partners/partners.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">create() {
+  const plain = randomBytes(24).toString(&quot;base64url&quot;);
+  this.keys.push({ hash: this.hash(plain), revokedAt: null });
+  return { apiKey: plain };
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>حفظ المفتاح كما هو.</li>
+<li>إرجاعه في قائمة الشركاء.</li>
+<li>استخدام مقارنة كلمة المرور البطيئة بشكل خاطئ ثم تسجيل السر عند الفشل.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>الاستدعاء الثاني لقائمة الشركاء لا يظهر المفتاح.</li>
+<li>المفتاح الملغى يفشل.</li>
+<li>مفتاح شريك لا يرى طلبات شريك آخر.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف اسم نطاق مسموحًا به في الحارس وتجاهل الباقي.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 25» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../24-cover-upload/README.html">24. غلاف المقال</a></li>
+<li>التالي: <a href="../26-login-shield/README.html">26. درع الدخول</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

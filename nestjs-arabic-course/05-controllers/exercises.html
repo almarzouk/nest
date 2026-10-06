@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس، ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>ما رمز النجاح الافتراضي لـ <code>GET</code> ولـ <code>POST</code> عندما يعيد المعالج كائنًا؟</li>
+<li>ماذا تفعل الوسيطة النصية في <code>@Controller(&#39;holds&#39;)</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>GET</code> يستخدم 200، و <code>POST</code> يستخدم 201، ما لم يُضبط <code>@HttpCode</code>.</li>
+<li>تثبت بادئة <code>/holds</code> لكل معالجات الصنف. نص <code>@Get</code> أو غيره يُلحَق بها.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم توقيع <code>POST /holds</code> لإنشاء حجز، و <code>GET /holds/:id</code> لقراءته، و <code>DELETE /holds/:id</code> لإلغائه بلا جسم. العميل يرسل <code>days</code> في JSON، و <code>Idempotency-Key</code> في رأس، وقد يمرر <code>?notify=mail</code>. اذكر الـ Decorator لكل مدخل والرمز الذي تريده للإلغاء.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>الإنشاء: <code>@Post()</code> و <code>@Body() dto</code> فيه <code>days</code>، و <code>@Headers(&#39;idempotency-key&#39;)</code> بالأحرف الصغيرة. الرمز الافتراضي 201 يناسب إنشاء مورد.</li>
+<li>القراءة: <code>@Get(&#39;:id&#39;)</code> و <code>@Param(&#39;id&#39;) id: string</code>.</li>
+<li>الإشعار قناة اختيارية: <code>@Query(&#39;notify&#39;)</code> على الإنشاء أو على مسار خاص، والقيمة نص.</li>
+<li>الإلغاء: <code>@Delete(&#39;:id&#39;)</code> و <code>@Param(&#39;id&#39;)</code> و <code>@HttpCode(204)</code> إن كان العقد بلا جسم.</li>
+<li>ضع أي مسار ثابت، إن أضفته لاحقًا، قبل <code>@Get(&#39;:id&#39;)</code> على Express الافتراضي.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>ثلاثة مسارات في Controller واحد تعطلت. شخّص كل عرض:</p>
+<ol>
+<li><code>GET /holds/me</code> يعيد حجزًا معرفه <code>me</code>.</li>
+<li><code>POST /holds</code> يعيد <code>{ id }</code> من الدالة، والعميل ينتظر حتى انتهاء المهلة، والتوقيع فيه <code>@Res() res</code>.</li>
+<li><code>page</code> في <code>GET /holds?page=2</code> يصبح <code>&quot;21&quot;</code> بعد <code>page + 1</code> داخل الخدمة.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>@Get(&#39;:id&#39;)</code> مُسجَّل قبل <code>@Get(&#39;me&#39;)</code> والاستراتيجية <code>declaration</code> على Express. <code>me</code> يطابق المعامل. انقل الثابت قبل النمط أو فعّل <code>routeResolutionStrategy: &#39;specificity&#39;</code>.</li>
+<li><code>@Res()</code> بلا <code>passthrough</code> يوقف الإرسال القياسي. <code>return { id }</code> لا يُرسل، ولم يُستدعَ <code>res.send</code>. إما <code>res.json</code> في وضع المكتبة، أو احذف <code>@Res()</code> وأعد الكائن، أو استخدم <code>passthrough: true</code> إن كنت تحتاج لمس الكائن فقط.</li>
+<li><code>@Query</code> يمرر نصًا. <code>&quot;2&quot; + 1</code> يلصق النصين. حوّل تحويلًا ظاهرًا أو انتظر Pipe في فصل لاحق. تعليق <code>number</code> لا يغيّر القيمة.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

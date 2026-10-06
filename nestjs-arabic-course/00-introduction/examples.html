@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>هذا الملف يجمع دروس المقدمة على سيناريو واحد صغير: <strong>متجر كتب</strong>. لا تبني مشروع Nest هنا. الهدف أن تنتقل بين HTTP و REST و Express و خريطة Nest من غير قفز.</p>
+<p>عندما يظهر كود Nest فهو معاينة للخريطة في <a href="./16-nestjs-architecture-overview.html">الدرس 16</a>. الوسوم تُشرح في فصولها.</p>
+<h2>المثال 1 — عقد القراءة</h2>
+<p>عميل يريد كتابًا.</p>
+<pre><code class="language-http">GET /books/2 HTTP/1.1
+Host: localhost:3000
+Accept: application/json
+</code></pre>
+<pre><code class="language-http">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  &quot;id&quot;: &quot;2&quot;,
+  &quot;title&quot;: &quot;Refactoring&quot;,
+  &quot;price&quot;: 40
+}
+</code></pre>
+<ul>
+<li>Client هو مرسل <code>GET</code>. Server هو عملية المتجر.</li>
+<li>المورد هو الكتاب <code>2</code>. التمثيل JSON، لا صف قاعدة البيانات.</li>
+<li><code>price</code> عدد. لو أرسلناه <code>&quot;40&quot;</code> لتغير عقد الجمع عند العميل.</li>
+</ul>
+<p>غياب الكتاب:</p>
+<pre><code class="language-http">HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{
+  &quot;statusCode&quot;: 404,
+  &quot;message&quot;: &quot;Book not found&quot;
+}
+</code></pre>
+<p>الرمز يحمل القرار. الجسم يشرح.</p>
+<h2>المثال 2 — العقد كله لهذه المرحلة</h2>
+<pre><code class="language-text">GET    /books
+POST   /books
+GET    /books/:id
+PATCH  /books/:id
+DELETE /books/:id
+GET    /books/:id/reviews
+POST   /books/:id/reviews
+</code></pre>
+<p>إنشاء:</p>
+<pre><code class="language-json">{ &quot;title&quot;: &quot;Clean Code&quot;, &quot;price&quot;: 30 }
+</code></pre>
+<p>الخادم يعيد <code>201</code> ويضيف <code>id</code>. العميل لا يخترع المعرّف في هذا العقد.</p>
+<p><code>PATCH</code> يرسل الحقول التي تتغير فقط:</p>
+<pre><code class="language-json">{ &quot;price&quot;: 28 }
+</code></pre>
+<p><code>PUT</code> لم نضعه في الجدول لأننا لا نريد إجبار العميل على إرسال الكتاب كاملًا في هذا المتجر. هذا قرار تصميم، ويُراجع إذا صار للكتاب حقول كثيرة يجب استبدالها معًا.</p>
+<h2>المثال 3 — Express صغير للكتب</h2>
+<p>طبقة JSON، ثم قراءة، ثم رفض الناقص عند الإنشاء. البيانات في الذاكرة حتى يبقى المثال قابلًا للقراءة.</p>
+<pre><code class="language-ts">import express, { type Request, type Response } from &#39;express&#39;;
+
+const app = express();
+
+interface Book {
+  id: string;
+  title: string;
+  price: number;
+}
+
+const books: Book[] = [{ id: &#39;2&#39;, title: &#39;Refactoring&#39;, price: 40 }];
+
+app.use(express.json());
+
+app.get(&#39;/books/:id&#39;, (req: Request, res: Response) =&gt; {
+  const book = books.find((item) =&gt; item.id === req.params.id);
+  if (!book) {
+    res.status(404).json({ statusCode: 404, message: &#39;Book not found&#39; });
+    return;
+  }
+  res.json(book);
+});
+
+app.post(&#39;/books&#39;, (req: Request, res: Response) =&gt; {
+  const title: unknown = req.body?.title;
+  const price: unknown = req.body?.price;
+  if (typeof title !== &#39;string&#39; || title.length === 0 || typeof price !== &#39;number&#39;) {
+    res.status(400).json({ statusCode: 400, message: &#39;Invalid book&#39; });
+    return;
+  }
+  const book: Book = { id: String(Date.now()), title, price };
+  books.push(book);
+  res.status(201).json(book);
+});
+
+app.listen(3000);
+</code></pre>
+<p>اقرأ السلسلة لطلب <code>POST /books</code> بجسم صالح:</p>
+<ol>
+<li><code>express.json()</code> يملأ <code>req.body</code> ثم ينادي <code>next</code> الداخلي فيه.</li>
+<li>طبقة <code>POST</code> تفحص النوع وقت التشغيل. TypeScript وحده لا يرى جسم الشبكة.</li>
+<li>عند النجاح ترسل <code>201</code> والجسم، ثم تتوقف. لا تستدعِ <code>next()</code> بعد <code>res.json</code>، لأن الرد انتهى.</li>
+</ol>
+<p>المقابل الذي ستكتبه لاحقًا بعد فصول Controllers و Pipes يشبه الفكرة التالية، لا تنسخه إلى مشروع اليوم:</p>
+<pre><code class="language-ts">@Post()
+create(@Body() dto: CreateBookDto): Book {
+  return this.booksService.create(dto);
+}
+</code></pre>
+<p>التحقق سيكون على <code>CreateBookDto</code> لا داخل <code>if</code> في كل مسار. الدالة تُرجع القيمة، و Nest تكتب الرد. توثيق Controllers يقول إن رمز النجاح الافتراضي <code>200</code>، وإن <code>POST</code> افتراضيًا <code>201</code>. تغيير ذلك يتم لاحقًا بـ <code>@HttpCode</code>. فصل Controllers يشرح هذا مع <code>@Res</code> عندما تحتاج التحكم اليدوي.</p>
+<h2>المثال 4 — تتبع Nest لطلب واحد</h2>
+<p>افترض أن المتجر كبر وصارت فيه محطات حقيقية. طلب <code>PATCH /books/2</code> بسعر جديد من مستخدم مسجّل:</p>
+<pre><code class="language-text">1  الطلب يدخل Express
+2  Middleware العام يضع JSON في الجسم
+3  Guard الهوية يقبل الطلب
+4  Interceptor يبدأ مؤقتًا
+5  Pipe يتحقق أن price عددًا موجبًا
+6  BooksController.update يستقبل id والقيمة الجاهزة
+7  BooksService تطبّق القاعدة: الكتاب موجود، والسعر مسموح
+8  Interceptor بعد المتحكم يسجّل المدة
+9  لا استثناء، فالفلتر لا يعمل
+10 200 و JSON للكتاب بعد التعديل
+</code></pre>
+<p>لو كان السعر <code>&quot;مجاني&quot;</code> كنص:</p>
+<ul>
+<li>المحطة 5 ترفض.</li>
+<li>المتحكم والخدمة لا يعملان.</li>
+<li>العميل يرى خطأ تحقق، غالبًا ضمن فئة <code>400</code> عندما نستخدم مسار Nest الافتراضي للـ ValidationPipe.</li>
+</ul>
+<p>لو كانت الخدمة ترمي &quot;الكتاب غير موجود&quot; بعد أن تجاوز الشكل الفحص:</p>
+<ul>
+<li>المتحكم لا يلتقط الخطأ.</li>
+<li>فلتر المسار إن وُجد يحوّله إلى <code>404</code>.</li>
+<li>إن لم يوجد، الفلتر الأعم يفعل ذلك.</li>
+<li>لا نكتب <code>404</code> يدويًا في ثلاثة ملفات.</li>
+</ul>
+<h2>المثال 5 — أين أضع الكود؟</h2>
+<table>
+<thead>
+<tr>
+<th>المطلوب</th>
+<th>المكان</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مسار <code>PATCH /books/:id</code></td>
+<td>Controller</td>
+</tr>
+<tr>
+<td>&quot;السعر لا يقل عن صفر&quot; كقاعدة عمل بعد أن وصل رقم</td>
+<td>Service</td>
+</tr>
+<tr>
+<td>&quot;الجسم يجب أن يحتوي price كعدد&quot;</td>
+<td>DTO + Pipe</td>
+</tr>
+<tr>
+<td>&quot;فقط موظف يغيّر السعر&quot;</td>
+<td>Guard</td>
+</tr>
+<tr>
+<td>تسجيل مدة الطلب</td>
+<td>Interceptor</td>
+</tr>
+<tr>
+<td>شكل JSON عند الغياب</td>
+<td>Exception Filter</td>
+</tr>
+<tr>
+<td>مشاركة خدمة الكتب مع وحدة الطلبات</td>
+<td>Module يصدّر الخدمة، والوحدة الأخرى تستورده</td>
+</tr>
+<tr>
+<td>استدعاء Express API نادرة لمكتبة مجتمع</td>
+<td>حافة الإقلاع أو المحوّل، لا داخل BooksService</td>
+</tr>
+</tbody></table>
+<p>إذا ترددت بين صفين، أبقِ HTTP والكائنات <code>req</code> و <code>res</code> في الصف الأول والصف الأخير، وأبقِ القاعدة في Service.</p>
+<h2>ماذا بعد؟</h2>
+<p>حل تمارين الفصل من غير الرجوع إلى هذا الملف أولًا. ثم اقرأ التمهيد إلى TypeScript.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

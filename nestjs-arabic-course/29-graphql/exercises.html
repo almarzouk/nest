@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب على كتالوج كتب. المسار code-first مع Apollo على Express.</p>
+<h2>سهل</h2>
+<ol>
+<li>أي جذر للقراءة وأي جذر لإنشاء كتاب؟</li>
+<li>أي خيار يولّد <code>schema.gql</code>؟</li>
+<li>أي مفتاح اشتراك تكتبه في الإعداد الحالي؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>Query</code> و <code>Mutation</code>.</li>
+<li><code>autoSchemaFile</code> بمسار الملف، مع <code>driver: ApolloDriver</code>.</li>
+<li><code>&#39;graphql-ws&#39;</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم نوع <code>Book</code> ومدخل إنشاء واستعلام بطاقة لا يجلب المؤلف. اذكر الزينة لا SQL.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>@ObjectType() class Book</code> بحقول <code>id</code> كـ <code>ID</code> و <code>title</code> كـ <code>String</code>. <code>authorId</code> بلا <code>@Field</code>.</li>
+<li><code>@InputType() class CreateBookInput</code> فيه <code>title</code> فقط.</li>
+<li><code>@Query(() =&gt; Book, { nullable: true }) book(@Args(&#39;id&#39;, { type: () =&gt; ID }) id: string)</code>.</li>
+<li>العملية: <code>query { book(id: &quot;42&quot;) { title } }</code>.</li>
+<li><code>@ResolveField</code> للمؤلف موجود لكن هذه العملية لا تشغّله.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>قائمة عشرين كتابًا مع المؤلف أظهرت 21 استعلامًا. الحارس على <code>createBook</code> يقرأ <code>switchToHttp()</code>. والاشتراك من عميل قديم لا يتصل. أصلح الاتجاه لا الشيفرة الكاملة.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>N+1 من <code>@ResolveField</code> لكل عنصر. DataLoader جديد داخل <code>context</code> لكل عملية، ودالة دفعة تعيد النتائج بترتيب المفاتيح. التفصيل في فصل 57. لا محمّل singleton.</li>
+<li>الحارس يستخدم <code>GqlExecutionContext.create(context).getContext()</code> لأن <code>context</code> في <code>forRoot</code> هو الذي يمرر <code>req</code>.</li>
+<li>العميل ينتقل إلى بروتوكول <code>graphql-ws</code>. مفتاح <code>subscriptions-transport-ws</code> لم يعد إعدادًا صالحًا.</li>
+<li>الهوية تُستنتج من الطلب بعد التحقق، ولا تُقبل حقلًا في <code>CreateBookInput</code>.</li>
+</ul>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

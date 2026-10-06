@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>الأساسات: الإعداد وقاعدة البيانات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-foundations.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>الأساسات: الإعداد وقاعدة البيانات</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إقلاع هيكل رف: تطبيق ESM، إعداد بيئة، وPrisma يتصل بـ Postgres، مع مسار صحة لا يلمس جداول الكتب بعد.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الدرس الأول يكتب كل الموارد في <code>AppModule</code>. سر القاعدة في المستودع. الصحة تفحص Stripe فتسقط الحاوية عندما يتأخر المزود. المشروع CommonJS بينما بقية المقتطفات تستورد بلاحقة <code>.js</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>nest new</code> بـ ESM (الافتراضي في Nest 12 ومعه Vitest لاحقًا). <code>ConfigModule</code> يقرأ <code>DATABASE_URL</code>. <code>PrismaService</code> singleton يتصل وينقطع مع دورة الحياة. <code>GET /health</code> يفحص العملية وربما القاعدة، لا الدفع. لا جداول مشاريع في هذا الدرس غير ما يلزم للإقلاع إن أخّرتم المخطط إلى درس المنظمة.</p>
+<h2>التعريف التقني</h2>
+<p>ولّدوا التطبيق بلا فرض Observe إن كنتم تتدربون: <code>nest new raf-api --no-observe</code>. التفعيل لاحقًا <code>--observe</code> مع <code>instrument</code>. Express الافتراضي. <code>PrismaClient</code> واحد في مزوّد <code>onModuleInit</code> / <code>onModuleDestroy</code>. لا <code>new PrismaClient()</code> داخل الطلب. متغيرات بلا قيم افتراضية للأسرار. الصحة عبر Terminus كما في وصفات Nest، وفحص Postgres منفصل عن فحص «حي» بسيط حتى يستطيع الموازن التفريق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">main.ts → AppModule
+            ConfigModule
+            PrismaModule
+            HealthModule
+لا BooksModule بعد
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { PrismaClient } from &#39;@prisma/client&#39;;
+
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  async onModuleInit() {
+    await this.$connect();
+  }
+
+  async onModuleDestroy() {
+    await this.$disconnect();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المزود singleton. نطاق REQUEST هنا يعيد الاتصال بلا فائدة في نموذج pool.</li>
+<li>الاستيراد من <code>@prisma/client</code> بلا مسار <code>.js</code> لأن الحزمة تحدده. ملفاتكم أنتم تستخدم <code>.js</code> في الاستيراد المحلي.</li>
+<li>الفشل في <code>$connect</code> يوقف الإقلاع وهذا أفضل من أول طلب غامض.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>ConfigModule</code> يفشل الإقلاع إن غاب <code>DATABASE_URL</code> عندما تضبطون <code>validate</code>.</li>
+<li>Prisma يفتح مجمعًا.</li>
+<li><code>GET /health/live</code> يعيد 200 بلا قاعدة.</li>
+<li><code>GET /health/ready</code> يفحص الاتصال.</li>
+<li>لا مسار مشروع بعد. جدول <code>Project</code> يأتي مع درس المشاريع حتى لا يُهاجر مخطط بلا مستأجر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { z } from &#39;zod&#39;;
+
+export const envSchema = z.object({
+  DATABASE_URL: z.string().url(),
+  PORT: z.coerce.number().default(3000),
+});
+</code></pre>
+<p><code>@nestjs/config</code> في Nest 12 يقبل Standard Schema. لا تضعوا <code>STRIPE_SECRET_KEY</code> كحقل إجباري في هذا الدرس إن كان الدفع مرحلة 06؛ أضيفوه عندما تصل الوحدة حتى يقلع التمرين المحلي بلا مفتاح.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سر في <code>docker-compose</code> يُcommit مع كلمة مرور إنتاج.</li>
+<li>صحة واحدة تفحص Stripe وPrisma معًا.</li>
+<li>ESM بلا <code>&quot;type&quot;: &quot;module&quot;</code> ثم فشل الاستيراد.</li>
+<li>فتح عميل Prisma لكل وحدة ميزة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قبل أي مورد. الهيكل الذي لا يقلع لا يستقبل منظمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضيفوا Redis في هذا الدرس إلا كخدمة فارغة في Compose لاحقًا. المهمة في درس 09. ولا تختاروا Fastify هنا بلا قياس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>يفحص</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>/health/live</code></td>
+<td>العملية</td>
+</tr>
+<tr>
+<td><code>/health/ready</code></td>
+<td>Postgres</td>
+</tr>
+<tr>
+<td>النشر</td>
+<td>ليس بعد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا عميل Prisma واحد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المجمع يُدار مرة. عميل لكل طلب يستنفد اتصالات Postgres.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يحدث لموازن إن كانت الصحة الوحيدة تنادي Stripe؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تعطل المزود يسحب نسخ رف السليمة. افصلوا الحي عن الجاهزية، واتركوا Stripe خارج الاثنين.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اكتبوا متغيرين إجباريين اليوم ومتغيرًا يُضاف في درس الدفع.</p>
+<details>
+<summary>الحل</summary>
+
+<p>اليوم <code>DATABASE_URL</code>. <code>PORT</code> له افتراض. في درس الدفع يُضاف <code>STRIPE_SECRET_KEY</code> وسر الويب هوك إلى المخطط حتى لا يقلع الإنتاج بدونهما، بينما التطوير بلا فوترة يمكنه وحدة لا تُستورد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي مشغّل اختبار سياتي مع ESM؟</li>
+<li>ماذا يفعل live مقابل ready؟</li>
+<li>لماذا لا جدول المشاريع هنا؟</li>
+<li>أين لا يُوضع سر القاعدة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>رف تقلع بـ ESM وإعداد متحقق وPrisma واحد وصحة لا تعرف الدفع. الموارد تبدأ بعد هذا الهيكل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أول سلوك للمستخدم: إثبات الهوية. الدرس التالي Auth.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — Terminus: <a href="https://docs.nestjs.com/recipes/terminus">https://docs.nestjs.com/recipes/terminus</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Database per Tenant</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-database-per-tenant.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Database per Tenant</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وضع مكتبة رف في قاعدة Postgres خاصة بها (نموذج الصومعة، silo): اتصال مستقل، ترحيل مستقل، وعطل أو استعادة لا تمس الجار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مكتبة كبيرة تشترط نسخة احتياطية مستقلة، أو منطقة بيانات، أو حد اتصالات لا يشاركه كتالوج الجيران. عمود في جدول مشترك لا يقنع عقدهم. schema في نفس العنقود ما زالت تشارك القرص والنسخة والإصدار.</p>
+<h2>الفكرة ببساطة</h2>
+<p>لكل مستأجر عنوان قاعدة. الطلب يختار عميل Prisma (أو اتصالًا) تلك القاعدة بعد حل المستأجر. لا استعلام «ينسى» العمود لأن الجداول لا تحتوي الجار أصلًا. الثمن: إنشاء قاعدة، سر، ترحيل، مراقبة، وتجميع اتصالات لكل عميل.</p>
+<h2>التعريف التقني</h2>
+<p>Silo يعني قاعدة لكل مستأجر. التطبيق يحتفظ بسجل توجيه: <code>tenantId → connection string</code> في مخزن تتحكمون فيه لا في جسم الطلب. العميل يُنشأ بكسل ويُعاد استخدامه. عدد المكتبات الكبير يعني عدد عملاء كبيرًا؛ لا تفتحوا <code>PrismaClient</code> لكل طلب. الترحيل حلقة على كل قواعد أو أداة تنشر بالتدريج. إسقاط قاعدة جار خطأ تشغيلي لا يمر من <code>where</code>. النسخ والاستعادة تتم لمكتبة واحدة. صفحة النطاقات في Nest تناقش شجرة حقن دائمة عندما تكون مصادر البيانات قليلة؛ مع مئات القواعد، خريطة عملاء singleton أصدق من <code>Scope.REQUEST</code> لكل طلب.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سجل التوجيه
+  lib_a → postgres://.../lib_a
+  lib_b → postgres://.../lib_b
+الطلب يختار عميلًا من الخريطة ثم يعمل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { PrismaClient } from &#39;@prisma/client&#39;;
+
+export class TenantClients {
+  private readonly clients = new Map&lt;string, PrismaClient&gt;();
+
+  get(tenantId: string, url: string) {
+    let client = this.clients.get(tenantId);
+    if (!client) {
+      client = new PrismaClient({ datasources: { db: { url } } });
+      this.clients.set(tenantId, client);
+    }
+    return client;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الخريطة تعيش مع العملية لا مع الطلب.</li>
+<li><code>url</code> يأتي من سجل التوجيه الداخلي بعد التحقق من المستأجر، لا من ترويسة اتصال.</li>
+<li>عند إغلاق التطبيق أغلقوا كل العملاء حتى لا تبقى مقابس.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>يُحل <code>tenantId</code> ويُفحص العضوية.</li>
+<li>يُجلب عنوان القاعدة من السجل السري.</li>
+<li>يُستخدم عميل تلك القاعدة في <code>book.findMany</code> بلا الحاجة إلى عمود مستأجر للعزل (يمكن إبقاؤه دفاعًا).</li>
+<li>فشل الاتصال عطل لمكتبة واحدة: 503 لتلك الطلبات، والآخرون على قواعدهم.</li>
+<li>النشر يشغّل الترحيل على كل عنوان قبل توجيه الحركة إلى كود يعتمد عمودًا جديدًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Injectable()
+export class BooksService {
+  constructor(private readonly clients: TenantClients, private readonly directory: { urlFor: (id: string) =&gt; string }) {}
+
+  list(tenantId: string) {
+    const db = this.clients.get(tenantId, this.directory.urlFor(tenantId));
+    return db.book.findMany({ where: { status: &#39;published&#39; }, take: 20 });
+  }
+}
+</code></pre>
+<p><code>directory.urlFor</code> يرمي إن لم تُنشأ القاعدة بعد. لا تسقطوا إلى قاعدة افتراضية «حتى تعمل» فيظهر كتالوج المكتبة الأولى للثانية.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>عنوان القاعدة في ترويسة <code>X-Database-Url</code> يتحكم فيها العميل.</li>
+<li><code>new PrismaClient()</code> داخل كل طلب فيُنهك Postgres.</li>
+<li>ترحيل المكتبة الكبيرة فقط ونسيان الباقي.</li>
+<li>كاش في الذاكرة بمفتاح <code>bookId</code> بلا <code>tenantId</code> رغم أن المعرّفات قد تتشابه عبر القواعد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عقد عزل قوي، أو حجم يبرر عمليات مستقلة، وعدد مستأجرين تقدرون على تشغيل قواعدهم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمئات المكتبات المجانية المتشابهة. التكلفة والمجمع والترحيل ستتجاوز ثمن عمود <code>tenantId</code>. ابدأوا pool حتى يفرض عميل الصومعة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Pool</th>
+<th>Bridge</th>
+<th>Silo</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>حد العزل</td>
+<td>صف في استعلام</td>
+<td>schema</td>
+<td>قاعدة</td>
+</tr>
+<tr>
+<td>استعادة جار</td>
+<td>مشتركة</td>
+<td>غالبًا مشتركة</td>
+<td>مستقلة</td>
+</tr>
+<tr>
+<td>عميل Prisma</td>
+<td>واحد</td>
+<td>واحد مع مسار</td>
+<td>واحد لكل مستأجر نشط</td>
+</tr>
+<tr>
+<td>إنشاء مستأجر</td>
+<td>صف</td>
+<td>schema + SQL</td>
+<td>قاعدة + سر + ترحيل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا لا يُنشأ <code>PrismaClient</code> لكل <code>GET /books</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن كل عميل مجمع اتصالات. لكل طلب يعني استنفاد <code>max_connections</code> وإبطاء الإقلاع. الخريطة تعيد العميل الموجود للمكتبة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>طلب مكتبة <code>lib_b</code> وقع على عميل <code>lib_a</code> بسبب خريطة خاطئة. هل ينقذك <code>where tenantId</code> إن لم يكن العمود موجودًا في نموذج الصومعة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. الجداول لا تحتوي الجار أصلًا، والعميل الخطأ يعرض كتالوج <code>lib_a</code> كاملًا. الاختبار يجب أن يثبت أن المعرّف يختار العنوان الصحيح. عمود زائد دفاع ممكن لكنه لا يصلح عنوانًا خاطئًا وحده إن نسيتم الشرط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مكتبة واحدة على silo والباقي على pool. ماذا يبقى مشتركًا في كود رف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حل المستأجر والعضوية وشكل الـ API. يختلف مصدر البيانات: عميل مشترك مع <code>where tenantId</code> أو عميل من الخريطة. الخدمة لا تقرأ الجسم لتعرف الفرق. التوجيه في السجل الداخلي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يختار الطلب في نموذج silo؟</li>
+<li>من أين يأتي عنوان القاعدة؟</li>
+<li>لماذا الترحيل حلقة؟</li>
+<li>متى تبقى pool كافية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>قاعدة لكل مستأجر تعزل النسخة والاتصال والاستعادة. العميل يُخزَّن لكل مكتبة، والعنوان من سجل سري بعد حل موثوق. الثمن تشغيل. ليست الخطوة الأولى لكل مكتبة صغيرة في رف.</p>
+<h2>ماذا بعد؟</h2>
+<p>النماذج الثلاثة تحتاج نفس البداية: من أين نعرف مكتبة هذا الطلب. الدرس التالي حل المستأجر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — Injection scopes: <a href="https://docs.nestjs.com/fundamentals/injection-scopes">https://docs.nestjs.com/fundamentals/injection-scopes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

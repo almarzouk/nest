@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jobs</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-jobs.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Jobs</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جدولة عمل غلاف المشروع في رف بعد التزام النشر، بحمولة فيها المنظمة، على Redis، من غير إبقاء الطلب مفتوحًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>publish</code> يحوّل الصورة داخل الطلب فيهلك المهلة. أو المهمة تُجدول قبل الالتزام فيعمل العامل على مشروع ما زال <code>draft</code> لأن المعاملة تراجعت. أو الحمولة بلا <code>organizationId</code> فيحدّث العامل أول مكتبة في الخريطة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>بعد نجاح معاملة النشر والتدقيق، أضيفوا مهمة <code>project.cover</code> بمعرّفات فقط. العامل يحمّل المشروع بتلك المنظمة. الفشل يعيد المحاولة ولا يعيد <code>draft</code>. Redis من <code>@nestjs/bullmq</code> أو طابور مكافئ. إن لم يُشغَّل Redis في اختبار الوحدة، استبدلوا الطابور بذاكرة.</p>
+<h2>التعريف التقني</h2>
+<p>الحمولة <code>{ organizationId, projectId }</code>. المعالج ينفّذ <code>tenantStorage.run</code> ثم يقرأ Prisma. لا سياق HTTP. عدد المحاولات محدود. المهمة ليست ويب هوك الشريك؛ تلك صف تسليم لاحق. لا تضعوا ملف الصورة كاملًا في Redis.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">COMMIT published + audit
+queue.add cover
+رد للعميل
+عامل: يقرأ بنفس المنظمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await this.queue.add(&#39;project.cover&#39;, { organizationId, projectId });
+</code></pre>
+<p>بعد <code>await</code> المعاملة لا قبلها.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاسم ثابت.</li>
+<li>المعرّفات لا عنوان URL داخلي يختاره العميل.</li>
+<li>فشل <code>add</code> بعد الالتزام فجوة؛ صندوق الصادر في فصل لاحق يضيقها. هنا على الأقل لا جدولة قبل الكتابة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المعاملة تنجح.</li>
+<li>Redis يستلم الرسالة.</li>
+<li>الرد 200 أو 204 للعميل حسب عقد النشر (التحديث 200 غالبًا).</li>
+<li>العامل يحمّل <code>where: { id: projectId, organizationId }</code>.</li>
+<li>إن غاب الصف لا يعالج مشروعًا آخر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Processor(&#39;covers&#39;)
+export class CoverProcessor {
+  @Process(&#39;project.cover&#39;)
+  async handle(job: { data: { organizationId: string; projectId: string } }) {
+    const { organizationId, projectId } = job.data;
+    return tenantStorage.run({ tenantId: organizationId }, () =&gt; this.covers.build(organizationId, projectId));
+  }
+}
+</code></pre>
+<p>الأسماء <code>Processor</code> و <code>Process</code> من الحزمة التي تختارونها (Bull). الفكرة: البيانات من <code>job.data</code> فقط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>انتظار العامل قبل رد HTTP.</li>
+<li>جدولة ثم معاملة.</li>
+<li>حمولة فيها السر.</li>
+<li>إعادة المشروع إلى <code>draft</code> عندما تفشل الصورة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لعمل الغلاف أو التصدير بعد النشر. Redis في Compose يأتي مع درس Docker؛ الاختبار يستبدل الطابور.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفحص الخطة أو العزل. ذلك يبقى في الطلب قبل الالتزام.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>داخل الطلب</th>
+<th>مهمة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>فحص الخطة</td>
+<td>نعم</td>
+<td>لا تعيد القرار</td>
+</tr>
+<tr>
+<td>تحويل الغلاف</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td>فشل لاحق</td>
+<td>—</td>
+<td>لا يلغي <code>published</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين يأخذ العامل المكتبة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>job.data.organizationId</code> لا من ترويسة ولا من طلب سابق.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الجدولة بعد <code>COMMIT</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يُبنى غلاف لمشروع تراجعت كتابته. العكس (ضياع المهمة بعد الالتزام) أهون ويُعالج بإعادة بناء من الصفوف أو بصندوق صادر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار نشر بلا Redis. ماذا تستبدلون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>منفذ <code>queue.add</code> في الذاكرة يسجّل الحمولة. الاختبار يتوقع نداءً واحدًا بعد النجاح ولا يتوقع نداءً عندما تفشل الخطة. لا تشغّلوا Redis لوحدة الخدمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا في الحمولة؟</li>
+<li>ماذا لا يُلغى عند فشل الغلاف؟</li>
+<li>أين لا يُجدول العمل؟</li>
+<li>كيف يُعزل الاستعلام داخل العامل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>مهمة الغلاف تُجدول بعد التزام النشر بحمولة منظمة ومعرّف. العامل لا يرى HTTP. الفشل لا يعيد المسودة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الشريك الخارجي يحتاج حدثًا موقّعًا، والمزود يحتاج مسارًا خامًا. الدرس التالي الويب هوك في المشروع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

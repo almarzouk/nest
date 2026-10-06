@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tenant Resolution</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-tenant-resolution.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Tenant Resolution</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد مكتبة الطلب في رف من المضيف أو من ترويسة تثقون بها أو من مطالبة داخل رمز موقّع، ثم رفض <code>tenantId</code> الآتي في الجسم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ثلاثة عملاء يصلون بطرق مختلفة: نطاق <code>lib-a.raf.example</code>، وتطبيق جوال يرسل ترويسة، ورمز دخول فيه <code>tenant_id</code> لأن الشخص اختار المكتبة عند الإصدار. مسار رابع يقبل <code>{ &quot;tenantId&quot;: &quot;lib-b&quot; }</code> في JSON فيقرأ الموظف كتالوج جاره.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحل استخراج لا ثقة عمياء. المضيف يُعيَّن إلى مستأجر في جدول تملكونه. الترويسة تُقبل فقط من بوابة أضافت القيمة بعد ما عرفت المستأجر، أو تُعاد مطابقتها على العضوية. مطالبة الرمز تُقرأ بعد التحقق من التوقيع. ثم <code>assertMembership</code>. الجسم لا يدخل هذه السلسلة.</p>
+<h2>التعريف التقني</h2>
+<p>مصادر مقبولة: اسم المضيف (<code>Host</code>) مثل <code>lib-a.raf.example</code> يُطابق سجل المستأجرين. ترويسة مثل <code>X-Tenant-Id</code> إن كانت قناة تتحكمون في من يكتبها (تطبيقكم بعد اختيار المكتبة) وما زالت العضوية تُفحص على الخادم. مطالبة <code>tenant_id</code> داخل access token الذي أصدرتموه عند اختيار المكتبة، وتُراجع في <code>validate</code>. مصادر مرفوضة: أي حقل جسم أو استعلام يحدده المهاجم ليتجاوز المضيف أو الرمز. إن تعارضت المصادر، ارفضوا الطلب بدل اختيار «الأول». غيّروا الرمز عند تبديل المكتبة حتى لا تبقى مطالبة قديمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Host أو ترويسة تطبيقكم أو مطالبة موقعة
+        → tenantId
+        → عضوية المستخدم
+        → سياق الطلب
+الجسم لا يشارك
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function tenantFromHost(host: string | undefined, domain: string) {
+  if (!host) return null;
+  const name = host.split(&#39;:&#39;)[0];
+  if (!name.endsWith(`.${domain}`)) return null;
+  const slug = name.slice(0, -(domain.length + 1));
+  if (!/^[a-z0-9-]+$/.test(slug)) return null;
+  return slug;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المنفذ يُقص قبل المطابقة.</li>
+<li><code>evil.com</code> لا ينتهي بـ <code>.raf.example</code> بالشكل الذي تتوقعون؛ اختبروا <code>lib-a.raf.example.evil.net</code>.</li>
+<li>الناتج slug يُحوَّل إلى <code>tenantId</code> عبر جدول، لا يُستخدم كعنوان قاعدة مباشرة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحارس يقرأ المصدر المتفق عليه لقناة API هذه.</li>
+<li>يجد المستأجر في السجل. الغياب 404 لمضيف مجهول أو 403 لترويسة بلا عضوية، حسب العقد المكتوب.</li>
+<li>يفحص العضوية للمستخدم المصدق.</li>
+<li>يضع <code>tenantId</code> في سياق الطلب (مخزن أو مطالبة الطلب).</li>
+<li>أي <code>body.tenantId</code> مختلف يُرفض بـ 400 حتى يظهر الخلل للعميل، أو يُتجاهل مع اختبار يثبت التجاهل. الرفض أوضح.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function resolveTenant(input: {
+  hostSlug: string | null;
+  headerSlug: string | null;
+  tokenTenantId: string | null;
+  bodyTenantId: string | null;
+}) {
+  if (input.bodyTenantId &amp;&amp; input.bodyTenantId !== (input.tokenTenantId ?? input.hostSlug ?? input.headerSlug)) {
+    throw new Error(&#39;tenant in body is not a source&#39;);
+  }
+  const tenantId = input.tokenTenantId ?? input.hostSlug ?? input.headerSlug;
+  if (!tenantId) throw new Error(&#39;tenant missing&#39;);
+  return tenantId;
+}
+</code></pre>
+<p>القنوات الثلاث الموثوقة لها ترتيب مكتوب. الجسم إن وُجد وخالفها يفشل. لا تجمعوا slug المضيف مع مكتبة الرمز إن اختلفا؛ في منتج حقيقي ارفضوا التعارض بدل <code>??</code> الصامت عندما تصل قناتان بقيمتين. الدالة أعلاه تبدأ بالرمز ثم المضيف للتوضيح، والاختبار يجب أن يغطي التعارض كخطأ.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الثقة بترويسة يضعها المتصفح نيابة عن أي موقع من غير فحص عضوية.</li>
+<li>مطالبة <code>tenant_id</code> يضعها العميل في JWT لم توقّعوه.</li>
+<li>قبول الجسم «لأنه أسهل للنموذج».</li>
+<li>كاش سياق الطلب على singleton فيتسرّب slug بين الطلبات.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل قناة تدخل رف: نطاق المتجر، جوال بترويسة، ورمز بعد اختيار المكتبة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحلّوا المستأجر داخل كل خدمة بطريقة مختلفة. نقطة واحدة في الحارس، والباقي يقرأ السياق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصدر</th>
+<th>يُقبل عندما</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المضيف</td>
+<td>الاسم في سجلكم بعد التطهير</td>
+</tr>
+<tr>
+<td>الترويسة</td>
+<td>تطبيقكم أرسلها وتُفحص العضوية</td>
+</tr>
+<tr>
+<td>مطالبة الرمز</td>
+<td>الرمز موقّع من رف وفيه المكتبة المختارة</td>
+</tr>
+<tr>
+<td>جسم JSON</td>
+<td>لا يُقبل كمصدر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p><code>Host: lib-a.raf.example</code> والمستخدم عضو. ما مكتبة الاستعلام؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مكتبة <code>lib-a</code> بعد تحويل slug إلى المعرّف. كتب <code>lib-b</code> لا تدخل <code>where</code> أو الاتصال.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>الرمز يقول <code>lib-a</code> والجسم يقول <code>lib-b</code>. ماذا تفعلون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترفضون الطلب. الرمز هو المصدر، والجسم المخالف لا يُتبع ولا يُتجاهل بصمت إن كان الاختبار أوضح عند 400. الاستعلام لا يجري على <code>lib-b</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>جوال بلا نطاق لكل مكتبة. من أين تأتي المكتبة عند إصدار الرمز؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من اختيار صريح بعد قائمة عضويات المستخدم، ثم تُكتب المطالبة في الرمز الذي توقّعونه. التبديل إلى مكتبة أخرى يصدر رمزًا جديدًا. الترويسة وحدها تُعاد مطابقتها على هذه المطالبة أو على العضوية في كل طلب.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>اذكر ثلاثة مصادر مقبولة.</li>
+<li>لماذا الجسم مرفوض حتى لو طابق العضوية بالصدفة؟</li>
+<li>ماذا تفعلون عند تعارض الرمز والمضيف؟</li>
+<li>أين تُفحص العضوية نسبة إلى استخراج slug؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>حل المستأجر من المضيف أو ترويسة قناتكم أو مطالبة رمز موقّع، ثم عضوية. <code>tenantId</code> في الجسم ليس مصدرًا. التعارض يُرفض لا يُدمج.</p>
+<h2>ماذا بعد؟</h2>
+<p>المعّرف معروف لكل طلب. الدرس التالي شكل ذلك داخل Nest: حارس، سياق، وخدمة لا تلمس <code>Request</code> في كل دالة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>ماذا تضع مكان المضيف في <code>REDIS_URL</code> لخدمة اسمها <code>redis</code> على شبكة Compose؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>redis</code>، مثل <code>redis://redis:6379</code>. <code>localhost</code> هو حاوية التطبيق.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>لماذا تفشل <code>npm run start:dev</code> في صورة المرحلة <code>runner</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصورة بلا مصدر <code>src</code> وبلا اعتماديات التطوير. الأمر الإنتاجي <code>node dist/main.js</code>.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>الحاوية تُقتل بعد عشر ثوانٍ من <code>stop</code> و Postgres يبقى عليه جلسات. ماذا ينقص في <code>main.ts</code> وماذا تفعل الخدمات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>enableShutdownHooks()</code> حتى يصل <code>SIGTERM</code>. <code>PrismaService</code> وعميل Redis يغلقان في <code>onModuleDestroy</code>. صيغة <code>CMD</code> التنفيذية حتى لا يبتلع غلاف الإشارة. أزل المؤقتات التي تبقي العملية حية.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

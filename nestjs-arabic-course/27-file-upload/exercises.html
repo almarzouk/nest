@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أجب من غير فتح الدروس. المجال متجر كتب على Express.</p>
+<h2>سهل</h2>
+<ol>
+<li>أي <code>Content-Type</code> يرسله نموذج فيه ملف؟</li>
+<li>أين تذهب البايتات إن لم تضبط <code>storage</code> ولا <code>dest</code>؟</li>
+<li>أي زينة تستخرج ملف حقل واحد؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>multipart/form-data</code> مع <code>boundary</code>.</li>
+<li>إلى <code>file.buffer</code> في الذاكرة.</li>
+<li><code>@UploadedFile()</code> بعد <code>FileInterceptor</code>.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم <code>POST /books/:id/cover</code> و <code>GET /books/:id/cover</code>.</p>
+<p>اذكر: اسم الحقل، خيارات Multer، الأنبوب، ماذا يُحفظ في الجدول، وماذا يُعاد عند التنزيل.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>الحقل <code>cover</code> مع <code>FileInterceptor</code> و <code>diskStorage</code> باسم <code>randomUUID</code>.</li>
+<li><code>limits.fileSize</code> عند 2 ميغابايت مثلًا.</li>
+<li><code>ParseFilePipe</code> فيه <code>MaxFileSizeValidator</code> و <code>FileTypeValidator</code> لـ PNG و JPEG بالرقم السحري.</li>
+<li>الجدول يحفظ <code>filename</code> فقط.</li>
+<li><code>GET</code> يعيد <code>StreamableFile</code> من <code>createReadStream</code> على مسار بنته الخدمة من المفتاح، مع <code>type</code> و <code>length</code>.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>نموذج واحد ينشئ كتابًا: <code>title</code> نص، <code>cover</code> صورة واحدة، <code>photos</code> حتى أربع صور، وملف خامس باسم يختاره العميل. ارفض التصميم الأخير، وضع كل معترض في مكانه، واشرح لماذا فشل الأنبوب بعد الكتابة على القرص ما زال يترك ملفًا.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li><code>FileFieldsInterceptor</code> أو معترضات لا تُكدس بسهولة على الدالة نفسها. الشكل الأنسب حقول معلنة: <code>cover</code> بحد 1 و <code>photos</code> عبر حقل واحد. عمليًا مساران أوضح: <code>POST /books</code> للنص، ثم <code>POST /books/:id/cover</code> و <code>POST /books/:id/photos</code> مع <code>FilesInterceptor(&#39;photos&#39;, 4)</code>.</li>
+<li>الحقل ذو الاسم الحر يُرفض: لا <code>AnyFilesInterceptor</code> في هذا العقد.</li>
+<li><code>diskStorage</code> يكتب قبل <code>ParseFilePipe</code>. الفشل يترك ملفًا بلا صف. انقل من مجلد مؤقت بعد النجاح، أو احذف <code>filename</code> في مسار الخطأ.</li>
+<li>لا تخزن <code>Express.Multer.File</code> ولا كائن Prisma داخل أي رد أو مهمة. المفتاح نص.</li>
+</ul>
+</details>
+
+<h2>سؤال ربط</h2>
+<p>ارسم تسلسل طلب <code>POST</code> لغلاف حجمه 5 ميغابايت والحد 2 ميغابايت. سمِّ المحطة التي تتوقف عندها، وما الذي لا يتغير في جدول <code>Book</code>.</p>
+<details>
+<summary>الحل</summary>
+
+<p>Multer يقرأ الجزء حتى <code>limits.fileSize</code> ثم يرفض. <code>ParseFilePipe</code> لا يعمل، و <code>BooksService.setCoverKey</code> لا يُستدعى. عمود <code>coverKey</code> يبقى على قيمته السابقة. لا يُكتب ملف نهائي باسم UUID إن قطع المحرك الكتابة مع الخطأ. إن كان محركك يترك ملفًا جزئيًا فنظّفه، لكن الصف لا يُحدَّث في الحالتين.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

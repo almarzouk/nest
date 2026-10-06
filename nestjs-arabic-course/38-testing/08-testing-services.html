@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>اختبار Services</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-testing-services.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>اختبار Services</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة حالات <code>BooksService</code> و <code>IsbnService</code> بالحاوية أو بـ <code>new</code>، مع توقع الأثر لا توقع السجل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>خدمة بلا اختبار تعود إلى استيراد SMTP. خدمة باختبار يطابق النص الداخلي سطرًا بسطر تنكسر عند إعادة التسمية. الاختبار الجيد يثبت العقد: حالة الصف، الإعلان، خريطة الناشر، وعدم <code>set</code> على المخبأ عند المهلة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>جهّز أوهامًا تسجّل النداءات. نفّذ عملية واحدة. افحص الخرج والنداء. حالة لكل فرع عقد لا لكل سطر. لا HTTP في هذا الملف.</p>
+<h2>التعريف التقني</h2>
+<p>نشر ناجح على قالب ESM:</p>
+<pre><code class="language-ts">import { describe, expect, it, vi } from &#39;vitest&#39;;
+
+it(&#39;emits after a successful update&#39;, async () =&gt; {
+  const update = vi.fn(async () =&gt; ({ id: &#39;42&#39;, status: &#39;PUBLISHED&#39; }));
+  const emitAsync = vi.fn(async () =&gt; []);
+  const service = new BooksService(
+    { book: { update } } as never,
+    { emitAsync } as never,
+  );
+  await service.publish(&#39;42&#39;);
+  expect(update).toHaveBeenCalledWith({
+    where: { id: &#39;42&#39; },
+    data: { status: &#39;PUBLISHED&#39; },
+  });
+  expect(emitAsync).toHaveBeenCalledWith(bookPublished, { bookId: &#39;42&#39; });
+});
+</code></pre>
+<p>قالب Jest يستعمل <code>jest.fn</code> والحزم العامة <code>describe</code> و <code>it</code> و <code>expect</code>.</p>
+<p>فرع الفشل:</p>
+<pre><code class="language-ts">it(&#39;does not emit when update throws&#39;, async () =&gt; {
+  const update = vi.fn(async () =&gt; {
+    throw new Error(&#39;db down&#39;);
+  });
+  const emitAsync = vi.fn();
+  const service = new BooksService({ book: { update } } as never, { emitAsync } as never);
+  await expect(service.publish(&#39;42&#39;)).rejects.toThrow(&#39;db down&#39;);
+  expect(emitAsync).not.toHaveBeenCalled();
+});
+</code></pre>
+<p><code>IsbnService</code>: وهم <code>cache.get</code> يعيد <code>undefined</code>، ووهم HTTP يرمي <code>AxiosError</code> مع <code>code: &#39;ECONNABORTED&#39;</code>. التوقع: الوعد يرفض بـ <code>GatewayTimeoutException</code> و <code>cache.set</code> لم يُستدعَ.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حالة = ترتيب + فرع واحد
+  توقع أثر ظاهر
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>إصابة مخبأ:</p>
+<pre><code class="language-ts">const cache = {
+  get: vi.fn(async () =&gt; ({ title: &#39;NestJS&#39; })),
+  set: vi.fn(),
+};
+</code></pre>
+<p>بعد <code>lookup(&#39;978&#39;)</code> الجسم <code>{ title: &#39;NestJS&#39; }</code> و <code>set</code> غير مستدعى لأن القيمة ليست <code>undefined</code>. هذا يثبت شرط <code>!== undefined</code> الذي يميز <code>null</code> المخزّن لاحقًا في حالة ثانية.</p>
+<h2>شرح المثال</h2>
+<p>حالة <code>null</code> المخزّن: <code>get</code> يعيد <code>null</code>، والنتيجة <code>null</code>، وبلا شبكة. إن استدعيت الشبكة فقد كُسر الشرط. حالتان أوضح من اختبار واحد فيه عدة <code>if</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>vi.fn</code> يسجّل الوسائط. <code>toHaveBeenCalledWith</code> يقارنها. إن مررت كائن Prisma حقيقيًا بالخطأ فالاختبار بطيء ويهشم العزل. الوهم لا يتصل. <code>rejects.toThrow</code> ينتظر وعدًا مرفوضًا. نسيان <code>await</code> على <code>expect(...).rejects</code> يعطي نجاحًا كاذبًا. دائمًا <code>await</code> لتوقع الرفض.</p>
+<h2>مثال عملي</h2>
+<p>جدول ملف <code>books.service.spec.ts</code>:</p>
+<table>
+<thead>
+<tr>
+<th>الحالة</th>
+<th>إثبات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نشر ناجح</td>
+<td><code>update</code> ثم <code>emitAsync</code></td>
+</tr>
+<tr>
+<td>فشل التحديث</td>
+<td>لا إعلان</td>
+</tr>
+<tr>
+<td>إنشاء مع غلاف</td>
+<td><code>add</code> بحمولة <code>{ bookId, coverKey }</code> بلا مفاتيح نموذج كاملة</td>
+</tr>
+</tbody></table>
+<p>حمولة <code>add</code> تُفحص بالمفاتيح لا بمرجع الكائن. <code>expect(payload).toEqual({ bookId: &#39;42&#39;, coverKey: &#39;a.png&#39; })</code> يكفي. وجود <code>coverKey</code> وغياب دوال Prisma هو العقد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>await</code> ناقص على <code>rejects</code>.</li>
+<li>حالة واحدة سعيدة فقط.</li>
+<li>توقع <code>logger.log</code> كنتيجة وحيدة.</li>
+<li>تشغيل الخدمة على <code>DATABASE_URL</code> المطور.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل خدمة فيها فرع يغيّر أثرًا: إعلان، مخبأ، طابور، خريطة خطأ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاختبار شكل JSON للمستخدم. ذلك المتحكم أو الرحلة. الخدمة تعيد كائن مجال أو ترمي استثناء Nest يمكن توقعه بنوعه: <code>toBeInstanceOf(BadGatewayException)</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العقد</th>
+<th>ماذا تتوقع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نشر</td>
+<td>نداء تحديث وإعلان</td>
+</tr>
+<tr>
+<td>مهلة ISBN</td>
+<td>رمي <code>504</code> وبلا <code>set</code></td>
+</tr>
+<tr>
+<td>إصابة مخبأ</td>
+<td>بلا نداء ناشر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>await expect(promise).rejects</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن نسيان الانتظار لا يفشل الاختبار عندما يُرفض الوعد بعد انتهاء الدالة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تثبت حالة المخبأ التي تعيد <code>{ title }</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أن <code>lookup</code> لا يستدعي <code>set</code> ولا الناشر عند الإصابة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أي حقول الحمولة تكفي لتوقع <code>add</code>، وما الذي يجب ألا يوجد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>bookId</code> و <code>coverKey</code> وربما <code>requestId</code>. لا كائن <code>book</code> من Prisma ولا <code>Buffer</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>كم فرعًا في حالة واحدة؟</li>
+<li>كيف تُكتب الأوهام في قالب ESM؟</li>
+<li>أي عنوان قاعدة لا يظهر في هذا الملف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>اختبار الخدمة حالات صغيرة على أوهام: أثر الحفظ والإعلان والمخبأ والطابور. انتظر توقع الرفض، ولا تعتمد على قاعدة المطور.</p>
+<h2>ماذا بعد؟</h2>
+<p>المتحكم مع خدمة مستبدَلة: هل يمرر المعرف والجسم كما يجب.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

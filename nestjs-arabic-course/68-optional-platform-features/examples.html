@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاث إضافات على رف بعد ما يعمل المسار الأساسي.</p>
+<h2>المثال 1 — لغة وبريد</h2>
+<p><code>I18nModule.forRoot</code> بـ <code>ar</code> و <code>en</code> و <code>I18nService.t</code> من خدمة singleton. تأكيد النشر صنف <code>Mailable</code> و <code>FileMailTransport</code> في التطوير. الإرسال من معالج الصندوق بعد الالتزام لا من مسار المتصفح. الاختبار يقرأ <code>InMemoryMailTransport</code>.</p>
+<h2>المثال 2 — غلاف ودفق</h2>
+<p><code>uploadToDisk</code> على قرص <code>covers</code> يرفض غير PNG/JPEG من البايتات. المفتاح يُحفظ مع <code>organizationId</code> الموثوق. الفاتورة على قرص خاص. الواجهة تفتح <code>@Sse(&#39;projects/:id/activity&#39;)</code> حتى <code>{ cover: &#39;ready&#39; }</code> ثم يغلق <code>finalize</code> المؤقت.</p>
+<h2>المثال 3 — عملية أم دالة أم هجين</h2>
+<p>واجهة رف تبقى <code>listen</code> في حاوية. عامل بلا مسارات قد يكون <code>createApplicationContext</code> داخل دالة بعد قياس البداية الباردة، لا نقلًا لجدول webpack في الوثائق. إن بقيت الرسائل في نفس العملية: <code>connectMicroservice</code> ثم <code>init</code> ثم <code>startAllMicroservices</code>، وبلا <code>inheritAppConfig</code> حتى يقرأ المعالج المنظمة من الحمولة.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

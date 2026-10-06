@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Existing Providers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-existing-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Existing Providers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنشاء اسم ثانٍ لنسخة موجودة بـ <code>useExisting</code>، بحيث يشير رمزان إلى الكائن نفسه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مكتبة قديمة تحقن <code>&#39;DeskAudit&#39;</code> ونص جديد يحقن <code>AuditLog</code>. <code>useClass: AuditLog</code> تحت الرمز القديم يبني نسخة ثانية بعدّاد مستقل. <code>useValue</code> يحتاج مرجعًا في وقت التحميل، قبل أن تنشئ الحاوية <code>AuditLog</code>. <code>useExisting</code> يؤجل الجلب إلى النسخة المسجّلة للرمز الآخر.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">{
+  provide: &#39;DeskAudit&#39;,
+  useExisting: AuditLog,
+}
+</code></pre>
+<p>مع Singleton، من يطلب <code>&#39;DeskAudit&#39;</code> ومن يطلب <code>AuditLog</code> يحصلان على النسخة نفسها.</p>
+<h2>التعريف التقني</h2>
+<p><code>useExisting</code> اسم بديل لرمز مسجّل. الرمز الهدف، هنا <code>AuditLog</code>، يبقى في <code>providers</code> باختصاره أو بوصفته. الاسم البديل لا يستدعي <code>new</code>.</p>
+<p>الفرق عن <code>useClass</code>:</p>
+<ul>
+<li><code>useClass: AuditLog</code> تحت رمز ثانٍ ينفذ بناءً ويخزن النتيجة في خانة الرمز الجديد.</li>
+<li><code>useExisting: AuditLog</code> يقرأ خانة <code>AuditLog</code> ويعيد ما فيها.</li>
+</ul>
+<p>الفرق عن <code>useValue</code>: القيمة في <code>useExisting</code> هي نتيجة حل الرمز الآخر، لا مرجعًا كتبته قبل الإقلاع.</p>
+<p>إن كان الرمزان <code>REQUEST</code>، فالاسم البديل يتبع نسخة ذلك الطلب للرمز الأصلي ضمن قواعد Scope. التوثيق يذكر الحالة الشائعة: Singleton على الطرفين يعني كائنًا واحدًا. لا تستخدم الاسم البديل لتغيير العمر؛ Scope يُحدَّد على التسجيل الأصلي.</p>
+<p>تصدير الاسم البديل يكون بتصدير رمزه: <code>exports: [&#39;DeskAudit&#39;]</code>، ويحتاج المستورد أن تُصدَّر السلسلة التي ترى <code>AuditLog</code> أيضًا داخل الـ Module التي عرّفت <code>useExisting</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AuditLog      -&gt; نسخة A
+DeskAudit     useExisting AuditLog -&gt; A
+مقارنة ===    ناجحة داخل Singleton
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class AuditLog {
+  private lines = 0;
+
+  write(message: string) {
+    this.lines += 1;
+    return { lines: this.lines, message };
+  }
+}
+
+const deskAuditAlias = {
+  provide: &#39;DeskAudit&#39;,
+  useExisting: AuditLog,
+};
+
+@Module({
+  providers: [AuditLog, deskAuditAlias],
+  exports: [AuditLog, &#39;DeskAudit&#39;],
+})
+export class AuditModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>AuditLog</code> تسجيل عادي ينشئ النسخة.</li>
+<li><code>&#39;DeskAudit&#39;</code> لا يملك حالة خاصة. <code>write</code> يزيد <code>lines</code> على النسخة الأصلية.</li>
+<li>تصدير الرمزين يتيح لمستهلك قديم ومستهلك جديد مشاركة العدّاد.</li>
+<li>حذف <code>AuditLog</code> من <code>providers</code> يترك <code>useExisting</code> مشيرًا إلى رمز غائب، فيفشل الحل.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>حل <code>&#39;DeskAudit&#39;</code> يطلب حل <code>AuditLog</code> أولًا. إن كانت النسخة في الذاكرة تُعاد. إن لم تكن، تُبنى مرة ثم تُعاد للرمز الأصلي وللاسم البديل. بناء ثانٍ لا يحدث لمجرد وجود الاسم البديل.</p>
+<p><code>useClass: AuditLog</code> في مكان <code>useExisting</code> كان سيخزن نسخة في خانة <code>&#39;DeskAudit&#39;</code> منفصلة عن خانة <code>AuditLog</code>. عدّاد <code>lines</code> يتفرع. هذا ما يفرقه الاختبار السريع: استدعِ <code>write</code> من الرمزين وقارن <code>lines</code>.</p>
+<h2>مثال عملي</h2>
+<p>جسر لخدمة المكتب التي ما زالت تطلب النص القديم:</p>
+<pre><code class="language-ts">import { Inject, Injectable, Module } from &#39;@nestjs/common&#39;;
+import { AuditLog } from &#39;./audit-log.js&#39;;
+import { AuditModule } from &#39;./audit.module.js&#39;;
+
+@Injectable()
+export class DeskService {
+  constructor(
+    @Inject(&#39;DeskAudit&#39;) private readonly audit: AuditLog,
+    private readonly direct: AuditLog,
+  ) {}
+
+  note(message: string) {
+    this.audit.write(message);
+    return this.direct.write(message);
+  }
+}
+
+@Module({
+  imports: [AuditModule],
+  providers: [DeskService],
+})
+export class DeskModule {}
+</code></pre>
+<p>بعد النداء، <code>lines</code> يساوي 2 لأن الاستدعائين يصبان في النسخة نفسها. نوع الحقل <code>AuditLog</code> وصف للكائن. الرمز الفعلي للاسم القديم هو النص داخل <code>@Inject</code>. الرمز <code>direct</code> يُستنتج من النوع لأن تسجيل الصنف موجود ومصدَّر.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useClass</code> بهدف المشاركة</td>
+<td>نسخة ثانية وحالة متفرعة</td>
+</tr>
+<tr>
+<td><code>useExisting</code> من غير تسجيل الرمز الأصلي</td>
+<td>لا خانة تُعاد</td>
+</tr>
+<tr>
+<td>توقع <code>new</code> عند كل حقن للاسم البديل</td>
+<td>Singleton يعيد المرجع المخزن</td>
+</tr>
+<tr>
+<td>تصدير <code>&#39;DeskAudit&#39;</code> من Module لا ترى <code>AuditLog</code></td>
+<td>الحل لا يجد الهدف</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لاسم متوافق مع مكتبة أو مع رمز نصي قديم، عندما يجب أن تبقى الحالة والنسخة واحدة. ولإتاحة الرمز نفسه عبر رمز صنف ورمز نص في الوقت نفسه.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تريد نسختين متعمدتين من الصنف نفسه. سجّل الرمز مرتين بـ <code>useClass</code> تحت رمزين، واقبل انفصال الحالة. وعندما تكون القيمة جاهزة قبل الإقلاع. تلك <code>useValue</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوصفة تحت رمز ثانٍ</th>
+<th>النسخة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useExisting: AuditLog</code></td>
+<td>نسخة تسجيل <code>AuditLog</code></td>
+</tr>
+<tr>
+<td><code>useClass: AuditLog</code></td>
+<td>بناء جديد في خانة الرمز الثاني</td>
+</tr>
+<tr>
+<td><code>useValue: readyLog</code></td>
+<td>المرجع الذي ملكته قبل الإقلاع</td>
+</tr>
+<tr>
+<td>اختصار <code>[AuditLog]</code> فقط</td>
+<td>رمز واحد بلا اسم بديل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يجب أن يبقى في <code>providers</code> بجانب كائن <code>useExisting</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>تسجيل الرمز الأصلي، مثل <code>AuditLog</code>، لأنه الخانة التي يُعاد محتواها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>write</code> من <code>&#39;DeskAudit&#39;</code> ثم من <code>AuditLog</code> جعل <code>lines</code> يساوي 1. أي وصفة رُبط بها الاسم القديم؟</p>
+<details><summary>الحل</summary>
+
+<p><code>useClass</code> أو تسجيل ثانٍ بنى نسخة أخرى. <code>useExisting</code> كان سيجعل الاستدعاء الثاني يرى <code>lines === 2</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا يصلح <code>useValue: auditInstance</code> بديلًا عن <code>useExisting</code> إن كانت <code>AuditLog</code> تُنشأ داخل الحاوية؟</p>
+<details><summary>الحل</summary>
+
+<p><code>useValue</code> يثبت المرجع عند تحميل الملف، قبل أن تبني الحاوية <code>AuditLog</code> وتحقن اعتمادياتها. <code>useExisting</code> ينتظر تلك النسخة. صنع <code>new AuditLog()</code> يدويًا لتمريره في <code>useValue</code> يتجاوز حل اعتماديات الصنف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الذي يُعاد عند حل رمز <code>useExisting</code>؟</li>
+<li>كيف يتفرع العدّاد مع <code>useClass</code> تحت اسم ثانٍ؟</li>
+<li>أي رمز تصدّر ليصل الاسم البديل إلى Module أخرى؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useExisting</code> اسم آخر لخانة مسجّلة، فالرموز تشارك النسخة ضمن Singleton. <code>useClass</code> تحت الرمز الجديد يبني نسخة أخرى وحالة أخرى.</p>
+<h2>ماذا بعد؟</h2>
+<p>الرموز التي ليست أصنافًا: Injection Tokens.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Alias providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers#alias-providers-useexisting">https://docs.nestjs.com/fundamentals/custom-providers#alias-providers-useexisting</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

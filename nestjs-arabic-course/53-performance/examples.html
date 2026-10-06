@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>هذا الملف يمر على متجر رف تحت قياس واحد. كل مثال يقرر طبقة مختلفة: الحلقة، نطاق الحقن، الفهرس، الكاش، الضغط، العمليات، ثم المحول. لا تُلصق هذه الطبقات دفعة واحدة في <code>main.ts</code> قبل أن تعرف أي طبقة ظهر رقمها في القياس.</p>
+<h2>المثال 1 — الصحة تكشف السد</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;health&#39;)
+export class HealthController {
+  @Get()
+  live() {
+    return { ok: true, at: Date.now() };
+  }
+}
+</code></pre>
+<p>أثناء توليد تقرير أسعار متزامن، راقب <code>at</code> بين طلبين متتاليين على <code>/health</code>. الفجوة هي زمن السد على هذه العملية. إن بقيت الفجوة صغيرة وتأخر <code>GET /books</code> وحده، فالسقف تحت الخدمة لا في الحلقة.</p>
+<h2>المثال 2 — فهرس القائمة ثم كاش بمفتاح المستأجر</h2>
+<pre><code class="language-ts">import { CACHE_MANAGER } from &#39;@nestjs/cache-manager&#39;;
+import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import type { Cache } from &#39;cache-manager&#39;;
+import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+
+@Injectable()
+export class ShelfService {
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
+  ) {}
+
+  async published(tenantId: string) {
+    const key = `shelf:${tenantId}`;
+    const hit = await this.cache.get(key);
+    if (hit) return hit;
+    const rows = await this.prisma.book.findMany({
+      where: { tenantId, status: &#39;published&#39; },
+      orderBy: { publishedAt: &#39;desc&#39; },
+      take: 20,
+      select: { id: true, title: true, publishedAt: true },
+    });
+    await this.cache.set(key, rows, 15_000);
+    return rows;
+  }
+}
+</code></pre>
+<p>الفهرس <code>(tenantId, status, publishedAt DESC)</code> يجعل الغياب رخيصًا. الكاش يجعل التكرار أرخص. المفتاح فيه المستأجر حتى لا تعرض مكتبة قائمة مكتبة أخرى. عند النشر احذف <code>shelf:${tenantId}</code> لا كل المفاتيح.</p>
+<h2>المثال 3 — عمال للـ CPU، Express يبقى حتى القياس</h2>
+<p>عملية الويب تبقى على Express. تقرير المدرج عملية أخرى:</p>
+<pre><code class="language-ts">import cluster from &#39;node:cluster&#39;;
+import { availableParallelism } from &#39;node:os&#39;;
+
+export function startWeb(boot: () =&gt; Promise&lt;void&gt;) {
+  if (!cluster.isPrimary) return boot();
+  for (let i = 0; i &lt; availableParallelism(); i++) cluster.fork();
+}
+</code></pre>
+<p>لا تستدعِ <code>startWeb</code> إلا بعد أن يُظهر القياس أن نواة واحدة ممتلئة والقاعدة مرتاحة. الجلسة والكاش في الذاكرة يُنقلان قبل هذه الدالة. Fastify لا يدخل هذا الملف: صفحة الأداء تطلب دليلًا، وعنوان الاستماع عندها <code>&#39;0.0.0.0&#39;</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>/health</code> لا يلمس Prisma، وإلا قاس القاعدة وسمّاها حلقة.</li>
+<li>لا <code>Scope.REQUEST</code> على مسار القائمة إن كان المستأجر يُمرَّر وسيطًا إلى singleton.</li>
+<li><code>take</code> داخل الاستعلام، والضغط في الوكيل إن كان Nginx موجودًا.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

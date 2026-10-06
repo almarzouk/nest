@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>class-validator</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-class-validator.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>class-validator</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة قواعد الحقول بزينة <code>class-validator</code> على صنف العقد، واستدعاء <code>validate</code> كما يفعل الأنبوب.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الشروط المتناثرة <code>if (!email.includes(&#39;@&#39;))</code> تختلف بين المسارات وتُنسى في التحديث المشتق. المكتبة تضع القاعدة فوق الحقل مرة واحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل قاعدة دالة زينة: <code>@IsEmail()</code> و <code>@IsString()</code> و <code>@MinLength()</code> و <code>@IsInt()</code> و <code>@IsOptional()</code>. <code>ValidationPipe</code> يستدعي <code>validate</code> من المكتبة نفسها. تستطيع استدعاء <code>validate</code> في اختبار من غير HTTP.</p>
+<h2>التعريف التقني</h2>
+<p>ثبّت <code>class-validator</code> مع <code>class-transformer</code>. الزينة تُستورد من <code>class-validator</code> لا من <code>@nestjs/common</code>.</p>
+<p><code>validate(object)</code> ترجع <code>Promise&lt;ValidationError[]&gt;</code>. المصفوفة الفارغة نجاح. كل خطأ فيه <code>property</code> و <code>constraints</code>. الأنبوب المدمج يحوّل هذه المصفوفة إلى <code>BadRequestException</code>. شكل الرد وخيارات <code>whitelist</code> ليست هذا الدرس.</p>
+<p>زينة شائعة على عقد عضو:</p>
+<ul>
+<li><code>@IsString()</code> و <code>@MinLength(n)</code> و <code>@MaxLength(n)</code> للنص.</li>
+<li><code>@IsEmail()</code> للبريد.</li>
+<li><code>@IsInt()</code> و <code>@Min(n)</code> للعدد.</li>
+<li><code>@IsOptional()</code> يسمح بغياب الحقل ولا يتخطى قيمة خاطئة إن وُجدت.</li>
+<li><code>@IsBoolean()</code> للعلم.</li>
+</ul>
+<p>القواعد تعمل على نسخة الصنف. كائن عادي <code>{ email: &#39;a&#39; }</code> قد لا يُفحص كما تتوقع حتى يمر <code>plainToInstance</code>. الأنبوب يفعل ذلك داخليًا. في الاختبار افعل الأمر نفسه أو ابنِ <code>new CreateMemberDto()</code> واملأ الحقول.</p>
+<p><code>class-validator</code> ليست مهملة. صفحة Nest الحالية ما زالت تبني <code>ValidationPipe</code> عليها، وتضيف مسار مخططات بجانبها. لا تحذف الزينة انتظارًا لحذف لم يحدث.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">حقل email
+  @IsEmail()  →  constraint
+validate(instance) → [] أو [{ property: &#39;email&#39;, constraints }]
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsEmail, IsOptional, IsString, MinLength } from &#39;class-validator&#39;;
+
+export class CreateMemberDto {
+  @IsString()
+  @MinLength(3)
+  fullName: string;
+
+  @IsEmail()
+  email: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+}
+</code></pre>
+<pre><code class="language-ts">import { validate } from &#39;class-validator&#39;;
+import { plainToInstance } from &#39;class-transformer&#39;;
+import { CreateMemberDto } from &#39;./create-member.dto.js&#39;;
+
+const dto = plainToInstance(CreateMemberDto, {
+  fullName: &#39;لم&#39;,
+  email: &#39;not-an-email&#39;,
+});
+const errors = await validate(dto);
+</code></pre>
+<p><code>errors</code> فيها عنصر لـ <code>fullName</code> وعنصر لـ <code>email</code>. <code>city</code> غائبة و <code>@IsOptional()</code> يجعل الغياب مقبولًا.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>زينتان على <code>fullName</code> تُجمعان. الفشل قد يذكر الطول والنوع معًا إن وصلت قيمة ليست نصًا طويلًا.</li>
+<li><code>@IsOptional()</code> فوق <code>@IsString()</code> على <code>city</code>. الترتيب المعتاد: الاختياري أولًا ثم القاعدة.</li>
+<li><code>plainToInstance</code> من <code>class-transformer</code> يصنع النسخة التي ترى الزينة. الدرس التالي يشرح المكتبة. هنا الاستدعاء لازم حتى لا تفحص كائنًا عاديًا بالخطأ.</li>
+<li>لا <code>ValidationPipe</code> في ملف الاختبار. الدالة <code>validate</code> هي المحرك.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند تحميل الصنف، كل زينة تسجّل قيدًا في بيانات الخاصية. <code>validate</code> يمشي الحقول، يشغّل القيود، ويجمع <code>ValidationError</code>. بعض القيود غير متزامنة، لذلك <code>validate</code> ترجع وعدًا، ولذلك <code>transform</code> في أنبوب التحقق <code>async</code>.</p>
+<p>الأنبوب المدمج يمرر خيارات <code>ValidatorOptions</code> مثل <code>whitelist</code> إلى هذه الدالة. من غير خيارات، الحقل الزائد لا يفشل الفحص ولا يُحذف. <code>validate</code> تخبرك عن الحقول المزيّنة فقط.</p>
+<p>رسالة القيد الافتراضية إنجليزية من المكتبة، مثل أن البريد يجب أن يكون بريدًا. تخصيص الرسالة وسيط في الزينة، وتجميعها في الرد درس شكل الأخطاء.</p>
+<h2>مثال عملي</h2>
+<p>اختبار واحد على <code>CreateMemberDto</code>: الجسم <code>{ fullName: &#39;هدى&#39;, email: &#39;huda@example.com&#39; }</code> يعطي مصفوفة فارغة. الجسم الذي ينقصه <code>@</code> يعطي خطأ على <code>email</code>. مسار <code>POST</code> لا يعيد كتابة القاعدة. حين تشتق <code>UpdateMemberDto</code> بـ <code>PartialType</code>، <code>@IsEmail()</code> تبقى على <code>email</code> إن أُرسل الحقل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استيراد <code>@IsEmail</code> من حزمة Nest. هو من <code>class-validator</code>.</li>
+<li>استدعاء <code>validate</code> على كائن عادي بلا <code>plainToInstance</code> ثم الاعتقاد أن الزينة معطلة.</li>
+<li><code>@IsOptional()</code> على حقل مطلوب في الإنشاء. الاختياري للتحديث أو للحقل غير الإلزامي فقط.</li>
+<li>كتابة قاعدة البريد في الخدمة أيضًا. مصدر واحد: الزينة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على حقول عقد الدخل التي يفحصها <code>ValidationPipe</code>، وفي اختبار يستدعي <code>validate</code> مباشرة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لفحص إعداد البيئة إن اخترت مخططًا هناك، ولاستبدال <code>ParseUUIDPipe</code> على معامل نص واحد إن كان الأنبوب المدمج أصرح. ولا تضعها على صنف الرد إلا لحاجة تسلسل لاحقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>تقبل</th>
+<th>ترفض مثلًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@IsEmail()</code></td>
+<td>بريدًا نصيًا</td>
+<td><code>not-an-email</code></td>
+</tr>
+<tr>
+<td><code>@MinLength(3)</code></td>
+<td>نصًا طويلًا كفاية</td>
+<td><code>&quot;لم&quot;</code></td>
+</tr>
+<tr>
+<td><code>@IsInt()</code></td>
+<td>عددًا صحيحًا</td>
+<td><code>&quot;3&quot;</code> كنص</td>
+</tr>
+<tr>
+<td><code>@IsOptional()</code></td>
+<td>غياب الحقل</td>
+<td>لا يعطّل القاعدة إن وُجدت قيمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة تُستورد <code>@IsEmail()</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>class-validator</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تعني مصفوفة فارغة من <code>validate</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل القيود على النسخة نجحت. الأنبوب في هذه الحالة لا يرمي بسبب الفحص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>city</code> اختيارية، لكن إن أُرسلت يجب أن تكون نصًا. أي زينتين تضع، وماذا يحدث لو أرسل العميل <code>&quot;city&quot;: 4</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@IsOptional()</code> و <code>@IsString()</code>. الغياب ينجح. القيمة <code>4</code> تفشل قيد النص لأن الاختياري لا يمرر قيمة حاضرة خاطئة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما اسم دالة المكتبة التي ترجع الأخطاء؟</li>
+<li>لماذا الاختبار يحتاج <code>plainToInstance</code>؟</li>
+<li>هل المكتبة مهملة في توثيق Nest الحالي؟</li>
+<li>ماذا يفحص <code>validate</code> في حقل بلا زينة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>class-validator</code> تضع قيد الحقل على الصنف. <code>validate</code> ترجع الأخطاء، و <code>ValidationPipe</code> يحوّلها إلى رفض طلب. القواعد تبقى مع <code>PartialType</code>. المكتبة مسار مدعوم بجانب المخططات لا بدلًا محذوفًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>class-transformer</code>: تحويل الكائن العادي إلى نسخة الصنف، وهو ما يحتاجه الفحص والتحويل لاحقًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://github.com/typestack/class-validator">class-validator</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

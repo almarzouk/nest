@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>أمثلة فصل الإعداد على مكتبة حي. الأسرار قيم وهمية. لا تنسخ عنوان إنتاج إلى المستودع.</p>
+<h2>مثال 1 — ما يُرفع وما يبقى محليًا</h2>
+<p><code>.env.example</code>:</p>
+<pre><code class="language-text">NODE_ENV=development
+PORT=3000
+DATABASE_URL=
+LIBRARY_NAME=neighborhood-library
+</code></pre>
+<p><code>.gitignore</code> يتضمن <code>.env</code>. المطوّر ينسخ المثال ويملأ <code>DATABASE_URL</code> بعنوان PostgreSQL على جهازه. الخادم يضبط المفاتيح الثلاثة الأولى من لوحة المنصة.</p>
+<h2>مثال 2 — مخطط يرفض الإقلاع</h2>
+<pre><code class="language-ts">import { z } from &quot;zod&quot;;
+
+export const libraryEnv = z.object({
+  NODE_ENV: z.enum([&quot;development&quot;, &quot;production&quot;, &quot;test&quot;]).default(&quot;development&quot;),
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  DATABASE_URL: z.string().min(1),
+  LIBRARY_NAME: z.string().min(1).default(&quot;neighborhood-library&quot;),
+});
+
+export type LibraryEnv = z.infer&lt;typeof libraryEnv&gt;;
+</code></pre>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { ConfigModule } from &quot;@nestjs/config&quot;;
+import { libraryEnv } from &quot;./library-env.js&quot;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+      validationSchema: libraryEnv,
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>بلا <code>DATABASE_URL</code> تتوقف <code>create</code> وتسمّي الحقل. <code>PORT=abc</code> يفشل الإكراه. <code>LIBRARY_NAME</code> إن غاب يصبح الاسم الافتراضي.</p>
+<h2>مثال 3 — قراءة المنفذ بعد المخطط</h2>
+<pre><code class="language-ts">import { NestFactory } from &quot;@nestjs/core&quot;;
+import { ConfigService } from &quot;@nestjs/config&quot;;
+import { AppModule } from &quot;./app.module.js&quot;;
+import type { LibraryEnv } from &quot;./library-env.js&quot;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const config = app.get(ConfigService&lt;LibraryEnv, true&gt;);
+  const port = config.get(&quot;PORT&quot;, { infer: true });
+  await app.listen(port);
+}
+
+await bootstrap();
+</code></pre>
+<p><code>infer</code> يقرأ نوع <code>PORT</code> من ناتج Zod. لا تمرّر <code>Number</code> مرة ثانية بعد <code>z.coerce.number()</code>.</p>
+<h2>مثال 4 — نطاق القاعدة ثم مصنع</h2>
+<pre><code class="language-ts">import { registerAs } from &quot;@nestjs/config&quot;;
+
+export const databaseConfig = registerAs(&quot;database&quot;, () =&gt; ({
+  url: process.env.DATABASE_URL ?? &quot;&quot;,
+}));
+</code></pre>
+<p>حمّله في <code>load</code> مع <code>validationSchema</code> حتى لا يصل <code>url</code> فارغًا. معاينة تمرير الاتصال، مع <code>synchronize: false</code>، تبقى في <a href="./08-for-root-async-preview.html">الدرس 8</a>. فصل قاعدة البيانات يفتح الاتصال بـ Prisma من <code>ConfigService.getOrThrow(&quot;DATABASE_URL&quot;)</code>.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>.env</code> غير متتبَّع، والمثال بلا أسرار.</li>
+<li>غياب <code>DATABASE_URL</code> يفشل قبل <code>listen</code>.</li>
+<li>لا توجد قراءة <code>process.env</code> داخل <code>BooksService</code>.</li>
+<li>سر أو عنوان لا يُطبع في السجل.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Constructor Injection</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-constructor-injection.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Constructor Injection</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كيف يعلن المُنشئ الاحتياج، ولماذا يمسح <code>import type</code> والواجهة قدرة Nest على الحل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الطلب في المُنشئ يعمل ما دام الرمز حاضرًا وقت التشغيل و TypeScript أصدر نوع المعامل. <code>import type { TaxPolicy }</code> يمسح الصنف من JavaScript، فتختفي Metadata. الواجهة تُمسح دائمًا ولا تُصدر <code>design:paramtypes</code>. الإقلاع يقول إن Nest لا تستطيع حل الاعتماديات رغم أن الملف «مستورد».</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">constructor(private readonly tax: TaxPolicy) {}
+</code></pre>
+<p>هذا خاصية معامل: <code>private</code> ينشئ الحقل ويسند الوسيط. نوع <code>TaxPolicy</code> هو ما تبحث عنه الحاوية إذا كان صنفًا أُصدر في Metadata. <code>@Inject(token)</code> يستبدل هذا الاستنتاج عندما لا يوجد صنف.</p>
+<h2>التعريف التقني</h2>
+<p>مع <code>emitDecoratorMetadata</code> وأي Decorator على الصنف (<code>@Injectable()</code> أو <code>@Controller()</code>)، يكتب المترجم مصفوفة أنواع المعاملات. Nest تقرأها عند بناء الرسم. عنصر المصفوفة يجب أن يكون قيمة وقت التشغيل، أي دالة الصنف البانية.</p>
+<p>تحذير التوثيق: التعليق يجب أن يشير إلى صنف. الواجهة والاسم المستعار للنوع يُمسحان، فيفشل الإقلاع. <code>import type</code> لصنف يمسحه أيضًا فتحدث النتيجة نفسها.</p>
+<pre><code class="language-ts">import type { TaxPolicy } from &#39;./tax.policy.js&#39;;
+</code></pre>
+<p>هذا الاستيراد مناسب لوصف يُستخدم في الأنواع فقط. هو غير مناسب لمعامل تريد حقنه إن كان <code>TaxPolicy</code> صنفًا. استيراد القيمة يبقي الرمز:</p>
+<pre><code class="language-ts">import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+</code></pre>
+<p><code>@Optional()</code> بجانب المعامل: الغياب يحل إلى <code>undefined</code>. <code>@Inject(TOKEN)</code> يكتب الرمز الصريح لذلك الموضع ويتقدم على النوع الممسوح.</p>
+<p>حقن الخاصية <code>@Inject(TOKEN) private readonly tax: TaxPolicy</code> ممكن. التوثيق يفضّل المُنشئ عندما لا يرث الصنف صنفًا آخر، لأن الاحتياج يبقى في التوقيع. حقن الحقل أنسب عندما يصبح <code>super()</code> في كل ابن مزعجًا. ذلك الاستثناء لا يلغي القاعدة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">صنف + استيراد قيمة + @Injectable
+  design:paramtypes = [TaxPolicy]
+واجهة أو import type
+  لا رمز في المصفوفة
+@Inject(SYMBOL)
+  الرمز الصريح يتقدم على النوع
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+import { VendorGateway } from &#39;./vendor.gateway.js&#39;;
+
+@Injectable()
+export class DraftService {
+  constructor(
+    private readonly tax: TaxPolicy,
+    private readonly vendors: VendorGateway,
+  ) {}
+
+  total(net: number) {
+    return net * (1 + this.tax.rate());
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الترتيب في المُنشئ هو ترتيب ما تبنيه الحاوية من وسائط، بعد أن تكون الاعتماديات ذاتها قد حُلّت.</li>
+<li><code>readonly</code> يبقي المرجع الذي سلّمته الخانة.</li>
+<li>الصنفان مستوردان كقيم حتى يدخلا Metadata.</li>
+<li><code>@Injectable()</code> هو Decorator الصنف الذي يتيح إصدار الأنواع. على Controller يكفي <code>@Controller()</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الحل تقرأ Nest معاملات <code>DraftService</code>. لكل عنصر تأخذ <code>@Inject</code> إن وُجد، وإلا تأخذ خانة <code>design:paramtypes</code>. ثم تحل ذلك الرمز في السياق. الناتج يُمرَّر إلى <code>new</code> الداخلي بالترتيب.</p>
+<p>إن كانت الخانة <code>Object</code> أو فارغة لأن النوع مُسح، فلا رمز سياسة تبحث عنه. الرسالة تظهر عند الإقلاع لا كـ <code>undefined</code> صامت داخل <code>total</code>، إلا إذا كان المعامل <code>@Optional()</code>.</p>
+<p>واجهة بهذا الشكل لا تُصلح الاستيراد:</p>
+<pre><code class="language-ts">export interface TaxPolicy {
+  rate(): number;
+}
+</code></pre>
+<p>حتى <code>import { TaxPolicy }</code> غير موجود أصلًا لأن الواجهة ليست تصدير قيمة. الصف المجرد أو <code>@Inject</code> مع <code>Symbol</code> هو الإصلاح، كما في Dependency Inversion و Injection Tokens.</p>
+<h2>مثال عملي</h2>
+<p>معامل صريح بجانب نوع ممسوح:</p>
+<pre><code class="language-ts">import { Inject, Injectable, Optional } from &#39;@nestjs/common&#39;;
+import type { Clock } from &#39;./clock.js&#39;;
+import { CLOCK } from &#39;./clock.token.js&#39;;
+import { VendorGateway } from &#39;./vendor.gateway.js&#39;;
+
+@Injectable()
+export class DraftService {
+  constructor(
+    private readonly vendors: VendorGateway,
+    @Optional() @Inject(CLOCK) private readonly clock?: Clock,
+  ) {}
+}
+</code></pre>
+<p><code>Clock</code> واجهة، لذا <code>import type</code> صحيح. <code>CLOCK</code> يُستورد قيمة لأنه <code>Symbol</code>. <code>VendorGateway</code> صنف باستيراده العادي. <code>@Optional()</code> هنا يخص الساعة فقط: بوابة غائبة ما زالت توقف الإقلاع.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>import type</code> لصنف في معامل المُنشئ</td>
+<td>الرمز ممسوح و <code>design:paramtypes</code> بلا مفتاح</td>
+</tr>
+<tr>
+<td>واجهة كنوع معامل من غير <code>@Inject</code></td>
+<td>لا إصدار لـ <code>design:paramtypes</code></td>
+</tr>
+<tr>
+<td><code>@Optional()</code> على كل المعاملات لتسكيت الإقلاع</td>
+<td>الاعتماد الإلزامي يصبح <code>undefined</code> عند أول طلب</td>
+</tr>
+<tr>
+<td>حقن الحقول مع إخفاء الاحتياج عن المُنشئ بلا وراثة</td>
+<td>التوقيع لا يروي قصة الصنف</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لكل اعتمادية تديرها الحاوية. المُنشئ مع استيراد قيمة للأصناف، و <code>@Inject</code> للرموز الأخرى، و <code>@Optional()</code> عند غياب مقبول لرمز واحد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحول وسيط الطلب إلى معامل مُنشئ. <code>net</code> في <code>total(net)</code> قيمة النداء، وتختلف كل طلب. المُنشئ لما تعيشه النسخة طوال Scope، لا لجسم JSON الحالي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>كتابة المعامل</th>
+<th>ماذا ترى الحاوية</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صنف مستورد كقيمة</td>
+<td>عنصر <code>design:paramtypes</code></td>
+</tr>
+<tr>
+<td><code>import type</code> لصنف</td>
+<td>لا رمز</td>
+</tr>
+<tr>
+<td>واجهة</td>
+<td>لا رمز</td>
+</tr>
+<tr>
+<td><code>@Inject(token)</code></td>
+<td>الرمز المكتوب حتى لو النوع واجهة</td>
+</tr>
+<tr>
+<td><code>@Optional()</code></td>
+<td>الغياب مسموح لذلك الموضع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا ينشئ <code>private readonly tax</code> في معامل المُنشئ؟</p>
+<details><summary>الحل</summary>
+
+<p>حقلًا على الصنف يُسند له الوسيط الذي تمرره الحاوية، من غير سطر إسناد يدوي.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>TaxPolicy</code> صنف، والخدمة كتبت <code>import type</code>. لماذا يفشل الإقلاع؟</p>
+<details><summary>الحل</summary>
+
+<p>استيراد النوع يُحذف من JavaScript، فنوع المعامل لا يبقى رمزًا في Metadata. الحاوية لا تجد مفتاح <code>TaxPolicy</code>. الإصلاح استيراد قيمة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا <code>import type { Clock }</code> مقبول في المثال العملي بينما المورد نفسه مرفوض لصنف <code>VendorGateway</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>Clock</code> واجهة والرمز الفعلي هو <code>CLOCK</code> عبر <code>@Inject</code>. الواجهة وصف للمترجم فقط. <code>VendorGateway</code> صنف ومفتاحه هو الدالة البانية، فيلزم بقاؤها بعد الترجمة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يجب أن يحتوي <code>design:paramtypes</code> حتى يُحل صنف؟</li>
+<li>أي Decorator يتقدم على النوع المستنتج؟</li>
+<li>متى يفضّل التوثيق المُنشئ على حقن الخاصية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المُنشئ يعلن الرموز، وخاصية المعامل تنشئ الحقل، و Metadata تحمل الأصناف الحاضرة وقت التشغيل. <code>import type</code> والواجهة يزيلان المفتاح، و <code>@Inject</code> يعيد المفتاح عندما لا يكون صنفًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>هوية المفتاح نفسه عندما تتعدد الأسماء: Tokens.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Providers (Dependency injection): <a href="https://docs.nestjs.com/providers#dependency-injection">https://docs.nestjs.com/providers#dependency-injection</a></li>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

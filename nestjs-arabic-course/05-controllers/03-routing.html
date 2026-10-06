@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Routing</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-routing.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Routing</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كيف يتكوّن المسار الكامل، وبأي ترتيب تُختار الدالة عندما يطابق أكثر من نمط الطلب نفسه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>GET /authors/me</code> قد يبتلعه <code>@Get(&#39;:id&#39;)</code> المكتوب قبله. التطبيق يقلع بلا تحذير، والخطأ يظهر عند الطلب. Routing يشرح الدمج وترتيب التسجيل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المسار = بادئة Controller + نص Decorator الطريقة. على Express، وهو المحول الافتراضي، ترتيب الإعلان يحدد من يفوز. NestJS 12 يضيف سياسة تعارض واختيار ترتيب حسب التحديد، وكلاهما اختياري.</p>
+<h2>التعريف التقني</h2>
+<p>نقطة النهاية هي طريقة HTTP زائد المسار. <code>@Controller(&#39;authors&#39;)</code> مع <code>@Get(&#39;me&#39;)</code> يعني <code>GET /authors/me</code>. <code>@Get()</code> وحده يعني <code>GET /authors</code>. ما بعد <code>?</code> لا يدخل المطابقة.</p>
+<p>الافتراضي <code>routeResolutionStrategy: &#39;declaration&#39;</code>: التسجيل بترتيب الإعلان. مسار بمعامل يسبق مسارًا ثابتًا فيحجبه على Express. <code>ParseIntPipe</code> لا ينقذ الموقف لأن اختيار المعالج يتم قبل أي Pipe.</p>
+<p>NestJS 12 يضيف خيارين ضمن <code>NestApplicationOptions</code>. الافتراضي يبقي السلوك السابق.</p>
+<pre><code class="language-ts">routeConflictPolicy: { duplicate: &#39;off&#39;, shadow: &#39;off&#39; }
+routeResolutionStrategy: &#39;declaration&#39;
+</code></pre>
+<p>القيم <code>&#39;warn&#39;</code> و <code>&#39;error&#39;</code> لكل من <code>duplicate</code> و <code>shadow</code>. مع <code>&#39;error&#39;</code> تُجمع الأزواج في <code>RouteConflictException</code> واحدة عند <code>app.init()</code> أو عند <code>app.listen()</code> إن لم تُستدعَ <code>init</code>.</p>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>duplicate</code></td>
+<td>الطريقة والمسار والمضيف والإصدار متطابقة</td>
+</tr>
+<tr>
+<td><code>shadow</code></td>
+<td>نمطان يمكن أن يطابقا الطلب نفسه، مثل <code>/authors/me</code> و <code>/authors/:id</code></td>
+</tr>
+</tbody></table>
+<p><code>&#39;specificity&#39;</code> يسجل الأكثر تحديدًا أولًا: قطعة ثابتة، ثم معامل، ثم wildcard. الأنواع <code>RouteConflictPolicy</code> و <code>RouteResolutionStrategy</code> مصدَّرة من <code>@nestjs/common</code>.</p>
+<p>Express حساس للترتيب. Fastify (<code>find-my-way</code>) يرتب بالتحديد أصلًا، فـ <code>shadow</code> و <code>&#39;specificity&#39;</code> بلا أثر عنده، بينما <code>duplicate</code> يعمل على المحولين.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">إعلان:  @Get(&#39;:id&#39;) ثم @Get(&#39;me&#39;)
+Express الافتراضي: &quot;me&quot; يطابق :id ولا يصل إلى me
+
+routeResolutionStrategy: &#39;specificity&#39;
+  الثابت me يُسجَّل قبل :id
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+
+@Controller(&#39;authors&#39;)
+export class AuthorsController {
+  @Get(&#39;me&#39;)
+  me() {
+    return { id: &#39;self&#39; };
+  }
+
+  @Get(&#39;:id&#39;)
+  findOne() {
+    return { id: &#39;from-param&#39; };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>me</code> ثابت و <code>:id</code> معامل. بترتيب الإعلان هذا، <code>GET /authors/me</code> يصل إلى <code>me</code> على Express.</li>
+<li>لو انعكس الإعلان، <code>:id</code> يلتقط <code>me</code> أولًا مع الاستراتيجية الافتراضية.</li>
+<li>اسم الدالة ما زال بلا دور في المطابقة.</li>
+<li>الشرطة <code>-</code> والنقطة <code>.</code> في المسار النصي حرفان عاديان.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تُسجَّل المسارات. مع <code>declaration</code> يبقى ترتيب الملف. مع <code>specificity</code> تعاد ترتيبها قبل التسليم للمحول الحساس للترتيب. سياسة <code>shadow: &#39;warn&#39;</code> تطبع التعارض وتكمل. <code>shadow: &#39;error&#39;</code> توقف الإقلاع بعد جمع كل الأزواج.</p>
+<p>Wildcard: <code>@Get(&#39;media/*&#39;)</code> يطابق <code>media/</code> و <code>media/a/b</code>. طبقة التوافق في Nest تسمح بالنجمة غير المسماة رغم أن Express 5 الخام يريد اسمًا مثل <code>media/{*splat}</code>. النجمة في وسط المسار على Express تحتاج اسمًا: <code>ab{*splat}cd</code>. Fastify لا يدعم النجمة في الوسط.</p>
+<p><code>app.setGlobalPrefix(&#39;api&#39;)</code> يسبق بادئة Controller، فيصبح <code>GET /api/authors/me</code>.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule, {
+  routeConflictPolicy: { duplicate: &#39;error&#39;, shadow: &#39;warn&#39; },
+  routeResolutionStrategy: &#39;specificity&#39;,
+});
+
+app.setGlobalPrefix(&#39;api&#39;);
+await app.listen(3000);
+</code></pre>
+<p>بهذا الإعداد، تكرار <code>GET /api/authors/me</code> مرتين يوقف الإقلاع، وحجب <code>me</code> خلف <code>:id</code> يظهر تحذيرًا، والتسجيل يقدّم القطعة الثابتة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Get(&#39;:id&#39;)</code> قبل <code>@Get(&#39;me&#39;)</code> على Express الافتراضي</td>
+<td><code>GET /authors/me</code> يدخل معالج المعامل</td>
+</tr>
+<tr>
+<td>الاعتماد على Pipe لرفض كلمة <code>me</code></td>
+<td>الـ Pipe يعمل بعد اختيار المعالج</td>
+</tr>
+<tr>
+<td><code>*</code> في وسط المسار على Fastify</td>
+<td>النمط غير مدعوم هناك</td>
+</tr>
+<tr>
+<td>توقع أن <code>?page=2</code> يغيّر اختيار الدالة</td>
+<td>الاستعلام يُقرأ بعد المطابقة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عند تركيب أي مسار أطول من البادئة، وعند وجود ثابت ومعامل تحت البادئة نفسها. فعّل <code>shadow: &#39;warn&#39;</code> في التطبيقات التي كبر فيها عدد المسارات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p><code>routeResolutionStrategy</code> لا يغيّر سلوك Fastify في الحجب. على Fastify اجعل <code>duplicate</code> هو الفحص الذي تعتمد عليه، ورتب المعنى في تصميم المسار نفسه.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاستراتيجية</th>
+<th>من يفوز بين <code>me</code> و <code>:id</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>declaration</code></td>
+<td>من كُتب أولًا في التسجيل</td>
+</tr>
+<tr>
+<td><code>specificity</code></td>
+<td>القطعة الثابتة <code>me</code> ثم المعامل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما المسار الكامل لـ <code>@Controller(&#39;authors&#39;)</code> و <code>@Get(&#39;me&#39;)</code> مع <code>setGlobalPrefix(&#39;api&#39;)</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>GET /api/authors/me</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يقلع التطبيق بينما <code>GET /authors/me</code> يعيد مؤلفًا رقمه <code>me</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Get(&#39;:id&#39;)</code> مُسجَّل قبل <code>@Get(&#39;me&#39;)</code> والاستراتيجية <code>declaration</code> على Express. المطابقة الأولى تفوز. Pipe لا يعيد الاختيار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الذي يميّز <code>duplicate: &#39;error&#39;</code> عن <code>shadow: &#39;warn&#39;</code> على Fastify؟</p>
+<details><summary>الحل</summary>
+
+<p><code>duplicate</code> يعمل على Fastify وExpress ويوقف الإقلاع عند تطابق الطريقة والمسار والمضيف والإصدار. <code>shadow</code> بلا أثر على Fastify لأن موجهه يرتب بالتحديد. التحذير مفيد على Express حيث الترتيب يقرر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ممّ يتكوّن مسار المعالج؟</li>
+<li>ما الافتراضي لـ <code>routeResolutionStrategy</code>؟</li>
+<li>أين تعمل النجمة في وسط المسار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المسار بادئة زائد قطعة الطريقة. على Express الافتراضي الترتيب في الملف هو الحكم، وNestJS 12 يجعل التعارض ظاهرًا عند الإقلاع بسياسة تختارها.</p>
+<h2>ماذا بعد؟</h2>
+<p>Decorators الطرق: <code>@Get</code> و <code>@Post</code> و <code>@Put</code> و <code>@Patch</code> و <code>@Delete</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers (Routing): <a href="https://docs.nestjs.com/controllers#routing">https://docs.nestjs.com/controllers#routing</a></li>
+<li>NestJS — Route conflicts: <a href="https://docs.nestjs.com/controllers#route-conflicts-and-resolution-order">https://docs.nestjs.com/controllers#route-conflicts-and-resolution-order</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REST مقابل GraphQL</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-rest-vs-graphql.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>REST مقابل GraphQL</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار عقد المتجر بين موارد HTTP ومخطط GraphQL، بمعيار شكل الشاشات لا بمعيار الموضة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد فصول REST صار المسار اسم مورد وفعلًا. شاشة تفاصيل الكتاب قد تستدعي <code>/books/42</code> ثم <code>/authors/7</code> ثم <code>/books/42/reviews?limit=3</code>. شاشة البطاقة تستدعي المسار الأول وتتجاهل نصف JSON. كلا العيبين حقيقيان. نقل كل المتجر إلى <code>/graphql</code> لا يلغي الحاجة إلى أسماء واضحة، وقد يخفي عمليات كان المسار يوثّقها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>REST يثبّت شكل التمثيل على المورد. GraphQL يثبّت المخطط ويجعل شكل الرد قرار العملية. الأول أوضح للتخزين المؤقت على عنوان URL ولأدوات HTTP. الثاني أوضح عندما تتنوع الشاشات على الرسم نفسه. يمكن أن يعيش الاثنان: REST للرفع والإدارة البسيطة، وGraphQL لواجهة القراءة الغنية.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>سؤال</th>
+<th>REST في هذه الدورة</th>
+<th>GraphQL</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>أين العملية؟</td>
+<td>المسار + Method</td>
+<td>حقل على <code>Query</code> أو <code>Mutation</code></td>
+</tr>
+<tr>
+<td>شكل الرد</td>
+<td>تمثيل المورد</td>
+<td>الحقول المطلوبة</td>
+</tr>
+<tr>
+<td>الغياب</td>
+<td><code>404</code> غالبًا</td>
+<td><code>null</code> أو خطأ حقلي حسب المخطط</td>
+</tr>
+<tr>
+<td>التخزين المؤقت الوسيط</td>
+<td>عنوان <code>GET</code></td>
+<td>أصعب، لأن الجسم هو الاستعلام</td>
+</tr>
+<tr>
+<td>الملف</td>
+<td><code>multipart</code></td>
+<td>ليس أداة الرفع هنا</td>
+</tr>
+</tbody></table>
+<p>حجة GraphQL الشائعة «طلب واحد بدل خمسة» صحيحة عندما تكون الخمسة شكل شاشة واحدة. هي مضللة عندما يخفي الطلب الواحد خمسة استعلامات قاعدة. ذلك N+1، ويُلمح لاحقًا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">REST:   GET /books/42          وثيقة كتاب
+GraphQL: query { book(id) { title author { name } } }
+         وثيقة بالشكل الذي رسمته الشاشة
+</code></pre>
+<p>العنوان في REST جزء من العقد. اسم الحقل في المخطط هو الجزء المقابل.</p>
+<h2>أبسط مثال</h2>
+<p>بطاقة كتاب على الرف.</p>
+<p>REST كما قد تكتبه اليوم:</p>
+<pre><code class="language-text">GET /books/42
+</code></pre>
+<pre><code class="language-json">{ &quot;id&quot;: &quot;42&quot;, &quot;title&quot;: &quot;NestJS&quot;, &quot;authorId&quot;: &quot;7&quot;, &quot;isbn&quot;: &quot;...&quot;, &quot;stock&quot;: 3 }
+</code></pre>
+<p>البطاقة تعرض <code>title</code> فقط. الباقي سافر.</p>
+<p>GraphQL للبطاقة نفسها:</p>
+<pre><code class="language-graphql">query {
+  book(id: &quot;42&quot;) { title }
+}
+</code></pre>
+<p>شاشة التفاصيل تضيف <code>author { name }</code> على المخطط نفسه، بلا مسار جديد إن كان الحقل معلنًا.</p>
+<h2>شرح المثال</h2>
+<p>REST يجبرك إما على تمثيل ضخم أو على تمثيل خاص بالموبايل مثل <code>/mobile/book-card</code> فيتكاثر العقد. GraphQL يبقي <code>Book</code> نوعًا واحدًا وتختار الشاشة. ثمن ذلك: العميل يتعلم المخطط، والتخزين المؤقت لم يعد «هذا الـ URL». وثمن REST: وثائق أوفر فيتش أو مسارات كثيرة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>وسيط HTTP لـ <code>GET /books/42</code> يستطيع التخزين بمفتاح العنوان. طلب GraphQL المعتاد <code>POST /graphql</code> يحمل النص في الجسم، فوسيط عام لا يفرّق بين بطاقة وتفاصيل إلا إذا فهم اللغة. لا تبنِ أمل الأداء على «طلب واحد». قس استعلامات القاعدة. الرفع في الفصل 27 يبقى <code>POST</code> متعدد الأجزاء لأن GraphQL JSON لا يحمل بايتات الغلاف بشكل لائق.</p>
+<h2>مثال عملي</h2>
+<p>قرار متجر الكتب في هذه الدورة:</p>
+<table>
+<thead>
+<tr>
+<th>القدرة</th>
+<th>العقد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قراءة الكتالوج بشاشات مختلفة</td>
+<td>GraphQL <code>Query</code></td>
+</tr>
+<tr>
+<td>إنشاء كتاب بحقول معروفة</td>
+<td><code>Mutation</code> أو <code>POST /books</code>، لا الاثنان بلا سبب</td>
+</tr>
+<tr>
+<td>رفع الغلاف</td>
+<td>REST multipart</td>
+</tr>
+<tr>
+<td>أصول الواجهة</td>
+<td><code>ServeStaticModule</code></td>
+</tr>
+</tbody></table>
+<p>إن أبقيت إنشاء الكتاب على REST، لا تكرره في mutation إلا لعميل لا يستطيع استدعاء المسار.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إعادة كتابة كل مسار REST حقلًا في أسبوع واحد.</li>
+<li>وضع فعل <code>deleteBook</code> على <code>Query</code>. القراءة بلا أثر جانبي.</li>
+<li>الحكم بأن REST «انتهى» لأن الشاشة الأولى احتجت حقلين زائدَين.</li>
+<li>نسيان أن رمز الغياب المألوف لفريقك سيتغير شكله.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>GraphQL عندما تتعدد أشكال القراءة على أنواع مستقرة. REST عندما يكون المورد والفعل والرمز قصة كافية، خصوصًا للكتابة البسيطة والملفات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدل رفع الملفات ولا الملفات الثابتة بمخطط. ولا تفتح GraphQL لخدمة داخلية لها عميل واحد وشكل ثابت إن كان المسار أوضح في السجلات.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>ضغط الشاشة</th>
+<th>ما الذي يتغير</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>REST، حقول ناقصة</td>
+<td>مسار آخر أو تمثيل أضخم</td>
+</tr>
+<tr>
+<td>REST، حقول زائدة</td>
+<td>تجاهل في العميل أو DTO أضيق</td>
+</tr>
+<tr>
+<td>GraphQL</td>
+<td>نص العملية على المخطط نفسه</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يجلس شكل رد البطاقة في GraphQL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في نص العملية التي تطلب الحقول، ضمن ما يسمح به المخطط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يصعب تخزين <code>POST /graphql</code> في وسيط لا يفهم GraphQL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العمليات المختلفة تشترك في العنوان، والنص داخل الجسم. مفتاح العنوان وحده لا يفرّق البطاقة عن التفاصيل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اذكر قدرة تبقى على REST في هذا المتجر ولماذا.</p>
+<details>
+<summary>الحل</summary>
+
+<p>رفع الغلاف. العقد <code>multipart</code> ومتحقق الملفات من الفصل السابق. مخطط JSON لا يستقبل الملف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يثبّت REST وماذا يثبّت GraphQL؟</li>
+<li>متى تكون «خمسة مسارات» مشكلة شاشة لا مشكلة قاعدة؟</li>
+<li>أي فصل يبقى مرجع الرفع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>REST مورد وفعل. GraphQL مخطط واختيار حقول. المتجر يستطيع إبقاء الملفات على HTTP ونقل القراءة الغنية إلى المخطط.</p>
+<h2>ماذا بعد؟</h2>
+<p>شكل المخطط نفسه: النوع، والجذر <code>Query</code>، والجذر <code>Mutation</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>GraphQL — Learn: <a href="https://graphql.org/learn/">https://graphql.org/learn/</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

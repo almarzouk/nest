@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>الملفات العامة لها باب، والـ API له باب. الفصل <code>29-graphql</code> يغيّر شكل الباب الثاني: العميل يطلب شجرة حقول بدل ما يستدعي مسارًا لكل شكل شاشة.</p>
+<h2>ماذا يبقى من هذا الفصل</h2>
+<ul>
+<li>الأصل العام في <code>public</code> أو <code>client/dist</code> عبر <code>ServeStaticModule</code>.</li>
+<li><code>serveRoot</code> أو <code>exclude</code> حتى لا يبتلع البدل مسارات JSON.</li>
+<li>على Fastify الاستثناء خيار Express. القيد هناك <code>renderPath</code>.</li>
+<li>غلاف المجال يبقى <code>StreamableFile</code> خارج <code>rootPath</code>.</li>
+<li><code>GET /api/missing</code> يجب ألا يعيد <code>index.html</code>.</li>
+</ul>
+<h2>ماذا ستقرأ هناك</h2>
+<p>GraphQL لغة استعلام ومخطط. Nest تولّد المخطط من أصناف TypeScript في الأسلوب code-first مع Apollo، وهذا مسار الدورة. Schema-first يُذكر حتى تعرف الفرق. المحللات تقابل المتحكمات، والحجج تقابل المعاملات، والـ context يحمل الطلب. DataLoader يُلمح هنا ويُعمَّق في فصل لاحق. الاشتراكات تستخدم <code>graphql-ws</code>، وواجهة التجربة GraphiQL لا Playground القديم.</p>
+<p>لا تفتح <code>@nestjs/graphql</code> قبل درس «ما هو GraphQL». المخطط مفهوم مستقل عن الزينة.</p>
+<p>افتح <a href="../29-graphql/README.html"><code>29-graphql</code></a> بعد أن ينجح فحص الواجهة وفحص مسار API الغائب على مشروعك.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

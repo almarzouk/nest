@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dependency Graph</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="10-dependency-graph.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Dependency Graph</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الاعتماديات كرسم يُبنى من الأوراق نحو الجذر، عبر حدود Module.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تسجيل <code>DraftService</code> قبل <code>TaxPolicy</code> في المصفوفة يوحي أن المسودة تُبنى أولًا. الرسم يقول العكس: من لا يعتمد على أحد يُحل أولًا، ثم من يحتاجه. دورة مغلقة، حيث يطلب كل طرف الآخر، لا ورقة لها فتوقف الإقلاع. رسمها أوضح من قراءة المصفوفات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>التحليل متعدٍ: إن كانت المسودة تحتاج السياسة والسياسة تحتاج الساعة، فالساعة جزء من رسم المسودة حتى لو لم يذكرها مُنشئ المسودة. التوثيق يسمي هذا الرسم سبب الحل من الأسفل إلى الأعلى، حتى لا تدير أنت الترتيب.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-text">DraftService -&gt; TaxPolicy -&gt; SystemClock
+             -&gt; VendorGateway
+</code></pre>
+<p>الحل: <code>SystemClock</code> و <code>VendorGateway</code> أولًا، بأي ترتيب بينهما لأنهما لا يعتمد أحدهما على الآخر، ثم <code>TaxPolicy</code>، ثم <code>DraftService</code>. Controller يعتمد على المسودة فيُبنى بعدها.</p>
+<p>الحدود: عقدة غير مصدَّرة لا تظهر في رسم Module أخرى. تصدير <code>DraftService</code> يجعل المستورد يعتمد على تلك العقدة، لا على <code>SystemClock</code> مباشرة، ما دامت الساعة داخل مُنشئ السياسة فقط.</p>
+<p>تسجيل الصنف مرتين في وحدتين يصنع عقدتين ونسختين Singleton. الرسم ليس «صنفًا واحدًا في العملية» بل «خانة في كل سياق».</p>
+<p>دورة <code>DraftService -&gt; AuditLog -&gt; DraftService</code> بلا ورقة. Nest تتوقف عند الحل. كسر الدورة بإعادة التصميم هو المسار السليم. <code>forwardRef</code> أداة لاحقة في فصل Circular Dependencies، وتُذكر هنا حتى لا تُخترع في هذا الدرس.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">        DraftsController
+              |
+        DraftService
+         /        \
+   TaxPolicy    VendorGateway
+      |
+  SystemClock
+</code></pre>
+<p>البناء من أسفل الرسم إلى أعلاه.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { SystemClock } from &#39;./system-clock.js&#39;;
+
+@Injectable()
+export class TaxPolicy {
+  constructor(private readonly clock: SystemClock) {}
+
+  rate() {
+    return this.clock.now().getMonth() === 11 ? 0.05 : 0.15;
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+import { VendorGateway } from &#39;./vendor.gateway.js&#39;;
+
+@Injectable()
+export class DraftService {
+  constructor(
+    private readonly tax: TaxPolicy,
+    private readonly vendors: VendorGateway,
+  ) {}
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>DraftService</code> لا تذكر <code>SystemClock</code>، والرسم يذكرها لأن الاعتماد متعدٍ.</li>
+<li><code>VendorGateway</code> ورقة إن كان مُنشئها بلا مزودات Nest.</li>
+<li>ترتيب معاملات المسودة لا يغيّر أن الساعة تُحل قبل السياسة.</li>
+<li>تسجيل الثلاثة مع الساعة في <code>providers</code> شرط ظهورهم كعقد.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أثناء الإقلاع تُجمع الطلبات من <code>design:paramtypes</code> و <code>@Inject</code> لكل صنف في الرسم المستورد من الجذر. الحاوية تبني قائمة حل تحترم الأسبقية: لا يُنادى مُنشئ عقدة قبل حل جيرانها الصادرة. الناتج Singleton يُخزَّن في خانة الرمز قبل أن تُبنى العقدة التي فوقه.</p>
+<p>Module التقارير التي تستورد المشتريات وتطلب <code>DraftService</code> تضيف عقدة <code>ReportsService</code> فوق المسودة، من غير نسخ عقد الضريبة إلى ملف التقارير. تلك العقد تبقى في سياق المالك وتُشارَك عبر التصدير.</p>
+<p>دورة قصيرة تظهر في رسالة الحل التي تذكر الرموز المتبقية. العلاج الأول إزالة الاعتماد بإدخال تجريد أو بنقل الدالة إلى الصنف الذي يملك البيانات. <code>forwardRef</code> يؤجل قراءة الرمز عندما تكون الدورة متعمدة ونادرة، وفصله لاحق.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-text">AppModule
+  imports AcquisitionModule
+    providers SystemClock, VendorGateway
+    providers TaxPolicy -&gt; SystemClock
+    providers DraftService -&gt; TaxPolicy, VendorGateway
+    exports DraftService
+  imports ReportsModule
+    imports AcquisitionModule
+    providers ReportsService -&gt; DraftService
+</code></pre>
+<p><code>ReportsService</code> لا تستطيع طلب <code>SystemClock</code> إن لم يُصدَّر. الرسم المرئي لها يتوقف عند <code>DraftService</code>. هذا حد Module داخل الرسم لا نقص في المحرك.</p>
+<p>نسختان من <code>SystemClock</code> تظهران إذا سجّلت <code>ReportsModule</code> الساعة مرة أخرى. رسمان فرعيان، وعدّادان إن وُجد عدّاد على الساعة.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الاعتماد على ترتيب <code>providers</code> لبناء الأوراق</td>
+<td>الحل يتبع الأسهم لا أسطر الملف</td>
+</tr>
+<tr>
+<td>دورة بين خدمتين بلا إعادة تصميم</td>
+<td>الإقلاع يتوقف ولا توجد ورقة تبدأ</td>
+</tr>
+<tr>
+<td>إعادة تسجيل ورقة في كل Module</td>
+<td>عقد مكررة ونسخ Singleton متعددة</td>
+</tr>
+<tr>
+<td>افتراض أن المستورد يرى كل أسلاف الرسم</td>
+<td>يرى المصدَّر فقط</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عند تتبع «من يُبنى قبل من» أو عند نقل صنف بين الوحدات. ارسم الأسهم من المستهلك إلى ما في مُنشئه، ثم كرر حتى الأوراق.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضف اعتمادية في المُنشئ فقط ليظهر السهم في الرسم. إن كانت الدالة تحتاج الساعة في نداء واحد، مرّرها وسيطًا من الطبقة التي تملكها. سهم إضافي يصعد بـ <code>REQUEST</code> لاحقًا إن تغيّر Scope الورقة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشكل</th>
+<th>اتجاه البناء</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>رسم بلا دورة</td>
+<td>من الأوراق إلى الجذر</td>
+</tr>
+<tr>
+<td>ترتيب المصفوفة</td>
+<td>لا يحدد الأسبقية</td>
+</tr>
+<tr>
+<td>تصدير الجذر فقط</td>
+<td>المستورد يرى قمة الفرع المصدَّر</td>
+</tr>
+<tr>
+<td>تسجيل مكرر للصنف</td>
+<td>عقدتان في رسمين</td>
+</tr>
+<tr>
+<td>دورة</td>
+<td>لا ترتيب صالح حتى ينكسر السهم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يُحل أولًا: <code>DraftService</code> أم <code>SystemClock</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>SystemClock</code>، لأنها ورقة تحت السياسة التي تحت المسودة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تعرف الساعة رسم المسودة وهي غائبة عن مُنشئ <code>DraftService</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>TaxPolicy</code> تطلب الساعة، والتحليل متعدٍ. كل أسلاف السياسة أسلاف لمن يطلب السياسة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>ReportsModule</code> تعيد <code>providers: [SystemClock]</code> وتستورد المشتريات. كم عقدة ساعة في العملية؟</p>
+<details><summary>الحل</summary>
+
+<p>اثنتان. خانة في سياق التقارير وخانة في سياق المشتريات. تصدير ساعة المشتريات وحذف التسجيل المحلي يدمج العقدة لمن يحقن الرمز المستورد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعني أن تحليل الاعتماد متعدٍ؟</li>
+<li>من أين تبدأ الحاوية البناء؟</li>
+<li>ماذا يحدث للرسم عندما تُغلق دورة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الرسم أسهم من المستهلك إلى رموز مُنشئه، والحل من الأوراق إلى الجذر. التصدير يشارك عقدة قائمة، والتسجيل الثاني ينسخ الفرع، والدورة توقف الإقلاع إلى أن يُكسر السهم.</p>
+<h2>ماذا بعد؟</h2>
+<p>خطوات Nest من قراءة Module حتى نداء المُنشئ: كيف تُحل الاعتمادية داخليًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

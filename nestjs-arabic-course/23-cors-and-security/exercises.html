@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>من يفرض CORS؟</li>
+<li>أي استدعاء يضع رؤوس Helmet المدمجة؟</li>
+<li>ما وحدة <code>ttl</code> في <code>@nestjs/throttler</code>؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>المتصفح عند قراءة سكربت على أصل آخر.</li>
+<li><code>app.useSecurityHeaders()</code> قبل <code>listen</code>.</li>
+<li>المللي ثانية.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<ol>
+<li>لماذا تفشل <code>PATCH</code> عبر الأصل على Fastify رغم <code>enableCors()</code> بلا خيارات؟</li>
+<li>أي طرق يتجاهلها <code>enableCsrfProtection</code>؟</li>
+<li>لماذا <code>@IsString()</code> لا يمنع حقن SQL؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>@fastify/cors</code> يعلن الطرق الآمنة فقط. أضف <code>PATCH</code> في <code>methods</code>.</li>
+<li><code>GET</code> و <code>HEAD</code> و <code>OPTIONS</code>.</li>
+<li>القيمة تبقى نصًا قد يُلصق في الاستعلام. الربط بمعامل أو بدالة ORM.</li>
+</ol>
+</details>
+
+<h2>متقدم</h2>
+<p>واجهة على <code>https://app.example</code> و API على <code>https://api.example</code>. الدخول بالكعكة. مقالات تُعرض عناوينها في React. بحث بعنوان. ملاحظة خاصة تُختم.</p>
+<ol>
+<li>ماذا يُضبط لأصل الواجهة في CORS و CSRF؟</li>
+<li>أين تُحفظ كلمة المرور، وأين تُحفظ الملاحظة؟</li>
+<li>كيف يُبحث عن العنوان؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>origin</code> و <code>credentials</code> في CORS، ونفس الأصل في <code>trustedOrigins</code> لأن القائمة لا تُملأ وحدها. الطرق تشمل <code>PATCH</code> و <code>DELETE</code>.</li>
+<li><code>PasswordHasher</code> في <code>passwordHash</code>. الملاحظة بـ <code>aes-256-ctr</code> مع <code>iv</code> جديد ومفتاح خارج المستودع.</li>
+<li><code>contains</code> أو <code>$queryRaw</code> موسوم. لا قالب نصي ولا <code>sql.raw</code> بالمدخل.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

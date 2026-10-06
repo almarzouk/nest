@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SetMetadata</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-set-metadata.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>SetMetadata</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>لصق بيانات ثابتة على الدالة أو الصنف بمفتاح، حتى يقرأها الحارس لاحقًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الاسترداد يحتاج دور <code>refund</code> بينما القائمة مفتوحة لكل شباك معروف. الشرط إن كُتب داخل اسم الدالة أو داخل <code>if (url)</code> ينكسر مع البادئة. البيانات على الدالة تبقى مع الدالة حين يتغير المسار.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>SetMetadata(key, value)</code> من <code>@nestjs/common</code> تخزن <code>value</code> تحت <code>key</code> على الهدف الذي تزيّنه. الحارس لا يُكتب في هذا الدرس. هنا اللصق والمفتاح الثابت فقط. القراءة أداة <code>Reflector</code> في الدرس التالي.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">SetMetadata(metadataKey: string, metadataValue: unknown): CustomDecorator
+</code></pre>
+<p>المفتاح سلسلة تشاركها الزينة والقارئ. عرّفها مرة:</p>
+<pre><code class="language-ts">export const DESK_ROLES_KEY = &#39;deskRoles&#39;;
+export const DeskRoles = (...roles: string[]) =&gt; SetMetadata(DESK_ROLES_KEY, roles);
+</code></pre>
+<p><code>DeskRoles</code> دالة ترجع الزينة حتى لا يتكرر المفتاح في المتحكمات. هذا نمط الصفحة المنخفض قبل <code>Reflector.createDecorator</code>. الشكل الذي يفضّله CLI 12 يُعرض في درس <code>Reflector</code>. هنا ترى ما يخزنه المفتاح صراحة حتى تعرف ماذا يخفي الشكل الأحدث.</p>
+<p>الاستخدام:</p>
+<pre><code class="language-ts">@SetMetadata(DESK_ROLES_KEY, [&#39;refund&#39;])
+@Post(&#39;refund&#39;)
+refund() {}
+</code></pre>
+<p>أو <code>@DeskRoles(&#39;refund&#39;)</code>.</p>
+<p>القيمة تُخزن عند تحميل الصنف لا عند كل طلب. لا تضع فيها <code>request</code> ولا مقعدًا. تلك حالة طلب. البيانات هنا إعداد للدالة: أدوار، أو علم عام.</p>
+<p>يمكن وضع الزينة على الصنف فتطبق على دواله حسب طريقة القراءة لاحقًا. <code>get</code> على الدالة لا يرى زينة الصنف تلقائيًا. <code>getAllAndOverride</code> يدمج المستويين. ذلك الدرس التالي. هنا اعرف أن مكان الزينة يغيّر أين تُخزن.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">@DeskRoles(&#39;refund&#39;) على refund
+  المفتاح deskRoles → [&#39;refund&#39;]
+الدالة list بلا زينة
+  لا قيمة تحت المفتاح
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { SetMetadata } from &#39;@nestjs/common&#39;;
+
+export const DESK_ROLES_KEY = &#39;deskRoles&#39;;
+
+export const DeskRoles = (...roles: string[]) =&gt; SetMetadata(DESK_ROLES_KEY, roles);
+</code></pre>
+<pre><code class="language-ts">import { DeskRoles } from &#39;./desk-roles.decorator.js&#39;;
+
+@Controller(&#39;tickets&#39;)
+export class TicketsController {
+  @DeskRoles(&#39;refund&#39;)
+  @Post(&#39;refund&#39;)
+  refund(): { ok: true } {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p><code>refund</code> تحمل <code>[&#39;refund&#39;]</code>. <code>list</code> إن أُضيفت بلا زينة لا تحمل المفتاح. الحارس الذي لم يُكتب بعد هو من سيمنع. في هذا الدرس يكفي أن البيانات لُصقت.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>...roles</code> تجمع <code>@DeskRoles(&#39;refund&#39;, &#39;audit&#39;)</code> في مصفوفة واحدة تُخزن كقيمة.</li>
+<li>المفتاح ثابت مُصدَّر. الحارس يستورد <code>DESK_ROLES_KEY</code> لا السلسلة يدويًا.</li>
+<li>الملف ينتهي استيراده بـ <code>.js</code>.</li>
+<li>لا منطق «هل المستخدم مشرف» في <code>DeskRoles</code>. الدالة ترجع زينة فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند تعريف الصنف تستدعي Nest الزينة وتكتب القيمة في خريطة بيانات الهدف عبر <code>Reflect.defineMetadata</code> تقريبًا. المفتاح هو <code>deskRoles</code>. عند الطلب لا تُعاد الكتابة. <code>Reflector.get</code> يقرأ الخريطة من مرجع <code>getHandler()</code> أو <code>getClass()</code>.</p>
+<p>إن اختلفت السلسلة في الحارس عن <code>DESK_ROLES_KEY</code> فالقراءة <code>undefined</code> والحارس الذي يعتبر الغياب سماحًا يفتح الاسترداد. لذلك التصدير من ملف واحد هو الدرس العملي.</p>
+<p>البيانات مشتركة بين كل الطلبات لأنها على الدالة لا على الطلب. تغيير المصفوفة بعد التحميل يغيّر كل الشباك. لا تعمل <code>push</code> على المصفوفة المخزنة أثناء الطلب.</p>
+<h2>مثال عملي</h2>
+<p>مسار الاسترداد يُعلَّم <code>@DeskRoles(&#39;refund&#39;)</code> ومسار الإلغاء <code>@DeskRoles(&#39;cancel&#39;)</code>. مراجعة الملف ترى الدور بجانب الدالة من غير فتح الحارس. اختبار وحدة يستدعي <code>Reflect.getMetadata(DESK_ROLES_KEY, TicketsController.prototype.refund)</code> أو <code>Reflector</code> في الدرس التالي ويتوقع <code>[&#39;refund&#39;]</code>. لا HTTP لازم لإثبات اللصق.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مفتاح <code>&#39;roles&#39;</code> هنا و <code>&#39;deskRoles&#39;</code> في الحارس.</li>
+<li>تخزين المستخدم الحالي في <code>SetMetadata</code>. المستخدم يتغير كل طلب.</li>
+<li>توقع أن الزينة وحدها ترجع <code>403</code>.</li>
+<li>تعديل المصفوفة المرجعة أثناء الطلب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لبيانات ثابتة على الدالة أو الصنف: أدوار، علم، اسم سياسة. غلاف <code>DeskRoles</code> يمنع تكرار المفتاح.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقيمة تُستخرج من الطلب إلى معامل. ذلك <code>createParamDecorator</code>. وللشكل الذي يولّده CLI حديثًا إن بدأتم ملف زينة جديدًا بعد درس <code>Reflector</code>. المفتاح الصريح يبقى مفهومًا لما هو مخزون.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>SetMetadata</code></th>
+<th><code>createParamDecorator</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تُوضع على</td>
+<td>دالة أو صنف</td>
+<td>معامل</td>
+</tr>
+<tr>
+<td>الناتج</td>
+<td>بيانات للقارئ</td>
+<td>قيمة الوسيط</td>
+</tr>
+<tr>
+<td>متى تُقرأ</td>
+<td>في الحارس عادة</td>
+<td>عند بناء الوسائط</td>
+</tr>
+<tr>
+<td>الحالة</td>
+<td>ثابتة على الهدف</td>
+<td>من طلب هذه الدورة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يُخزن <code>@DeskRoles(&#39;refund&#39;)</code> تحت <code>deskRoles</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المصفوفة <code>[&#39;refund&#39;]</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُصدَّر <code>DESK_ROLES_KEY</code> بدل كتابة <code>&#39;deskRoles&#39;</code> في الحارس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يتشارك اللصق والقراءة المرجع نفسه. اختلاف حرف في السلسلة يجعل <code>get</code> يرجع <code>undefined</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد أن كل دوال المتحكم تحتاج <code>audit</code> إلا <code>refund</code> التي تحتاج <code>refund</code>. أين تلصق كل قيمة، وما الذي لا يضمنه هذا الدرس وحده؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@DeskRoles(&#39;audit&#39;)</code> على الصنف و <code>@DeskRoles(&#39;refund&#39;)</code> على الدالة. ظهور قيمة الدالة بدل الصنف يعتمد على قارئ <code>getAllAndOverride</code> في الدرس التالي. <code>SetMetadata</code> وحده يلصق في المكانين ولا يختار الفائز.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وسيطا <code>SetMetadata</code>؟</li>
+<li>لماذا لا تُخزن بيانات الطلب؟</li>
+<li>هل الزينة تمنع الاسترداد وحدها؟</li>
+<li>ماذا يصدّر الملف غير الدالة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>SetMetadata</code> تلصق قيمة ثابتة بمفتاح على الدالة أو الصنف. غلاف صغير يحصر المفتاح. القارئ والحسم بين زينة الصنف والدالة درس <code>Reflector</code>، والشكل المفضّل للتوليد بعده مباشرة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>Reflector</code>: القراءة، وتغليب الدالة على الصنف، و <code>createDecorator</code> الذي يفضّله CLI.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

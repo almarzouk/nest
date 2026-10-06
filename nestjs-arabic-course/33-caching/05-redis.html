@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Redis</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-redis.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Redis</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>نقل المخبأ من ذاكرة العملية إلى Redis حتى تشترك نسخ Nest في مفاتيح ISBN.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد تشغيل نسختين خلف موازن، كل واحدة تخزّن <code>isbn:978...</code> وحدها. تصحيح عبر <code>del</code> على العقدة التي خدمت لوحة الإدارة لا يفرغ العقدة الثانية. الزائر يتنقل بين عنوانين حتى تنتهي المدد. Redis مخزن واحد ترى الجميع فيه المفتاح نفسه.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>cache-manager</code> يتحدث إلى مخازن عبر Keyv. التوثيق الحالي لـ Redis يستعمل <code>@keyv/redis</code> و <code>createKeyv</code>. تسجّل المخزن داخل <code>CacheModule.registerAsync</code>. الدوال <code>get</code> و <code>set</code> و <code>del</code> في <code>IsbnService</code> تبقى كما هي.</p>
+<p>لا تستخدم حزمة <code>cache-manager-redis-store</code> القديمة كمسار هذا الدرس.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm i @keyv/redis
+</code></pre>
+<pre><code class="language-ts">import { CacheModule } from &#39;@nestjs/cache-manager&#39;;
+import { createKeyv } from &#39;@keyv/redis&#39;;
+
+CacheModule.registerAsync({
+  useFactory: () =&gt; ({
+    stores: [createKeyv(&#39;redis://localhost:6379&#39;)],
+  }),
+});
+</code></pre>
+<p>العنوان من الإعداد في التطبيق الحقيقي:</p>
+<pre><code class="language-ts">useFactory: (config: ConfigService) =&gt; ({
+  stores: [createKeyv(config.getOrThrow&lt;string&gt;(&#39;REDIS_URL&#39;))],
+}),
+inject: [ConfigService],
+</code></pre>
+<p><code>ttl</code> على <code>set</code> يبقى بالميلي ثانية. إن وُجد متجر ذاكرة ومتجر Redis معًا، الصفحة تصف مصفوفة <code>stores</code> حيث الأول افتراضي والبقية احتياط. لمخبأ مشترك بين النسخ ابدأ بمتجر Redis واحد حتى لا تظن أن الكتابة وصلت الجميع وهي في ذاكرة العقدة فقط.</p>
+<p>Redis هنا مخزن مفاتيح تنتهي، لا قاعدة كتب. فقدان المفتاح يعيد الحساب من الناشر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نسخة أ  \
+         Redis  isbn:978 -&gt; { title } حتى TTL
+نسخة ب  /
+</code></pre>
+<p><code>del</code> من أي نسخة يزيل المفتاح للجميع.</p>
+<h2>أبسط مثال</h2>
+<p><code>IsbnService</code> بلا تغيير توقيع:</p>
+<pre><code class="language-ts">await this.cache.set(key, fresh, isbnTitleTtlMs);
+</code></pre>
+<p>الفرق في الوحدة: <code>stores</code> تشير إلى Redis بدل الذاكرة. اختبار الوحدة ما زال يحقن مديرًا وهميًا ولا يفتح Redis.</p>
+<h2>شرح المثال</h2>
+<p>الخدمة لا تستورد <code>ioredis</code> ولا تعرف المنفذ. إن غيّرت العنوان في <code>REDIS_URL</code> يتغير المصنع عند الإقلاع. <code>lookup</code> تبقى: <code>get</code>، ثم الناشر، ثم <code>set</code>، وبلا <code>set</code> عند الرمي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>createKeyv</code> يفتح عميلًا نحو Redis. <code>set</code> يكتب مفتاحًا بأمر انتهاء يوافق المدة. النسخة الثانية على <code>get</code> تقرأ القيمة نفسها. إن تعطل Redis، فشل <code>get</code> أو <code>set</code> استثناء جديد على مسار البطاقة. قرر: إما تعتبر المخبأ اختياريًا وتلتقط الخطأ ثم تنادي الناشر، أو تفشل الطلب لأن البنية التحتية للمخبأ جزء من جاهزية القراءة. للمتجر، فشل المخبأ يجب ألا يحوّل ISBN إلى <code>500</code> إن كان الناشر متاحًا. التقط خطأ المخزن واحسب من المصدر. لا تلتقط <code>GatewayTimeoutException</code> في ذلك الفرع عن طريق جملة <code>catch</code> واسعة.</p>
+<pre><code class="language-ts">let cached: { title: string } | null | undefined;
+try {
+  cached = await this.cache.get(key);
+} catch {
+  cached = undefined;
+}
+</code></pre>
+<p>هذا الالتقاط لخطأ المخزن فقط، بعد أن تميّزه إن كانت المكتبة ترمي نوعًا خاصًا. جملة <code>catch</code> عريضة حول <code>lookup</code> كله تبتلع أخطاء الناشر. أبقِها حول <code>get</code> و <code>set</code>.</p>
+<h2>مثال عملي</h2>
+<p>تطوير بلا Redis يبقى <code>CacheModule.register({ ttl })</code> في الذاكرة. إنتاج يبدّل المصنع إلى <code>createKeyv</code>. الاختبارات لا تتصل بـ <code>localhost:6379</code>. إن أردت اختبار تكامل فخادم Redis منفصل أو حاوية، لا قاعدة الإنتاج.</p>
+<p>المفتاح ما زال <code>isbn:${isbn}</code> بلا بيانات مستخدم. مشاركة Redis لا تغيّر قاعدة «المفتاح يحدد من يرى القيمة».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتقاد أن Redis يصحح TTL الخاطئة. هو يشاركها فقط.</li>
+<li><code>cache-manager-redis-store</code> من مقال قديم.</li>
+<li><code>catch</code> حول <code>lookup</code> كاملًا عند معالجة سقوط Redis.</li>
+<li>وضع أسرار الناشر قيمًا في Redis بلا حاجة. القيمة <code>{ title }</code> أو <code>null</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يعمل أكثر من نسخة Nest وتريد إصابة مشتركة وحذفًا يراه الجميع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لنسخة واحدة في تمرين محلي. الذاكرة أوضح. ولا كبديل عن Postgres لجدول <code>Book</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المخزن</th>
+<th>النسخ المتعددة</th>
+<th>بعد إعادة التشغيل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ذاكرة العملية</td>
+<td>كل عقدة مستقلة</td>
+<td>فارغ</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>مفتاح مشترك</td>
+<td>يبقى حتى TTL إن كانت Redis نفسها تعمل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة من <code>@keyv/redis</code> يمررها المثال إلى <code>stores</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>createKeyv</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يتغير كود <code>set</code> عند تبديل الذاكرة بـ Redis؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الخدمة تتحدث إلى <code>CACHE_MANAGER</code>. المخزن تفصيل <code>registerAsync</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تلتقط كل الأخطاء حول <code>lookup</code> عندما يسقط Redis؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المهلة و <code>502</code> من الناشر يجب أن يصلا إلى الزائر أو إلى سياسة الإثراء. التقط فشل <code>get</code> و <code>set</code> فقط ثم احسب من المصدر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يوحّد Redis بين العقد؟</li>
+<li>أي حزمة لا تُنسخ من المقالات القديمة؟</li>
+<li>هل تُخزَّن أسرار الناشر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Redis عبر <code>createKeyv</code> يجعل مفتاح ISBN مشتركًا بين النسخ. الخدمة تبقى على <code>get</code> و <code>set</code>. سقوط المخزن لا يبتلع خطأ الناشر.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما الذي يتحول إلى خطر إن دخل المخزن: صلاحية المستخدم، والأخطاء.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Caching: <a href="https://docs.nestjs.com/data/caching">https://docs.nestjs.com/data/caching</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

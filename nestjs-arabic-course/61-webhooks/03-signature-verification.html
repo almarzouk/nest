@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التحقق من التوقيع</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-signature-verification.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التحقق من التوقيع</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إثبات أن جسم ويب هوك رف لم يُبدَّل وأن من أرسله يملك السر، بحساب HMAC على البايتات نفسها التي وصلت.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسار <code>POST /webhooks/billing</code> عام. من يعرف العنوان يرسل <code>{ &quot;type&quot;: &quot;customer.subscription.updated&quot;, &quot;status&quot;: &quot;active&quot; }</code> فيفتح الخطة. سر في ترويسة من غير ربطها بالجسم يُنسخ مع جسم آخر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المرسل يحسب HMAC-SHA256 على الجسم الخام (وأحيانًا الطابع الزمني) بالسر المشترك، ويضع الناتج في ترويسة. أنتم تحسبون نفس الحساب وتقارنون بنتيجة ثابتة الزمن. الاختلاف 400 ولا تحديث. الطابع يحد إعادة إرسال قديم.</p>
+<h2>التعريف التقني</h2>
+<p><code>createHmac(&#39;sha256&#39;, secret).update(rawBody).digest(&#39;hex&#39;)</code> من <code>node:crypto</code>. المقارنة بـ <code>timingSafeEqual</code> على Bufferين بنفس الطول. لا تقارنوا بـ <code>===</code> على السلاسل. الجسم هو البايتات قبل <code>JSON.parse</code>؛ إن سلسلة Nest الكائن ثم أعدتم <code>JSON.stringify</code> فقد يتغير الترتيب والمسافات فيختلف HMAC رغم أن المعنى واحد. لذلك الدرس التالي يبقي <code>rawBody</code>. للصادر، رف تحسب التوقيع وشريط الشريك يتحقق بنفس العقد المكتوب: اسم الترويسة وقاعدة النص الموقَّع (الجسم فقط أو <code>timestamp.body</code>).</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سر + بايتات الجسم → HMAC
+يرسل في الترويسة
+المستقبل يعيد الحساب
+تطابق آمن زمنيًا → يكمل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { createHmac, timingSafeEqual } from &#39;node:crypto&#39;;
+
+export function sign(secret: string, raw: Buffer) {
+  return createHmac(&#39;sha256&#39;, secret).update(raw).digest(&#39;hex&#39;);
+}
+
+export function signaturesMatch(expectedHex: string, givenHex: string) {
+  const a = Buffer.from(expectedHex);
+  const b = Buffer.from(givenHex);
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>update</code> على <code>Buffer</code> لا على كائن.</li>
+<li>اختلاف الطول يرفض قبل <code>timingSafeEqual</code> لأن الدالة ترمي إن اختلف الطول.</li>
+<li>السداسي يجب أن يكون ناتج نفس الترميز عند الطرفين. وثّقوا hex لا base64 في عقد رف الصادر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>تصل الترويسة والجسم الخام.</li>
+<li>ترفضون إن غاب الطابع أو كان أقدم من النافذة (مثل خمس دقائق) إن كان الطابع جزءًا من العقد.</li>
+<li>تحسبون HMAC على نفس سلسلة البايتات التي وقّعها المرسل.</li>
+<li>التطابق يكمل إلى تحليل JSON.</li>
+<li>الفشل 400 بلا تفاصيل تخبر أي بايت اختلف. السجل الداخلي يحفظ معرّف الحدث فقط.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عقد صادر بسيط توقّعه رف:</p>
+<pre><code class="language-ts">export function signedPayload(secret: string, timestamp: string, raw: Buffer) {
+  const signed = Buffer.concat([Buffer.from(`${timestamp}.`), raw]);
+  return sign(secret, signed);
+}
+</code></pre>
+<p>الشريك يعيد البناء من الطابع والجسم الخام لا من JSON المعاد تسلسله. documentوا أن النقطة بين الطابع والجسم جزء من العقد. تغييرها يكسر كل الأطراف.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقيع <code>JSON.stringify(req.body)</code> بعد التحليل.</li>
+<li>مقارنة <code>===</code> تسرّب زمنًا نظريًا وتختلف مع حالة الأحرف.</li>
+<li>سر واحد لكل المكتبات في الصادر فيستطيع عنوان مكتبة التحقق من أحداث أخرى إن تسرّب.</li>
+<li>قبول التوقيع ثم أخذ <code>tenantId</code> من الجسم كما في الدرس الوارد.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل وارد من مزود وكل صادر إلى شريك. بلا توقيع لا تحديث حالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا توقّعوا طلبات القارئ التي تحمل Bearer. ذلك إثبات آخر. ولا تبنوا خوارزمية جديدة؛ HMAC-SHA256 كافٍ لهذا العقد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الفحص</th>
+<th>ماذا يمنع</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>سر في ترويسة فقط</td>
+<td>لا يمنع استبدال الجسم</td>
+</tr>
+<tr>
+<td>HMAC على JSON المعاد</td>
+<td>يفشل على مسافات أو يمر على جسم مُعدَّل إن أسأتم البناء</td>
+</tr>
+<tr>
+<td>HMAC على البايتات + طابع</td>
+<td>يربط السر بالجسم وبالزمن</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا يفشل التوقيع الصحيح بعد <code>JSON.parse</code> ثم <code>stringify</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن البايتات قد تختلف (ترتيب مفاتيح، مسافات) عن التي وقّعها المرسل. الحساب يكون على <code>rawBody</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>طول التوقيع القادم يختلف عن طول حسابكم. ماذا تعيدون ولماذا لا تنادون <code>timingSafeEqual</code> مباشرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>ترفضون. <code>timingSafeEqual</code> ترمي إن اختلف الطول. الرفض 400 من غير تحديث.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الطابع داخل النافذة والتوقيع صحيح لكن الحدث عمره يوم في طابور المزود الذي يعيد المحاولة. أي طبقة تمنع الأثر المكرر إن كان التوقيع سيمر كل مرة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التوقيع يثبت الأصل لا الحداثة عبر أيام إن كانت النافذة تُفحص عند أول وصول فقط، ولا يمنع إعادة المزود المشروعة. مفتاح التكرار على معرّف الحدث هو الذي يمنع الأثر مرتين. الطابع يحد إعادة اللصق المتأخرة خارج النافذة، والتكرار يعالج الإعادات داخل العقد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>على ماذا يُحسب HMAC؟</li>
+<li>لماذا المقارنة ثابتة الزمن؟</li>
+<li>ماذا يضيف الطابع؟</li>
+<li>لماذا سر لكل عنوان صادر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التوقيع HMAC على البايتات الخام مع مقارنة <code>timingSafeEqual</code>. التحليل إلى JSON يأتي بعد التطابق. الطابع يحد اللصق القديم، ولا يغني عن مفتاح التكرار.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحساب يحتاج البايتات الأصلية داخل Nest. الدرس التالي <code>rawBody</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Node.js — Crypto HMAC: <a href="https://nodejs.org/api/crypto.html">https://nodejs.org/api/crypto.html</a></li>
+<li>NestJS — Raw body: <a href="https://docs.nestjs.com/faq/raw-body">https://docs.nestjs.com/faq/raw-body</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

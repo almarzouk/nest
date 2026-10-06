@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>مسؤولية HTTP مقابل السياسة</h2>
+<pre><code class="language-ts">@Post()
+create(@CurrentUserId() userId: string, @Body() dto: CreateOrderDto) {
+  return this.orders.place(userId, dto);
+}
+</code></pre>
+<p>الضريبة والبريد ليسا في المتحكم. البريد صنف <code>ReceiptMailer</code> إن استقل سبب تغييره.</p>
+<h2>قنوات بلا switch</h2>
+<pre><code class="language-ts">const payment = this.payments.find((item) =&gt; item.code === code);
+await payment.pay(totalMinor);
+</code></pre>
+<p><code>WalletPayment</code> يُضاف في <code>inject</code> لا داخل <code>charge</code>.</p>
+<h2>استبدال سليم</h2>
+<p><code>findTitle</code> يعيد <code>null</code> من Prisma ومن المزيف. الخدمة تترجم <code>null</code> عند الحافة. لا <code>NotFoundException</code> من المحول.</p>
+<h2>رمزان ونسخة واحدة</h2>
+<pre><code class="language-ts">{ provide: BOOKS_READ, useExisting: PrismaBooks },
+{ provide: BOOKS_WRITE, useExisting: PrismaBooks },
+</code></pre>
+<p>التقرير يحقن <code>BOOKS_READ</code> فقط.</p>
+<h2>عكس السهم</h2>
+<p><code>PlaceOrder</code> يحقن <code>ORDERS</code>. <code>PrismaOrdersAdapter</code> يستورد المنفذ. الوحدة تصدّر <code>PlaceOrder</code> لا المحول.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>ملف السياسة بلا مسار <code>prisma</code>.</li>
+<li>المزيف يمرر فرع الغياب لا النجاح فقط.</li>
+<li>عقد الدفع لا يعيد أنواع مزود خارجي.</li>
+<li>التصدير أضيق من الصنف الذي ينفذ كل الدوال.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

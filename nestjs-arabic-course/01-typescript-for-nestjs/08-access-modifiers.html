@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Access Modifiers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-access-modifiers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Access Modifiers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحديد من يحق له استخدام عضو الصنف: <code>public</code> و <code>protected</code> و <code>private</code>، وحدود ذلك وقت التشغيل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إذا كانت كل الحقول عامة، أي ملف يعيد تعيين اتصال قاعدة البيانات أو يقرأ سرًا وُضع على الكائن بالخطأ. المعدّل يوثق القصد ويجعل المترجم يرفض الاستخدام الخارجي.</p>
+<h2>الفكرة ببساطة</h2>
+<ul>
+<li><code>public</code>: من أي مكان. هذا الافتراضي.</li>
+<li><code>protected</code>: الصنف نفسه والأصناف التي ترثه.</li>
+<li><code>private</code>: الصنف نفسه فقط، من جهة TypeScript.</li>
+</ul>
+<h2>التعريف التقني</h2>
+<p>المعدّلات حقول نوعية في TypeScript. الناتج JavaScript لا يطبق <code>private</code> التقليدي إلا إذا استخدمت الحقول الخاصة الأصلية التي تبدأ بـ <code>#</code>. Nest وكتب TypeScript التعليمية يستخدمان <code>private</code> و <code>public</code> لأنهما جزء من أسلوب الإطار منذ سنوات، والفحص يتم في المترجم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">خارج الصنف  -&gt; public فقط
+ابن يرث     -&gt; public و protected
+جسم الصنف   -&gt; الكل
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">class Safe {
+  public label = &#39;desk&#39;;
+  protected level = 1;
+  private code = &#39;secret&#39;;
+
+  reveal(): string {
+    return this.code;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>label</code> تُقرأ من <code>safe.label</code>.</li>
+<li><code>level</code> خطأ من الخارج، ومسموح داخل <code>class Better extends Safe</code>.</li>
+<li><code>code</code> خطأ حتى على الابن في فحص TypeScript.</li>
+<li><code>reveal</code> دالة عامة تعيد قيمة مشتقة. هي بوابة، لا فتح للحقل نفسه. في مثال حقيقي لا تُرجع السر كما هو.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المترجم يحذف الكلمات ويبقي خصائص عادية. <code>JSON.stringify</code> على الكائن قد يكتب <code>code</code> إذا كان حقلًا قابلًا للعد. <code>private</code> ليس تشفيرًا ولا إخفاء للرد. إخفاء الرد <code>@Exclude</code> لاحقًا في Serialization.</p>
+<p>الحقل <code>#code</code> في JavaScript يمنع الوصول حتى من خارج الفحص، بما فيه <code>obj[&#39;code&#39;]</code>. Nest لا تفرض هذا الأسلوب في الأمثلة الرسمية. افهم الفرق حتى لا تخلط الأمان بالمترجم.</p>
+<h2>مثال عملي</h2>
+<p>خدمة كلمات مرور: الهاش خاص، والتحقق دالة عامة.</p>
+<pre><code class="language-ts">class PasswordHasher {
+  hash(plain: string): string {
+    return `hashed:${plain}`;
+  }
+
+  matches(plain: string, hashed: string): boolean {
+    return this.hash(plain) === hashed;
+  }
+}
+</code></pre>
+<p>المثال تعليمي ومفتاح الهاش هنا ليس خوارزمية. الفصل الأمني يستبدل هذا بـ bcrypt أو ما يوثّقه Nest. القصد: المستدعي يرى <code>hash</code> و <code>matches</code>، ولا يرى تفاصيل داخلية لو أضفت حقل ملح <code>private salt</code>.</p>
+<p><code>public</code> على الدالة يمكن حذفه لأنه الافتراضي. كتابته أحيانًا تقابل <code>private</code> في الملف نفسه ليبقى القصد ظاهرًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع سر في حقل <code>private</code> ثم إرجاع الكائن كله من متحكم. الحقل يخرج في JSON.</li>
+<li>الاعتماد على <code>private</code> لمنع طلب HTTP من قراءة شيء. الطلب لا يمر بفحص المعدّل.</li>
+<li>جعل كل شيء <code>public</code> &quot;حتى لا يزعجني المترجم&quot;. تضيع حدود الصنف.</li>
+</ul>
+<h2>متى نستخدم كل واحد؟</h2>
+<table>
+<thead>
+<tr>
+<th>المعدّل</th>
+<th>في Nest</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>public</code></td>
+<td>دوال يستدعيها متحكم أو خدمة أخرى</td>
+</tr>
+<tr>
+<td><code>private</code></td>
+<td>تفاصيل الخدمة، والاعتماد المحقون الذي لا يعاد تعيينه من الخارج</td>
+</tr>
+<tr>
+<td><code>protected</code></td>
+<td>أساس صنف يرثه غيره، مثل استراتيجية Passport لاحقًا عندما توسع صنفًا جاهزًا</td>
+</tr>
+</tbody></table>
+<h2>متى لا نستخدم private كأمان؟</h2>
+<p>عندما يكون التهديد عميلًا على الشبكة أو <code>JSON.stringify</code>. هناك عقود إخراج وفحص حقول.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>private</code> في TS</th>
+<th><code>#field</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يفرضه</td>
+<td>المترجم</td>
+<td>JavaScript وقت التشغيل</td>
+</tr>
+<tr>
+<td>أمثلة Nest الرسمية</td>
+<td>شائعة</td>
+<td>نادرة في التوثيق الأساسي</td>
+</tr>
+<tr>
+<td>يمنع JSON</td>
+<td>لا</td>
+<td>لا إذا سُلسل الكائن بطريقة تصل للقيمة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي سطر يقبله المترجم من خارج الصنف: <code>safe.label</code> أم <code>safe.code</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>safe.label</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ابنٍ <code>class AuditSafe extends Safe</code> هل يستطيع قراءة <code>level</code> و <code>code</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>level</code> نعم لأنه <code>protected</code>. <code>code</code> لا لأنه <code>private</code> على الأب فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا إرجاع <code>this</code> من خدمة مستخدمين فيها <code>private passwordHash</code> خطر حتى مع المعدّل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المعدّل لا يحذف الخاصية من الكائن. المتحكم إذا أرجع الكائن، طبقة JSON تكتب الحقول القابلة للعد ومنها الهاش. الحل لاحقًا: لا تضع الهاش على الكائن الخارج، أو استبعده عند التسلسل. افصل كائن المستخدم العام عن سجل الاعتماد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الافتراضي إذا حذفت المعدّل؟</li>
+<li>من يرى <code>protected</code>؟</li>
+<li>لماذا <code>private</code> لا يكفي لإخفاء حقل عن HTTP response؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المعدّلات توثّق الحدود ويفحصها TypeScript. <code>public</code> للعقود، <code>private</code> للتفاصيل، <code>protected</code> للوراثة. الأمان على الشبكة طبقة أخرى.</p>
+<h2>ماذا بعد؟</h2>
+<p>نجمع المعدّل مع constructor في السطر الذي تتكرر كتابته في Nest.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Member visibility: <a href="https://www.typescriptlang.org/docs/handbook/2/classes.html#member-visibility">https://www.typescriptlang.org/docs/handbook/2/classes.html#member-visibility</a></li>
+<li>NestJS — Providers (أمثلة constructor): <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا تحتاج القوائم عقدًا</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-lists-need-a-contract.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا تحتاج القوائم عقدًا</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت شكل واحد لاستعلام القوائم في كل مورد، بعد أن جرّب الفصل 19 الشكل على المقالات فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>GET /posts</code> يستخدم <code>page</code> و <code>pageSize</code>. <code>GET /comments</code> الذي يكتبه مطوّر آخر يستخدم <code>offset</code> و <code>limit</code>، والتعليقات تحت المقال تستخدم <code>skip</code>. الواجهة تكتب ثلاثة محلّلات. صفحة فارغة مرة <code>404</code> ومرة <code>200</code>. سقف الحجم <code>50</code> في المقالات وغائب في التعليقات فيُطلب <code>pageSize=100000</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>عقد القائمة قرار منتج لا تفصيل مسار. الأسماء نفسها، والصفحة تبدأ من <code>1</code>، والصفحة الفارغة <code>200</code> مع <code>items: []</code>، والسقف واحد، والترتيب الافتراضي مستقر بمفتاح فريد. الفصل 19 طبّق ذلك على المنشورات. هنا نعمّمه قبل الحديث عن المؤشر والفهارس.</p>
+<h2>التعريف التقني</h2>
+<p>الغلاف الذي تعرفه الواجهة:</p>
+<pre><code class="language-ts">export type Page&lt;T&gt; = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+</code></pre>
+<p>الاستعلام الأساسي:</p>
+<pre><code class="language-text">?page=1&amp;pageSize=20
+</code></pre>
+<p><code>page</code> أقل من <code>1</code> أو <code>pageSize</code> فوق <code>50</code> يعطي <code>400</code> من الأنبوب، كما في <code>ListPostsQueryDto</code>. الغياب يعني <code>1</code> و <code>20</code>. صفحة بعد آخر عنصر تعيد <code>items</code> فارغة و <code>total</code> الحقيقي، لا <code>404</code>. <code>404</code> يبقى لمعرّف مقال غير موجود.</p>
+<p><code>total</code> مع نفس <code>where</code> الذي جلب <code>items</code>. عدد الجدول كله يكذب على من رشّح <code>published=true</code>.</p>
+<p>المورد الجديد، مثل التعليقات، يستورد العقد ولا يعيد تسمية الحقول. الاختلاف المسموح هو المرشحات الخاصة بالمورد، وتُضاف إلى جانب الحقول المشتركة لا بدلًا منها.</p>
+<p>ترتيب بلا مفتاح فريد يجعل الصف يظهر في صفحتين أو يختفي عند إدراج صف. لذلك كل قائمة تحمل فاصل تعادل، و<code>id</code> مناسب. التفصيل في درس الفرز.</p>
+<p>OpenAPI يوثّق الغلاف مرة عبر <code>ApiPaginatedResponse</code> من فصل الوثيقة، باسم نوع لكل عنصر: مقال أو تعليق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">كل قائمة
+  نفس page و pageSize و items و total
+مرشحات المورد تُضاف
+الغياب قيمة افتراضية
+الفراغ 200
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export function emptyPage&lt;T&gt;(page: number, pageSize: number): Page&lt;T&gt; {
+  return { items: [], page, pageSize, total: 0 };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>دالة صغيرة تمنع كل متحكم من اختراع شكل الفراغ. <code>total: 0</code> صادق حين لا صفوف. حين توجد صفوف والعميل طلب <code>page</code> بعيدة، <code>items</code> فارغة و <code>total</code> أكبر من صفر حتى تستطيع الواجهة إخفاء زر التالي. لا تحوّل الحالة الثانية إلى <code>404</code> لأن المقال موجود والقائمة نافذة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>العميل يبني روابط «التالي» من <code>page + 1</code> ما دام <code>page * pageSize &lt; total</code>. إن غيّر مورد واحد المعنى إلى فهارس تبدأ من صفر، الرابط يقفز صفًا أو يكرر الأول. العقد المكتوب في DTO مشترك يجعل الأنبوب يرفض الانحراف قبل الخدمة.</p>
+<p><code>count</code> استعلام ثانٍ. على جدول صغير للمكتبة مقبول. درس أثر القاعدة يبين متى يصبح العدد أغلى من العناصر ومتى تكتفي الواجهة بمؤشر بلا <code>total</code>.</p>
+<h2>مثال عملي</h2>
+<p>عرّف العقد في ملف واحد يستعمله <code>PostsController</code> و <code>CommentsController</code>. وثّق المثالين في Swagger وتأكد أن الغلافين يحملان <code>items</code> لا <code>results</code> في واحد و <code>data</code> في الآخر. اختبار عقد يطلب <code>GET /posts?page=1&amp;pageSize=20</code> و <code>GET /posts/3/comments?page=1&amp;pageSize=20</code> ويتوقع المفاتيح نفسها. <code>pageSize=51</code> يعيد <code>400</code> على المسارين.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>404</code> لصفحة قائمة فارغة.</li>
+<li><code>page</code> تبدأ من <code>0</code> في مورد واحد.</li>
+<li><code>total</code> بلا المرشح.</li>
+<li>سقف على المقالات فقط.</li>
+<li>جسم قائمة يعيد كيانًا فيه <code>passwordHash</code> لأن التسلسل لم يُطبَّق على العناصر.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل <code>GET</code> يعيد مجموعة متغيرة الحجم يستهلكها عميل خارج الوحدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لقائمة ثابتة قصيرة تعرف أنها أقل من السقف دائمًا، مثل دورين <code>reader</code> و <code>editor</code> في إعداد. تغليفها بصفحات يضيف عقدًا بلا حاجة. وما زال الإخراج صنف استجابة لا صف جدول.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>عقد مشترك</th>
+<th>اسم لكل مسار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الواجهة محلّل واحد</td>
+<td>محلّل لكل مورد</td>
+</tr>
+<tr>
+<td>السقف في DTO قاعدة</td>
+<td>مسار ينسى <code>@Max</code></td>
+</tr>
+<tr>
+<td>الفراغ متفق عليه</td>
+<td><code>404</code> و <code>200</code> يتناوبان</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا تعيد قائمة بلا نتائج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>200</code> مع <code>items: []</code> وصفحة وحجم و <code>total</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>total</code> يستخدم <code>where</code> نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه عدد المطابق للمرشح لا عدد الجدول. الواجهة تحسب عدد الصفحات منه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مورد جديد أعاد مصفوفة عارية. ماذا يكلف ذلك بعد شهر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل عميل يبني ترقيمه، والسقف يغيب، و OpenAPI ينقسم. أعد <code>Page&lt;T&gt;</code> قبل أن تتكاثر الأسماء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين تبدأ <code>page</code>؟</li>
+<li>ما سقف <code>pageSize</code> في المكتبة؟</li>
+<li>أي درس طبّق العقد أول مرة على المقالات؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>القوائم تشترك في الأسماء والسقف والفراغ والعدد المطابق. مرشحات المورد تُضاف إلى هذا العقد. الفصل 19 كان التطبيق الأول، والباقي من هذا الفصل يجعله قابلًا للإعادة ويربطه بالقاعدة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./02-pagination.html">Pagination</a> الإزاحة والمؤشر.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>Prisma — Pagination: <a href="https://www.prisma.io/docs/orm/prisma-client/queries/pagination">https://www.prisma.io/docs/orm/prisma-client/queries/pagination</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

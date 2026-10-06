@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Registration و Resolution</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-registration-and-resolution.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Registration و Resolution</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فصل لحظتين: Registration يكتب الوصفة تحت الرمز، و Resolution ينفّذ الوصفة وينتج القيمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>«الخدمة مسجّلة إذًا النسخة موجودة» خلط يجعل <code>useFactory</code> غير المفهوم: الملف حُمّل والعميل لم يُبنَ بعد. العكس أيضًا: مناداة المصنع عند كل قراءة للملف. اللحظتان مختلفتان. التسجيل عند قراءة <code>@Module</code>، والحل عندما تحتاج الحاوية القيمة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Registration يربط الرمز بالوصفة ويضعه في سياق Module. لا يشترط بناء Singleton في السطر نفسه. Resolution يقرأ الوصفة: يعيد قيمة <code>useValue</code>، أو يبني <code>useClass</code>، أو ينادي <code>useFactory</code>، أو يتبع <code>useExisting</code>.</p>
+<p>للنطاق <code>DEFAULT</code> يتم الحل أثناء الإقلاع بعد اكتمال الرسم، وتُخزَّن النسخة. لـ <code>REQUEST</code> يتكرر الحل لكل طلب. الوصفة تبقى التسجيل في الحالتين.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق يسمي الربط في <code>providers</code> تسجيلًا: الرمز <code>CatsService</code> يرتبط بالصنف. الاختصار يوسَّع إلى <code>{ provide, useClass }</code> قبل أن يُحل.</p>
+<table>
+<thead>
+<tr>
+<th>الوصفة عند الحل</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useValue</code></td>
+<td>المرجع الذي ثُبّت عند التسجيل</td>
+</tr>
+<tr>
+<td><code>useClass</code></td>
+<td>نسخة بعد حل مُنشئ ذلك الصنف</td>
+</tr>
+<tr>
+<td><code>useFactory</code></td>
+<td>قيمة إرجاع الدالة بعد حل <code>inject</code>، والوعد يُنتظَر</td>
+</tr>
+<tr>
+<td><code>useExisting</code></td>
+<td>ناتج حل الرمز الآخر، لا بناء جديد</td>
+</tr>
+</tbody></table>
+<p>تسجيل رمز مرتين في السياق نفسه يعيد كتابة الخانة أو يخلق تعارضًا يجب أن تراه عند الإقلاع، لا نسختين متعاونتين تحت اسم واحد. نسختان متعمدتان تعنيان رمزين.</p>
+<p><code>@Optional()</code> لا يسجل شيئًا. هو يغيّر الحل: الرمز الغائب يصبح <code>undefined</code> لذلك المعامل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Registration
+  TaxPolicy -&gt; { useClass: FlatTax }
+
+Resolution عند الإقلاع (DEFAULT)
+  حل FlatTax
+  خزّن النسخة تحت TaxPolicy
+  ابنِ DraftService بها
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+import { FlatTax } from &#39;./flat-tax.js&#39;;
+import { TaxPolicy } from &#39;./tax.policy.js&#39;;
+
+@Module({
+  providers: [
+    { provide: TaxPolicy, useClass: FlatTax },
+    DraftService,
+  ],
+})
+export class AcquisitionModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>تقييم هذا الملف يسجل وصفتين. <code>FlatTax</code> لم تُستدعَ بعد بمجرد مرور المترجم على الكائن.</li>
+<li>الحل لاحقًا يبني <code>FlatTax</code> ثم <code>DraftService</code> لأن الثانية تعتمد على الأولى.</li>
+<li>ترتيب المصفوفة تسجيل لا جدول حل. لو كُتبت <code>DraftService</code> أولًا فالحل ما زال يبني السياسة قبلها.</li>
+<li>بعد الحل، قراءة الخانة تعيد النسخة المخزنة طوال عمر التطبيق الافتراضي.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>NestFactory.create</code> يقرأ الوحدات ويسجل الخانات، ثم يحل ما يلزم لبناء Controllers و Providers ذات <code>DEFAULT</code>. لذلك مصنع <code>async</code> يؤخر <code>listen</code>: الحل جزء من الإقلاع لا من أول <code>GET</code>.</p>
+<p>طلب <code>GET</code> بعد ذلك لا يعيد Registration. المعالج موجود، و <code>this.drafts</code> مرجع الحل القديم.</p>
+<p>مع <code>Scope.REQUEST</code> يبقى التسجيل مرة، ويتكرر الحل مع كل طلب على ذلك الفرع. تكلفة ذلك في درس Scope: السلسلة كلها تُحل مجددًا.</p>
+<p><code>useValue</code> حالة خاصة: القيمة ناتج التسجيل أصلًا، فالحل يعيدها بلا خطوة بناء. هي ما زالت تمر بمرحلة الحل عندما يسأل مستهلك عن الرمز، والناتج المرجع نفسه.</p>
+<h2>مثال عملي</h2>
+<p>منطقة اختيارية لا تسجيل لها:</p>
+<pre><code class="language-ts">import { Injectable, Optional } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class DraftService {
+  constructor(@Optional() private readonly region?: RegionCode) {}
+
+  label() {
+    return this.region?.code ?? &#39;unset&#39;;
+  }
+}
+</code></pre>
+<p>إن لم توجد وصفة <code>RegionCode</code>، التسجيل لم ينسَ خانة بقدر ما الحل سُمح له أن يتخطاها بسبب <code>@Optional()</code>. إضافة <code>{ provide: RegionCode, useValue: { code: &#39;jeddah&#39; } }</code> لاحقًا تغيّر الحل من غير تعديل <code>label</code>. هذا فرق المرحلتين: الوصفة الجديدة تسجيل، وظهور <code>jeddah</code> نتيجة حل تالٍ.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>اعتبار ترتيب <code>providers</code> ترتيب <code>new</code></td>
+<td>الحل يتبع الاعتماد لا أسطر المصفوفة</td>
+</tr>
+<tr>
+<td>توقع نداء <code>useFactory</code> عند حفظ الملف فقط</td>
+<td>النداء عند الحل؛ مع Singleton مرة أثناء الإقلاع</td>
+</tr>
+<tr>
+<td>تسجيل الرمز نفسه مرتين أملًا في نسختين</td>
+<td>خانة واحدة لكل رمز في السياق</td>
+</tr>
+<tr>
+<td><code>@Optional()</code> كبديل عن <code>providers</code> لمزوّد إلزامي عند غيره</td>
+<td>المستهلك الآخر ما زال يفشل عند الحل</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>Registration عند إضافة قدرة إلى Module. Resolution تتركه للحاوية عند الإقلاع أو لكل طلب حسب Scope. تدخّلك هو كتابة وصفة صحيحة، لا مناداة المصنع من Controller.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحل الرمز يدويًا بـ <code>new</code> بعد أن سجلته «للتأكد». الحل الثاني نسخة خارج الخانة. استعلام <code>ModuleRef</code> لاحقًا عندما يوجد سبب خارج المُنشئ، وهو درس مستقل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Registration</th>
+<th>Resolution</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>متى</td>
+<td>قراءة Module عند الإقلاع</td>
+<td>عند بناء من يحتاج الرمز</td>
+</tr>
+<tr>
+<td>الناتج</td>
+<td>خانة وصفة</td>
+<td>قيمة أو نسخة</td>
+</tr>
+<tr>
+<td><code>DEFAULT</code></td>
+<td>مرة</td>
+<td>مرة ثم تخزين</td>
+</tr>
+<tr>
+<td><code>REQUEST</code></td>
+<td>مرة</td>
+<td>لكل طلب على ذلك الفرع</td>
+</tr>
+<tr>
+<td>خطأ الوصفة</td>
+<td>قد يظهر عند قراءة التعريف</td>
+<td>يظهر عند تنفيذها ونقص رمز</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>useClass: FlatTax</code> يبني الكائن لحظة كتابة الكائن في الملف؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. الكائن وصفة تسجيل. البناء عند الحل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مصنع <code>async</code> على رمز Singleton يؤخر <code>app.listen</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الحل جزء من الإقلاع للنطاق الافتراضي. Nest تنتظر الوعد قبل أن تكتمل الشجرة وتقبل الاتصالات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>RegionCode</code> بلا تسجيل و <code>@Optional()</code> على <code>DraftService</code> فقط، بينما <code>LabelPrinter</code> تطلب <code>RegionCode</code> من غير <code>@Optional()</code>. ماذا ينجح وماذا يفشل؟</p>
+<details><summary>الحل</summary>
+
+<p>التسجيل لا خانة له. حل <code>DraftService</code> ينجح و <code>region</code> تكون <code>undefined</code>. حل <code>LabelPrinter</code> يفشل الإقلاع لأن معاملها ما زال إلزاميًا. <code>@Optional()</code> قرار حل لكل معامل لا تسجيل عالمي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يُخزَّن في الخانة قبل أول حل لـ <code>useClass</code>؟</li>
+<li>أي الوصفات تعيد مرجعًا من غير بناء؟</li>
+<li>لماذا ترتيب المصفوفة ليس ترتيب الإنشاء؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التسجيل يكتب الوصفة تحت الرمز داخل السياق. الحل ينفّذها وينتج القيمة، مرة للإقلاع في Singleton وكل طلب على فرع <code>REQUEST</code>. <code>@Optional()</code> يغيّر الحل عند الغياب ولا يكتب خانة.</p>
+<h2>ماذا بعد؟</h2>
+<p>كيف يُعلَن الطلب في المُنشئ حتى يستطيع الحل قراءته: Constructor Injection.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

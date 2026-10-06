@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AppModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-app-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>AppModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إبقاء الجذر فهرس وحدات، لا مكان كل قواعد المنتج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>AppModule</code> في القالب يملك المتحكم والخدمة لأن التطبيق سطر واحد. إن بقي كذلك بعد عشر ميزات، ضاع سبب الوحدات: أي تعديل يلمس الجذر، والحدود شكلية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الجذر يستورد وحدات الميزات. قد يملك مزوّدات عابرة للتطبيق كله لاحقًا، مثل إعداد عام، بعد أن نفهم الوحدة العامة و <code>ConfigModule</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>AppModule</code> هو Root Module الممرَّر إلى <code>NestFactory.create</code>. وجوده في <code>app.module.ts</code> عرف القالب لا إلزام الاسم. تغيير الاسم يلزم تغيير وسيط <code>create</code> والاستيراد.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+  imports: [BooksModule, OrdersModule]
+  controllers: []
+  providers: []
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  imports: [BooksModule],
+})
+export class AppModule {}
+</code></pre>
+<p>انقل <code>AppController</code> لاحقًا أو أبقه لمسار صحة بسيط. لا تضع فيه <code>POST /orders</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>BooksModule</code> صنف لا نص مسار.</li>
+<li>الترتيب في <code>imports</code> يؤثر على ترتيب Middleware بين الوحدات كما يذكر توثيق مسار الطلب: بعد العام ثم الجذر ثم البعد عن الجذر. لا ترتب الوحدات عشوائيًا عندما يصبح عندك Middleware. اليوم الترتيب مجرد قائمة.</li>
+<li>الجذر الذي لا يصدّر شيئًا طبيعي. نادرًا تستورد وحدة أخرى الجذر.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>create(AppModule)</code> يبدأ من هذه Metadata ويمشي <code>imports</code> عمقًا. وحدة غير واصلة إلى هذه الشجرة لا تُنشأ. لذلك ميزة جديدة بلا سطر <code>imports</code> &quot;غير موجودة&quot; رغم أن ملفها سليم.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-text">src/app.module.ts          imports فقط
+src/books/*                الميزة
+src/orders/*               الميزة
+src/main.ts                create(AppModule) فقط
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسخ <code>providers</code> من وحدة الميزة إلى الجذر &quot;حتى تعمل&quot;. تحصل على نسخة ثانية أو تخفي أن التصدير ناقص.</li>
+<li>وضع <code>listen</code> أو أنابيب داخل ملف الوحدة. الإعداد العام على <code>app</code> في <code>main.ts</code> حتى نعرف نمطًا أفضل.</li>
+<li>دورة: الجذر يستورد ميزة والميزة تستورد الجذر.</li>
+</ul>
+<h2>متى يبقى شيء في الجذر؟</h2>
+<p>مسار <code>GET /</code> للصحة، أو استيراد <code>ConfigModule</code> لاحقًا مرة واحدة.</p>
+<h2>متى نفرغه؟</h2>
+<p>عندما يصبح كل مسار ملك ميزة. الجذر قائمة <code>imports</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القالب الأول</th>
+<th>تطبيق فيه ميزتان</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>controllers و providers في الجذر</td>
+<td>imports للوحدات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تستقبل <code>AppModule</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>NestFactory.create</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُسجَّل <code>BooksService</code> في الجذر إن كانت الوحدة تستورد وتصدّر الخدمة؟</p>
+<details><summary>الحل</summary>
+
+<p>التسجيل الثاني ينشئ نطاقًا آخر. الاستيراد يكفي لرؤية المصدَّر.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ميزة لا تصلها سلسلة <code>imports</code> من الجذر. هل يشغّل <code>start:dev</code> مساراتها؟</p>
+<details><summary>الحل</summary>
+
+<p>لا. الرسم لا يراها، فالمحوّل لا يسجل مساراتها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما واجب الجذر بعد أن تكبر الميزات؟</li>
+<li>ماذا يلزم تغييره إن أعدت تسمية الصنف؟</li>
+<li>لماذا الدورة مع الجذر مشكلة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>AppModule</code> مدخل الرسم. مع النمو يصبح قائمة وحدات لا سلة مسارات.</p>
+<h2>ماذا بعد؟</h2>
+<p>المفاتيح الأربعة بمعنى أدق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

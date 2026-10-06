@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة معترضات على الشباك. كل واحد أثر واحد. الترتيب في المثال الثالث متعمد.</p>
+<h2>مثال 1 — سجل لا يغيّر الجسم</h2>
+<pre><code class="language-ts">@Injectable()
+export class TicketLogInterceptor implements NestInterceptor {
+  intercept(context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const request = context.switchToHttp().getRequest&lt;{ method: string; url: string }&gt;();
+    const started = Date.now();
+    const label = `${request.method} ${request.url}`;
+    return next.handle().pipe(
+      tap({
+        next: () =&gt; console.log(`${label} ${Date.now() - started}ms`),
+        error: () =&gt; console.log(`${label} failed`),
+      }),
+    );
+  }
+}
+</code></pre>
+<h2>مثال 2 — غلاف على متحكم التذاكر</h2>
+<pre><code class="language-ts">@Injectable()
+export class TicketEnvelopeInterceptor implements NestInterceptor {
+  intercept(_context: ExecutionContext, next: CallHandler): Observable&lt;{ data: unknown }&gt; {
+    return next.handle().pipe(map((data) =&gt; ({ data })));
+  }
+}
+</code></pre>
+<p><code>TicketsController</code> يحمل الغلاف. <code>list</code> ترجع <code>string[]</code> والعميل يرى <code>{ data: string[] }</code>. <code>HealthController</code> بلا الزينة.</p>
+<h2>مثال 3 — مهلة على التقرير فقط، والسجل أقرب إلى الدالة</h2>
+<pre><code class="language-ts">@Controller(&#39;reports&#39;)
+export class SalesReportController {
+  @UseInterceptors(ReportTimeoutInterceptor, TicketLogInterceptor)
+  @Get(&#39;sales&#39;)
+  sales(): { total: number } {
+    return { total: 10 };
+  }
+}
+</code></pre>
+<p>الدخول: المهلة ثم السجل ثم الدالة، لأن الكتابة من اليسار إلى اليمين على المستوى نفسه. الخروج: <code>tap</code> السجل يرى <code>{ total: 10 }</code> أولًا، ثم تيار المهلة يمرر القيمة إن صدرت في الوقت. <code>BadRequestException</code> من أنبوب على الدالة يمر بفرع <code>error</code> في السجل ثم يعاد رميه من <code>catchError</code> في المهلة لأنه ليس <code>TimeoutError</code>.</p>
+<p>لا تخزين في هذه الأمثلة. <code>of</code> يتخطى الدالة، والتقرير يجب أن يعمل.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>subscribe</code> داخل <code>intercept</code>.</li>
+<li><code>tap</code> لا ترجع جسمًا بديلًا.</li>
+<li>الغلاف في مكان واحد.</li>
+<li>مهلة التقرير لا تُعمَّم على <code>POST /tickets</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

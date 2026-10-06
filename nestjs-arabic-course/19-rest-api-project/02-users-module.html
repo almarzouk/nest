@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Users</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-users-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Users</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء <code>UsersModule</code>: إنشاء مستخدم بالبريد والاسم، وقراءته بالمعرّف، من غير إرجاع تجزئة كلمة المرور.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>منشور بلا مؤلف ثابت يربط <code>authorId</code> بقيمة لا تملك صفًا. إن عاش المستخدم داخل <code>PostsService</code>، حذف البريد أو فحص التكرار يتناثر. المورد <code>users</code> هو جدول <code>User</code> كما رُسم في الحدود.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>UsersService</code> تنشئ وتجلب. <code>UsersController</code> يترجم HTTP. البريد الفريد قيد في PostgreSQL. كلمة المرور في هذا الفصل تُخزَّن مؤقتًا كقيمة لا تُعاد، والفصل <code>20</code> يستبدل التخزين الساذج بـ <code>PasswordHasher</code>. لا تُبقِ كلمة مرور واضحة في عمود إنتاج. العمود اسمه <code>passwordHash</code> من الآن حتى لا يعاد تسمية الترحيل مرتين، والقيمة حتى فصل المصادقة ليست تجزئة حقيقية: لا تنشر الوحدة بهذا الشكل.</p>
+<p>الأسلم في التمرين المحلي: ارفض تشغيل المسار إن لم يكن <code>NODE_ENV=development</code>، أو خزّن ناتج تجزئة لاحقًا. الدرس يركز على حدود الوحدة، ويذكر أن القيمة الواضحة ممنوعة خارج جهازك.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">@Controller(&quot;users&quot;)
+export class UsersController {
+  constructor(private readonly users: UsersService) {}
+
+  @Post()
+  create(@Body() dto: CreateUserDto) {
+    return this.users.create(dto);
+  }
+
+  @Get(&quot;:id&quot;)
+  findOne(@Param(&quot;id&quot;, ParseIntPipe) id: number) {
+    return this.users.findOne(id);
+  }
+}
+</code></pre>
+<p><code>CreateUserDto</code> فيه <code>email</code> و <code>name</code> و <code>password</code> بوسوم class-validator. الخدمة تكتب <code>passwordHash: dto.password</code> فقط في فرع تطوير معزول، وتستبدله في فصل المصادقة باستدعاء <code>hash</code>. الاستجابة:</p>
+<pre><code class="language-ts">select: { id: true, email: true, name: true }
+</code></pre>
+<p><code>findUnique</code> إن رجعت <code>null</code> ترمي الخدمة <code>NotFoundException</code>. تكرار البريد خطأ Prisma يُترجم إلى <code>ConflictException</code>.</p>
+<p>الوحدة:</p>
+<pre><code class="language-ts">@Module({
+  imports: [PrismaModule],
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService],
+})
+export class UsersModule {}
+</code></pre>
+<p><code>exports</code> حتى تتأكد <code>PostsModule</code> من المؤلف من غير فتح <code>PrismaService</code> على جدول المستخدم إن رغبت بحد أوضح. كلا الأسلوبين مقبول: فحص المؤلف عبر <code>UsersService.findOne</code> يصدّر قاعدة المستخدم من وحدته.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">POST /users  -&gt; DTO -&gt; UsersService.create -&gt; prisma.user.create
+GET /users/4 -&gt; ParseIntPipe -&gt; findOne -&gt; 404 أو { id, email, name }
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { ConflictException, Injectable, NotFoundException } from &quot;@nestjs/common&quot;;
+import { Prisma } from &quot;../generated/prisma/client.js&quot;;
+import { PrismaService } from &quot;../prisma/prisma.service.js&quot;;
+
+@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(input: { email: string; name: string; passwordHash: string }) {
+    try {
+      return await this.prisma.user.create({
+        data: input,
+        select: { id: true, email: true, name: true },
+      });
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError &amp;&amp; error.code === &quot;P2002&quot;) {
+        throw new ConflictException(&quot;Email already registered&quot;);
+      }
+      throw error;
+    }
+  }
+
+  async findOne(id: number) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, name: true },
+    });
+    if (!user) {
+      throw new NotFoundException(&quot;User not found&quot;);
+    }
+    return user;
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الخدمة لا تستقبل كلمة المرور باسم حقل الاستجابة. المتحكم يمرّر <code>passwordHash</code> من DTO في هذا الفصل التعليمي، وستتغيّر هذه الوسيطة حين يدخل المجزّئ. <code>select</code> يمنع العمود السري حتى لو أضفت حقولًا لاحقًا ونسيت. رمز <code>P2002</code> قيد الفرادة في Prisma. ترجمته تخفي تفاصيل المشغّل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>ParseIntPipe</code> يرفض <code>id</code> غير العددي بـ <code>400</code> قبل الخدمة. <code>create</code> يرسل <code>INSERT</code> ويرجع الأعمدة المختارة. مرشح الاستثناءات يحوّل <code>NotFoundException</code> إلى جسم فيه <code>404</code>. لا يوجد حارس. المسار مفتوح داخل حدود هذا الفصل.</p>
+<h2>مثال عملي</h2>
+<p>أنشئ مستخدمًا <code>ada@example.com</code>. أعِد الطلب نفسه وتوقع <code>409</code>. اطلب <code>GET /users/999</code> وتوقع <code>404</code>. اطلب <code>GET /users/1</code> وتأكد أن JSON فيه <code>id</code> و <code>email</code> و <code>name</code> فقط. اختبار الوحدة يزيف <code>prisma.user.create</code> ولا يتصل بقاعدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إرجاع كائن Prisma كاملًا.</li>
+<li>فحص تكرار البريد فقط في الذاكرة.</li>
+<li>جعل <code>PostsService</code> تكتب في <code>prisma.user</code>.</li>
+<li>الإبقاء على كلمة مرور واضحة بعد إنهاء فصل المصادقة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p> حين احتاج منشور أو تعليق لاحقًا إلى مؤلف له صف حقيقي.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كنظام حسابات إنتاج قبل التجزئة وقبل إغلاق <code>POST /users</code> خلف سياسة التسجيل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>select</code> في الخدمة</th>
+<th>إرجاع النموذج كاملًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>العقد يسمي الحقول</td>
+<td>العمود السري قد يخرج</td>
+</tr>
+<tr>
+<td>يتغير بتغيير العقد</td>
+<td>يتغير بتغيير الجدول</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي استثناء لتكرار البريد، وأي استثناء لمستخدم غائب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>ConflictException</code> للتكرار، و <code>NotFoundException</code> للغياب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تُصدَّر <code>UsersService</code> من الوحدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تفحص <code>PostsModule</code> وجود المؤلف عبر قاعدة المستخدمين لا عبر SQL منسوخ.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلبان ينشئان البريد نفسه في اللحظة نفسها وتجاوزا فحصًا مبكرًا. ماذا يبقى حارسًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@unique</code> ورمز <code>P2002</code> الذي يتحوّل إلى <code>409</code>. الفحص المبكر يحسّن الرسالة الشائعة ولا يستبدل القيد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>GET /users/:id</code>؟</li>
+<li>لماذا <code>select</code>؟</li>
+<li>من يملك كتابة جدول المستخدم؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>مورد المستخدم وحدة مستقلة، العقد بلا سر، والتكرار والغياب استثناءات HTTP واضحة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-posts-module.html">Posts</a> يربط المنشور بمؤلف من هذه الوحدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers: <a href="https://docs.nestjs.com/controllers">https://docs.nestjs.com/controllers</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

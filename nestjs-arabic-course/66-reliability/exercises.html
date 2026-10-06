@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — الأداة</h2>
+<p>ضعوا الأداة: resilience، idempotency، outbox، workflows، locks.</p>
+<ol>
+<li>504 لاقتباس بطيء.</li>
+<li>إعادة إنشاء مشروع.</li>
+<li>رسالة مع <code>COMMIT</code>.</li>
+<li>انتظار سبعة أيام.</li>
+<li>تصدير على نسخة واحدة.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 <code>@nestjs/resilience</code>. 2 <code>@nestjs/idempotency</code>. 3 <code>@nestjs/outbox</code> مع <code>tx</code>. 4 <code>@nestjs/workflows</code>. 5 <code>@nestjs/locks</code> بمخزن مشترك.</p>
+</details>
+
+<h2>تمرين متوسط — tx</h2>
+<p>لماذا <code>outbox.add(message, this.prisma)</code> يهدم الضمان؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العميل الجذر يلتزم وحده وقد تُرسل الرسالة ثم يتراجع نشر المشروع، أو العكس حسب الترتيب. الصفحة تطلب عميل المعاملة التفاعلية وترمي <code>OutboxTransactionRequiredError</code> على القاعدة نفسها.</p>
+</details>
+
+<h2>تمرين متقدم — ثلاث حاويات</h2>
+<p>القفل في الذاكرة والتدفق في Postgres. أي جزء ما زال يتكرر وأي جزء ينجو من إعادة التشغيل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التصدير الليلي يتكرر ثلاث مرات لأن كل حاوية ترى قفلها. التدفق المسجّل في القاعدة يُستأنف بلا تكرار الخطوات المكتملة. انقلوا <code>LockStore</code> إلى Postgres أو Redis مشترك.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

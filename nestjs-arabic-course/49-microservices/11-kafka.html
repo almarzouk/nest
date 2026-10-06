@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Kafka</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-kafka.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Kafka</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استعمال Kafka سجلًا مرتبًا للأحداث مع <code>Transport.KAFKA</code>، ومجموعة مستهلك <code>groupId</code>، عندما يبقى التاريخ وإعادة القراءة مهمين.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>طابور Rabbit يزيل الرسالة بعد الإقرار. تحليل «ماذا حدث للطلب» وإعادة بناء نموذج قراءة يحتاج سجلًا يبقى. Kafka subject (topic) يحتفظ بالأحداث حسب سياسة الاحتفاظ. المستهلكون في نفس <code>groupId</code> يتقاسمون الأقسام. Nest يربط الأنماط بالمواضيع عبر <code>@EventPattern</code> غالبًا، لأن التوثيق ينبّه أن منصات السجل أنسب للأحداث من الطلب-الرد.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>client.brokers</code> مثل <code>[&#39;kafka:9092&#39;]</code> داخل Compose، و <code>consumer.groupId</code> اسم مجموعة الفوترة. الحزمة <code>kafkajs</code>. المنتج يلحق الحدث بموضوع. مجموعة البحث تقرأ بنفس الموضوع بـ <code>groupId</code> آخر إن كان يجب أن يراه الطرفان كاملًا. لا <code>localhost</code> من حاوية التطبيق.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">{
+  transport: Transport.KAFKA,
+  options: {
+    client: {
+      clientId: &#39;billing&#39;,
+      brokers: [process.env.KAFKA_BROKER ?? &#39;127.0.0.1:9092&#39;],
+    },
+    consumer: {
+      groupId: &#39;billing-consumers&#39;,
+    },
+  },
+}
+</code></pre>
+<pre><code class="language-ts">@EventPattern(&#39;order.cancelled&#39;)
+cancelled(@Payload() data: { orderId: string }): void {
+  void data.orderId;
+}
+</code></pre>
+<p>العميل <code>emit(&#39;order.cancelled&#39;, { orderId })</code> من عملية الكتالوج بخيارات منتج Kafka.</p>
+<p>الترتيب مضمون داخل القسم لا عبر الموضوع كله. مفتاح الرسالة، إن ضبطته في طبقة أدنى، يجمع أحداث الطلب الواحد في قسم. لا تفترض ترتيبًا عالميًا.</p>
+<p>الإزاحة (offset) تُحفظ للمجموعة. إعادة المعالجة من إزاحة قديمة تعيد الأحداث. لذلك المستهلك يجب أن يتحمل التكرار، مثل عمال Rabbit.</p>
+<p>الطلب-الرد على Kafka أثقل ومخالف لطبيعة السجل. إن احتجت <code>invoiceId</code> فورًا فخدمة تكتب ثم ترد عبر مسار آخر، أو طابور طلب-رد، لا سلسلة <code>send</code> على Kafka كعادة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">موضوع order.cancelled يبقى
+مجموعة billing تقرأ مرة وتقدم الإزاحة
+مجموعة search تقرأ نفس التاريخ وحدها
+التكرار ممكن عند إعادة القراءة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>إلغاء الطلب <code>emit</code> إلى الموضوع. الفوترة <code>groupId: billing-consumers</code> تكتب إشعارًا دائنًا بشكل متكرر آمن. البحث <code>groupId: search-consumers</code> يحدّث الفهرس. إيقاف البحث لا يوقف الفوترة ولا يحذف السجل.</p>
+<h2>شرح المثال</h2>
+<p>مجموعتان تعنيان نسختين من التدفق لا تنافسًا على الرسالة نفسها. نسختان داخل <code>billing-consumers</code> تتقاسمان الأقسام فلا تعالجان نفس الرسالة معًا في الحالة السليمة. هذا عكس بث Redis.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>kafkajs</code> يتصل بالوسطاء.</li>
+<li>المنتج يلحق سجلًا بالموضوع.</li>
+<li>المجموعة تسحب من الأقسام المسندة إليها.</li>
+<li>Nest يطابق اسم النمط إلى المعالج.</li>
+<li>تقديم الإزاحة بعد المعالجة الناجحة يمنع إعادة لا نهائية إن نجحت.</li>
+<li>فشل قبل التقديم يعيد السجل. اجعل <code>handle</code> متكررًا.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>في التطوير وسيط واحد <code>kafka:9092</code>. لا تبنِ عنقودًا من ثلاث عقد لأجل درس. احتفاظ قصير. الحدث يحمل <code>orderId</code> لا صف Prisma. إعادة بناء <code>order_view</code> تقرأ الموضوع أو تعيد الاستهلاك من البداية في بيئة إصلاح. صفحة المتصفح لا تنتظر Kafka لرد <code>POST</code> إن كان الحفظ في القاعدة مصدر الحقيقة والموضوع إشعارًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>groupId</code> واحد لخدمتين يجب أن ترى كل منهما كل الأحداث.</li>
+<li>توقع ترتيب عالمي.</li>
+<li><code>send</code> متزامن كأسلوب افتراضي على السجل.</li>
+<li>حمولة ضخمة فيها كيان ORM.</li>
+<li><code>localhost:9092</code> من حاوية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>أحداث تبقى، أكثر من فريق يستهلك التاريخ، وحجم يبرر تشغيل Kafka.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>طابور مهمة بسيط. Rabbit أو BullMQ أخف تشغيلًا. وبث حالة حاضرة فقط. Redis يكفي.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Kafka</th>
+<th>RabbitMQ</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بعد المعالجة</td>
+<td>السجل يبقى حسب السياسة</td>
+<td>يُزال بعد الإقرار</td>
+</tr>
+<tr>
+<td>مستهلك ثانٍ لكل الأحداث</td>
+<td>مجموعة أخرى</td>
+<td>تبادل وترابط منفصل</td>
+</tr>
+<tr>
+<td>الطلب-الرد</td>
+<td>غير طبيعي</td>
+<td>مدعوم عبر Nest</td>
+</tr>
+<tr>
+<td>التشغيل</td>
+<td>أثقل</td>
+<td>أخف نسبيًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يميز <code>groupId</code> لمجموعتي الفوترة والبحث؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل مجموعة تقرأ الموضوع بشكل مستقل. نفس المعرف يجعلهما يتقاسمان الأقسام كمجموعة واحدة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا المستهلك المتكرر مهم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إعادة قراءة الإزاحة أو إعادة التسليم تعيد الحدث. المعالجة يجب أن تعطي نفس الأثر عند التكرار.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تنتظر صفحة <code>POST</code> استهلاك Kafka قبل الرد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>السجل إشعار بعد الحفظ. الرد يعتمد على كتابة مصدر الحقيقة. انتظار المستهلك يربط زمن الصفحة بزمن المجموعة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة يستخدم النقل؟</li>
+<li>أين الترتيب مضمون؟</li>
+<li>أي مضيف للوسيط في Compose؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Kafka مع <code>Transport.KAFKA</code> سجل أحداث ومجموعات مستهلكين. استعمله عندما يبقى التاريخ ويُعاد قراءته، واجعل المعالجة متكررة، ولا تجعله مسار رد المتصفح.</p>
+<h2>ماذا بعد؟</h2>
+<p>NATS: طلب-رد خفيف على ناقل صُمم للرسائل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Kafka: <a href="https://docs.nestjs.com/microservices/kafka">https://docs.nestjs.com/microservices/kafka</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

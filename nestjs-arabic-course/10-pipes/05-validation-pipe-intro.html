@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مقدمة ValidationPipe</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-validation-pipe-intro.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مقدمة ValidationPipe</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف <code>ValidationPipe</code> المدمج: يفحص معاملًا نوعه صنف عليه زينة <code>class-validator</code>، ويرمي <code>400</code> عند الفشل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>ParseIntPipe</code> يفحص قيمة واحدة. جسم إنشاء فاتورة فيه عدة حقول. فحصها يدويًا في المتحكم يكرر القواعد ويبقيها بعيدة عن شكل البيانات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تكتب صنفًا بحقول مزيّنة. المعامل <code>@Body() invoice: CreateInvoiceDto</code>. أنبوب <code>ValidationPipe</code> يقرأ الزينة ويرفض الجسم الذي يخالفها. خيارات مثل <code>whitelist</code> فصل لاحق. هنا أصغر تشغيل.</p>
+<h2>التعريف التقني</h2>
+<p>الأنبوب مُصدَّر من <code>@nestjs/common</code>. يحتاج الحزمتين:</p>
+<pre><code class="language-bash">npm i class-validator class-transformer
+</code></pre>
+<p>يربط عالميًا:</p>
+<pre><code class="language-ts">app.useGlobalPipes(new ValidationPipe());
+</code></pre>
+<p>أو على معامل: <code>@Body(new ValidationPipe())</code>.</p>
+<p>الصنف يجب أن يكون صنفًا حقيقيًا في وقت التشغيل. الواجهة والنوع العام لا يصدران بيانات وصفية، والاستيراد <code>import type</code> يُمسح. اكتب <code>import { CreateInvoiceDto }</code>.</p>
+<p>عند فشل <code>@IsEmail()</code> مثلًا يكون الرد <code>400</code> و <code>message</code> مصفوفة رسائل. شكل الرسائل وخيارات <code>errorFormat</code> درسهما في فصل التحقق.</p>
+<p>الأنبوب يتخطى الأنواع الأصلية <code>String</code> و <code>Boolean</code> و <code>Number</code> و <code>Array</code> و <code>Object</code> لأن الزينة لا تُعلَّق عليها. لذلك <code>@Param(&#39;id&#39;) id: string</code> لا يُفحص بهذا الأنبوب. استخدم <code>ParseIntPipe</code> لذلك المعامل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">JSON خام → صنف CreateInvoiceDto → قراءة الزينة → نجاح: القيمة تمر
+                                              → فشل: 400 والمعالج لا يعمل
+</code></pre>
+<p>العقد وقت التشغيل هو الصنف، لا واجهة TypeScript.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsInt, IsString, MinLength } from &#39;class-validator&#39;;
+
+export class CreateInvoiceDto {
+  @IsString()
+  @MinLength(3)
+  customer: string;
+
+  @IsInt()
+  cents: number;
+}
+</code></pre>
+<pre><code class="language-ts">import { Body, Controller, Post } from &#39;@nestjs/common&#39;;
+import { CreateInvoiceDto } from &#39;./create-invoice.dto.js&#39;;
+
+@Controller(&#39;invoices&#39;)
+export class InvoicesController {
+  @Post()
+  create(@Body() dto: CreateInvoiceDto): CreateInvoiceDto {
+    return dto;
+  }
+}
+</code></pre>
+<p>مع الأنبوب العام، الجسم <code>{ &quot;customer&quot;: &quot;ن&quot;, &quot;cents&quot;: 100 }</code> يُرفض لأن <code>customer</code> أقصر من 3. الجسم الصالح يصل إلى <code>create</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الزينة من <code>class-validator</code> لا من Nest. الأنبوب يستدعي المكتبة.</li>
+<li><code>@Body()</code> بلا أنبوب محلي يكفي حين يكون <code>ValidationPipe</code> عامًا.</li>
+<li>الدالة ترجع الـ DTO في هذا المثال حتى ترى ماذا مر. الخدمة الحقيقية تُستدعى بعد النجاح فقط.</li>
+<li><code>cents</code> كعدد في JSON يعمل مع <code>@IsInt()</code>. الاستعلام النصي ليس هذا المسار.</li>
+</ul>
+<p>لا تضبط <code>transform: true</code> هنا. تحويل الكائن العادي إلى نسخة الصنف خيار لاحق، والتحقق الافتراضي يستطيع قراءة الزينة عبر <code>plainToInstance</code> داخليًا كما تشرح صفحة الأنابيب في العينة التعليمية. السلوك الذي نثبّته الآن: الفشل <code>400</code> والنجاح يمرر القيمة إلى الدالة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المعالج مُعلَّم بأن نوع الجسم <code>CreateInvoiceDto</code>.</li>
+<li><code>emitDecoratorMetadata</code> مع <code>reflect-metadata</code> يضع <code>design:type</code> وبيانات الزينة على الصنف. مشاريع Nest CLI تفعّل ذلك.</li>
+<li>الأنبوب يرى <code>metatype</code> صنفًا ليس من الأنواع الأصلية.</li>
+<li>يستدعي التحقق. مصفوفة أخطاء غير فارغة تصبح <code>BadRequestException</code>.</li>
+<li>الدالة لا تُستدعى عند الفشل.</li>
+</ol>
+<p>حقل زائد مثل <code>role</code> يمر في هذا الإعداد لأن <code>whitelist</code> مطفأ. لا تعتمد على هذا الدرس لمنع الحقول الزائدة.</p>
+<h2>مثال عملي</h2>
+<p>عميل يرسل <code>{ &quot;customer&quot;: &quot;دار النشر&quot;, &quot;cents&quot;: 2500 }</code>. الأنبوب ينجح. <code>InvoicesService.create</code> تستلم الكائن. عميل آخر يرسل <code>cents</code> كنص <code>&quot;2500&quot;</code> من نموذج خاطئ. <code>@IsInt()</code> يرفض قبل أن تجمع الخدمة قروشًا. رسالة <code>400</code> تكفي لإصلاح النموذج. تفاصيل شكل الرسالة تُضبط لاحقًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تعريف العقد كـ <code>interface</code> ثم الدهشة أن كل جسم يمر. الأنبوب لا يرى الواجهة.</li>
+<li><code>import type { CreateInvoiceDto }</code> في ملف المتحكم. الصنف يختفي وقت التشغيل.</li>
+<li>توقع فحص <code>@Param(&#39;id&#39;) id: string</code> بهذا الأنبوب. النوع الأصلي يُتخطى.</li>
+<li>جمع كل خيارات الإنتاج في أول ربط. المقدمة تثبت الربط والرفض فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على جسم أو كائن استعلام أو معاملات مسار ممثلة بصنف فيه زينة <code>class-validator</code>، غالبًا ربطًا عامًا واحدًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لعدد في مسار واحد حيث <code>ParseIntPipe</code> أصرح، ولمخطط Zod حيث الأنبوب الآخر في فصل التحقق. ولا تغلقه على Middleware.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>ParseIntPipe</code></th>
+<th><code>ValidationPipe</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>موضوعه</td>
+<td>قيمة واحدة</td>
+<td>صنف بحقول</td>
+</tr>
+<tr>
+<td>القاعدة</td>
+<td>مدمجة</td>
+<td>زينة <code>class-validator</code></td>
+</tr>
+<tr>
+<td>الربط الشائع</td>
+<td>على المعامل</td>
+<td>عام على التطبيق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أين تُستورد <code>ValidationPipe</code>، وما الحزمتان اللتان تثبّتهما؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/common</code>. الحزمتان <code>class-validator</code> و <code>class-transformer</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يمر <code>@Query(&#39;q&#39;) q: string</code> بلا فحص رغم وجود أنبوب عام؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>metatype</code> هو <code>String</code>، والأنبوب يتخطى الأنواع الأصلية. ضع القاعدة على صنف، أو استخدم أنبوب تحليل إن كان الشكل عددًا أو منطقًا.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>زميل كتب <code>export interface CreateInvoiceDto</code> ووضع الزينة على حقولها. ماذا يصل إلى <code>create</code> عند إرسال <code>cents</code> كنص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الواجهة تُمسح ولا تحمل زينة وقت التشغيل. الأنبوب لا يفحص، والنص يصل إلى الدالة. العقد يجب أن يكون <code>class</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يحدث للمعالج حين تفشل الزينة؟</li>
+<li>لماذا لا تصلح <code>interface</code> كـ DTO لهذا الأنبوب؟</li>
+<li>ما أثر <code>import type</code> على الصنف؟</li>
+<li>أي خيار نؤجله إلى فصل التحقق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ValidationPipe</code> يفحص صنفًا مزينًا ويرفض بـ <code>400</code> قبل المتحكم. الأنواع الأصلية تُتخطى. الخيارات التي تحذف حقولًا أو تحوّل النسخ أو تغيّر شكل الخطأ تأتي في فصلها، بعد أن يوجد عقد DTO أوضح.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يكتب أنبوبًا خاصًا بنطاق الفواتير يطبّق <code>PipeTransform</code> من غير إعادة اختراع الأنابيب المدمجة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

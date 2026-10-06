@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Filtering</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-filtering.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Filtering</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>بناء <code>where</code> من حقول استعلام مسموحة فقط، مع نطاق يفرضه الخادم ولا يفتحه العميل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فصل المقالات قبل <code>published</code> كنص. تعميم ذلك بقبول <code>filter</code> كـ JSON يتحول إلى <code>where</code> يتيح طلب <code>passwordHash</code> أو عمودًا بلا فهرس أو شرطًا ينفي الملكية. <code>&quot;false&quot;</code> مع تحويل منطقي ساذج يصبح <code>true</code> لأن النص غير الفارغ حقيقة في JavaScript. ذلك الفخ ظهر في الفصل 19 ويبقى قائمًا في أي DTO مشترك.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل مرشح حقل على DTO بمزخرفات، لا كائن حر. الخدمة تنسخ الحقل إلى <code>where</code> إن وُجد. ما لا تعرفه DTO يرفضه <code>forbidNonWhitelisted</code>. نطاق الرؤية، مثل «المنشور أو ما أملكه»، يُضاف في الخدمة من <code>@CurrentUser()</code> ولا يُقرأ من الاستعلام كعمود خام.</p>
+<h2>التعريف التقني</h2>
+<p>مرشحات المقالات التي يعرفها العقد:</p>
+<pre><code class="language-ts">published?: boolean;
+authorId?: number;
+</code></pre>
+<p>تحليل المنطقي كما ثُبّت للقائمة الأولى: <code>&quot;true&quot;</code> و <code>&quot;false&quot;</code> فقط، وأي قيمة سواهما <code>400</code>. لا <code>enableImplicitConversion</code> على هذا الحقل.</p>
+<pre><code class="language-ts">function andWhere&lt;T extends Record&lt;string, unknown&gt;&gt;(
+  base: T,
+  extra: Record&lt;string, unknown&gt;,
+) {
+  return { ...base, ...extra };
+}
+</code></pre>
+<p><code>base</code> نطاق الخادم. <code>extra</code> ما سمح به الاستعلام بعد التحقق. للزائر:</p>
+<pre><code class="language-ts">const base = { published: true };
+</code></pre>
+<p>للمستخدم الداخل الذي يطلب مسوداته، الخدمة تستطيع توسيع النطاق إلى مقالات يملكها حتى لو <code>published</code> كاذبة، بشرط <code>authorId</code> من الجلسة لا من طلب يستطيع تزويره لشخص آخر. إن سمح المنتج بـ <code>authorId</code> في الاستعلام للوحة المحررين فقط، فالسياسة تسبق الدمج. مرشح الاستعلام لا يلغي <code>@Can</code>.</p>
+<p>التعليقات مرشحها الثابت <code>postId</code> من المسار، كما في مورد التعليقات. لا حقل <code>postId</code> في الاستعلام يغيّر المسار.</p>
+<p>القائمة الفارغة بعد مرشح ضيق <code>200</code> و <code>total: 0</code>. المرشح والعد يستخدمان الكائن نفسه.</p>
+<p>Prisma <code>findMany({ where })</code> يربط القيم كمعاملات. لا تبنِ المرشح بلصق SQL. درس الحقن ما زال ساريًا إن كتب أحدهم بحثًا خامًا.</p>
+<p>بحث <code>q</code> على العنوان، إن أضفته، يذهب إلى <code>contains</code> مع حد طول في DTO، لا إلى <code>OR</code> يفتح كل الأعمدة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">استعلام مسموح -&gt; extra
+جلسة وسياسة -&gt; base
+where = base ثم extra
+JSON حر لا يدخل Prisma
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const where = {
+  ...visibility(user),
+  ...(query.authorId !== undefined ? { authorId: query.authorId } : {}),
+};
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>visibility</code> دالة واحدة تختبرها بلا HTTP. للزائر تعيد <code>{ published: true }</code>. إن مرّر الزائر <code>published=false</code> تقرر المنتج: إما <code>400</code> لأنه خارج النطاق، أو تجاهل القيمة لأن <code>base</code> يفرض <code>true</code>. الأصرح رفض التناقض بـ <code>400</code> حتى لا يظن العميل أنه رأى المسودات. المحرر الذي يطلب مسوداته لا يرسل <code>published=false</code> لتجاوز ملكية غيره. <code>authorId</code> في <code>extra</code> يُقبل بعد أن تتحقق السياسة أنه يطلب نفسه أو أنه يملك صلاحية اللوحة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الأنبوب يحوّل الاستعلام إلى DTO. الخدمة تبني كائنًا عاديًا. Prisma يولّد <code>AND</code> بين الحقول. فهرس يطابق الحقول الشائعة يجعل الخطة رخيصة، وذلك درس الأثر. شرط غير مفهرس على جدول كبير يمسح الصفوف حتى لو كان العقد صحيحًا.</p>
+<p>حقل زائد في الاستعلام يسقط أو يُرفض قبل هذه الدالة. لذلك لا يصل <code>passwordHash</code> إلى <code>where</code>.</p>
+<h2>مثال عملي</h2>
+<p>اختبار زائر مع <code>published=false</code> يتوقع <code>400</code> أو قائمة منشورات فقط، حسب القرار الذي تكتبه مرة في <code>visibility</code>. اختبار محرر يرى مسودته ولا يرى مسودة غيره حتى مع <code>authorId</code> لغيره. اختبار <code>&quot;false&quot;</code> يتوقع <code>false</code> لا <code>true</code>. <code>count</code> و <code>findMany</code> في الاختبار يستقبلان الكائن نفسه. مورد التعليقات يتجاهل أي <code>published</code> لأن الحقل غير موجود على DTO التعليق فيرفضه الأنبوب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>JSON.parse</code> للاستعلام داخل <code>where</code>.</li>
+<li><code>Boolean(&quot;false&quot;)</code> أو تحويل ضمني.</li>
+<li>مرشح عميل يستبدل شرط الملكية.</li>
+<li><code>postId</code> من الاستعلام يختلف عن المسار.</li>
+<li>عدّ بلا المرشح.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل قائمة قابلة للتضييق بحقول تعرفها وتقدر فهرستها.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كواجهة عامة لكل أعمدة القاعدة. التقرير الحر أداة داخلية بعقد مختلف وصلاحية أضيق، لا <code>GET</code> عام. ولا تستبدل السياسة بمرشح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>حقول DTO</th>
+<th><code>where</code> من JSON</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الأنبوب يرفض الزائد</td>
+<td>العميل يختار الأعمدة</td>
+</tr>
+<tr>
+<td>النطاق في الخدمة</td>
+<td>النطاق قابل للاستبدال</td>
+</tr>
+<tr>
+<td><code>&quot;false&quot;</code> تُحلَّل صراحة</td>
+<td>التحويل الضمني يخونها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُفرض «الزائر يرى المنشور فقط»؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>where</code> الأساسي داخل الخدمة من نوع المستخدم، لا كثقة في <code>published</code> القادم من الاستعلام وحده.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يعيد نص الاستعلام <code>published=false</code> مع <code>Boolean(value)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>true</code> لأن النص غير فارغ. الحل مقارنة صريحة بـ <code>&quot;true&quot;</code> و <code>&quot;false&quot;</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>محرر يمرّر <code>authorId</code> لمؤلف آخر. أين يُرفض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في السياسة أو في <code>visibility</code> قبل الدمج: إما <code>403</code> أو إجبار <code>authorId</code> من الجلسة. المرشح لا يوسّع الملكية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا لا يُقبل كائن <code>where</code> خام؟</li>
+<li>ماذا يشارك <code>count</code> مع <code>findMany</code>؟</li>
+<li>من أين يأتي <code>postId</code> لتعليقات المقال؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المرشح حقل مسموح يُدمَج فوق نطاق الخادم. التحويل المنطقي صريح. السياسة لا تُلغى بمعامل استعلام.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-sorting.html">Sorting</a> مفاتيح ترتيب من قائمة ثابتة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Validation: <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

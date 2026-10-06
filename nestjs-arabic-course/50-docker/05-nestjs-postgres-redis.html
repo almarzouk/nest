@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NestJS و PostgreSQL و Redis</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-nestjs-postgres-redis.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>NestJS و PostgreSQL و Redis</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>جمع الصورة متعددة المراحل مع Compose بحيث يتصل Nest بـ Postgres و Redis بأسماء الخدمات، ويغلق العملاء عند إيقاف الحاوية.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ملف Compose صحيح مع كود ما زال يثبت <code>localhost</code>، أو صورة تشغّل <code>start:dev</code>، أو إيقاف Docker يقطع Node قبل <code>$disconnect</code>. هذا الدرس يربط الإعداد والإقلاع والإيقاف بالعناوين داخل الشبكة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>DATABASE_URL</code> مضيفه <code>postgres</code>. <code>REDIS_URL</code> مضيفه <code>redis</code>. <code>ConfigModule</code> يقرأهما عند الإقلاع. <code>PrismaService</code> على <code>onModuleInit</code> يتصل وعلى <code>onModuleDestroy</code> يقطع. <code>main.ts</code> يستدعي <code>enableShutdownHooks()</code> حتى يمر <code>SIGTERM</code> من Docker إلى الخطافات. الأمر في الصورة <code>node dist/main.js</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  await app.listen(process.env.PORT ?? 3000, &#39;0.0.0.0&#39;);
+}
+await bootstrap();
+</code></pre>
+<p><code>0.0.0.0</code> حتى يصل نشر المنفذ <code>3000:3000</code> إلى العملية.</p>
+<pre><code class="language-ts">DATABASE_URL: postgresql://app:app@postgres:5432/app
+REDIS_URL: redis://redis:6379
+</code></pre>
+<p>عميل Redis في مصنع أو في <code>onModuleInit</code> يستعمل <code>REDIS_URL</code> كما هو. لا تستبدل المضيف في الكود بشرط <code>if (docker)</code>.</p>
+<p>الهجرة: <code>npx prisma migrate deploy</code> خطوة قبل تبديل المرور أو حاوية مهمة تنتهي، لا سباق كل نسخة <code>api</code> عند كل بدء. في التطوير يمكن تشغيلها مرة من جهازك نحو منفذ منشور لـ Postgres إن نشرته محليًا، أو مهمة Compose لمرة واحدة.</p>
+<p>الصحة لاحقًا تفحص القاعدة. هنا يكفي أن فشل <code>$connect</code> يمنع الاستماع لأن الوعد في <code>onModuleInit</code> يرفض الإقلاع.</p>
+<p>Node في الصورة 22.14 أو أي وسم يحقق 22.12+ أو 20.19+. لا تشغّل الصورة بقاعدة Node أقدم من حد Nest.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">SIGTERM من Docker
+  -&gt; enableShutdownHooks
+  -&gt; onModuleDestroy: $disconnect و redis.quit
+  -&gt; العملية تخرج
+الإقلاع: مضيف postgres و redis من البيئة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p><code>PrismaService</code> من فصل دورة الحياة بلا تغيير سوى أن العنوان يأتي من البيئة التي وضعها Compose. أضف عميل ذاكرة:</p>
+<pre><code class="language-ts">import { Injectable, OnModuleDestroy, OnModuleInit } from &#39;@nestjs/common&#39;;
+import { ConfigService } from &#39;@nestjs/config&#39;;
+
+@Injectable()
+export class RedisService implements OnModuleInit, OnModuleDestroy {
+  constructor(private readonly config: ConfigService) {}
+
+  async onModuleInit(): Promise&lt;void&gt; {
+    const url = this.config.getOrThrow&lt;string&gt;(&#39;REDIS_URL&#39;);
+    await this.connect(url);
+  }
+
+  async onModuleDestroy(): Promise&lt;void&gt; {
+    await this.quit();
+  }
+
+  private async connect(url: string): Promise&lt;void&gt; {
+    void url;
+  }
+
+  private async quit(): Promise&lt;void&gt; {
+    return undefined;
+  }
+}
+</code></pre>
+<p>استبدل <code>connect</code> بمكتبة <code>ioredis</code> التي تستقبل <code>url</code> كاملًا. لا تمرر <code>host: &#39;localhost&#39;</code> بجانب العنوان.</p>
+<h2>شرح المثال</h2>
+<p>الخدمتان Singleton. الإقلاع ينتظر الاتصالين قبل <code>listen</code> إن كانا في وحدات تُهيأ قبل الاستماع. الإيقاف من <code>docker compose stop</code> يرسل <code>SIGTERM</code>، والخطاف يحرر المقابس حتى لا تقتل المهلة العملية في منتصف الكتابة. من غير <code>enableShutdownHooks</code> Docker ينتظر ثم يرسل <code>SIGKILL</code> والعملاء يُقطعون.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>Compose يمرر البيئة إلى العملية.</li>
+<li><code>ConfigService</code> يقرأ <code>DATABASE_URL</code> بعد <code>@</code> حتى المضيف <code>postgres</code>.</li>
+<li>DNS للشبكة يحل الاسم إلى عنوان الحاوية.</li>
+<li><code>$connect</code> يفتح مجمعًا نحو <code>5432</code> داخل شبكة Compose لا عبر منفذ الضيف.</li>
+<li>عند الإيقاف تُستدعى <code>onModuleDestroy</code> بالترتيب الموثق.</li>
+<li>إن بقي مؤقت بلا <code>clearInterval</code> قد لا تخرج العملية قبل <code>SIGKILL</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تحقق من داخل الحاوية لا من جهازك فقط:</p>
+<pre><code class="language-text">docker compose exec api node -e &quot;console.log(process.env.DATABASE_URL)&quot;
+</code></pre>
+<p>يجب أن ترى المضيف <code>postgres</code>. ثم أوقف <code>postgres</code> وتأكد أن نسخة جديدة من <code>api</code> لا تفتح المنفذ وهي تتصل بفراغ. أعد القاعدة و <code>up</code> مرة أخرى. <code>docker compose stop api</code> ثم راجع أن سجل الإيقاف ظهر من <code>onModuleDestroy</code> إن أضفت سطر سجل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>مضيف <code>localhost</code> في <code>DATABASE_URL</code> داخل Compose.</li>
+<li><code>start:dev</code> في <code>command</code>.</li>
+<li>هجرة متوازية من كل نسخة.</li>
+<li>نسيان <code>enableShutdownHooks</code> ثم مهلة قتل عشر ثوانٍ.</li>
+<li>نشر <code>5432</code> واعتماد التطبيق على <code>localhost:5432</code> من داخل الحاوية رغم النشر. النشر للضيف فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما شغّلت المتجر بـ Compose مع القاعدة والذاكرة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضع كلمة سر التعلم <code>app</code> في خادم عام. ولا تشغّل Redis الناقل و Redis الكاش بلا قصد على نفس الاستخدام إن كان الفصل أوضح لحملك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المتغير</th>
+<th>المضيف داخل Compose</th>
+<th>على جهازك بلا Docker</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>DATABASE_URL</code></td>
+<td><code>postgres</code></td>
+<td><code>127.0.0.1</code></td>
+</tr>
+<tr>
+<td><code>REDIS_URL</code></td>
+<td><code>redis</code></td>
+<td><code>127.0.0.1</code></td>
+</tr>
+<tr>
+<td>أمر التشغيل</td>
+<td><code>node dist/main.js</code></td>
+<td><code>start:dev</code> للتطوير</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>listen</code> على <code>0.0.0.0</code> مع نشر المنفذ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تقبل العملية الاتصالات القادمة عبر واجهة الحاوية التي ينشرها Docker، لا على واجهة داخلية فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يرسل <code>docker compose stop</code> وكيف يصل إلى <code>$disconnect</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>SIGTERM</code>. مع <code>enableShutdownHooks</code> تدخل سلسلة الإيقاف ومنها <code>onModuleDestroy</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تشغّل <code>migrate deploy</code> في <code>CMD</code> نفسه مع خادم له عدة نسخ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>النسخ تتسابق على الهجرة. نفّذها خطوة واحدة قبل توجيه المرور، ثم ابدأ النسخ على مخطط مستقر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُكتب اسم المضيف؟</li>
+<li>ماذا يغلق <code>onModuleDestroy</code> هنا؟</li>
+<li>أي أمر يُمنع كـ <code>command</code> للإنتاج؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Nest في Compose يقرأ عناوين <code>postgres</code> و <code>redis</code> من البيئة، يستمع على <code>0.0.0.0</code>، ويغلق العملاء عندما تصل إشارة Docker بفضل خطافات الإيقاف. الصورة تشغّل <code>dist</code> بإصدار Node المطلوب.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الملفات الثلاثة معًا، ثم الإنتاج على الخادم.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>Docker — Compose: <a href="https://docs.docker.com/compose/">https://docs.docker.com/compose/</a></li>
+<li>NestJS — Lifecycle events: <a href="https://docs.nestjs.com/fundamentals/lifecycle-events">https://docs.nestjs.com/fundamentals/lifecycle-events</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

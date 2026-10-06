@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>المكتبة على PostgreSQL و Prisma فقط. TypeORM و Drizzle لا يُسجَّلان في هذا المثال.</p>
+<h2>مثال 1 — عنوان من الإعداد</h2>
+<p><code>.env</code> المحلي فيه <code>DATABASE_URL</code> ولا يُرفع. المخطط يرفض الغياب. <code>PrismaService</code> تقرأ <code>getOrThrow</code> وتبني <code>PrismaPg</code>.</p>
+<pre><code class="language-ts">const adapter = new PrismaPg({
+  connectionString: config.getOrThrow&lt;string&gt;(&quot;DATABASE_URL&quot;),
+});
+super({ adapter });
+</code></pre>
+<p><code>onModuleInit</code> يستدعي <code>$connect</code>، و <code>main.ts</code> يستدعي <code>enableShutdownHooks</code>.</p>
+<h2>مثال 2 — مخطط ثم ترحيل</h2>
+<pre><code class="language-prisma">model Book {
+  id        Int     @id @default(autoincrement())
+  title     String
+  published Boolean @default(false)
+  member    Member? @relation(fields: [memberId], references: [id])
+  memberId  Int?
+}
+
+model Member {
+  id    Int    @id @default(autoincrement())
+  email String @unique
+  books Book[]
+}
+</code></pre>
+<pre><code class="language-bash">npx prisma migrate dev --name init
+npx prisma generate
+</code></pre>
+<p>الإنتاج لاحقًا: <code>npx prisma migrate deploy</code> على الملفات المرفوعة.</p>
+<h2>مثال 3 — إعارة في معاملة</h2>
+<pre><code class="language-ts">return this.prisma.$transaction(async (tx) =&gt; {
+  const book = await tx.book.findUnique({ where: { id: bookId } });
+  if (!book || book.memberId !== null) {
+    throw new Error(&quot;Book is not available&quot;);
+  }
+  await tx.loan.create({ data: { bookId, memberId } });
+  return tx.book.update({ where: { id: bookId }, data: { memberId } });
+});
+</code></pre>
+<p>نموذج <code>Loan</code> يُضاف بترحيل مستقل قبل هذا الاستدعاء. كل الأثر على <code>tx</code>.</p>
+<h2>مثال 4 — الوحدة</h2>
+<p><code>PrismaModule</code> تصدّر <code>PrismaService</code>. <code>BooksModule</code> و <code>LoansModule</code> تستوردانها. المتحكم لا يستدعي <code>prisma.book</code> بنفسه.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>أداة واحدة في <code>AppModule</code>.</li>
+<li><code>synchronize</code> غير مستخدم لأن المسار Prisma.</li>
+<li>مجلد <code>migrations</code> مرفوع، و <code>.env</code> والعميل المولَّد غير مرفوعين.</li>
+<li>اختبار الوحدة يمرّر مزيفًا لـ <code>PrismaService</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

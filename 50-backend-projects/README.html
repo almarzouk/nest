@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>خمسون مشروع Backend</title>
+<link rel="stylesheet" href="../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>خمسون مشروع Backend</h1>
+<p>مسار بناء من الصفر. كل مجلد فكرة مختلفة، والترتيب من أبسط HTTP حتى تشغيل إنتاجي. الشرح بالعربية، وأسماء Nest والأوامر تبقى بالإنجليزية.</p>
+<p>هذا المجلد لا يحتوي تطبيقات جاهزة. كل مشروع تبدأه أنت بأمر <code>nest new</code> في مجلد عمل خارج هذا الدليل، والدليل يمشي معك خطوة خطوة. عندما تريد البناء الفعلي، اطلب المشروع برقمه.</p>
+<h2>القواعد</h2>
+<ul>
+<li>Backend فقط. لا واجهة، ولا CSS، ولا تطبيق جوال.</li>
+<li>لا تبدأ بالمشروع 30 إن لم يعمل المشروع 11. المهارات تتراكم.</li>
+<li>أعد استخدام الفكرة، ولا تنسخ مجلد المشروع السابق وتغيّر الأسماء فقط.</li>
+<li>الرمز <code>201</code> للإنشاء، و <code>200</code> للقائمة حتى لو كانت فارغة.</li>
+<li>الأسرار في البيئة لا في الكود، من المشروع الذي يصل إلى الحسابات فصاعدًا.</li>
+<li>NestJS 12 كما في الدورة، و ESM مع لاحقة <code>.js</code> في استيراد TypeScript.</li>
+</ul>
+<h2>الترتيب</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>المشروع</th>
+<th>المستوى</th>
+<th>التركيز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>01</td>
+<td><a href="./01-echo-api/README.html">صدى الطلب</a></td>
+<td>مبتدئ</td>
+<td>أول Controller</td>
+</tr>
+<tr>
+<td>02</td>
+<td><a href="./02-notes-memory/README.html">ملاحظات في الذاكرة</a></td>
+<td>مبتدئ</td>
+<td>CRUD بلا قاعدة</td>
+</tr>
+<tr>
+<td>03</td>
+<td><a href="./03-task-board/README.html">لوحة مهام</a></td>
+<td>مبتدئ</td>
+<td>حالة مسموحة</td>
+</tr>
+<tr>
+<td>04</td>
+<td><a href="./04-quote-jar/README.html">برطمان اقتباسات</a></td>
+<td>مبتدئ</td>
+<td>قراءة عشوائية</td>
+</tr>
+<tr>
+<td>05</td>
+<td><a href="./05-visit-counter/README.html">عداد الزيارات</a></td>
+<td>مبتدئ</td>
+<td>مورد واحد</td>
+</tr>
+<tr>
+<td>06</td>
+<td><a href="./06-address-book/README.html">دفتر عناوين</a></td>
+<td>مبتدئ</td>
+<td>تفرد وتعارض</td>
+</tr>
+<tr>
+<td>07</td>
+<td><a href="./07-study-cards/README.html">بطاقات دراسة</a></td>
+<td>مبتدئ</td>
+<td>موعد الاستحقاق</td>
+</tr>
+<tr>
+<td>08</td>
+<td><a href="./08-link-shortener/README.html">مختصر روابط</a></td>
+<td>مبتدئ</td>
+<td>تحويل 302</td>
+</tr>
+<tr>
+<td>09</td>
+<td><a href="./09-expense-ledger/README.html">دفتر مصروفات</a></td>
+<td>مبتدئ</td>
+<td>أرقام صحيحة</td>
+</tr>
+<tr>
+<td>10</td>
+<td><a href="./10-habit-tracker/README.html">متتبع عادات</a></td>
+<td>مبتدئ</td>
+<td>قيد يومي</td>
+</tr>
+<tr>
+<td>11</td>
+<td><a href="./11-article-blog/README.html">مقالات بتحقق</a></td>
+<td>متوسط</td>
+<td>DTO و ValidationPipe</td>
+</tr>
+<tr>
+<td>12</td>
+<td><a href="./12-article-comments/README.html">تعليقات المقال</a></td>
+<td>متوسط</td>
+<td>مورد فرعي</td>
+</tr>
+<tr>
+<td>13</td>
+<td><a href="./13-tag-catalog/README.html">وسوم المقالات</a></td>
+<td>متوسط</td>
+<td>علاقة متعدد لمتعدد</td>
+</tr>
+<tr>
+<td>14</td>
+<td><a href="./14-library-catalog/README.html">فهرس كتب ومؤلفين</a></td>
+<td>متوسط</td>
+<td>وحدتان</td>
+</tr>
+<tr>
+<td>15</td>
+<td><a href="./15-recipe-box/README.html">صندوق وصفات</a></td>
+<td>متوسط</td>
+<td>تحجيم الكميات</td>
+</tr>
+<tr>
+<td>16</td>
+<td><a href="./16-poll-booth/README.html">غرفة تصويت</a></td>
+<td>متوسط</td>
+<td>صوت واحد</td>
+</tr>
+<tr>
+<td>17</td>
+<td><a href="./17-room-booking/README.html">حجز غرف</a></td>
+<td>متوسط</td>
+<td>تعارض الوقت</td>
+</tr>
+<tr>
+<td>18</td>
+<td><a href="./18-support-desk/README.html">مكتب تذاكر</a></td>
+<td>متوسط</td>
+<td>آلة حالات</td>
+</tr>
+<tr>
+<td>19</td>
+<td><a href="./19-product-catalog/README.html">كتالوج بمنتجات مرقمة</a></td>
+<td>متوسط</td>
+<td>ترقيم وتصفية وفرز</td>
+</tr>
+<tr>
+<td>20</td>
+<td><a href="./20-shopping-cart/README.html">سلة لا تثق بالسعر</a></td>
+<td>متوسط</td>
+<td>حساب على الخادم</td>
+</tr>
+<tr>
+<td>21</td>
+<td><a href="./21-accounts/README.html">حسابات وتجزئة</a></td>
+<td>متوسط</td>
+<td>تسجيل ودخول</td>
+</tr>
+<tr>
+<td>22</td>
+<td><a href="./22-profile/README.html">الملف الحالي</a></td>
+<td>متوسط</td>
+<td>المستخدم الحالي</td>
+</tr>
+<tr>
+<td>23</td>
+<td><a href="./23-editorial-roles/README.html">أدوار التحرير</a></td>
+<td>متوسط</td>
+<td>تفويض بسيط</td>
+</tr>
+<tr>
+<td>24</td>
+<td><a href="./24-cover-upload/README.html">غلاف المقال</a></td>
+<td>متوسط</td>
+<td>رفع ملف</td>
+</tr>
+<tr>
+<td>25</td>
+<td><a href="./25-partner-api-keys/README.html">مفاتيح الشركاء</a></td>
+<td>متوسط</td>
+<td>مفتاح API</td>
+</tr>
+<tr>
+<td>26</td>
+<td><a href="./26-login-shield/README.html">درع الدخول</a></td>
+<td>متوسط</td>
+<td>حد المعدل</td>
+</tr>
+<tr>
+<td>27</td>
+<td><a href="./27-catalog-cache/README.html">كتالوج مخزّن مؤقتًا</a></td>
+<td>متوسط</td>
+<td>TTL وإبطال</td>
+</tr>
+<tr>
+<td>28</td>
+<td><a href="./28-mail-queue/README.html">طابور رسائل الترحيب</a></td>
+<td>متوسط</td>
+<td>BullMQ</td>
+</tr>
+<tr>
+<td>29</td>
+<td><a href="./29-domain-events/README.html">حدث نشر المقال</a></td>
+<td>متوسط</td>
+<td>EventEmitter</td>
+</tr>
+<tr>
+<td>30</td>
+<td><a href="./30-audit-trail/README.html">سجل تدقيق</a></td>
+<td>متوسط</td>
+<td>من غيّر ماذا</td>
+</tr>
+<tr>
+<td>31</td>
+<td><a href="./31-shop-tenants/README.html">ملاحظات لكل متجر</a></td>
+<td>متقدم</td>
+<td>مستأجر من ترويسة</td>
+</tr>
+<tr>
+<td>32</td>
+<td><a href="./32-notes-versioning/README.html">إصداران للملاحظات</a></td>
+<td>متقدم</td>
+<td>إصدار URI</td>
+</tr>
+<tr>
+<td>33</td>
+<td><a href="./33-public-docs/README.html">توثيق الكتالوج</a></td>
+<td>متقدم</td>
+<td>OpenAPI</td>
+</tr>
+<tr>
+<td>34</td>
+<td><a href="./34-tested-tasks/README.html">مهام مُختبرة</a></td>
+<td>متقدم</td>
+<td>وحدة ورحلة</td>
+</tr>
+<tr>
+<td>35</td>
+<td><a href="./35-ops-health/README.html">صحة وإيقاف</a></td>
+<td>متقدم</td>
+<td>live و ready</td>
+</tr>
+<tr>
+<td>36</td>
+<td><a href="./36-order-stock/README.html">طلب يخصم المخزون</a></td>
+<td>متقدم</td>
+<td>معاملة</td>
+</tr>
+<tr>
+<td>37</td>
+<td><a href="./37-checkout-idempotency/README.html">دفع وهمي بلا تكرار</a></td>
+<td>متقدم</td>
+<td>Idempotency-Key</td>
+</tr>
+<tr>
+<td>38</td>
+<td><a href="./38-outbound-webhooks/README.html">ويب هوك صادر</a></td>
+<td>متقدم</td>
+<td>توقيع وإعادة</td>
+</tr>
+<tr>
+<td>39</td>
+<td><a href="./39-inbound-webhooks/README.html">ويب هوك وارد</a></td>
+<td>متقدم</td>
+<td>الجسم الخام</td>
+</tr>
+<tr>
+<td>40</td>
+<td><a href="./40-order-live/README.html">حالة الطلب لحظة بلحظة</a></td>
+<td>متقدم</td>
+<td>WebSocket</td>
+</tr>
+<tr>
+<td>41</td>
+<td><a href="./41-book-search/README.html">بحث الكتب</a></td>
+<td>متقدم</td>
+<td>استعلام وفهرس</td>
+</tr>
+<tr>
+<td>42</td>
+<td><a href="./42-sales-report/README.html">تقرير مبيعات</a></td>
+<td>متقدم</td>
+<td>قراءة منفصلة</td>
+</tr>
+<tr>
+<td>43</td>
+<td><a href="./43-tenant-pool/README.html">عزل المستأجر في كل استعلام</a></td>
+<td>متقدم</td>
+<td>عمود tenant</td>
+</tr>
+<tr>
+<td>44</td>
+<td><a href="./44-organizations/README.html">منظمات ودعوات</a></td>
+<td>إنتاج</td>
+<td>عضوية</td>
+</tr>
+<tr>
+<td>45</td>
+<td><a href="./45-subscriptions/README.html">خطط واشتراك</a></td>
+<td>إنتاج</td>
+<td>الحالة من الحدث</td>
+</tr>
+<tr>
+<td>46</td>
+<td><a href="./46-outbox-publisher/README.html">صندوق صادر</a></td>
+<td>إنتاج</td>
+<td>كتابة مزدوجة آمنة</td>
+</tr>
+<tr>
+<td>47</td>
+<td><a href="./47-delivery-dispatch/README.html">توزيع التوصيل</a></td>
+<td>إنتاج</td>
+<td>رسالتان بين وحدتين</td>
+</tr>
+<tr>
+<td>48</td>
+<td><a href="./48-request-trace/README.html">أثر الطلب</a></td>
+<td>إنتاج</td>
+<td>معرّف ارتباط</td>
+</tr>
+<tr>
+<td>49</td>
+<td><a href="./49-library-graphql/README.html">فهرس GraphQL</a></td>
+<td>إنتاج</td>
+<td>مخطط وN+1</td>
+</tr>
+<tr>
+<td>50</td>
+<td><a href="./50-library-platform/README.html">منصة المكتبة للإنتاج</a></td>
+<td>إنتاج</td>
+<td>صورة و Compose</td>
+</tr>
+</tbody></table>
+<h2>المستويات</h2>
+<ol>
+<li><strong>01–10</strong> ذاكرة ووحدة واحدة. تتعلم المسار والخدمة والأخطاء.</li>
+<li><strong>11–20</strong> حدود أوضح: DTO، موارد فرعية، تعارض، ترقيم، سلة لا تثق بالعميل.</li>
+<li><strong>21–35</strong> هوية، ملفات، مفاتيح، حد معدل، ذاكرة مؤقتة، طابور، أحداث، تدقيق، إصدار، توثيق، اختبار، صحة.</li>
+<li><strong>36–50</strong> PostgreSQL، معاملات، تكرار، ويب هوك، WebSocket، مستأجرون، صندوق صادر، Docker.</li>
+</ol>
+<p>الدورة المرافقة: <a href="../nestjs-arabic-course/README.html">nestjs-arabic-course</a>.</p>
+<h2>التقدم</h2>
+<p>علّم المربع في <a href="./PROGRESS.html">PROGRESS.md</a> عندما يعمل العقد عندك، لا عندما تقرأ العنوان.</p>
+
+</article>
+</main>
+<script src="../assets/learn.js"></script>
+</body>
+</html>

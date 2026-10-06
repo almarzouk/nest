@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متى نستخدمه ومتى لا</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-when-to-use-it.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متى نستخدمه ومتى لا</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار Middleware حين يكون العمل عن الطلب قبل اختيار المعالج، وترك القرارات التي تحتاج الدالة المختارة للطبقات اللاحقة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد أن صارت الكتابة سهلة، يميل الفريق لوضع التحقق والصلاحية وتغليف JSON في <code>use</code> لأن التوقيع يسمح بأي كود. المكان الخطأ يعمل مرة ويصعب مرتين.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Middleware للطلب كظرف: تتبع، ختم، قياس بداية، أو دالة Express قائمة. قرار «هل تمضي هذه الدالة» للـ Guard. شكل المعامل للـ Pipe. شكل القيمة الراجعة للـ Interceptor.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة الرسمية ترسم الحد: Middleware مناسب لمهمة لا ترتبط بسياق مسار بعينه، مثل التحقق من رمز وإلصاق <code>request.user</code>، لأن ذلك لا يحتاج معرفة أي دالة ستعمل. وتقول إن Middleware أعمى عن المعالج التالي. Guard يرى <code>ExecutionContext</code> فيعرف ماذا سيُنفَّذ.</p>
+<p>في هذه الدورة، بناء تسجيل الدخول لاحق. الحد الذي نثبّته الآن: قرار يعتمد على metadata المسار، مثل دور مكتوب على الدالة، لا يُكتب في <code>use</code>. إلصاق هوية على الطلب يمكن أن يعيش هنا حين تدرس المصادقة، لأنه لا يقرأ زينة الدالة. حتى ذلك الفصل، أمثلة هذا المجلد تبقى ختمًا وتتبعًا.</p>
+<p>جسم JSON محلّل من المنصة. لا تعِد كتابة محلّل إلا بعد <code>bodyParser: false</code> في <code>NestFactory.create</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">هل أحتاج اسم الدالة أو بياناتها؟  Guard
+هل أحوّل معاملًا أو أرفض شكله؟     Pipe
+هل أغلّف الناتج أو أقيس بعد العمل؟  Interceptor
+هل ألصق شيئًا على طلب مطابق؟       Middleware
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import type { NextFunction, Request, Response } from &#39;express&#39;;
+
+export function markDesk(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  res.setHeader(&#39;x-desk&#39;, &#39;circulation&#39;);
+  next();
+}
+</code></pre>
+<p><code>markDesk</code> لا تقرأ <code>@Roles</code> ولا تلمس DTO. تصلح لهذه الطبقة.</p>
+<p>قرار «المشرف فقط على <code>DELETE /loans/:id</code>» يُكتب Guard يقرأ بيانات الدالة. الزينة تُبنى في فصل Custom Decorators.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الترويسة <code>x-desk</code> معلومة عن المدخل الذي مر منه الطلب.</li>
+<li>لا فرع يفحص دور المستخدم.</li>
+<li>الربط بـ <code>forRoutes</code> على متحكم المكتب يكفي.</li>
+<li>مسار الصحة يُستثنى إن كان الختم يزعج الفحص.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الطلب يدخل <code>markDesk</code> قبل أن تُبنى قائمة Guards الخاصة بالدالة. قراءة <code>Reflector</code> من هنا تلتف على طبقة لم تبدأ. الإطار قد يسمح بالاستيراد، والتصميم يمنعه: الصفحة تقول إن هذه الطبقة لا تعرف المعالج التالي.</p>
+<p>إن رميت <code>ForbiddenException</code> من <code>use</code>، العميل قد يرى <code>403</code>. فلتر الدالة لا يشارك، لأن الفلاتر الخاصة بالمسار لا تُستدعى من Middleware. Guard على المسار نفسه يدخل فلاتر المسار ثم المتحكم ثم العام. هذا فرق ظاهر حين تصحح «لماذا فلتر المتحكم صامت».</p>
+<p><code>try/catch</code> يبتلع الخطأ في أي طبقة. Middleware الذي يمسك الاستثناء ولا يعيد رميه ينهي القصة بلا فلتر.</p>
+<h2>مثال عملي</h2>
+<p>ثلاثة احتياجات على مكتب الإعارة:</p>
+<table>
+<thead>
+<tr>
+<th>الطلب</th>
+<th>الأداة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وضع <code>x-request-id</code></td>
+<td>Middleware دالة</td>
+</tr>
+<tr>
+<td>رفض <code>page=abc</code> في الاستعلام</td>
+<td><code>ParseIntPipe</code></td>
+</tr>
+<tr>
+<td>رفض حذف الإعارة لغير المشرف</td>
+<td>Guard يقرأ دور الدالة</td>
+</tr>
+<tr>
+<td>تغليف <code>{ data }</code> حول القائمة</td>
+<td>Interceptor على طريق العودة</td>
+</tr>
+</tbody></table>
+<p>جمع الأربعة في صنف Middleware واحد ينجح على مسار ويتشعب حين يختلف الدور أو شكل الرد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فحص دور المسار داخل <code>use</code> لأن Express القديم كان يجمع كل شيء هناك. في Nest هذا Guard.</li>
+<li>إعادة تحليل JSON فوق المحلّل الذي سجّله المحوّل.</li>
+<li>قياس زمن المعالج بفرق وقت داخل Middleware. العودة من الخدمة لم تحدث بعد. Interceptor مع <code>tap</code> يراها.</li>
+<li>تخطي حارس عام عن طريق <code>exclude</code>. الاستثناء يتخطى Middleware. الحارس يعمل بعده. العلامة التي تفتح مسارًا عامًا هي <code>@Public</code> في فصل لاحق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تتبع، ختم، بداية مؤقت، ربط دالة <code>(req, res, next)</code> موجودة، وتقييد ذلك بـ <code>forRoutes</code> و <code>exclude</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>تحويل الأنواع، التحقق من DTO، السماح حسب زينة الدالة، وتغيير الجسم الراجع بعد الخدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العمل</th>
+<th>الطبقة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ترويسة تتبع</td>
+<td>Middleware</td>
+</tr>
+<tr>
+<td>هوية على <code>req</code> بلا قراءة زينة</td>
+<td>Middleware ممكن، وفصل المصادقة لاحق</td>
+</tr>
+<tr>
+<td>سماح حسب metadata</td>
+<td>Guard</td>
+</tr>
+<tr>
+<td><code>id</code> نصًا يصبح عددًا</td>
+<td>Pipe</td>
+</tr>
+<tr>
+<td><code>{ data: result }</code></td>
+<td>Interceptor</td>
+</tr>
+<tr>
+<td>شكل خطأ <code>HttpException</code></td>
+<td>Exception filter</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في أي طبقة تضع توليد <code>x-request-id</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Middleware، غالبًا دالة عبر <code>app.use</code> أو <code>apply</code>، لأنه عمل على الظرف قبل المعالج.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>زميل وضع فحص <code>@Roles</code> داخل <code>use</code> واستدعى <code>Reflector</code>. ما الاعتراض التصميمي من صفحة Guards؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Middleware لا يعرف أي معالج سيُنفَّذ بعد <code>next()</code>. قراءة الزينة عمل Guard لأنه يستلم <code>ExecutionContext</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>GET /health</code> صار <code>403</code> بعد حارس عام، والفريق اقترح Middleware يستثني الصحة. ما الاتجاه الذي تؤجله إلى فصل الزينة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>علامة على مسار الصحة يقرأها الحارس العام ويرجع <code>true</code> قبل فحص الهوية. اسمها الشائع <code>@Public</code>. <code>exclude</code> يتخطى Middleware لا الحارس. الحارس العام يعمل بعد هذه الطبقة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما السؤال الذي يفرز Middleware عن Guard؟</li>
+<li>لماذا قياس زمن المعالج ضعيف هنا؟</li>
+<li>من يشكّل خطأ رُمي من <code>use</code>؟</li>
+<li>أين يعيش رفض DTO؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Middleware يلصق على الطلب قبل اختيار الدالة. ما يحتاج اسم الدالة أو ناتجها أو شكل معاملها يعيش في Guard و Interceptor و Pipe. التتبع هو المثال النموذجي لهذا الفصل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع دالة تتبع وصنف ساعة واستثناء الصحة، ثم التمارين، ثم ننتقل إلى Pipes حيث يتغير شكل المعاملات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

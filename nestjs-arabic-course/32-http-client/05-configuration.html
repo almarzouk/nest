@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>إعداد العميل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-configuration.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>إعداد العميل</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>نقل عنوان الناشر والمهلة والمفتاح إلى إعداد الوحدة عبر <code>registerAsync</code>، وترك القيم الافتراضية آمنة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>baseURL</code> المثبّت في <code>IsbnModule</code> يكسر التشغيل عند تغيير البيئة، ويدفع المفتاح إلى Git. مهلة <code>800</code> المنسوخة في المعترض وفي Axios تنحرف عندما يعدّل مطور واحدة فقط. الإعداد مصدر واحد تقرأه المصنع عند الإقلاع.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ConfigModule</code> يقرأ البيئة. <code>HttpModule.registerAsync</code> يحقن <code>ConfigService</code> ويبني خيارات Axios. الخدمة لا تنادي <code>process.env</code>. الاختبار يمرر إعدادًا قصير المهلة أو يستبدل <code>IsbnService</code> كلها.</p>
+<h2>التعريف التقني</h2>
+<p>مفاتيح مقترحة:</p>
+<pre><code class="language-text">ISBN_BASE_URL=https://isbn.example/v1
+ISBN_TIMEOUT_MS=800
+ISBN_TOKEN=...
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { HttpModule } from &#39;@nestjs/axios&#39;;
+import { ConfigModule, ConfigService } from &#39;@nestjs/config&#39;;
+import { IsbnService } from &#39;./isbn.service.js&#39;;
+
+@Module({
+  imports: [
+    HttpModule.registerAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =&gt; ({
+        baseURL: config.getOrThrow&lt;string&gt;(&#39;ISBN_BASE_URL&#39;),
+        timeout: Number(config.get&lt;string&gt;(&#39;ISBN_TIMEOUT_MS&#39;) ?? 800),
+        maxRedirects: 2,
+        headers: {
+          authorization: `Bearer ${config.getOrThrow&lt;string&gt;(&#39;ISBN_TOKEN&#39;)}`,
+          accept: &#39;application/json&#39;,
+        },
+      }),
+    }),
+  ],
+  providers: [IsbnService],
+  exports: [IsbnService],
+})
+export class IsbnModule {}
+</code></pre>
+<p><code>getOrThrow</code> يوقف الإقلاع إن غاب العنوان أو المفتاح، وذلك أفضل من أول طلب زائر يفشل بـ <code>401</code> غامض. <code>Number(...)</code> لأن بيئة النظام نصوص. إن كان الناتج <code>NaN</code> أصلح المفتاح قبل التشغيل.</p>
+<p>عميل <code>fetch</code> في <code>@nestjs/http-client</code> يستعمل <code>baseUrl</code> ومهلة قد تُكتب <code>&#39;800ms&#39;</code>. لا تخلط أسماء الحقول بين الحزمتين في الملف نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">بيئة
+  ConfigService
+    useFactory
+      Axios instance داخل HttpModule
+        IsbnService.lookup بلا عناوين
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>اختبار وحدة لا يفتح الشبكة: استبدل الخدمة.</p>
+<pre><code class="language-ts">const isbn = { lookup: async () =&gt; ({ title: &#39;NestJS in Practice&#39; }) };
+</code></pre>
+<p>اختبار يمر على <code>HttpService</code> يستبدل الناقل أو يشغّل خادمًا محليًا على <code>ISBN_BASE_URL</code> لا على ناشر حقيقي. المفتاح في الاختبار قيمة وهمية.</p>
+<h2>شرح المثال</h2>
+<p>المصنع يعمل مرة عند إنشاء الوحدة. تغيير ملف البيئة بعد الإقلاع لا يحدّث Axios حتى تعيد التشغيل، ما لم تبنِ مصنعًا يقرأ كل مرة، وهذا غير لازم هنا. <code>accept: application/json</code> يعلن ما تستطيع ترجمته. إن أعاد الناشر XML ستفشل فحص <code>title</code> بـ <code>502</code>، وهذا أصدق من تحليل صامت.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Nest ينشئ سياق الوحدة، يحل <code>ConfigService</code>، وينتظر المصنع إن كان <code>async</code>. الناتج يُمرر كخيارات منشئ Axios. كل <code>get</code> نسبي يلصق <code>baseURL</code> ويمرر الترويسات. <code>timeout</code> يبدأ مع إرسال الطلب. إعادة التوجيه محدودة بـ <code>maxRedirects</code> حتى لا يتبع العميل سلسلة مفتوحة. لا تسجّل <code>headers.authorization</code> في معترض Axios للتصحيح على بيئة مشتركة.</p>
+<h2>مثال عملي</h2>
+<p>قيم مختلفة بلا نسخ الوحدة:</p>
+<pre><code class="language-text">تطوير   ISBN_BASE_URL=http://localhost:4010  ISBN_TIMEOUT_MS=200
+إنتاج   ISBN_BASE_URL=https://isbn.example/v1  ISBN_TIMEOUT_MS=800
+</code></pre>
+<p>الاختبار المحلي يستعمل مهلة قصيرة حتى يفشل التعليق بسرعة. الإنتاج يمنح الناشر 800ms كما قرر منتج صفحة الإنشاء. الكود واحد.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>التزام <code>.env</code> وفيه <code>ISBN_TOKEN</code>.</li>
+<li><code>baseUrl</code> على خيارات Axios. الحقل في Axios هو <code>baseURL</code>.</li>
+<li>قراءة <code>process.env</code> داخل <code>lookup</code> بعد أن وفرت المصنع.</li>
+<li>مهلة المعترض 800 ومهلة Axios 5000 فيصمت الزائر على حد المعترض بينما المقبس ما زال مفتوحًا، أو العكس.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>كلما اختلف العنوان أو السر بين البيئات. أي عميل صادر في المتجر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمضيف ثابت داخل اختبار لا يقرأ بيئة المطور. هناك <code>register</code> بقيم صريحة في وحدة الاختبار أوضح من متغيرات خفية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>register({...})</code></td>
+<td>اختبار أو عنوان لن يتغير في المستودع</td>
+</tr>
+<tr>
+<td><code>registerAsync</code> + <code>ConfigService</code></td>
+<td>تطوير وإنتاج</td>
+</tr>
+<tr>
+<td><code>HttpClientModule</code></td>
+<td>مسار <code>fetch</code> في التوثيق الحالي، بأسماء حقول مختلفة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي دالة تمنع الإقلاع عند غياب <code>ISBN_BASE_URL</code>؟</p>
+<details>
+<summary>الحل</summary>
+`config.getOrThrow`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>timeout</code> في البيئة نص ويُمرر رقمًا؟</p>
+<details>
+<summary>الحل</summary>
+متغيرات البيئة نصوص. `Number` ينتج الميلي ثانية التي يتوقعها Axios.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما خطر مهلة RxJS أقصر من مهلة Axios على المسار نفسه؟</p>
+<details>
+<summary>الحل</summary>
+الزائر يرى الخطأ بينما طلب Axios ما زال يعمل حتى مهلة المقبس، فيُحمَّل الناشر بلا مستفيد.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حقل Axios لعنوان الأساس؟</li>
+<li>لماذا لا تُصدَّر الترويسة إلى سجلات التصحيح؟</li>
+<li>من يقرأ الإعداد: <code>lookup</code> أم المصنع؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>registerAsync</code> يبني عميل ISBN من البيئة عند الإقلاع. المهلة والمفتاح والعنوان لا تُنسخ داخل الدالة، والخدمة تبقى ترجمة واستثناءات.</p>
+<h2>ماذا بعد؟</h2>
+<p>تخزين نتيجة تستحق الإعادة، ومتى تصبح النسخة المحفوظة خطرًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — HTTP module (Axios): <a href="https://docs.nestjs.com/techniques/http-module">https://docs.nestjs.com/techniques/http-module</a></li>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/techniques/configuration">https://docs.nestjs.com/techniques/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

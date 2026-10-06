@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>كيف تحدث الدورة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-how-cycles-happen.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>كيف تحدث الدورة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>رؤية الاعتماد الدائري كما يراه Nest: بين صنفين، أو بين وحدتين، أو عبر ملف برميل يعيد التصدير داخل مجلده.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>رسالة إقلاع تقول إن الاعتماد غير معرّف، أو أن Nest لا يستطيع حل الدورة، بينما كل ملف يبدو صحيحًا وحده. السبب أن بناء الرسم يحتاج الرمزين معًا قبل أن يكتمل أي منهما، أو أن <code>index.ts</code> يسحب الوحدة وهي ما زالت تُقيَّم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>دورة بين Providers: <code>A</code> يحقن <code>B</code> و <code>B</code> يحقن <code>A</code> في الـ <code>constructor</code>. دورة بين Modules: كل وحدة تضع الأخرى في <code>imports</code>. دورة ملفات: برميل <code>cats/index.ts</code> يصدّر المتحكم والخدمة، والملف داخل المجلد يستورد من البرميل فيعود إلى نفسه أثناء التحميل. التوثيق يطلب تجنب البراميل لأصناف الوحدات والمزودات، وخصوصًا استيراد البرميل من ملف جاره.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة Circular dependency: الدورة عندما يحتاج صنف <code>A</code> الصنف <code>B</code> والعكس. تحدث في Nest بين المزودات وبين الوحدات. الإطار يحتاج metadata الطرف الآخر أثناء تحليل الـ <code>constructor</code>. إن كان الصنف لم يُهيأ بعد لأن تحميله ينتظرك، يصل الاعتماد فارغًا.</p>
+<p><code>forwardRef</code> يؤجل قراءة الصنف إلى دالة، وهذا الدرس التالي بعد أن ترى الشكل الخام. <code>ModuleRef</code> بديل على طرف واحد، ويُشرح مع إعادة الرسم.</p>
+<p>تحذير التوثيق: ترتيب الإنشاء غير محدد، فلا تبنِ منطقًا يعتمد على أي <code>constructor</code> يعمل أولًا. دورة مع <code>Scope.REQUEST</code> قد تنتج اعتمادًا <code>undefined</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تحميل الملف أ ينتظر الصنف ب
+تحميل الملف ب ينتظر الصنف أ
+الحاوية ترى رمزًا لم يكتمل -&gt; فشل حل أو undefined
+
+index.ts يصدّر الخدمة
+الخدمة تستورد من index.ts
+التحميل يدور قبل أن يُغلق التصدير
+</code></pre>
+<p>الدورة قد تكون في الرسم المنطقي أو في ترتيب ملفات TypeScript فقط. الثانية تختفي بتغيير سطر الاستيراد، والأولى تحتاج حدودًا جديدة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { OrdersService } from &#39;./orders.service.js&#39;;
+
+@Injectable()
+export class BillingService {
+  constructor(private readonly orders: OrdersService) {}
+}
+</code></pre>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { BillingService } from &#39;./billing.service.js&#39;;
+
+@Injectable()
+export class OrdersService {
+  constructor(private readonly billing: BillingService) {}
+}
+</code></pre>
+<p>كل ملف قانوني وحده. معًا يشكلان دورة مزودات. الإقلاع لا يضمن أي طرف يُبنى أولًا.</p>
+<h2>شرح المثال</h2>
+<p><code>BillingService</code> يحتاج نسخة <code>OrdersService</code> قبل أن يُكمل بناءه، والعكس صحيح. الحاوية لا تجد ترتيبًا سفليًا كما في الرسم الخالي من الدورات. إن أضفت <code>Scope.REQUEST</code> على أحدهما زاد احتمال أن ترى الطرف الآخر <code>undefined</code> وقت البناء، وهذا تحذير موثق لا حالة نادرة تُهمل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>import</code> يقيّم الملفات. مع ESM ودورة ملفات قد يكون الربط الحي ما زال في طور التهيئة.</li>
+<li>المزخرفات تكتب metadata أنواع المعاملات.</li>
+<li>إن كان الرمز <code>undefined</code> لحظة قراءة النوع، تُحفظ metadata ناقصة.</li>
+<li>عند إنشاء الرسم يرمي Nest أو يترك حقنًا فارغًا.</li>
+<li>دورة الوحدات مشابهة على مستوى <code>imports</code>: كل وحدة تنتظر تهيئة الأخرى.</li>
+<li>البرميل يزيد الخطوة 1 حتى لو كان الرسم المنطقي شجرة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export { BooksService } from &#39;./books.service.js&#39;;
+export { BooksModule } from &#39;./books.module.js&#39;;
+</code></pre>
+<p>وداخل <code>books.service.ts</code> سطر <code>import { BooksModule } from &#39;./index.js&#39;</code> يعود إلى البرميل الذي ينتظر الخدمة. التوثيق: <code>cats/cats.controller</code> لا يستورد مجلد <code>cats</code> ليحصل على <code>cats.service</code>. استورد <code>./books.service.js</code> مباشرة. إن اختفت الرسالة بعد هذا التغيير فالدورة كانت في الملفات. إن بقيت فالدورة في الـ <code>constructor</code> أو في <code>imports</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>زيادة <code>forwardRef</code> قبل معرفة إن كان البرميل هو السبب.</li>
+<li>دورة وحدات لأن كل ميزة تستورد الأخرى بدل طرف مشترك صغير.</li>
+<li>الاعتماد على ترتيب البناء لملء حقل.</li>
+<li>خلط رسالة ESM عن تصدير حي مع رسالة Nest عن حل الاعتماد. اقرأ الاثنتين.</li>
+<li>إخفاء الدورة وراء <code>new OtherService()</code> داخل الدالة، فتفقد الحقن والاختبار.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند فشل الإقلاع بسبب اعتماد فارغ أو تحذير دورة. ارسم السهمين على ورقة قبل أي مسكن.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفتح <code>forwardRef</code> لأن اختبارًا واحدًا فشل في ترتيب <code>beforeEach</code>. أصلح الاستيراد أو الحدود أولًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>نوع الدورة</th>
+<th>أين تظهر</th>
+<th>أول فحص</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Providers</td>
+<td><code>constructor</code> متبادل</td>
+<td>هل الطرفان يحتاجان حقنًا معًا؟</td>
+</tr>
+<tr>
+<td>Modules</td>
+<td><code>imports</code> متبادل</td>
+<td>هل يمكن طرف ثالث يُستورد من الاثنين؟</td>
+</tr>
+<tr>
+<td>برميل</td>
+<td><code>index.ts</code> مع جاره</td>
+<td>استيراد الملف المباشر</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما تعريف الدورة بين صنفين؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>كل واحد يحتاج الآخر. في Nest تكون بين مزودات أو بين وحدات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يمنع التوثيق أن يستورد <code>cats.controller</code> مجلد <code>cats</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البرميل يصدّر المتحكم والخدمة، والاستيراد من داخل المجلد نفسه يعيد التحميل إلى البرميل قبل اكتمال التصدير، فتنشأ دورة ملفات.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>دورة مزودات وأحد الطرفين <code>Scope.REQUEST</code>. ماذا يحذّر التوثيق بالإضافة إلى فشل الترتيب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قد يصل الاعتماد <code>undefined</code>. ترتيب الإنشاء أصلًا غير محدد، ونطاق الطلب يزيد هشاشة الدورة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما أنواع الدورات الثلاثة التي تبحث عنها؟</li>
+<li>لماذا ترتيب الـ <code>constructor</code> ليس عقدًا؟</li>
+<li>ماذا تغيّر في الاستيراد قبل <code>forwardRef</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الدورة إما رسم حقن دائري أو تحميل ملفات دائري. ارسمها، وأزل البرميل الداخلي، ثم قرر إن كانت الحدود نفسها هي العيب.</p>
+<h2>ماذا بعد؟</h2>
+<p>متى تكون الدورة مشكلة تصميم لا مجرد سطر ناقص.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Circular dependency: <a href="https://docs.nestjs.com/fundamentals/circular-dependency">https://docs.nestjs.com/fundamentals/circular-dependency</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

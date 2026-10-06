@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة حدود على API المقالات. الاستيراد ينتهي بـ <code>.js</code> في مشروع ESM.</p>
+<h2>مثال 1 — أصل الواجهة</h2>
+<p><code>main.ts</code> يستدعي <code>enableCors</code> بقائمة أصل واحدة من الإعداد، مع <code>credentials: true</code> و <code>methods</code> التي تشمل <code>PATCH</code> و <code>DELETE</code>. ثم <code>useSecurityHeaders()</code> و <code>enableCsrfProtection</code> بنفس الأصل في <code>trustedOrigins</code>. أصل CORS لا يُنسخ تلقائيًا إلى CSRF.</p>
+<h2>مثال 2 — دخول أبطأ وشكل أضيق</h2>
+<p><code>ThrottlerModule.forRoot</code> بنافذة <code>60_000</code> وحد عام للقراءة، و <code>@Throttle</code> على <code>POST /auth/sign-in</code> بحد أصغر. <code>RegisterDto</code> فيه البريد وكلمة المرور فقط. <code>forbidNonWhitelisted</code> يرفض <code>role</code>. الخدمة تكتب <code>role: &quot;reader&quot;</code> وتستدعي <code>passwordHasher.hash</code>.</p>
+<h2>مثال 3 — بحث بلا لصق</h2>
+<p><code>SearchService.titles</code> يستعمل <code>findMany</code> مع <code>contains</code>. اختبار يمرّر <code>&#39; OR 1=1 --</code> ويتوقع نتيجة بحث حرفية. مسار قديم استُبدل كان يبني قالب SQL. عنوان المقال يُعرض في الواجهة كنص لا كـ HTML.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>curl</code> ينجح في <code>GET</code> حتى قبل CORS، والمتصفح على أصل آخر يحتاج الرؤوس.</li>
+<li><code>POST</code> من أصل غير موثوق يأخذ <code>403</code> قبل Prisma.</li>
+<li><code>document.cookie</code> بلا <code>__Host-sid</code>، و <code>passwordHash</code> غائب عن JSON.</li>
+<li>لا <code>$queryRawUnsafe</code> بإدخال طلب.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

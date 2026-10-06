@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ValidationPipe</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-validation-pipe.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ValidationPipe</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل <code>ValidationPipe</code> المدمج على صنف مزيّن، ومعرفة متى يتخطى المعامل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>زينة <code>class-validator</code> على <code>ReserveSeatDto</code> لا تعمل حتى يستدعي شيء <code>validate</code>. كتابة الأنبوب التعليمي من صفحة Pipes تعيد ما يوفره الإطار بغنى أقل.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>new ValidationPipe()</code> عامًا على التطبيق، والمعامل نوعه صنف عليه زينة. الفشل <code>400</code> و <code>message</code> مصفوفة رسائل. النجاح يمرر القيمة إلى الدالة. الخيارات التي تحذف حقولًا أو تحوّل النسخة تأتي بعد هذا الدرس.</p>
+<h2>التعريف التقني</h2>
+<p>الأنبوب من <code>@nestjs/common</code>. الحزمتان <code>class-validator</code> و <code>class-transformer</code>.</p>
+<pre><code class="language-ts">app.useGlobalPipes(new ValidationPipe());
+</code></pre>
+<p>الربط على الدالة <code>@UsePipes(new ValidationPipe())</code> أو على المعامل <code>@Body(new ValidationPipe())</code> حين لا تريد عمومية بعد.</p>
+<p>خيارات البناء التي تذكرها الواجهة في الصفحة تشمل <code>transform</code> و <code>disableErrorMessages</code> و <code>exceptionFactory</code> و <code>errorFormat</code>، وترث خيارات <code>class-validator</code> مثل <code>whitelist</code> و <code>forbidNonWhitelisted</code>. هذا الدرس يتركها على افتراضاتها.</p>
+<p>الأنبوب يفحص معاملًا نوعه صنف. يتخطى <code>String</code> و <code>Number</code> و <code>Boolean</code> و <code>Array</code> و <code>Object</code>. لذلك <code>@Param(&#39;id&#39;) id: string</code> لا يُفحص هنا. استخدم أنبوب تحليل أو صنفًا مثل <code>FindSeatParams</code> عليه <code>@IsNumberString()</code> إن أردت فحص كائن المعاملات كله.</p>
+<p>لا <code>import type</code> للصنف. لا واجهة مكان الصنف. لا نوع عام عارٍ لعناصر مصفوفة.</p>
+<p>عند بريد غير صالح، الصفحة تعرض شكلًا مثل:</p>
+<pre><code class="language-json">{
+  &quot;statusCode&quot;: 400,
+  &quot;error&quot;: &quot;Bad Request&quot;,
+  &quot;message&quot;: [&quot;email must be an email&quot;]
+}
+</code></pre>
+<p>الرمز الافتراضي يمكن تغييره بـ <code>errorHttpStatusCode</code> ضمن خيارات المكتبة. الافتراضي <code>BadRequestException</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">metatype صنف مزيّن؟  نعم → plainToInstance ثم validate → 400 أو مرور
+metatype نوع أصلي؟    نعم → تمرير القيمة كما هي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { IsInt, IsString, Min } from &#39;class-validator&#39;;
+
+export class ReserveSeatDto {
+  @IsString()
+  showId: string;
+
+  @IsInt()
+  @Min(1)
+  seat: number;
+}
+</code></pre>
+<pre><code class="language-ts">import { ValidationPipe } from &#39;@nestjs/common&#39;;
+import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.useGlobalPipes(new ValidationPipe());
+await app.listen(3000);
+</code></pre>
+<pre><code class="language-ts">@Post()
+reserve(@Body() dto: ReserveSeatDto): ReserveSeatDto {
+  return dto;
+}
+</code></pre>
+<p><code>{ &quot;showId&quot;: &quot;s1&quot;, &quot;seat&quot;: 0 }</code> يرجع <code>400</code>. <code>{ &quot;showId&quot;: &quot;s1&quot;, &quot;seat&quot;: 4 }</code> يدخل <code>reserve</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الربط مرة في الإقلاع يغطي كل معامل صنف.</li>
+<li>الدالة ترجع <code>dto</code> حتى ترى ماذا مر. الخدمة في التطبيق الحقيقي تُستدعى هنا.</li>
+<li>حقل <code>note</code> زائد في JSON يمر مع هذا البناء لأن <code>whitelist</code> لم يُفتح.</li>
+<li>المعالج يستلم كائنًا قد لا يكون <code>instanceof ReserveSeatDto</code> إلى أن تفعّل <code>transform</code>. الفحص تم على نسخة داخلية.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الإطار يمرر <code>ArgumentMetadata.metatype</code>. الأنبوب إن وجد صنفًا خارج قائمة الأنواع الأصلية يستدعي <code>plainToInstance</code> ثم <code>validate</code>. أخطاء غير فارغة تذهب إلى <code>exceptionFactory</code> الافتراضي الذي يرمي <code>BadRequestException</code> برسائل القيود.</p>
+<p>معامل ثانٍ على الدالة نفسها من نوع أصلي يُمرَّر. أنبوب عام لا يعني أن كل المعاملات تُفحص بالقواعد نفسها.</p>
+<p>نسخة <code>new ValidationPipe()</code> في <code>main.ts</code> لا تُحقن. إن احتاج الأنبوب خدمة، فالربط <code>{ provide: APP_PIPE, useClass: ValidationPipe }</code> كما في صفحة الأنابيب. الخيارات عندها تُمرَّر بطريقة المزود المناسبة، والغالب في هذا الفصل نسخة الإقلاع لأن الخيارات قيم ثابتة.</p>
+<p>فشل الأنبوب يسبق جسم <code>reserve</code>. فلتر المسار يراه.</p>
+<h2>مثال عملي</h2>
+<p><code>POST /reservations</code> على الصالة. العميل يرسل <code>seat</code> كنص <code>&quot;4&quot;</code> من نموذج. <code>@IsInt()</code> يرفض لأن القيمة ليست عددًا. ذلك صحيح مع الافتراض. تحويل النص إلى عدد ليس هذا الدرس. مسار <code>GET /shows/:id</code> يبقى على <code>ParseUUIDPipe</code> أو نص، ولا تنتظر أن الأنبوب العام يرفض <code>id</code> الفارغ إن كان النوع <code>string</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>app.useGlobalPipes</code> ثم لوم الزينة.</li>
+<li>توقع رفض الحقل الزائد من هذا البناء.</li>
+<li>فحص مصفوفة <code>ReserveSeatDto[]</code> من غير <code>ParseArrayPipe</code> أو صنف يغلّف العناصر.</li>
+<li>بناء الأنبوب مرتين، مرة في <code>main.ts</code> ومرة بخيارات أضيق على المسار، من غير أن تعرف أن مستوى المسار يعمل ضمن ترتيب الأنابيب. الأضيق يجب أن يكون مقصودًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>سياسة واحدة للتطبيق: كل جسم صنف يُفحص بزينة <code>class-validator</code> قبل المتحكم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمخطط Zod. ذلك <code>StandardSchemaValidationPipe</code>. ولعدد مسار واحد حيث <code>ParseIntPipe</code> أوضح. ولا تفتح كل الخيارات في السطر الأول قبل أن تعرف أثر كل واحد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الربط</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useGlobalPipes</code></td>
+<td>كل الأصناف في تطبيق HTTP</td>
+</tr>
+<tr>
+<td><code>@UsePipes</code> على متحكم</td>
+<td>مجموعة مسارات فقط</td>
+</tr>
+<tr>
+<td><code>@Body(new ValidationPipe())</code></td>
+<td>جسم دالة واحدة</td>
+</tr>
+<tr>
+<td><code>APP_PIPE</code></td>
+<td>حين تحتاج حقنًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما رمز الحالة الافتراضي لفشل <code>@Min(1)</code> مع هذا الأنبوب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>400</code> عبر <code>BadRequestException</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يمر <code>@Query(&#39;q&#39;) q: string</code> بلا رسالة فحص؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>metatype</code> نوع أصلي <code>String</code>. الأنبوب يتخطاه. القاعدة إن لزم تكون على صنف استعلام أو على أنبوب تحليل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد رسائل <code>class-validator</code> على جسم الحجز، وحقن مسجّل داخل أنبوب عام. أي ربط يفشل، وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>new ValidationPipe()</code> في <code>main.ts</code> لا يحقن. سجّل <code>APP_PIPE</code> في وحدة ترى المسجّل. الرسائل تبقى من المكتبة ما دامت الزينة على الصنف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزم يحتاج الأنبوب؟</li>
+<li>متى يتخطى المعامل؟</li>
+<li>هل الافتراض يحذف الحقول الزائدة؟</li>
+<li>هل الدالة تُستدعى عند فشل <code>validate</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ValidationPipe</code> العام يفحص أصناف العقد ويرفض بـ <code>400</code>. الأنواع الأصلية تمر. الحذف والتحويل وشكل الرسالة خيارات منفصلة تُضاف حين تعرف أثرها.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي خيارا <code>whitelist</code> و <code>forbidNonWhitelisted</code>: إسقاط الحقل الزائد أو رفض الطلب بسببه.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

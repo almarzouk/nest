@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Global Filters</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-global-filters.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Global Filters</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل فلتر على التطبيق كله، وفهم أنه الوحيد الذي يرى استثناء Middleware.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نسخ <code>@UseFilters</code> على كل متحكم تنسى مسارًا. واستثناء من <code>traceLoan</code> لا يمر على فلتر <code>TicketsController</code> أصلًا. الشكل المشترك الأخير يحتاج ربطًا عامًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>app.useGlobalFilters(new DeskExceptionFilter())</code> أو مزوّد <code>APP_FILTER</code>. الربط العام يرى ما تبقى بعد فلاتر المسار والمتحكم، ويرى أيضًا استثناء Middleware لأن تلك الطبقة لا تملك فلتر مسار.</p>
+<h2>التعريف التقني</h2>
+<p>بلا حقن:</p>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+app.useGlobalFilters(new DeskExceptionFilter());
+await app.listen(3000);
+</code></pre>
+<p>مع حقن، من <code>@nestjs/core</code>:</p>
+<pre><code class="language-ts">providers: [{ provide: APP_FILTER, useClass: DeskExceptionFilter }]
+</code></pre>
+<p><code>new</code> في <code>main.ts</code> خارج الحاوية. <code>ConfigService</code> في الباني تحتاج <code>APP_FILTER</code>. يمكن تسجيل أكثر من <code>APP_FILTER</code>. الترتيب مع فلاتر المسار يُشرح في الدرس التالي: الأخص أولًا، والعام أخيرًا بين المستويات. عدة فلاتر عامة تتبع ترتيب التسجيل عند البحث داخل المستوى العام.</p>
+<p>في تطبيق هجين، <code>useGlobalFilters</code> قد لا يشمل الناقل الآخر إلا بضبط لاحق. في HTTP يشمل المتحكمات.</p>
+<p>استثناء Middleware، كما تقول صفحة Middleware ودورة الطلب: الفلاتر العامة فقط، سواء المدمج أو ما سجّلته بـ <code>useGlobalFilters</code> أو <code>APP_FILTER</code>. <code>@UseFilters</code> على صنف Middleware غير مدعوم. فلتر المتحكم لا يُختار قبل تحديد المسار.</p>
+<p><code>app.use</code> على المنصة قد يمر خطأه خارج <code>MiddlewareModule</code>. الصفحة تفضّل الرمي من Middleware مربوط بـ <code>MiddlewareConsumer</code> حتى تصل طبقة Nest.</p>
+<p>الفلتر العام ما زال ملزمًا بقاعدة <code>@Catch</code>: لا تحوّل <code>HttpException</code> إلى <code>500</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">رمي من reserve           قد يمسكه فلتر المسار أولًا، وإلا العام
+رمي من traceLoan         العام فقط
+useGlobalFilters(new)    بلا حقن
+APP_FILTER               مع حقن
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { APP_FILTER } from &#39;@nestjs/core&#39;;
+import { DeskExceptionFilter } from &#39;./desk-exception.filter.js&#39;;
+
+@Module({
+  providers: [{ provide: APP_FILTER, useClass: DeskExceptionFilter }],
+})
+export class TicketsModule {}
+</code></pre>
+<p><code>DeskExceptionFilter</code> هنا هو صنف الدرس السابق الذي يفرّع <code>HttpException</code>. تسجيله في وحدة التذاكر يجعله عامًا على التطبيق كله رغم مكان الملف، كما في تلميح <code>APP_GUARD</code>. الأفضل أن يعيش في الوحدة التي تملكه.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>useClass</code> يبني من الحاوية.</li>
+<li>الزينة على المتحكم غير لازمة لهذا الربط.</li>
+<li>الصحة و <code>POST /tickets</code> و Middleware الوحدات تدخل النطاق.</li>
+<li>إن وُجد <code>@UseFilters(SeatLogFilter)</code> على دالة الاسترداد، ذلك الفلتر يُجرَّب أولًا لتلك الدالة. العام يبقى لما لا يُمسك.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الإقلاع يجمع <code>APP_FILTER</code>. عند استثناء غير ممسوك يبحث الإطار من الأخص إلى الأعم. إن لم يمسك مسار ولا متحكم، يصل العام. عند استثناء Middleware يبدأ البحث من العام مباشرة.</p>
+<p>الفلتر المدمج ما زال موجودًا كسلوك أساس إن لم يمسك فلترك الاستثناء. <code>@Catch()</code> الفارغ يمسك قبل أن تحتاج المدمج، لذلك يجب أن يكتب ردًا صحيحًا بنفسه.</p>
+<p>حارس المسار الذي يرمي <code>UnauthorizedException</code> لا يذهب إلى العام إن مسكه فلتر على الدالة. لا تكرر كتابة الجسم في العام وفي المسار إلا بوراثة.</p>
+<h2>مثال عملي</h2>
+<p><code>traceLoan</code> يرمي <code>BadRequestException</code> لمعرف تتبع أطول من الحد. فلتر على <code>TicketsController</code> لا يغيّر الرد. بعد <code>APP_FILTER</code> يظهر جسم <code>DeskExceptionFilter</code> مع الرمز <code>400</code>. الاختبار ينادي مسارًا يمر على Middleware التتبع بترويسة طويلة ويتوقع <code>400</code> لا <code>500</code>. ثم يطلب مقعدًا تالفًا على <code>POST</code> ويتوقع <code>400</code> أيضًا من الأنبوب عبر الفلتر نفسه، ما دام لا يوجد فلتر مسار يطمس الرمز.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع <code>@UseFilters</code> على المتحكم أن يلتقط Middleware.</li>
+<li><code>useGlobalFilters(new Filter())</code> مع مزوّد في الباني.</li>
+<li>فلتر عام يكتب <code>500</code> لكل شيء فيحوّل أخطاء التتبع السليمة.</li>
+<li>تسجيل الفلتر مرتين، في <code>main.ts</code> وفي <code>APP_FILTER</code>، فتتكرر الآثار الجانبية مثل السجل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لشكل خطأ أخير مشترك، ولأي استثناء قد يخرج من Middleware، مع الإبقاء على رموز <code>HttpException</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لشكل يخص دالة واحدة فقط. ذلك <code>@UseFilters</code> على الدالة حتى لا تغيّر الصحة. ولا كبديل عن رمي النوع الصحيح من الخدمة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الربط</th>
+<th>يرى <code>reserve</code></th>
+<th>يرى Middleware</th>
+<th>الحقن</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>على الدالة</td>
+<td>إن لم يُمسك أقرب منه</td>
+<td>لا</td>
+<td>صنف الزينة نعم</td>
+</tr>
+<tr>
+<td>على المتحكم</td>
+<td>نعم لدواله</td>
+<td>لا</td>
+<td>نعم</td>
+</tr>
+<tr>
+<td><code>useGlobalFilters(new)</code></td>
+<td>لما يصل إلى العام</td>
+<td>نعم</td>
+<td>لا</td>
+</tr>
+<tr>
+<td><code>APP_FILTER</code></td>
+<td>لما يصل إلى العام</td>
+<td>نعم</td>
+<td>نعم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ربط يرى استثناء <code>traceLoan</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فلتر عام: <code>useGlobalFilters</code> أو <code>APP_FILTER</code>، بالإضافة إلى الفلتر المدمج. فلتر المتحكم لا يراه.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا تفشل <code>ConfigService</code> داخل فلتر بُني بـ <code>new</code> في <code>main.ts</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>البناء خارج الوحدات. سجّل <code>APP_FILTER</code> مع <code>useClass</code> في وحدة ترى الإعداد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>فلتر المسار يمسك <code>SeatTakenException</code> فقط، والعام يمسك الباقي بفرع HTTP. من يكتب رد المقعد المبيع، ومن يكتب رد معرف التتبع التالف في Middleware؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فلتر المسار يكتب <code>409</code> للمقعد لأنه أخص ويطابق النوع. معرف التتبع في Middleware لا يرى فلتر المسار، فيكتبه العام، ويجب أن يبقى <code>400</code> لا <code>500</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما رمز المزود للفلتر المحقون؟</li>
+<li>لماذا لا يكفي <code>@UseFilters</code> على المتحكم لخطأ Middleware؟</li>
+<li>ماذا يجب أن يفعل الفلتر العام بـ <code>HttpException</code>؟</li>
+<li>متى تفضّل الربط على الدالة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الفلتر العام شبكة أخيرة وشبكة Middleware. الحقن عبر <code>APP_FILTER</code>. الأخص على المسار يسبق العام حين يكون المسار مختارًا. الرمز الذي رماه <code>HttpException</code> يبقى كما هو.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يرتّب البحث: مسار، ثم متحكم، ثم عام، ولماذا لا يُستدعى الثاني بعد الأول.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+<li><a href="https://docs.nestjs.com/middleware">Middleware</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

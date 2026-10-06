@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تحويل شكل الاستجابة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-response-mapping.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تحويل شكل الاستجابة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تغليف القيمة التي يرجعها المعالج بشكل JSON موحد، مثل <code>{ data }</code>، باستخدام <code>map</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل دالة تذاكر تكتب <code>{ data: ticket }</code> يدويًا. دالة جديدة ترجع المصفوفة عارية فينكسر عميل الواجهة. الغلاف سياسة مسار لا قاعدة حجز.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الدالة ترجع <code>ticket</code> أو <code>ticket[]</code>. المعترض يعمل <code>map((data) =&gt; ({ data }))</code>. الخدمة لا تعرف الغلاف. الحقول السرية تُحذف قبل ذلك في عقد الخارج، لا داخل <code>map</code> كقائمة سوداء متأخرة.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تبني <code>TransformInterceptor&lt;T&gt;</code> الذي يطبّق <code>NestInterceptor&lt;T, Response&lt;T&gt;&gt;</code> ويرجع <code>next.handle().pipe(map((data) =&gt; ({ data })))</code>.</p>
+<p>معالج يرجع <code>[]</code> يصبح الجسم:</p>
+<pre><code class="language-json">{ &quot;data&quot;: [] }
+</code></pre>
+<p><code>map</code> على طريق الخروج. لا تغيّر الدخول.</p>
+<p>تحذير الصفحة: التغليف لا يعمل مع أسلوب الرد الخاص بالمكتبة حين تحقن <code>@Res()</code> وتكتب الرد بنفسك، إلا مع <code>passthrough: true</code>.</p>
+<p>مثال آخر في الصفحة: استبدال <code>null</code> بسلسلة فارغة عبر <code>map</code>. السياسة العامة للقيم الفارغة معترض أيضًا، بشرط أن يكون العقد واضحًا. في التذاكر سنغلّف فقط، ونترك <code>null</code> كما هو حتى لا نخترع معنى.</p>
+<p>الغلاف لا يغيّر رمز الحالة. <code>POST</code> يبقى <code>201</code> إن كان الرمز من Nest. يتغير الجسم فقط.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">service → Ticket
+controller return Ticket
+map → { data: Ticket }
+عميل الواجهة يقرأ body.data
+</code></pre>
+<p>عقد الحقول ما زال <code>Ticket</code> داخل <code>data</code>.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { type CallHandler, type ExecutionContext, Injectable, type NestInterceptor } from &#39;@nestjs/common&#39;;
+import { type Observable } from &#39;rxjs&#39;;
+import { map } from &#39;rxjs/operators&#39;;
+
+export interface TicketEnvelope&lt;T&gt; {
+  data: T;
+}
+
+@Injectable()
+export class TicketEnvelopeInterceptor&lt;T&gt; implements NestInterceptor&lt;T, TicketEnvelope&lt;T&gt;&gt; {
+  intercept(_context: ExecutionContext, next: CallHandler): Observable&lt;TicketEnvelope&lt;T&gt;&gt; {
+    return next.handle().pipe(map((data: T) =&gt; ({ data })));
+  }
+}
+</code></pre>
+<p><code>GET /tickets</code> الذي يرجع <code>[{ id: &#39;t1&#39; }]</code> يخرج <code>{ &quot;data&quot;: [{ &quot;id&quot;: &quot;t1&quot; }] }</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>المعامل النوعي <code>T</code> يوثّق ما يصدره المعالج وما يغلَّف.</li>
+<li><code>_context</code> غير لازم للغلاف الأعمى. معترض لاحق قد يقرأ المسار ليتخطى الغلاف.</li>
+<li>لا <code>tap</code> هنا. التغيير هو الغرض.</li>
+<li>الدالة تبقى <code>return tickets</code> لا <code>return { data: tickets }</code>. الغلاف مرتين ينتج <code>data.data</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد نجاح الدالة يصدر التيار القيمة. <code>map</code> تبني كائنًا جديدًا. Nest يسلسله. إن كانت القيمة <code>undefined</code>، السلوك الافتراضي للإطار قد يختلف عن كائن، فلا تعتمد على غلاف لعملية بلا رد. أرجع كائنًا من الدالة إن كان الغلاف مطلوبًا.</p>
+<p>خطأ قبل الإصدار لا يدخل <code>map</code>. العميل يرى جسم الفلتر لا <code>{ data }</code>. هذا مرغوب: خطأ <code>400</code> ليس نجاحًا مغلفًا إلا إذا صممت ذلك عمدًا في الفلتر.</p>
+<p><code>ClassSerializerInterceptor</code> لاحقًا يصفّي حقولًا. إن رُبط مع هذا الغلاف، ترتيب الخروج يحدد إن كان الإخفاء على التذكرة الداخلية أو على الغلاف. فضّل أن الدالة ترجع عقد الخارج النظيف ثم يغلّف المعترض.</p>
+<h2>مثال عملي</h2>
+<p>واجهة الشباك تقرأ <code>response.data</code> لكل مسارات <code>TicketsController</code>. المعترض على الصنف. <code>HealthController</code> يرجع <code>{ ok: true }</code> بلا غلاف لأن الزينة ليست عليه. اختبار عقد يتوقع <code>data</code> مصفوفة على <code>GET /tickets</code> ويتوقع غياب <code>data</code> على <code>GET /health</code>. دالة <code>reserve</code> ترجع التذكرة لا الغلاف، والاختبار الوحدة للخدمة يبقى بلا <code>data</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تغليف داخل الخدمة وتغليف في المعترض.</li>
+<li><code>@Res()</code> يكتب JSON بنفسه ثم الدهشة أن <code>data</code> غائبة.</li>
+<li><code>map</code> ترجع <code>data</code> فقط من غير قوسين لكائن: <code>map(data =&gt; { data })</code> كتلة لا ترجع شيئًا. الصيغة <code>({ data })</code>.</li>
+<li>إخفاء <code>password</code> داخل <code>map</code> بدل عقد الرد. الغلاف ليس قائمة حقول.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لسياسة شكل عام على مجموعة مسارات: غلاف <code>data</code>، أو استبدال <code>null</code> إن وثّقت ذلك للعميل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمسار الصحة أو لملف ثنائي أو حين تكتب الرد بيديك. ولا لأخطاء HTTP. تلك فلاتر. ولا لتغيير <code>seat</code> قبل الحفظ.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>الدالة تغلّف</th>
+<th>المعترض يغلّف</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الخدمة</td>
+<td>تعرف JSON العميل</td>
+<td>ترجع عقد النطاق</td>
+</tr>
+<tr>
+<td>مسار جديد</td>
+<td>قد ينسى الغلاف</td>
+<td>يرث زينة الصنف</td>
+</tr>
+<tr>
+<td>الصحة</td>
+<td>سهلة الانفصال</td>
+<td>تبقى خارج الصنف</td>
+</tr>
+<tr>
+<td>الخطأ</td>
+<td>لا يغلَّف تلقائيًا</td>
+<td>لا يغلَّف عبر <code>map</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يصبح الجسم إن رجعت الدالة <code>[]</code> وهذا المعترض مربوط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ &quot;data&quot;: [] }</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يرى عميل <code>GET /health</code> المفتاح <code>data</code> في هذا التصميم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المعترض على <code>TicketsController</code> فقط. متحكم الصحة لا يرث الزينة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>reserve</code> ترجع <code>{ data: ticket }</code> والدالة عليها المعترض أيضًا. ماذا يرى العميل، وكيف توحّد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ data: { data: ticket } }</code>. الغلاف مرتين. الدالة ترجع <code>ticket</code> فقط، والمعترض هو المكان الوحيد للغلاف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي عامل يبدّل شكل الرد؟</li>
+<li>هل يتغير رمز <code>201</code> بسبب <code>map</code>؟</li>
+<li>متى يتعطّل التغليف مع <code>@Res()</code>؟</li>
+<li>هل خطأ <code>400</code> يمر في <code>map</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>map</code> على تيار <code>handle</code> تغلّف ناجح الدالة. الخدمة ترجع العقد الداخلي للرد، والمعترض يضع السياسة العامة. الأخطاء تبقى للفلتر، والصحة تبقى خارج الربط إن كان شكلها مختلفًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يقطع التيار بمهلة ويرجّع <code>408</code> حين يتأخر المعالج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/interceptors">Interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

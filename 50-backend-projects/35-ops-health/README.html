@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>35 — صحة وإيقاف</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>35 — صحة وإيقاف</h1>
+<p><strong>المستوى:</strong> متقدم<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new ops-health</code></p>
+<h2>ماذا تبني</h2>
+<p>مسار حياة رخيص، ومسار جاهزية يسأل مخزنًا. الإيقاف يغلق المخزن بهدوء. الحياة لا تفحص القاعدة.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>قبل Docker تحتاج أن تعرف ماذا يضرب المنسّق. خلط المسارين يعيد تشغيل تطبيق سليم لأن القاعدة تعطلت، أو العكس.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>liveness مقابل readiness</li>
+<li>enableShutdownHooks</li>
+<li>OnApplicationShutdown</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>Kubernetes كامل</li>
+<li>عدة قواعد</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>أي مشروع فيه خدمة تتصل بمخزن. يمكن محاكاة المخزن بعلم ready في الذاكرة.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/52-health-checks/README.html">52-health-checks</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>GET /health/live لا يلمس قاعدة.</li>
+<li>GET /health/ready يفشل بـ 503 إن أُغلق العلم.</li>
+<li>الإيقاف يستدعي disconnect مرة.</li>
+<li>لا تجعل الفشل 500 عامًا إن كان عقد الصحة 503.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/health/live</code></td>
+<td>200</td>
+<td>العملية حية</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/health/ready</code></td>
+<td>200</td>
+<td>أو 503</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new ops-health</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>نفّذ مخزنًا صغيرًا فيه check() و close().</li>
+<li>فعّل خطاطيف الإيقاف.</li>
+<li>اكتب تجربة: أوقف الجاهزية وتوقع 503 والحياة 200.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/health/health.controller.ts
+src/storage/memory-storage.ts
+src/main.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">app.enableShutdownHooks();
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>فحص PostgreSQL داخل live.</li>
+<li>نسيان خطاطيف الإيقاف فيظل الاتصال مفتوحًا.</li>
+<li>ready دائمًا 200.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>المساران مختلفان تحت الاختبار.</li>
+<li>الإغلاق يُستدعى عند إشارة الإيقاف.</li>
+<li>الرد عند العطل 503.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>بدّل المحاكاة بـ @nestjs/terminus عندما تربط Prisma.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 35» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../34-tested-tasks/README.html">34. مهام مُختبرة</a></li>
+<li>التالي: <a href="../36-order-stock/README.html">36. طلب يخصم المخزون</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

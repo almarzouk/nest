@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ConfigModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-config-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ConfigModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل تحميل البيئة مرة واحدة في جذر التطبيق عبر <code>ConfigModule.forRoot</code>، ومعرفة متى تكون الوحدة عامة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استدعاء <code>dotenv.config()</code> داخل كل وحدة ميزة يحمّل الملف مرات، ويخفي ترتيب الدمج. وحدة لا تستورد مصدر الإعداد ثم تحقن <code>ConfigService</code> تفشل عند الإقلاع لأن المزوّد غير مرئي في نطاقها.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ConfigModule.forRoot()</code> وحدة ديناميكية: تقرأ <code>.env</code>، تدمج البيئة، وتسجّل <code>ConfigService</code>. تضعها في <code>AppModule</code>. <code>isGlobal: true</code> يجعل المزوّد مرئيًا لبقية الوحدات بعد هذا التسجيل الواحد. من غير الخيار، كل وحدة ميزة تستورد <code>ConfigModule</code> قبل أن تحقن الخدمة.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة <code>@nestjs/config</code>. الشكل المعتاد:</p>
+<pre><code class="language-ts">ConfigModule.forRoot({
+  isGlobal: true,
+  envFilePath: &quot;.env&quot;,
+  cache: true,
+});
+</code></pre>
+<p><code>cache: true</code> يخزّن قراءات <code>process.env</code> خلف <code>get</code> لأن الوصول المتكرر إلى البيئة قد يكون مكلفًا. <code>load</code> يقبل مصفوفة دوال تبني كائنات إعداد متداخلة، ودرس namespace يفصّل <code>registerAs</code>.</p>
+<p><code>forFeature</code> تسجيل جزئي لملف إعداد خاص بوحدة ميزة، بعد أن يكون <code>forRoot</code> قد حمّل البيئة في الجذر. التوثيق يحذّر أن قيم <code>forFeature</code> قد لا تكون جاهزة في بنّاء وحدة أخرى؛ <code>onModuleInit</code> يعمل بعد تهيئة الوحدات التي تعتمد عليها.</p>
+<p><code>ConditionalModule.registerWhen(FooModule, &quot;USE_FOO&quot;)</code> يحمّل وحدة إن لم يكن المتغير <code>false</code>. يحتاج <code>ConfigModule</code> محمّلًا حتى يُحسم <code>ConfigModule.envVariablesLoaded</code>. هذا أداة لاحقة، لا بديل عن التحقق من المفاتيح المطلوبة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+  imports ConfigModule.forRoot({ isGlobal: true })
+       |
+       +-- يسجل ConfigService مرة
+       |
+BooksModule, LoansModule
+  تحقن ConfigService من غير import إضافي
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &quot;@nestjs/common&quot;;
+import { ConfigModule } from &quot;@nestjs/config&quot;;
+import { BooksModule } from &quot;./books/books.module.js&quot;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      cache: true,
+    }),
+    BooksModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>forRoot</code> يُستدعى في الجذر فقط. <code>BooksModule</code> لا تعيد الاستدعاء ولا تستورد <code>ConfigModule</code> لأن <code>isGlobal</code> صدّر الخدمة للتطبيق بعد تسجيلها في <code>AppModule</code>. <code>cache</code> يخص قراءات البيئة المتكررة، ولا يغني عن التحقق من الشكل.</p>
+<p>ترتيب <code>imports</code> هنا يضع الإعداد قبل وحدات الميزة. القيم المطلوبة ما زالت تُفحص في درس التحقق، لأن غياب الملف وحده لا يوقف الإقلاع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>forRoot</code> ترجع Dynamic Module فيها مزوّد <code>ConfigService</code>. أثناء التهيئة تُحلَّل ملفات البيئة وتُدمج. إن وُجد <code>validationSchema</code> أو <code>validate</code>، الفشل يرمي قبل أن يكتمل الإقلاع. درس لاحق يكتب ذلك المخطط.</p>
+<p><code>isGlobal</code> لا يعني أن كل الوحدات في المشروع يجب أن تكون عامة. هي استثناء لمزوّد يحتاجه الجميع بعد تكوين واحد. بقية ميزات المكتبة، مثل الكتب والإعارات، تبقى وحدات عادية تُستورد حيث تُستخدم.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة الحي: <code>AppModule</code> يستورد <code>ConfigModule.forRoot({ isGlobal: true })</code> ثم <code>BooksModule</code> و <code>LoansModule</code>. خدمة الإعارة تحقن <code>ConfigService</code> لتقرأ <code>LOAN_DAYS</code> إن كان مدة الإعارة تختلف بين فرع تجريبي وفرع حقيقي. إن أزلت <code>isGlobal</code> ولم تستورد <code>ConfigModule</code> داخل <code>LoansModule</code>، الإقلاع يفشل لأن <code>ConfigService</code> غير متاح في ذلك النطاق.</p>
+<p>في <code>main.ts</code>، بعد <code>NestFactory.create</code>، تستطيع <code>app.get(ConfigService)</code> لقراءة <code>PORT</code> قبل <code>listen</code>. ذلك وصول من حاوية التطبيق، لا استيراد للخدمة من ملف الإقلاع كأنها دالة حرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استدعاء <code>forRoot</code> داخل كل Feature Module فيتكرر التحميل.</li>
+<li><code>isGlobal: true</code> من غير تسجيل الوحدة في <code>AppModule</code>.</li>
+<li>جعل كل وحدات المجال <code>@Global()</code> لأن الإعداد صار عامًا.</li>
+<li>قراءة <code>process.env</code> في جسم الوحدة عند الاستيراد ثم افتراض أن <code>forRoot</code> سبقه. تقييم الملف يحدث عند الاستيراد، والتحميل داخل التهيئة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>مرة في الجذر لكل تطبيق يقرأ بيئة. <code>isGlobal: true</code> حين معظم الوحدات تحتاج <code>ConfigService</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإخفاء أسرار داخل مزوّدات بلا تحقق. التسجيل العام يسهّل الحقن، ولا يثبت أن المفتاح موجود أو أن نوعه صحيح.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>forRoot</code> في الجذر</th>
+<th>استيراد <code>ConfigModule</code> في كل ميزة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تكوين واحد مع <code>isGlobal</code></td>
+<td>صريح حين وحدات قليلة تحتاج الإعداد</td>
+</tr>
+<tr>
+<td>المزوّد مرئي بعد التسجيل</td>
+<td>كل وحدة تذكر الاعتماد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يُستدعى <code>ConfigModule.forRoot</code> في تطبيق المكتبة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>AppModule</code> مرة واحدة. وحدات الكتب والإعارة تحقن <code>ConfigService</code> ولا تعيد <code>forRoot</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>isGlobal: true</code> مضبوط، لكن <code>BooksService</code> لا يرى <code>ConfigService</code>. ما أول شيء تفحصه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>هل <code>AppModule</code> يستورد ناتج <code>forRoot</code> فعلًا؟ العام يبدأ بعد تسجيل الوحدة في الجذر. ثم تتأكد أن الحقن في بنّاء مزوّد مسجّل، لا في دالة خارج الحاوية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا قراءة <code>process.env.DATABASE_URL</code> في أعلى <code>app.module.ts</code> لتمريرها إلى وحدة أخرى قد ترى سلسلة فارغة رغم وجود <code>.env</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أعلى الملف يُقيَّم عند الاستيراد، وقد يسبق تحميل dotenv داخل <code>forRoot</code>. مرّر القراءة إلى مصنع يعمل أثناء التهيئة، وهو موضوع <code>forRootAsync</code> في آخر الفصل. أو حمّل الملف قبل الإقلاع بعلم <code>--env-file</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يسجّل <code>forRoot</code>؟</li>
+<li>متى تختار <code>isGlobal</code>؟</li>
+<li>لماذا لا يُستدعى <code>forRoot</code> في كل ميزة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>ConfigModule.forRoot</code> هو باب الإعداد في الجذر. <code>isGlobal</code> يوزّع <code>ConfigService</code> بعد تسجيل واحد. القراءة نفسها ما زالت تحتاج خدمة تعرف المفتاح والنوع.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./04-config-service.html">ConfigService</a> يقرأ المفتاح، والقيمة الافتراضية، و <code>getOrThrow</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/application/configuration">https://docs.nestjs.com/application/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

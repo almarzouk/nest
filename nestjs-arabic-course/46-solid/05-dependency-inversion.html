@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Dependency Inversion</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-dependency-inversion.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Dependency Inversion</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قلب اتجاه الاعتماد في Nest: سياسة الطلبات تعتمد على رمز منفذ تملكه، ومحول Prisma هو الذي يعتمد على ذلك الرمز وينفذه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>OrdersService</code> تستورد <code>PrismaService</code> فتصبح السياسة تابعة لتفصيل أدنى. كل تغيير عميل أو اختبار يحتاج القاعدة أو مزيفًا يشبه العميل كله. مبدأ عكس الاعتماد: الوحدات العالية لا تعتمد على وحدات منخفضة. كلاهما يعتمد على تجريد. التفاصيل تعتمد على التجريد أيضًا. الحاوية في Nest هي مكان الوصل: <code>provide</code> التجريد و <code>useClass</code> التفصيل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ضع <code>OrdersPort</code> و <code>Symbol</code> بجانب <code>PlaceOrder</code>. المحول في مجلد بنية يستورد المنفذ. الوحدة تربط <code>{ provide: ORDERS, useClass: PrismaOrdersAdapter }</code>. <code>PlaceOrder</code> لا يظهر في ملفها مسار Prisma. هذا ما مهّد له Clean، والمبدأ هنا اسم الضغط: اعكس السهم.</p>
+<h2>التعريف التقني</h2>
+<p>اتجاه خاطئ للتطبيق الذي قرر العزل:</p>
+<pre><code class="language-ts">import { PrismaService } from &#39;../prisma/prisma.service.js&#39;;
+</code></pre>
+<p>داخل <code>PlaceOrder</code>.</p>
+<p>اتجاه معكوس:</p>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { ORDERS, type OrdersPort } from &#39;./orders.port.js&#39;;
+
+@Injectable()
+export class PlaceOrder {
+  constructor(@Inject(ORDERS) private readonly orders: OrdersPort) {}
+
+  execute(totalMinor: number) {
+    if (totalMinor &lt; 0) {
+      throw new Error(&#39;المجموع سالب&#39;);
+    }
+    return this.orders.save({ totalMinor });
+  }
+}
+</code></pre>
+<p><code>PrismaOrdersAdapter implements OrdersPort</code> ويستورد Prisma. السهم من الملف الأدنى إلى ملف المنفذ في الأعلى.</p>
+<p>الحقن بالـ <code>constructor</code> هو عكس التحكم الذي بنيت عليه الدورة: الصنف لا يعمل <code>new</code> لتفصيله. المبدأ يزيد أن نوع ذلك الاعتماد تجريد يملكه الأعلى.</p>
+<p>في المشروع الصغير الذي أبقى Prisma داخل الخدمة عمدًا، الاعتماد ما زال على تفصيل، وهو مقبول ما دمت وثّقت التأجيل. عندما تلمس <code>import { PrismaClient }</code> من ملف سياسة تريد اختباره يوميًا، اعكس ذلك الملف فقط.</p>
+<p><code>forwardRef</code> بين سياسة وتفصيل علامة أن السهم ما زال متشابكًا. بعد العكس، السياسة لا تستورد المحول فلا دورة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">PlaceOrder -&gt; OrdersPort
+                 ^
+PrismaOrdersAdapter
+الوحدة: ORDERS = PrismaOrdersAdapter
+</code></pre>
+<p>الأعلى يسمي الحاجة. الأدنى يلبّيها. الحاوية تعرّف من يلبّي اليوم.</p>
+<h2>أبسط مثال</h2>
+<p>اختبار:</p>
+<pre><code class="language-ts">const saved: number[] = [];
+const orders: OrdersPort = {
+  save: async (input) =&gt; {
+    saved.push(input.totalMinor);
+  },
+};
+const place = new PlaceOrder(orders);
+await place.execute(100);
+</code></pre>
+<p>لا حاوية ولا قاعدة. المحول الحقيقي يبقى لملف البنية واختبار التكامل.</p>
+<h2>شرح المثال</h2>
+<p><code>execute( -1 )</code> يرمي قبل <code>save</code>. هذا اختبار سياسة لا اختبار SQL. العكس هو الذي جعل <code>new PlaceOrder(orders)</code> ممكنًا بمعامل بسيط. خدمة تبني <code>new PrismaClient()</code> داخل الدالة لا تُعطى هذا المعامل.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>سياسة الإقلاع تسجل الربط في الوحدة.</li>
+<li>بناء <code>PlaceOrder</code> يطلب <code>ORDERS</code>.</li>
+<li>الحاوية تبني المحول وتحل Prisma داخله.</li>
+<li>وقت النداء تعبر الدالة المنفذ إلى المحول.</li>
+<li>استبدال الربط في <code>TestingModule</code> يضع المزيف.</li>
+<li>المحول الذي يستدعي <code>PlaceOrder</code> يعيد السهم ويصنع دورة. الأثر الجانبي بعد الحفظ يبقى خارج السياسة أو في منفذ خروج آخر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>وحدة <code>OrdersModule</code>:</p>
+<pre><code class="language-ts">@Module({
+  providers: [
+    PlaceOrder,
+    PrismaOrdersAdapter,
+    { provide: ORDERS, useExisting: PrismaOrdersAdapter },
+  ],
+  exports: [PlaceOrder],
+})
+export class OrdersModule {}
+</code></pre>
+<p>المتحكم في الوحدة أو في وحدة مدخل يستورد <code>OrdersModule</code> ويحقن <code>PlaceOrder</code>. لا يحقن المحول. تصدير <code>PlaceOrder</code> سطح الدخول. إبقاء <code>ORDERS</code> غير مصدَّر يمنع الجار من استبدال المخزن. إن احتاج اختبار خارجي الاستبدال، فالاختبار يعيد الربط في <code>TestingModule</code> ولا يعتمد على تصدير الرمز للإنتاج.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تجريد في ملف يستورد Prisma.</li>
+<li>سياسة تعمل <code>new PrismaOrdersAdapter()</code>.</li>
+<li>تصدير المحول كسطح الوحدة.</li>
+<li>عكس كل استعلام قراءة قبل وجود اختبار أو محول ثانٍ.</li>
+<li>واجهة تعيد أنواع العميل فيبقى السهم المنطقي نازلًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يجب أن تُختبر السياسة أو تُقاد من غير التفصيل، وعلى حدود السياق التي استقرت.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعكس استدعاء <code>ConfigService</code> الإعدادي في كل مكان. الإعداد تفصيل تطبيق مقبول في الحافة. ولا تعكس <code>Logger</code> إن كان عقد Nest كافيًا للفريق.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاتجاه</th>
+<th>من يستورد من</th>
+<th>الاختبار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>خدمة → Prisma</td>
+<td>الأعلى يسمي التفصيل</td>
+<td>غالبًا قاعدة أو مزيف ضخم</td>
+</tr>
+<tr>
+<td>خدمة → منفذ ← محول</td>
+<td>الأدنى يطبّق الأعلى</td>
+<td>مزيف صغير على الرمز</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يملك ملف <code>OrdersPort</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جانب السياسة، لا جانب Prisma. المحول يستورد ذلك الملف.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>useExisting</code> في مثال الوحدة بدل <code>useClass</code> ثانٍ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>PrismaOrdersAdapter</code> مسجّل أصلًا. الربط باللقب يبقي نسخة واحدة خلف <code>ORDERS</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار إنتاج يستورد الوحدة ويريد مزيفًا. أين تغيّر الربط من غير تصدير <code>ORDERS</code> للجار؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>Test.createTestingModule</code> أعد تعريف <code>{ provide: ORDERS, useValue: fake }</code> داخل حاوية الاختبار. تصدير الإنتاج يبقى <code>PlaceOrder</code> فقط.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعتمد عليه الأعلى؟</li>
+<li>ماذا يفعل <code>new</code> داخل السياسة؟</li>
+<li>متى إبقاؤك على Prisma داخل الخدمة قرار تأجيل لا سهو؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>اعكس الاعتماد عندما يضر السهم النازل: السياسة تطلب رمزًا تملكه، والمحول الأدنى ينفذه، والوحدة تربطهما. الحقن هو الآلية، ومكان الواجهة هو القرار.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة SOLID على وحدة طلبات واحدة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

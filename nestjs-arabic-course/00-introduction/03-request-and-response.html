@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Request و Response</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-request-and-response.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Request و Response</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الرسالة الذاهبة والرسالة الراجعة كقطعتين واضحتين، قبل أسماء الـ Decorators التي ستستخرج منهما القيم لاحقًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>إذا كان &quot;الطلب&quot; كتلة غامضة، ستخلط بين ثلاثة أشياء مختلفة تصل معًا:</p>
+<ul>
+<li>أي عملية يريدها العميل.</li>
+<li>على أي مورد.</li>
+<li>ما البيانات المرفقة.</li>
+</ul>
+<p>والرد كذلك: نجاح العملية غير شكل البيانات الراجعة. رمز <code>201</code> يخبر العميل أن موردًا أُنشئ. الجسم يخبره ما هذا المورد. إذا أهملت أحدهما، الواجهة تخمّن.</p>
+<h2>الفكرة ببساطة</h2>
+<p><strong>Request</strong> رسالة من Client إلى Server: ماذا أريد، وعلى أي عنوان، ومع أي بيانات.</p>
+<p><strong>Response</strong> رسالة من Server إلى Client: ماذا حدث، وبأي حالة، ومع أي ناتج.</p>
+<h2>التعريف التقني</h2>
+<p>في HTTP:</p>
+<ul>
+<li>الـ Request يتكون من سطر البداية (الطريقة والمسار وإصدار البروتوكول)، ثم Headers، ثم جسم اختياري.</li>
+<li>الـ Response يتكون من سطر الحالة (الإصدار ورمز الحالة وسبب مختصر)، ثم Headers، ثم جسم اختياري.</li>
+</ul>
+<p>NestJS و Express يعطيانك هذين الكائنين في صور أسهل، لكن المحتوى هو هذا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Request
++-----------------------------+
+| Method   GET | POST | ...   |
+| Target   /books/2           |
+| Headers  Accept, Authorization, ...
+| Body     موجود أو فارغ      |
++-----------------------------+
+              |
+              v
+           Server
+              |
+              v
+Response
++-----------------------------+
+| Status   200 | 201 | 404... |
+| Headers  Content-Type, ...  |
+| Body     تمثيل الناتج       |
++-----------------------------+
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>العميل يريد كتابًا واحدًا.</p>
+<p>Request بشكل مقروء:</p>
+<pre><code class="language-http">GET /books/2 HTTP/1.1
+Host: localhost:3000
+Accept: application/json
+</code></pre>
+<p>Response:</p>
+<pre><code class="language-http">HTTP/1.1 200 OK
+Content-Type: application/json
+
+{
+  &quot;id&quot;: &quot;2&quot;,
+  &quot;title&quot;: &quot;Designing Data-Intensive Applications&quot;
+}
+</code></pre>
+<p>هذا النص شكل البروتوكول. المكتبات تبنيه وتفكه نيابة عنك. ستقرأ الأجزاء، لا هذا النص، في معظم أيامك.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>GET</code> الطريقة: اقرأ، ولا تغيّر شيئًا بهذا الطلب.</li>
+<li><code>/books/2</code> الهدف على هذا الخادم. <code>2</code> معرّف الكتاب.</li>
+<li><code>HTTP/1.1</code> إصدار البروتوكول في هذه الرسالة.</li>
+<li><code>Host</code> رأس إلزامي في HTTP/1.1: أي موقع على هذا العنوان تقصد.</li>
+<li><code>Accept</code> يخبر الخادم أن العميل يستطيع قراءة JSON. الخادم قد يحترم ذلك.</li>
+<li><code>200</code> يعني أن الخادم وجد الكتاب وأعاده.</li>
+<li><code>Content-Type: application/json</code> يخبر العميل كيف يفسر الجسم.</li>
+<li>الجسم هو تمثيل الكتاب، لا الكائن داخل ذاكرة الخادم.</li>
+</ul>
+<p>سطر فارغ في الرسالة الحقيقية يفصل الرؤوس عن الجسم. هنا وضعت الرؤوس ثم الجسم للوضوح.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>العميل يفتح اتصالًا إلى العنوان والمنفذ.</li>
+<li>يكتب بايتات الطلب.</li>
+<li>الخادم يقرأ حتى يكتمل الطلب: السطر الأول، الرؤوس، ثم الجسم إن وُجد وطوله معروف أو الاتصال يحدد نهايته.</li>
+<li>برنامجك — لاحقًا Express أو Nest — يضع هذه الأجزاء في كائن request.</li>
+<li>بعد أن يقرر البرنامج النتيجة، يكتب سطر الحالة والرؤوس والجسم.</li>
+<li>العميل يقرأ الاستجابة ويفسر الجسم حسب <code>Content-Type</code>.</li>
+</ol>
+<p>في Node.js الكائنان هما IncomingMessage للطلب و ServerResponse للرد، من وحدة <code>node:http</code>. Express يمررهما إليك باسم <code>req</code> و <code>res</code>، وتوثيق Express ينص على أنهما الكائنان نفسهما اللذان يعطيهما Node، مع إضافات Express فوقهما. Nest يبني فوق ذلك طبقة ستمر عليك في فصل Controllers. لا تحفظ أسماء أصناف Nest الآن.</p>
+<h2>مثال عملي</h2>
+<p>إنشاء كتاب.</p>
+<p>Request:</p>
+<pre><code class="language-http">POST /books HTTP/1.1
+Host: localhost:3000
+Content-Type: application/json
+
+{
+  &quot;title&quot;: &quot;Refactoring&quot;,
+  &quot;price&quot;: 40
+}
+</code></pre>
+<p>Response محتملة:</p>
+<pre><code class="language-http">HTTP/1.1 201 Created
+Content-Type: application/json
+Location: /books/18
+
+{
+  &quot;id&quot;: &quot;18&quot;,
+  &quot;title&quot;: &quot;Refactoring&quot;,
+  &quot;price&quot;: 40
+}
+</code></pre>
+<ul>
+<li><code>POST</code> إنشاء.</li>
+<li>الجسم يحمل ما يقترحه العميل.</li>
+<li><code>201</code> أُنشئ مورد. <code>200</code> كان سيعني نجاحًا عامًا. الرمز أدق من جملة داخل JSON.</li>
+<li><code>Location</code> يخبر أين يعيش المورد الجديد. رأس شائع مع الإنشاء، وستستخدمه عندما نضبط الردود في Nest.</li>
+</ul>
+<p>إذا لم يوجد مسار <code>/books/2</code>:</p>
+<pre><code class="language-http">HTTP/1.1 404 Not Found
+Content-Type: application/json
+
+{
+  &quot;statusCode&quot;: 404,
+  &quot;message&quot;: &quot;Book not found&quot;
+}
+</code></pre>
+<p>الرمز يقول للفئة البرمجية ماذا حدث. الجسم يشرح للإنسان أو للواجهة. الاثنان معًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع نتيجة العملية داخل JSON فقط، مع إرجاع <code>200</code> للفشل وللنجاح. العميل عندها يفتح الجسم ليعرف إن كان فشلًا. الرمز جزء من العقد.</li>
+<li>قراءة معرّف المورد من الجسم بينما هو أصلًا في المسار، أو العكس، من غير اتفاق. في REST الشائع: معرّف المورد القائم في المسار، وحقول الإنشاء في الجسم.</li>
+<li>افتراض أن غياب الجسم يعني فشلًا. <code>204 No Content</code> نجاح بلا جسم.</li>
+</ul>
+<h2>متى نهتم بكل جزء؟</h2>
+<table>
+<thead>
+<tr>
+<th>الجزء</th>
+<th>سؤال يجيبه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Method</td>
+<td>ما نوع العملية؟</td>
+</tr>
+<tr>
+<td>Target / URL</td>
+<td>على أي مورد؟</td>
+</tr>
+<tr>
+<td>Headers</td>
+<td>سياق: نوع المحتوى، الهوية، التفضيلات</td>
+</tr>
+<tr>
+<td>Body</td>
+<td>حمولة الإنشاء أو التعديل</td>
+</tr>
+<tr>
+<td>Status</td>
+<td>ماذا قرر الخادم؟</td>
+</tr>
+<tr>
+<td>Response body</td>
+<td>التمثيل الذي يستطيع العميل قراءته</td>
+</tr>
+</tbody></table>
+<h2>مقارنة سريعة مع ما ستراه في Express</h2>
+<pre><code class="language-text">Express                         معنى الجزء
+app.get(&#39;/books/:id&#39;, ...)      Method + مسار
+req.params.id                   قطعة من المسار
+req.query                       ما بعد ?
+req.body                        جسم الطلب بعد تحليله
+res.status(201).json(...)       Status + جسم JSON
+</code></pre>
+<p>في Nest ستقابل لاحقًا <code>@Get</code> و <code>@Param</code> و <code>@Query</code> و <code>@Body</code>. الأسماء تقابل هذا الجدول. شرحها في فصل Controllers، بعد أن نبني المشروع.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>صنف كل سطر: Request أم Response، وأي جزء منه (Method أو Path أو Header أو Body أو Status).</p>
+<ol>
+<li><code>DELETE /books/2</code></li>
+<li><code>404</code></li>
+<li><code>Authorization: Bearer ...</code></li>
+<li><code>{ &quot;title&quot;: &quot;Clean Code&quot; }</code></li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>Request: Method هو <code>DELETE</code> و Path هو <code>/books/2</code>.</li>
+<li>Response: Status.</li>
+<li>Request Header في الحالة الشائعة. الخادم قد يعيد رؤوسًا أيضًا، لكن <code>Authorization</code> يرسله العميل.</li>
+<li>Body. الاتجاه يعتمد على العملية: في الإنشاء يكون Request، وفي القراءة يكون Response. الشكل وحده لا يحدد الاتجاه.</li>
+</ol>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>العميل أرسل <code>POST /books</code> بجسم ينقصه العنوان. الخادم رفض الحفظ. اقترح Status وقل إن كان الجسم ضروريًا. لا تشترط نص الرسالة حرفيًا.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>400 Bad Request</code> يناسب بيانات عميل غير مقبولة. جسم الاستجابة مفيد لأنه يسمي الحقل الناقص، حتى تستطيع الواجهة إظهاره. الرمز وحده يقول &quot;طلبك غير صالح&quot; ولا يقول أي حقل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>طلب <code>GET /books/2</code> أعاد <code>200</code> وجسمًا فيه <code>&quot;error&quot;: &quot;not found&quot;</code>. ما المشكلة في هذا العقد، وماذا تغيّر في سلوك الواجهة إذا أصلحت الرمز إلى <code>404</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الرمز <code>200</code> يعني نجاح القراءة. الواجهة التي تثق بالرمز ستعامل الكتاب كأنه موجود، ثم تتعثر عندما تقرأ الحقل <code>error</code>. مع <code>404</code> تستطيع الواجهة، وطبقة HTTP، وأي وسيط، أن تفهم الغياب من غير اتفاق سري على شكل JSON. جسم الخطأ يبقى مفيدًا للرسالة، والرمز يحمل المعنى.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الأجزاء الأربعة التي تبحث عنها في Request؟</li>
+<li>ماذا يضيف Status ولا يغني عنه نص داخل JSON؟</li>
+<li>ماذا يخبرك <code>Content-Type</code>؟</li>
+<li>أي كائنات Node يغلّفها Express باسم <code>req</code> و <code>res</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Request يحدد العملية والهدف والسياق والحمولة. Response يحدد القرار والتمثيل. الرمز والجسم يؤديان وظيفتين مختلفتين.</p>
+<h2>ماذا بعد؟</h2>
+<p>هذان الشكلان ليسا اختراع Express. هما HTTP. الدرس التالي يشرح البروتوكول: الطرق، والرموز، والرؤوس، ولماذا كل طلب مستقل عن الذي قبله.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>MDN — HTTP overview: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview">https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Overview</a></li>
+<li>MDN — HTTP messages: <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Messages">https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/Messages</a></li>
+<li>Node.js — HTTP: <a href="https://nodejs.org/api/http.html">https://nodejs.org/api/http.html</a></li>
+<li>Express — Hello world (ينص على أن <code>req</code> و <code>res</code> هما كائنا Node): <a href="https://expressjs.com/en/starter/hello-world.html">https://expressjs.com/en/starter/hello-world.html</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

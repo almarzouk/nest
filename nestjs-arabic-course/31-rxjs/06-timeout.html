@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>timeout</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-timeout.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>timeout</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنهاء الانتظار على تيار إذا تأخرت القيمة الأولى عن حد زمني، وتحويل ذلك إلى خطأ يمكن ترجمته.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معترض أو عميل ينتظر منبعًا عالقًا. الوصلة تبقى مشغولة والمستخدم يرى تحميلًا بلا نهاية. إلغاء المتصفح لا يصل دائمًا إلى طلب داخلي بدأته أنت. حد زمني يحوّل الصمت إلى خطأ.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>timeout(ms)</code> من <code>rxjs</code> يخطئ التيار إذا لم تصدر قيمة خلال المدة. الخطأ <code>TimeoutError</code>. التقطه بـ <code>catchError</code> إن أردت <code>GatewayTimeoutException</code> بدل رسالة المكتبة. هذا ليس <code>@Timeout()</code> من جدولة Nest. ذاك مؤقت إقلاع يُدرس في فصل لاحق.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { TimeoutError, catchError, throwError, timeout } from &#39;rxjs&#39;;
+import { GatewayTimeoutException } from &#39;@nestjs/common&#39;;
+
+source.pipe(
+  timeout(1500),
+  catchError((error: unknown) =&gt; {
+    if (error instanceof TimeoutError) {
+      return throwError(() =&gt; new GatewayTimeoutException(&#39;catalog timed out&#39;));
+    }
+    return throwError(() =&gt; error);
+  }),
+);
+</code></pre>
+<p>المدة بالميلي ثانية. <code>1500</code> تعني ثانية ونصف من لحظة الاشتراك حتى أول قيمة، ما لم تمرر إعدادًا أحدث بشكل تاريخ. للطلب الواحد هذا هو السلوك الذي نريده.</p>
+<p>ضع المعامل قبل <code>map</code> الثقيل إن كان الانتظار على المنبع لا على التحويل المحلي. <code>map</code> على كائن في الذاكرة لا يحتاج <code>timeout</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">اشتراك
+  المنبع صامت
+    بعد 1500ms TimeoutError
+      catchError -&gt; 504
+  المنبع أصدر قيمة في الوقت
+    timeout يمرر القيمة ويكمل
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>على تيار تجربة:</p>
+<pre><code class="language-ts">import { delay, of, timeout } from &#39;rxjs&#39;;
+
+const slow = of(&#39;isbn-meta&#39;).pipe(delay(3000), timeout(1500));
+</code></pre>
+<p><code>delay</code> للاختبار فقط. في التطبيق المصدر هو <code>next.handle()</code> أو طلب HTTP. هذا التيار يخطئ لأن التأخير أطول من الحد.</p>
+<h2>شرح المثال</h2>
+<p><code>of</code> يصدر فورًا ثم <code>delay</code> يؤجل الإصدار ثلاث ثوانٍ. <code>timeout(1500)</code> لا يرى قيمة في الوقت فيصدر <code>TimeoutError</code> ويلغي المصدر. في الاختبار توقع الخطأ لا العنوان. إن خفّضت <code>delay</code> إلى 200 ينجح التيار ويصل <code>isbn-meta</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الاشتراك يبدأ المؤقت. كل <code>next</code> يعيد ضبط السلوك حسب شكل <code>timeout</code> الذي استدعيته. لتيار قيمة واحدة، غياب تلك القيمة حتى المدة يعني الخطأ ثم الإلغاء. الإلغاء مهم حتى لا يصل الرد المتأخر لاحقًا ويكمل عملًا ظننته ميتًا. إن لم يلغِ المصدر العمل الخارجي فعلًا، قد تكمل المكتبة الطلب على الشبكة رغم أن المشترك رحل. مع <code>HttpService</code> اربط المهلة أيضًا في إعداد Axios كما في الفصل التالي، حتى يُقطع الطلب عند المصدر لا في الملاحظ فقط.</p>
+<h2>مثال عملي</h2>
+<p>حد كتالوج داخلي 1500ms وحد بحث ISBN 800ms لأن الصفحة لا تنتظر الغلاف الخارجي طويلًا. المهلتان في مكانين مختلفين لا رقم سحري واحد في معترض عالمي. المعترض العالمي بـ <code>timeout(800)</code> يقطع <code>POST</code> رفعًا بطيئًا مشروعًا. ركّب المهلة على مسار الوكيل فقط.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>خلط <code>timeout</code> من RxJS مع <code>@Timeout</code> من <code>@nestjs/schedule</code>.</li>
+<li>معترض عالمي بمهلة أقصر من أبطأ مسار شرعي.</li>
+<li>التقاط <code>TimeoutError</code> وإرجاع <code>of(null)</code>.</li>
+<li>مهلة في <code>pipe</code> بلا مهلة على عميل HTTP، فيبقى المقبس الخارجي مفتوحًا.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على تيار يعتمد على منبع قد يصمت: وكيل، أو سلسلة معترض تغلف ذلك الوكيل.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على <code>BooksService.findById</code> المحلية التي تعيد وعد Prisma. هناك مهلة الاستعلام إعداد القاعدة لا معامل تيار. ولا على تدفق <code>StreamableFile</code> طويل لأن القيمة قد تبدأ متأخرة أو تستمر طويلًا.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>أين تعيش</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>timeout</code> في <code>rxjs</code></td>
+<td>سلسلة تيار</td>
+</tr>
+<tr>
+<td>مهلة Axios</td>
+<td>طلب الفصل التالي</td>
+</tr>
+<tr>
+<td><code>@Timeout</code> في الجدولة</td>
+<td>دالة تُنفَّذ مرة بعد الإقلاع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي صنف خطأ يرمى عند تجاوز المدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>TimeoutError</code> من <code>rxjs</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تضع <code>timeout(800)</code> على كل المتحكمات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الرفع والمسارات الطويلة المشروعة ستُقطع. المهلة على مسار المنبع البطيء فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تُضبط مهلة على العميل الخارجي بالإضافة إلى <code>timeout</code> في <code>pipe</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن معامل التيار يوقف الملاحظ. مهلة العميل تقطع الطلب نفسه حتى لا تبقى وصلة معلقة بعد أن رأى المستخدم <code>504</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وحدة الرقم الممرر إلى <code>timeout</code>؟</li>
+<li>أي استثناء HTTP يناسب صمت المنبع؟</li>
+<li>أي زينة جدولة ليست هذا المعامل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>timeout</code> يحوّل الصمت إلى <code>TimeoutError</code>. ترجمه إلى <code>504</code> على مسار الوكيل، واترك المهلة بجانب المنبع لا على التطبيق كله.</p>
+<h2>ماذا بعد؟</h2>
+<p>ما تتركه من المكتبة حتى يبقى الفصل قصيرًا قبل عميل HTTP.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>RxJS — <code>timeout</code>: <a href="https://rxjs.dev/api/index/function/timeout">https://rxjs.dev/api/index/function/timeout</a></li>
+<li>NestJS — Interceptors: <a href="https://docs.nestjs.com/interceptors">https://docs.nestjs.com/interceptors</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

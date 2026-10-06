@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Interfaces</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-interfaces.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Interfaces</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>وصف شكل كائن يتكرر بين خدمة ومتحكم، ومعرفة أن Interface تُمحى عند التشغيل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كتابة <code>{ title: string; price: number }</code> في كل دالة تكرر العقد وتفتح باب اختلاف حرف. نريد اسمًا واحدًا للشكل.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>interface</code> اسم لشكل كائن: أي حقول، وبأي أنواع. المترجم يقارن الكائنات بهذا الشكل. وقت التشغيل لا توجد Interface.</p>
+<h2>التعريف التقني</h2>
+<p>Interface في TypeScript تصف شكلًا هيكليًا. أي كائن فيه الحقول المطلوبة يصلح، حتى لو لم يقل <code>implements</code>. يمكن تمديدها بـ <code>extends</code>. لا تنتج كود JavaScript يتحقق من القيم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">وقت الكتابة:  Book شكل معروف
+وقت التشغيل:  كائن عادي، والفحص من Validation لا من Interface
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">interface Book {
+  id: string;
+  title: string;
+  price: number;
+}
+
+function titleOf(book: Book): string {
+  return book.title;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>Book</code> عقد: ثلاثة حقول.</li>
+<li><code>titleOf</code> تقبل أي كائن يطابق الشكل.</li>
+<li><code>{ id: &#39;2&#39;, title: &#39;Refactoring&#39;, price: 40 }</code> يصلح حتى لو لم يُنشأ بصنف <code>Book</code>.</li>
+<li>كائن ينقصه <code>price</code> يُرفض عند الفحص.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد الترجمة تختفي <code>interface Book</code> بالكامل. لا دالة <code>instanceof Book</code>. لذلك توثيق Validation في Nest يقول: لا تُصدر Metadata للـ generics أو الـ interfaces، و <code>ValidationPipe</code> لا يتحقق من DTO مُعلَن كـ interface. استخدم صنفًا ملموسًا. هذا الفرق سيُعاد في فصل DTO، وهو سبب أن عقد الشبكة صنف لا Interface.</p>
+<h2>مثال عملي</h2>
+<p>عقد قراءة منفصل عن عقد الإنشاء، لأن العميل لا يرسل <code>id</code>:</p>
+<pre><code class="language-ts">interface CreateBook {
+  title: string;
+  price: number;
+}
+
+interface Book extends CreateBook {
+  id: string;
+}
+</code></pre>
+<p><code>extends</code> يضيف الحقول. <code>Book</code> فيه العنوان والسعر والمعرّف. الدالة التي تحفظ تأخذ <code>CreateBook</code> وتعيد <code>Book</code>. هذا تمييز مدخلات ومخرجات ستسميه الدورة لاحقًا Input DTO و Response، عندما تصبح أصنافًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استخدام Interface كـ DTO تتحقق منه <code>ValidationPipe</code>. الفحص لن يرى الحقول.</li>
+<li><code>import type</code> مفهوم لاحقًا: النوع الممحو لا يُستورد كقيمة. الصنف الذي تحتاجه Nest وقت التشغيل يُستورد استيراد قيمة.</li>
+<li>الظن أن <code>implements</code> يفحص البيانات القادمة من JSON.</li>
+</ul>
+<h2>متى نستخدم Interface؟</h2>
+<p>لشكل داخلي بين دوال TypeScript: ناتج خدمة، أو إعدادات، أو عقد لا يُفحص بـ class-validator.</p>
+<h2>متى لا نستخدمها؟</h2>
+<p>كجسم <code>@Body()</code> الذي يجب أن يُتحقق منه وقت التشغيل عبر <code>ValidationPipe</code>. هناك صنف. <code>StandardSchemaValidationPipe</code> مسار آخر بمخطط، وسيأتي في التحقق، وهو أيضًا ليس Interface.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Interface</th>
+<th>Class</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>وقت التشغيل</td>
+<td>غير موجودة</td>
+<td>موجودة كدالة بناء</td>
+</tr>
+<tr>
+<td><code>ValidationPipe</code></td>
+<td>لا يراها</td>
+<td>يراها إذا وُسمت حقولها</td>
+</tr>
+<tr>
+<td>حقن Nest</td>
+<td>لا تُحقن</td>
+<td>تُحقن إذا سُجّلت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل <code>{ id: &#39;1&#39;, title: &#39;A&#39;, price: 1, extra: true }</code> يطابق <code>Book</code> في المثال؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نعم من جهة الأنواع: الحقول المطلوبة موجودة، والحقل الزائد مسموح عند تمرير كائن بهذا الشكل في أغلب سياقات التعيين المباشرة للكائن المعرّف كمتغير. التشدد على الحقول الزائدة (excess property check) يظهر أقوى عند تمرير الكائن حرفيًا في مكان ينتظر <code>Book</code>. الفكرة: Interface تفرض وجود المطلوب، ولا تحذف الزائد وقت التشغيل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا نضع <code>@IsString()</code> على Interface؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الوسوم تحتاج هدفًا يعيش وقت التشغيل، وهو خاصية على صنف. Interface تُحذف، فلا مكان يلصق عليه الوسوم ولا Metadata يقرأها <code>ValidationPipe</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>خدمة تعيد <code>Promise&lt;Book | null&gt;</code>. الواجهة Interface. ماذا يبقى منها في JavaScript الناتج؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا شيء من اسم <code>Book</code>. تبقى الدالة التي تُرجع Promise وقيمة كائن أو <code>null</code>. من يستقبل الناتج يحتاج فحص <code>null</code> في الكود، لا اعتمادًا على أن Interface &quot;ستمنع&quot; الغياب وقت التشغيل.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تصف Interface؟</li>
+<li>لماذا لا تصلح وحدها كـ DTO لـ <code>ValidationPipe</code>؟</li>
+<li>ما معنى أن النظام الهيكلي يقبل كائنًا لم يقل <code>implements</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Interface اسم لشكل أثناء الكتابة. شبكة Nest تحتاج صنفًا أو مخططًا يعيش بعد الترجمة عندما نريد فحصًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>الاتحاد والأسماء البديلة يصفان قيمة قد تكون أحد عدة أشكال.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>TypeScript — Interfaces: <a href="https://www.typescriptlang.org/docs/handbook/2/everyday-types.html">https://www.typescriptlang.org/docs/handbook/2/everyday-types.html</a></li>
+<li>NestJS — Validation (interfaces لا تُفحص): <a href="https://docs.nestjs.com/application/validation">https://docs.nestjs.com/application/validation</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

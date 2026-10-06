@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Lazy-loading Modules</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-lazy-loading.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Lazy-loading Modules</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تحميل وحدة عند أول حاجة بـ <code>LazyModuleLoader</code> لتقصير إقلاع دالة serverless، ومعرفة ما الذي لا يُسجَّل إن تأخر: متحكمات، بوابات، resolvers، وmiddleware.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الإقلاع الافتراضي يبني كل الوحدات قبل أول عمل. في دالة تُستدعى نادرًا، زمن البرد يدفع ثمن ميزات لا تخص هذا المسار. التحميل الكسول يؤجل <code>import()</code> وبناء الوحدة حتى يصل الطلب المناسب. في تطبيق طويل العمر داخل حاوية، الربح صغير لأن الإقلاع مرة واحدة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>احقن <code>LazyModuleLoader</code> من <code>@nestjs/core</code>. عند الحاجة:</p>
+<pre><code class="language-ts">const { LazyModule } = await import(&#39;./lazy.module.js&#39;);
+const moduleRef = await this.lazyModuleLoader.load(() =&gt; LazyModule);
+</code></pre>
+<p>الناتج <code>ModuleRef</code> لتلك الوحدة. أول <code>load</code> يبني ويخزن، والتالي يعيد المخزون بسرعة. خطافات دورة الحياة لا تُستدعى على الوحدة الكسولة وخدماتها. لا تجعلها <code>global</code>. المتحكمات داخلها لا تُسجَّل كمسارات بعد أن بدأ الاستماع.</p>
+<h2>التعريف التقني</h2>
+<p>الوحدة ملف Nest عادي:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { LazyService } from &#39;./lazy.service.js&#39;;
+
+@Module({
+  providers: [LazyService],
+  exports: [LazyService],
+})
+export class LazyModule {}
+</code></pre>
+<p>بعد <code>load</code>:</p>
+<pre><code class="language-ts">const { LazyService } = await import(&#39;./lazy.service.js&#39;);
+const lazyService = moduleRef.get(LazyService);
+</code></pre>
+<p><code>load</code> يقبل خيارًا ثانيًا <code>{ logger: false }</code> لإسكات سجل التحميل.</p>
+<p>التوثيق يحذر: التقنية مختلفة عن lazy routes في Angular رغم الاسم. الوحدات الكسولة تشارك رسم التطبيق مع ما بُني عند الإقلاع ومع ما يُحمَّل لاحقًا.</p>
+<p>ما لا يعمل كمسارات متأخرة:</p>
+<ul>
+<li>Controllers في HTTP. Fastify لا يضيف مسارات بعد الجاهزية، والتسجيل المتأخر لا يفتح URL.</li>
+<li>Gateways وموضوعات بعض النواقل (Kafka و gRPC و RabbitMQ) التي تشترك قبل الاتصال.</li>
+<li>Resolvers في GraphQL لأن المخطط يُبنى من metadata المحمّلة مسبقًا.</li>
+<li><code>Middleware</code> عبر <code>configure</code> على <code>NestModule</code> عند الطلب.</li>
+</ul>
+<p>يمكن الحصول على المحمّل من <code>app.get(LazyModuleLoader)</code> في <code>main.ts</code> أيضًا.</p>
+<p>مع webpack اضبط <code>module</code> على <code>esnext</code> و <code>moduleResolution</code> على <code>node</code> حتى ينقسم الملف. مشروع Nest الافتراضي على <code>tsc</code> يستعمل <code>import()</code> الديناميكي كما في ESM، ومع امتداد <code>.js</code> في المسار المحلي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الإقلاع: وحدات الشجرة الساخنة فقط
+أول حدث: import() -&gt; load -&gt; get(Service) -&gt; عمل
+ثاني حدث: load من الكاش
+المسار HTTP الجديد؟ لا يُضاف بهذه الآلية
+</code></pre>
+<p>الكسول خدمة تُستدعى من كود يعمل، لا باب URL يظهر فجأة.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { LazyModuleLoader } from &#39;@nestjs/core&#39;;
+
+@Injectable()
+export class ReportJob {
+  constructor(private readonly lazyModuleLoader: LazyModuleLoader) {}
+
+  async run(): Promise&lt;string&gt; {
+    const { ReportModule } = await import(&#39;./report.module.js&#39;);
+    const moduleRef = await this.lazyModuleLoader.load(() =&gt; ReportModule);
+    const { ReportService } = await import(&#39;./report.service.js&#39;);
+    const reports = moduleRef.get(ReportService);
+    return reports.build();
+  }
+}
+</code></pre>
+<p><code>ReportModule</code> فيها <code>ReportService</code> فقط، بلا متحكم.</p>
+<h2>شرح المثال</h2>
+<p><code>import()</code> يؤجل تقييم الملف حتى <code>run</code>. <code>load</code> يدمجه في الرسم مرة. <code>get</code> يجلب Singleton تلك الوحدة. دالة serverless التي لا تبني تقارير لا تدفع ثمن المحرك في البرد. دالة الحاوية التي تبني التقارير كل دقيقة تدفع الثمن عند أول تشغيل ثم تستعمل الكاش.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإقلاع لا يرى <code>ReportModule</code> إن لم تُستورد ساكنًا.</li>
+<li>أول <code>load</code> يسجل المزودات ويبنيها ويربط ما تستطيع من الرسم الموجود.</li>
+<li>خطاف <code>onModuleInit</code> على <code>ReportService</code> لا يُستدعى. افتح الموارد داخل الدالة أو في بناء عادي.</li>
+<li>النداء التالي يعيد الوحدة المخزنة.</li>
+<li>متحكم داخل الملف لا يضيف <code>GET</code> بعد <code>listen</code>.</li>
+<li>وسم الوحدة <code>global</code> لا يجعلها عامة بأثر رجعي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عامل طابور يشغّل <code>invoice</code> أو <code>export</code> حسب الحقل <code>kind</code>. حمّل <code>InvoiceModule</code> أو <code>ExportModule</code> داخل المعالج. أبقِ متحكم HTTP للمسار في الشجرة الساخنة. شارك <code>PrismaModule</code> عبر استيراده استيرادًا ساكنًا من الوحدة الكسولة إن احتاجت العميل، أو مرر البيانات إلى دالة لا تفتح اتصالًا جديدًا. لا تعتمد على <code>onModuleDestroy</code> في الوحدة الكسولة لإغلاق ما فتحته؛ أغلق في الدالة أو في خدمة ساخنة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وضع <code>AppController</code> في وحدة كسولة وتوقع ظهور المسار.</li>
+<li>انتظار خطافات العمر.</li>
+<li><code>load</code> لكل رسالة من غير الاستفادة من الكاش في التصميم (الكاش موجود، لكن <code>import</code> المتكرر ما زال يستحق الإبقاء على المرجع).</li>
+<li>اعتبار الميزة لازمة لتطبيق المتجر الدائم. الإقلاع مرة لا يبرر التعقيد.</li>
+<li>نسيان <code>.js</code> في مسار <code>import()</code> تحت ESM.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>دالة أو عامل بارد يتفرع إلى خدمات ثقيلة حسب المدخل، والمسار الشبكي مسجّل مسبقًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتقسيم متحكمات REST في عملية تستمع دائمًا. استيراد ساكن أوضح. ولا لمخطط GraphQL code-first.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التحميل</th>
+<th>متى تُبنى الوحدة</th>
+<th>المسارات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ساكن في <code>imports</code></td>
+<td>أثناء الإقلاع</td>
+<td>تُسجَّل قبل الاستماع</td>
+</tr>
+<tr>
+<td><code>LazyModuleLoader</code></td>
+<td>أول <code>load</code> ثم كاش</td>
+<td>لا متحكمات متأخرة</td>
+</tr>
+<tr>
+<td>Dynamic <code>register</code></td>
+<td>أثناء الإقلاع أيضًا، بخيار</td>
+<td>مسجّلة مع الشجرة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرجع <code>load</code> وكيف تجلب الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>ModuleRef</code>. تستدعي <code>get</code> على رمز الخدمة بعد <code>import</code> لصنفها.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يُستعمل هذا الأسلوب لإضافة <code>GET /reports</code> بعد الإقلاع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المتحكمات والـ middleware والبوابات وresolvers لا تُسجَّل كما يُتوقع عند التحميل المتأخر. منصات مثل Fastify لا تفتح مسارات بعد الجاهزية.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين تغلق عميلًا فتحته خدمة داخل وحدة كسولة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في مسار الدالة التي استدعت الخدمة، أو في مزود ساخن يملك خطاف <code>onModuleDestroy</code>. خطافات الوحدة الكسولة لا تُستدعى.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الفرق عن كسول Angular؟</li>
+<li>ماذا يحدث في ثاني <code>load</code>؟</li>
+<li>أي تطبيقات يبرر لها التوثيق هذا الأسلوب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>LazyModuleLoader</code> يبني وحدة خدمة عند الحاجة ويخزنها. الإقلاع البارد يستفيد. المسارات والمخطط والخطافات تبقى على الشجرة التي تُحمَّل قبل الاستماع.</p>
+<h2>ماذا بعد؟</h2>
+<p>Asynchronous Providers: مصنع مزود يرجع وعدًا داخل الوحدة، وهو غير <code>forRootAsync</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Lazy loading modules: <a href="https://docs.nestjs.com/fundamentals/lazy-loading-modules">https://docs.nestjs.com/fundamentals/lazy-loading-modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

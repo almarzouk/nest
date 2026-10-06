@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Schema و Query و Mutation</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-schema-query-mutation.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Schema و Query و Mutation</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة مخطط صغير: أنواع، جذر قراءة، جذر كتابة، ونص عملية بمتغيرات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>سماع «أرسل أي JSON إلى <code>/graphql</code>» ينتج عمليات بلا عقد. المخطط هو الذي يرفض الحقل المجهول والحجة الناقصة قبل الخدمة. من غير تمييز <code>Query</code> عن <code>Mutation</code> تُوضع الكتابة على جذر القراءة فيصعب على العميل والأدوات معرفة ما يغيّر بيانات.</p>
+<h2>الفكرة ببساطة</h2>
+<p>SDL هي لغة وصف المخطط. <code>type Book</code> حقول. <code>type Query</code> نقاط الدخول للقراءة. <code>type Mutation</code> نقاط الدخول التي يُتوقع أن تغيّر حالة. العملية تسمي الجذر والحقول. المتغيرات تُمرر بجانب النص.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-graphql">type Book {
+  id: ID!
+  title: String!
+}
+
+type Query {
+  book(id: ID!): Book
+  books: [Book!]!
+}
+
+type Mutation {
+  createBook(title: String!): Book!
+}
+</code></pre>
+<ul>
+<li><code>[Book!]!</code> قائمة مطلوبة، وعناصرها غير <code>null</code>. القائمة قد تكون فارغة.</li>
+<li><code>book(id: ID!): Book</code> قد يعيد <code>null</code> إن كان الغياب ممثلًا بذلك. هذا قرار مخطط، ويختلف عن <code>404</code>.</li>
+<li>التعليق في SDL بـ <code>&quot;...&quot;</code> فوق الحقل وصف يظهر في أدوات المخطط.</li>
+<li><code>subscription</code> جذر ثالث. قناته درس آخر في هذا الفصل.</li>
+</ul>
+<p>جسم HTTP المعتاد:</p>
+<pre><code class="language-json">{
+  &quot;query&quot;: &quot;query One($id: ID!) { book(id: $id) { title } }&quot;,
+  &quot;variables&quot;: { &quot;id&quot;: &quot;42&quot; }
+}
+</code></pre>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Schema  = ما يجوز
+Query   = اقرأ بلا أثر جانبي مقصود
+Mutation = غيّر حالة ثم أعد شجرة
+Operation + variables = طلب هذه المرة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>قراءة ثم إنشاء، كعمليتين منفصلتين.</p>
+<pre><code class="language-graphql">query One($id: ID!) {
+  book(id: $id) {
+    id
+    title
+  }
+}
+</code></pre>
+<pre><code class="language-graphql">mutation Create($title: String!) {
+  createBook(title: $title) {
+    id
+    title
+  }
+}
+</code></pre>
+<p>اسم العملية <code>One</code> و <code>Create</code> يظهر في السجلات. عملية بلا اسم أصعب تتبعًا عندما يرسل العميل أكثر من نص.</p>
+<h2>شرح المثال</h2>
+<p>الحجة <code>$title</code> تُعرَّف في رأس العملية وتُربط بالحقل. القيمة تأتي من <code>variables</code> لا من لصق سلسلة المستخدم داخل النص. ذلك يمنع كسر الاقتباس ويبقي النص قابلًا للتخزين كقالب. حقول الرد بعد <code>createBook</code> اختيار للعميل: قد يطلب <code>id</code> فقط.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>الخادم يبني مخططًا قابلًا للتنفيذ من SDL أو من الأصناف لاحقًا. عند الطلب يتحقق من الأنواع. فشل التحقق خطأ قبل المحلل: حقل غير موجود، أو <code>ID</code> مفقود. إن عبر النص، تُنفَّذ حقول الجذر. مواصفة GraphQL تنفّذ حقول <code>Mutation</code> على الجذر بترتيب تسلسلي حتى لا تتسابق كتابتان في العملية نفسها. حقول <code>Query</code> يمكن أن تُجدول بالتوازي. لذلك لا تضع أثرًا جانبيًا في <code>Query</code> وتعتمد على الترتيب.</p>
+<h2>مثال عملي</h2>
+<p>عقد كتالوج الإصدار الأول:</p>
+<table>
+<thead>
+<tr>
+<th>الحاجة</th>
+<th>الحقل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بطاقة وعنوان</td>
+<td><code>book(id: ID!): Book</code></td>
+</tr>
+<tr>
+<td>رف الصفحة</td>
+<td><code>books: [Book!]!</code></td>
+</tr>
+<tr>
+<td>إضافة عنوان</td>
+<td><code>createBook(title: String!): Book!</code></td>
+</tr>
+</tbody></table>
+<p>الحذف، إن أضفته، حقل على <code>Mutation</code> مثل <code>removeBook(id: ID!): Boolean!</code> وليس حقلًا على <code>Query</code>. الشكل النهائي للحذف قرار منتج: هل تعيد الكتاب المحذوف أم علمًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>لصق معرف المستخدم داخل نص الاستعلام بدل <code>variables</code>.</li>
+<li><code>createBook</code> داخل <code>type Query</code>.</li>
+<li>اعتبار <code>[Book]!</code> و <code>[Book!]!</code> الشكل نفسه. الأول يسمح بعنصر <code>null</code>.</li>
+<li>عملية واحدة فيها عدة mutations مترابطة ثم الافتراض أنها معاملة قاعدة واحدة. التسلسل ليس transaction.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>هذا الشكل هو عقد الفصل: اقرأ من <code>Query</code>، واكتب من <code>Mutation</code>، وصف الحقول في الأنواع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تخترع جذرًا ثالثًا للأوامر العادية. <code>subscription</code> للحدث المستمر فقط. ولا تضع SQL في SDL.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الجذر</th>
+<th>أثر على البيانات</th>
+<th>مثال المتجر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>Query</code></td>
+<td>قراءة</td>
+<td><code>book</code> و <code>books</code></td>
+</tr>
+<tr>
+<td><code>Mutation</code></td>
+<td>كتابة</td>
+<td><code>createBook</code></td>
+</tr>
+<tr>
+<td><code>Subscription</code></td>
+<td>قناة أحداث</td>
+<td>لاحقًا، تعليق جديد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>على أي جذر تضع <code>createBook</code>؟</p>
+<details>
+<summary>الحل</summary>
+على `Mutation`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الفرق بين <code>[Book!]!</code> وقائمة قد تحتوي <code>null</code>؟</p>
+<details>
+<summary>الحل</summary>
+`[Book!]!` القائمة نفسها مطلوبة وكل عنصر `Book`. `[Book]!` يسمح بعنصر فارغ داخل قائمة موجودة.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا المتغيرات أسلم من تعويض العنوان داخل نص الاستعلام؟</p>
+<details>
+<summary>الحل</summary>
+القيمة تسافر في `variables` ويتحقق النوع منها. تعويض النص يكسر الاقتباس ويخلط بيانات المستخدم بشكل العملية.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يصف SDL؟</li>
+<li>لماذا ترتيب mutations على الجذر تسلسلي؟</li>
+<li>أين توضع عملية الحذف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المخطط أنواع وجذور. <code>Query</code> قراءة و <code>Mutation</code> كتابة. العملية تختار الحقول، والمتغيرات تحمل القيم.</p>
+<h2>ماذا بعد؟</h2>
+<p>الأوراق والقوائم: scalars و enums، ثم أنواع الإدخال التي ليست أنواع إخراج.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>GraphQL — Schemas and types: <a href="https://graphql.org/learn/schema/">https://graphql.org/learn/schema/</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

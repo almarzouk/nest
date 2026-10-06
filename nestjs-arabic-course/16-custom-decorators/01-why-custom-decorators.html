@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا Decorators مخصصة</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-custom-decorators.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا Decorators مخصصة</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة لماذا تُخفى قراءة الطلب ومفاتيح البيانات خلف زينة، وما الذي يحتاجه TypeScript حتى تعمل الزينة القديمة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل دالة في الشباك تبدأ بـ <code>const user = request.user</code> أو تبحث عن النص <code>&#39;roles&#39;</code> و <code>&#39;isPublic&#39;</code> في أكثر من حارس. المفتاح النصي يُكتب غلطًا في ملف واحد فيصمت الحارس ويفتح المسار. التوقيع لا يُظهر أن الدالة تحتاج المستخدم الحالي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الزينة المخصصة اسم يظهر عند الدالة أو المعامل: <code>@CurrentUser()</code> و <code>@Roles([&#39;refund&#39;])</code> و <code>@Public(true)</code>. البناء نفسه في الدروس التالية. هنا السبب، وإعداد المترجم الذي يبقي بيانات الزينة حتى الإقلاع.</p>
+<h2>التعريف التقني</h2>
+<p>Nest مبني على زينة. زينة المعامل الجاهزة مثل <code>@Body()</code> و <code>@Param()</code> تغطي HTTP العام. ما يتكرر في تطبيقك وليس في الإطار يُلف في زينة باسم المجال.</p>
+<p>نوعان سيُبنيان لاحقًا:</p>
+<ul>
+<li>زينة معامل عبر <code>createParamDecorator</code> ترجع قيمة إلى وسيط الدالة.</li>
+<li>زينة بيانات عبر <code>SetMetadata</code> أو <code>Reflector.createDecorator</code> يقرأها حارس بـ <code>Reflector</code>.</li>
+</ul>
+<p>الزينة التقليدية في TypeScript، وهي التي تعتمد عليها بيانات الحقن <code>design:paramtypes</code>، تحتاج في <code>tsconfig</code>:</p>
+<pre><code class="language-json">{
+  &quot;compilerOptions&quot;: {
+    &quot;experimentalDecorators&quot;: true,
+    &quot;emitDecoratorMetadata&quot;: true
+  }
+}
+</code></pre>
+<p>ومرة عند الإقلاع:</p>
+<pre><code class="language-ts">import &#39;reflect-metadata&#39;;
+</code></pre>
+<p>مشاريع Nest CLI تضع ذلك. من غيره تُترجم الزينة بلا بيانات الأنواع التي يقرأها <code>ValidationPipe</code> والحاوية. هذا الدرس لا يستبدل ذلك بزينة معيار TC39. الإعداد أعلاه هو مسار الزينة القديمة الذي ما زال مسار البيانات الوصفية في التطبيق المولَّد.</p>
+<p>حذف الإعداد قد يُبقي البناء أخضر ويكسر الفحص أو الحقن وقت التشغيل. ذلك امتداد درس وقت التشغيل في فصل DTO، مذكور هنا لأن الزينة الجديدة ستجلس على الإعداد نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قبل: request.user و SetMetadata(&#39;roles&#39;, ...)
+بعد: @CurrentUser() و @Roles([&#39;refund&#39;])
+المترجم: experimentalDecorators + emitDecoratorMetadata + reflect-metadata
+</code></pre>
+<p>الاسم على الدالة وثيقة. المفتاح النصي تفصيل داخل ملف الزينة.</p>
+<h2>أبسط مثال</h2>
+<p>توقيع قبل الزينة:</p>
+<pre><code class="language-ts">@Post(&#39;refund&#39;)
+refund(@Req() request: { user?: { name: string } }): { name: string } {
+  const name = request.user?.name ?? &#39;unknown&#39;;
+  return { name };
+}
+</code></pre>
+<p>التوقيع بعد ما سيُبنى في درس <code>@CurrentUser</code>:</p>
+<pre><code class="language-ts">@Post(&#39;refund&#39;)
+refund(@CurrentUser() user: { name: string }): { name: string } {
+  return { name: user.name };
+}
+</code></pre>
+<p>الدالة الثانية لا تعرف من أين جاء المستخدم. الاختبار يمرر الوسيط مباشرة إن فصلت الخدمة عن HTTP.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Req()</code> يعرض كائن المنصة كله، ومنها ترويسات لا تحتاجها الدالة.</li>
+<li>الزينة تضيق المعامل إلى المستخدم.</li>
+<li>الحارس ما زال هو من يلصق <code>request.user</code> قبل الدالة. الزينة لا تثبت الهوية. هي تقرأ ما لصقه الحارس أو Middleware.</li>
+<li><code>@Public</code> لا تفتح المسار وحدها. الحارس العام يقرأ العلامة ويرجع <code>true</code>. الزينة بلا قارئ لا تغيّر الدورة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند تحميل الصنف تعمل دوال الزينة وتسجّل بيانات عبر <code>reflect-metadata</code> أو عبر ما يخزنه <code>Reflector.createDecorator</code>. عند الطلب، معامل الزينة المخصصة يُستدعى في بناء وسائط الدالة، بعد الحارس، ويمكن أن يمر عليه أنبوب إن فعّلت خياره. بيانات <code>@Roles</code> تُقرأ في الحارس قبل الدالة، لا داخلها.</p>
+<p><code>import type</code> لا يلصق زينة. الزينة استيراد قيمة. ملف الزينة يُستورد بلاحقة <code>.js</code> في ESM.</p>
+<p>إن أُغلق <code>emitDecoratorMetadata</code> تبقى بعض زينات Nest التي تخزن بياناتها بنفسها، وقد يضيع نوع المعامل في الحقن. لا تفصل إعداد الزينة عن مشروع CLI من أجل ملف واحد.</p>
+<h2>مثال عملي</h2>
+<p>ثلاثة تكرارات في الشباك اليوم: قراءة <code>user</code> في <code>refund</code> و <code>list</code> و <code>audit</code>. مفتاح <code>&#39;deskRoles&#39;</code> في حارس و <code>&#39;roles&#39;</code> في آخر فلا يُمنع الاسترداد. جمع القراءة في <code>@CurrentUser</code> والمفتاح داخل ملف <code>@Roles</code> واحد يجعل الغلط في مكان واحد يظهر في المراجعة. الصحة ما زالت مغلقة بحارس عام إلى أن تُعلَّم بـ <code>@Public</code> ويحترمها الحارس. الإعداد في <code>tsconfig</code> يبقى كما ولّده CLI.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع أن الزينة تستبدل الحارس أو الفلتر.</li>
+<li>نسخ المفتاح النصي في كل حارس بعد بناء الزينة. القارئ يستورد الثابت من ملف الزينة.</li>
+<li>إغلاق <code>experimentalDecorators</code> ثم مطاردة أخطاء حقن غامضة.</li>
+<li>وضع منطق الحجز داخل مصنع الزينة. المصنع يستخرج أو يلصق بيانات فقط.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يتكرر استخراج من الطلب أو تتكرر بيانات على الدالة في أكثر من مسار، والاسم يوثّق العقد أفضل من <code>@Req()</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لاستخراج استُخدم مرة في دالة واحدة. <code>@Req()</code> هناك أوضح. ولا لقاعدة مقعد. تلك خدمة واستثناء. ولا تفتح الصحة بزينة لا يقرأها الحارس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>@Req()</code> ومفتاح نصي</th>
+<th>زينة باسم المجال</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>التوقيع</td>
+<td>كائن الطلب</td>
+<td>مستخدم أو أدوار</td>
+</tr>
+<tr>
+<td>الغلط في المفتاح</td>
+<td>صامت ومتفرق</td>
+<td>محصور في ملف الزينة</td>
+</tr>
+<tr>
+<td>من يقرر الإذن</td>
+<td>ما زال الحارس</td>
+<td>ما زال الحارس</td>
+</tr>
+<tr>
+<td>المترجم</td>
+<td>—</td>
+<td>زينة قديمة مع إصدار البيانات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الذي لا تفعله <code>@CurrentUser()</code> بدل الحارس؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا تثبت الهوية. تقرأ <code>user</code> الذي لصقه الحارس أو Middleware. من غير لصق تصل القيمة فارغة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما الإعدادان في <code>compilerOptions</code> وما الاستيراد عند الإقلاع لمسار الزينة القديمة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>experimentalDecorators</code> و <code>emitDecoratorMetadata</code>، مع <code>import &#39;reflect-metadata&#39;</code> مرة في الإقلاع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>حارس عام يغلق الصحة، وأُضيف <code>@Public</code> على <code>GET /health</code> من غير تعديل الحارس. لماذا الرد ما زال <code>401</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العلامة بيانات فقط. الحارس يجب أن يقرأها بـ <code>Reflector</code> ويرجع <code>true</code> قبل فحص الترويسة. الزينة بلا قارئ لا تغيّر <code>canActivate</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تخفي الزينة عن المتحكم؟</li>
+<li>لماذا يبقى الحارس مسؤولًا عن الإذن؟</li>
+<li>ما دور <code>reflect-metadata</code>؟</li>
+<li>متى تبقي <code>@Req()</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الزينة المخصصة اسم لعقد يتكرر: معامل أو بيانات دالة. الحارس والفلتر يبقيان من ينفذ السياسة. الزينة القديمة تحتاج إصدار البيانات و <code>reflect-metadata</code> كما في مشروع CLI.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي <code>createParamDecorator</code>: مصنع زينة المعامل التي تقرأ السياق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/custom-decorators">Custom decorators</a></li>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

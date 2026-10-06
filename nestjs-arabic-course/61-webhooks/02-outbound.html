@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Outbound Webhooks</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-outbound.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Outbound Webhooks</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرسال حدث من رف إلى عنوان سجّلته المكتبة، مثل <code>book.published</code>، كعقد تسليم لا كنداء متزامن داخل طلب النشر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>شريك المخزون يريد أن يعرف بالنشر فورًا. استدعاؤه بـ <code>fetch</code> داخل <code>POST /books/:id/publish</code> يربط مهلة رف بمهلة الشريك. إن فشل الشريك أعاد الموظف النشر فتكرر في كتالوجكم.</p>
+<h2>الفكرة ببساطة</h2>
+<p>المكتبة تسجّل <code>url</code> وأحداثًا وسرًا. بعد التزام النشر تُدرج عملية تسليم. عامل يرسل <code>POST</code> إلى العنوان مع توقيع. الشريك يرد 2xx. غير ذلك تُعاد المحاولة. فشل الشريك لا يعيد الكتاب مسودة.</p>
+<h2>التعريف التقني</h2>
+<p>جدول <code>WebhookEndpoint</code>: <code>organizationId</code>, <code>url</code>, <code>secret</code>, <code>events</code>. جدول <code>WebhookDelivery</code>: <code>eventId</code>, <code>endpointId</code>, <code>status</code>, <code>attempts</code>. الحدث له معرّف ثابت يراه الشريك في الترويسة حتى يطبق تكراره عنده. السر لا يُعاد في <code>GET</code>. الإرسال يستخدم مهلة قصيرة. حوّلوا SSRF: ارفضوا عناوين داخلية مثل <code>localhost</code> و <code>169.254.169.254</code> عند حفظ <code>url</code>. التوقيع نفسه في الدرس التالي؛ هنا شكل الرسالة والجدولة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">نشر ملتزم → صف delivery pending
+عامل → POST url
+       ترويسات: حدث، توقيع، معرّف
+       2xx → sent
+       غير ذلك → محاولة لاحقة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export interface OutboundEvent {
+  id: string;
+  type: &#39;book.published&#39;;
+  organizationId: string;
+  data: { bookId: string };
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>id</code> ثابت عبر إعادات الإرسال حتى لا يظن الشريك أن كل محاولة كتاب جديد.</li>
+<li><code>data</code> معرّفات لا صف Prisma كامل.</li>
+<li><code>organizationId</code> داخلي للتسليم؛ إن لم يكن جزءًا من عقد الشريك فلا تلزموه به إن كان العنوان أصلًا لمكتبة واحدة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>المدير يسجّل العنوان والأحداث.</li>
+<li><code>publish</code> يلتزم ثم يدرج <code>WebhookDelivery</code> لكل عنوان مشترك في <code>book.published</code>.</li>
+<li>العامل يقرأ <code>pending</code> ويرسل.</li>
+<li>الشبكة تُقطع بعد ما عالج الشريك الرسالة. عندكم ما زالت <code>pending</code> فتعيدون بنفس <code>id</code>.</li>
+<li>الشريك الذي يخزّن <code>id</code> لا ينشر المخزون مرتين. هذا عقدكم معه، والتفصيل في درس التكرار.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function rememberDeliveries(endpoints: { id: string; events: string[] }[], event: OutboundEvent) {
+  return endpoints
+    .filter((endpoint) =&gt; endpoint.events.includes(event.type))
+    .map((endpoint) =&gt; ({ endpointId: endpoint.id, eventId: event.id, status: &#39;pending&#39; as const }));
+}
+</code></pre>
+<p>لا ترسلوا داخل هذه الدالة. هي تخطّط الصفوف. الإرسال عامل يعرف <code>organizationId</code> من الحدث لا من سياق طلب انتهى.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>await fetch</code> قبل رد 200 على الموظف.</li>
+<li>سر جديد في كل محاولة فيكسر التحقق عند الشريك.</li>
+<li>معرّف حدث جديد في كل إعادة محاولة.</li>
+<li>قبول <code>url</code> يشير إلى شبكة داخلية.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تريد مكتبة أن تتكامل أدواتها مع رف من غير أن تستعلم كل ثانية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإشعار موظف بالبريد؛ تلك قناة إشعار. ولا إن كان الشريك يستطيع السحب من <code>GET</code> وأنتم لا تضمنون استقباله HTTP.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>وارد</th>
+<th>صادر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>من يكتب العنوان</td>
+<td>أنتم عند المزود</td>
+<td>المكتبة عندكم</td>
+</tr>
+<tr>
+<td>من يوقّع</td>
+<td>المزود</td>
+<td>رف</td>
+</tr>
+<tr>
+<td>فشل المعالجة</td>
+<td>المزود يعيد</td>
+<td>عاملكم يعيد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل فشل عنوان الشريك يعيد حالة الكتاب إلى مسودة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. النشر ملتزم. التسليم صف <code>pending</code> أو <code>failed</code> بعد استنفاد المحاولات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يبقى <code>event.id</code> ثابتًا في المحاولة الثانية؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يميّز الشريك التكرار عن حدث نشر جديد. معرّف جديد يعني أثرًا ثانيًا في مخزونه.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الذي ترفضونه عند حفظ <code>https://169.254.169.254/latest</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>العنوان وجهة بيانات وصفية داخلية لا شريك. التحقق عند الحفظ يمنع العامل من جلب أسرار البنية. اقبلوا https عامًا فقط بعد فحص النطاق.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى يُدرج صف التسليم نسبة إلى التزام النشر؟</li>
+<li>ماذا يثبت <code>event.id</code>؟</li>
+<li>لماذا لا يُعرض السر في <code>GET</code>؟</li>
+<li>ما فرق الصادر عن بريد الدعوة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الصادر حدث بعد الالتزام، يُرسل إلى عناوين المكتبة بمعرّف ثابت. العامل يسلّم، وفشل العنوان لا يلغي الكتالوج. العنوان يُفحص ضد الوجهات الداخلية.</p>
+<h2>ماذا بعد؟</h2>
+<p>الوارد والصادر كلاهما يحتاج إثبات أن البايتات لم تتغير. الدرس التالي التحقق من التوقيع.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Webhooks: <a href="https://docs.nestjs.com/http/webhooks">https://docs.nestjs.com/http/webhooks</a></li>
+<li>MDN — Fetch: <a href="https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API">https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

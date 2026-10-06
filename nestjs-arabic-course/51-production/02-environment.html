@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Environment Variables</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-environment.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Environment Variables</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة الإعداد من بيئة التشغيل مع تحقق عند الإقلاع، وإبقاء الأسرار خارج Git وخارج صورة Docker.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>عنوان قاعدة مكتوب في المصدر يصل إلى المستودع. ملف <code>.env</code> منسوخ إلى الصورة يتجمد مع الإصدار الخطأ. غياب <code>DATABASE_URL</code> الذي يُكتشف عند أول طلب يفتح المنفذ ثم يسقط. التحقق عند الإقلاع يرفض العملية قبل <code>listen</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>ConfigModule.forRoot</code> يحمّل البيئة ويمكن أن يقرأ <code>.env</code> في التطوير فقط. في الإنتاج المنصة تحقن المتغيرات ولا تعتمد على ملف داخل الصورة. دالة <code>validate</code> ترمي إن غاب متغير أو فسد رقم. <code>getOrThrow</code> عند الاستعمال يمنع سلسلة فارغة صامتة.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ConfigModule } from &#39;@nestjs/config&#39;;
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      ignoreEnvFile: process.env.NODE_ENV === &#39;production&#39;,
+      validate: (env: Record&lt;string, unknown&gt;) =&gt; {
+        if (!env.DATABASE_URL || typeof env.DATABASE_URL !== &#39;string&#39;) {
+          throw new Error(&#39;DATABASE_URL مطلوب&#39;);
+        }
+        return env;
+      },
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p><code>ignoreEnvFile</code> في الإنتاج يمنع ملفًا قديمًا داخل مجلد العمل من تغطية متغيرات المنصة. في التطوير اترك القراءة من <code>.env</code> غير المتتبع.</p>
+<p>لا تطبع <code>config.get(&#39;DATABASE_URL&#39;)</code> في سجل.info. إن احتجت تشخيصًا فاطبع المضيف فقط بعد التحليل لا كلمة السر.</p>
+<p><code>.env.example</code> يسرد المفاتيح بلا قيم سرية حتى يعرف الفريق الأسماء. القيم الحقيقية في مدير أسرار أو في بيئة Compose المحلية غير المرفوعة.</p>
+<p><code>forRoot</code> مرة في الجذر كما في فصل الوحدات الديناميكية. الميزات تحقن <code>ConfigService</code>.</p>
+<p>أرقام المنافذ: حوّل <code>PORT</code> بـ <code>Number</code> وتحقق من المجال. سلسلة <code>&quot;3000&quot;</code> تعمل مع <code>listen</code> أحيانًا وتفشل في حساب آخر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تطوير: .env غير متتبع
+إنتاج: بيئة المنصة، ignoreEnvFile
+إقلاع: validate ترمي قبل listen
+الكود: getOrThrow لا افتراض صامت لسر
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const port = Number(process.env.PORT ?? 3000);
+await app.listen(port, &#39;0.0.0.0&#39;);
+</code></pre>
+<p>مع التحقق أن <code>PORT</code> إن وُجد فهو رقم. <code>DATABASE_URL</code> بلا افتراض <code>localhost</code> في الإنتاج. الافتراض المحلي يختبئ في <code>.env</code> التطويري فقط.</p>
+<h2>شرح المثال</h2>
+<p>المنصة تضع <code>PORT</code> أحيانًا. تجاهله يجعل النشر على منفذ لا يراه الوكيل. <code>0.0.0.0</code> مع Docker كما سبق. التحقق المركزي في <code>validate</code> أفضل من عشر <code>getOrThrow</code> بلا رسالة موحّدة، و <code>getOrThrow</code> يبقى عند المزود الذي لا يُبنى إن فشل التحقق أصلًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>عملية Node ترث البيئة من systemd أو Docker أو المنصة.</li>
+<li><code>forRoot</code> يقرأها وقد يدمج ملفًا في التطوير.</li>
+<li><code>validate</code> ترمي فيوقف الإقلاع.</li>
+<li><code>ConfigService</code> يوزع القيم على المصانع و <code>forRootAsync</code>.</li>
+<li>تغيير السر في المنصة يحتاج إعادة تشغيل أو آلية تحديث لا قراءة ملف داخل الصورة القديمة.</li>
+<li>سجل البناء في CI لا يطبع الأسرار في الأمر <code>echo</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>مفاتيح دنيا: <code>DATABASE_URL</code> و <code>REDIS_URL</code> و <code>PORT</code>. في Compose الأسماء <code>postgres</code> و <code>redis</code>. على المنصة عناوين مُدارة. نفس المفاتيح. <code>.env.example</code> يوثقها. اختبار الوحدة يمرر <code>useValue</code> للإعداد ولا يقرأ ملفك الشخصي.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>سر في <code>forRoot({ url: &#39;postgres://user:pass@...&#39; })</code> داخل Git.</li>
+<li><code>.env</code> في <code>COPY</code> الصورة.</li>
+<li><code>ignoreEnvFile</code> مطفأ في الإنتاج فيغلب ملف قديم.</li>
+<li>طباعة البيئة كاملة عند الإقلاع.</li>
+<li>افتراض <code>localhost</code> إن غاب المتغير.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل عنوان وسر ومهلة تختلف بين الأجهزة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضع علم ميزة يتغير كل طلب في البيئة. ذلك إعداد يُنشر أو قاعدة. البيئة تُقرأ عند الإقلاع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصدر</th>
+<th>التطوير</th>
+<th>الإنتاج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>.env</code></td>
+<td>نعم، غير متتبع</td>
+<td>لا يُعتمد عليه</td>
+</tr>
+<tr>
+<td>بيئة العملية</td>
+<td>ممكن</td>
+<td>المصدر</td>
+</tr>
+<tr>
+<td>قيمة في المصدر</td>
+<td>ثوابت غير سرية</td>
+<td>لا أسرار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا <code>.env.example</code> بلا كلمات سر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه يُرفع في Git ليعرف الفريق أسماء المفاتيح فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يفعل <code>ignoreEnvFile</code> عندما <code>NODE_ENV</code> هو <code>production</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يمنع ملف <code>.env</code> في مجلد العمل من تغطية متغيرات المنصة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا فشل الإقلاع عند سر ناقص أفضل من فشل أول طلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المنسّق لا يرسل مرورًا إلى نسخة فتحت المنفذ ثم سقطت على أول استعلام. <code>validate</code> يوقف العملية قبل <code>listen</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تعيش قيمة الإنتاج؟</li>
+<li>ماذا لا يُطبع في السجل؟</li>
+<li>متى <code>getOrThrow</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>المتغيرات من بيئة التشغيل، تُتحقق عند الإقلاع، ولا تدخل الصورة ولا Git. التطوير يقرأ <code>.env</code> محليًا، والإنتاج يتجاهل ذلك الملف.</p>
+<h2>ماذا بعد؟</h2>
+<p>Logging في الإنتاج: ماذا يُكتب بعد أن منعت طباعة الأسرار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Configuration: <a href="https://docs.nestjs.com/techniques/configuration">https://docs.nestjs.com/techniques/configuration</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

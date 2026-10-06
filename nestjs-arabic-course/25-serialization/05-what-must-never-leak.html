@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما لا يجوز أن يخرج</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-what-must-never-leak.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما لا يجوز أن يخرج</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت قائمة ما يبقى داخل الخادم لمكتبة المقالات، وكيف نمنع تسربه في JSON والسجلات والوثيقة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فريق أخفى <code>password</code> ونسي أن العمود صار <code>passwordHash</code>. أو أخفى الجسم وأعاد التجزئة في رسالة <code>409</code> عند تكرار البريد. أو وضع الرمز في مثال Swagger. أو سجّل <code>dto</code> بعد الدمج مع الصف. العميل أو ملف السجل يصبح نسخة من أسرار الدخول.</p>
+<h2>الفكرة ببساطة</h2>
+<p>لا يغادر الشبكة: كلمة المرور، <code>passwordHash</code>، رمز الجلسة الخام، تجزئة رمز الجلسة، رمز التحديث الخام، مفتاح HMAC، ومفتاح تشفير الملاحظات. يخرج: <code>id</code> و <code>email</code> و <code>role</code> وبيانات المقال العامة. المنع طبقات: <code>select</code>، صنف استجابة، <code>@Exclude</code> أو مخطط، وثيقة بلا الحقل، وسجل لا يطبع الصف.</p>
+<h2>التعريف التقني</h2>
+<table>
+<thead>
+<tr>
+<th>السر</th>
+<th>أين يعيش</th>
+<th>ماذا يرى العميل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>password</code></td>
+<td>طلب الدخول فقط</td>
+<td>لا شيء بعد المعالجة</td>
+</tr>
+<tr>
+<td><code>passwordHash</code></td>
+<td>عمود المستخدم</td>
+<td>غائب عن JSON</td>
+</tr>
+<tr>
+<td><code>__Host-sid</code></td>
+<td>كعكة <code>HttpOnly</code></td>
+<td>لا جسم يعيدها</td>
+</tr>
+<tr>
+<td>تجزئة الجلسة</td>
+<td>مخزن الجلسات</td>
+<td>غائبة</td>
+</tr>
+<tr>
+<td>refresh الخام</td>
+<td>قناة الجوال عند الإصدار</td>
+<td>مرة واحدة في استجابة الدخول المخصصة، لا في <code>GET</code></td>
+</tr>
+<tr>
+<td>مفتاح AES</td>
+<td>بيئة أو مدير أسرار</td>
+<td>غائب</td>
+</tr>
+</tbody></table>
+<p>استجابة الدخول للجوال التي تصدر <code>accessToken</code> و refresh هي العقد الذي صممته في المصادقة، لا استثناءً عشوائيًا. لا تعِد تلك الرموز من <code>GET /me</code>. لا تضع refresh في JSON واجهة المتصفح إن كانت الجلسة بالكعكة.</p>
+<pre><code class="language-ts">select: { id: true, email: true, role: true }
+</code></pre>
+<p>هذا الجلب لا يحمّل التجزئة إلى Node. <code>toResponse</code> لا يملك ما ينسخه. إن احتاج <code>verify</code> التجزئة فذلك في <code>signIn</code> فقط، والناتج للعميل <code>UserResponse</code> زائد الكعكة أو الرموز عبر مسار الإصدار.</p>
+<p>اختبار:</p>
+<pre><code class="language-ts">expect(res.body.passwordHash).toBeUndefined();
+expect(JSON.stringify(res.body)).not.toContain(&quot;$scrypt$&quot;);
+</code></pre>
+<p>رسالة الخطأ من <code>ConflictException</code> نص ثابت مثل <code>Email already registered</code>. لا تمرّر <code>error.meta</code> من Prisma إلى العميل. <code>P2002</code> قد يتضمن حقولًا. المرشح يترجم الرمز إلى <code>409</code> بلا <code>meta</code> خام.</p>
+<p>Swagger: <code>UserResponse</code> بلا الخاصية. لا <code>example</code> فيه سلسلة <code>$scrypt</code>. إضافة CLI على كيان كامل تُراجع مع <code>@ApiHideProperty</code> أو تُستبعد من <code>type</code>.</p>
+<p>السجل: سجّل <code>userId</code> لا الصف. <code>password</code> في <code>RegisterDto</code> لا يدخل <code>Logger</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">أسرار في الجدول والبيئة والكعكة
+عقد الشبكة أضيق
+الاختبار يفشل إن ظهر $scrypt$
+الخطأ العام بلا meta من Prisma
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Get(&quot;me&quot;)
+me(@CurrentUser(&quot;id&quot;) id: string) {
+  return this.users.findPublic(id);
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p><code>findPublic</code> يجلب <code>select</code> الضيق. حتى لو تعطّل الاعتراض، الجسم بلا تجزئة. <code>@CurrentUser()</code> قد يكون الكائن الذي حمّله <code>validate</code>. تأكد أن ذلك الكائن نفسه لا يُعاد إن كان يحمل التجزئة. أعد التحميل بـ <code>select</code> أو انسخ الحقول العامة. إرجاع نتيجة <code>validate</code> مباشرة سبب تسريب متكرر.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>JSON.stringify</code> ينشر المفاتيح القابلة للعد. <code>undefined</code> تُحذف، لذا <code>@Exclude</code> ينجح. قيمة <code>null</code> تبقى مفتاحًا. لا تضع <code>passwordHash: null</code> كتمويه. احذف المفتاح. رؤوس الاستجابة ليست مكانًا للتجزئة أيضًا. <code>Set-Cookie</code> للجلسة يضبطه <code>SignInService</code> بقيمة عشوائية لا بـ <code>userId</code>.</p>
+<p>ملف HAR من المتصفح فيه الكعكة إن سجّل المطوّر الشبكة. ذلك سر جلسة. لا ترفق HAR في تذكرة.</p>
+<h2>مثال عملي</h2>
+<p>راجع أربعة مخارج: جسم <code>POST /users</code>، جسم <code>GET /me</code>، جسم خطأ التكرار، وسطر السجل في <code>signIn</code>. كل منها يفشل الاختبار إن احتوى <code>password</code> أو <code>passwordHash</code> أو بادئة <code>$scrypt$</code>. راجع <code>GET /posts/:id</code> مع <code>include</code> للمؤلف. ثم راجع <code>api-json</code> بالبحث عن <code>passwordHash</code>. النتيجة الفارغة هي المطلوبة.</p>
+<p>مسار إصدار الرمز للجوال يُختبر وحدَه: الرمز حاضر هناك وغائب في الطلب التالي لـ <code>GET /me</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إخفاء <code>password</code> والإبقاء على <code>passwordHash</code>.</li>
+<li><code>throw new ConflictException(user)</code>.</li>
+<li>إرجاع مستخدم <code>validate()</code> كما حُمّل.</li>
+<li>مثال OpenAPI واقعي لسر.</li>
+<li><code>console.log(dto)</code> في التسجيل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>القائمة تطبق على كل مسار جديد قبل دمجه، لا بعد بلاغ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لإخفاء مقال مسودة عن غير صاحبه عبر حذف JSON فقط. الاستعلام لا يجلب المسودة لغير المالك. التسلسل لا يصلح قرار الوجود.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>select</code> ضيق</th>
+<th><code>@Exclude</code> فقط</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السر لا يدخل الذاكرة للمسار</td>
+<td>السر يُنسخ ثم يُحذف</td>
+</tr>
+<tr>
+<td>يحمي إن سقط الاعتراض</td>
+<td>يحمي شكل JSON عند تفعيل الاعتراض</td>
+</tr>
+<tr>
+<td>لا يغطّي السجل إن سجّلت صفًا آخر</td>
+<td>لا يغطّي السجل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي بادئة في JSON تعني أن تجزئة scrypt خرجت؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>$scrypt$</code>. الاختبار يبحث عنها في النص المسلسل.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>ConflictException</code> لا تحمل كائن المستخدم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>جسم الخطأ يذهب إلى العميل. النص الثابت يكفي. <code>meta</code> من Prisma قد يزيد على ذلك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>validate</code> تعيد المستخدم مع التجزئة لتتحقق من حالة الحساب، ثم يعيدها <code>GET /me</code>. ماذا تغيّر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا تعد كائن التحقق. أعد <code>UserResponse</code> من حقول عامة أو أعد الجلب بـ <code>select</code> بلا <code>passwordHash</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الحقول العامة للمستخدم؟</li>
+<li>أين يجوز أن يظهر refresh؟</li>
+<li>ماذا تفعل <code>select</code> زيادة على الاعتراض؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>أسرار الدخول والجلسة والمفاتيح لا تدخل JSON ولا السجل ولا أمثلة الوثيقة. الجلب الضيق وصنف الاستجابة والاختبار الذي يبحث عن <code>$scrypt$</code> يغلقون المسار الذي تنساه المزخرفات.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> على المستخدم والمقال.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Serialization: <a href="https://docs.nestjs.com/application/serialization">https://docs.nestjs.com/application/serialization</a></li>
+<li>NestJS — Encryption and Hashing: <a href="https://docs.nestjs.com/security/encryption-and-hashing">https://docs.nestjs.com/security/encryption-and-hashing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

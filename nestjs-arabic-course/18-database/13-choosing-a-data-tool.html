@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>متى تختار Prisma أو TypeORM أو Drizzle</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="13-choosing-a-data-tool.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>متى تختار Prisma أو TypeORM أو Drizzle</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تثبيت قرار واحد لمكتبة الدورة ولبقية الفصول: Prisma على PostgreSQL، مع معرفة متى يكون TypeORM أو Drizzle هو الجواب في مشروع آخر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد ثلاث صفحات رسمية يسهل تشغيل الأداتين «مؤقتًا». الترحيلات تتعارض، والاختبارات تفتح مجمعين، والفصول التالية لا تعرف أين تضع <code>include</code> وأين تضع <code>Repository</code>. قرار مؤجَّل يكلّف أكثر من قرار مبكر قابل للمراجعة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>اختر الأداة التي سيملك فريقك مخططها وترحيلها لسنة، لا التي ظهر مثالها أولًا في البحث. هذه الدورة تملك Prisma: خدمة، وحدة، ترحيل، علاقات، معاملات. TypeORM و Drizzle يبقيان مفهومين حتى تقرأ مشروعًا قائمًا أو توثيق Nest من غير أن تعيد بناء المكتبة عليهما.</p>
+<h2>التعريف التقني</h2>
+<p>ملخص قسم Data في Nest:</p>
+<table>
+<thead>
+<tr>
+<th>الأداة</th>
+<th>الحزمة</th>
+<th>أسلوب المخطط</th>
+<th>في هذه الدورة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Prisma</td>
+<td>عميل مولَّد، بلا حزمة Nest خاصة</td>
+<td><code>schema.prisma</code></td>
+<td>المسار التطبيقي</td>
+</tr>
+<tr>
+<td>TypeORM</td>
+<td><code>@nestjs/typeorm</code></td>
+<td>كيانات بزينة</td>
+<td>بديل رسمي، <code>synchronize: false</code></td>
+</tr>
+<tr>
+<td>Drizzle</td>
+<td><code>@nestjs/drizzle</code></td>
+<td><code>pgTable</code></td>
+<td>بديل رسمي أحدث في التوثيق</td>
+</tr>
+<tr>
+<td>MongoDB</td>
+<td><code>@nestjs/mongoose</code></td>
+<td>مخططات Mongoose</td>
+<td>خيار موثّق، بلا فصل هنا</td>
+</tr>
+<tr>
+<td>Sequelize</td>
+<td><code>@nestjs/sequelize</code></td>
+<td>نماذج</td>
+<td>خيار موثّق، بلا فصل هنا</td>
+</tr>
+<tr>
+<td>MikroORM</td>
+<td><code>@mikro-orm/nestjs</code></td>
+<td>Data Mapper</td>
+<td>خيار يوثّقه Nest، بلا فصل هنا</td>
+</tr>
+</tbody></table>
+<p>MongoDB يناسب مستندات مرنة بلا جداول علائقية. مكتبة الكتب والإعارات تحتاج مفاتيح أجنبية وقيودًا، لذلك PostgreSQL. Sequelize و MikroORM موجودان إن ورثتهما. لا نبدأ بهما مسار REST التالي.</p>
+<p>معايير الاختيار العملية:</p>
+<ul>
+<li>هل الفريق يرتاح لملف مخطط وتوليد، أم لكيان، أم لاستعلام ظاهر؟</li>
+<li>هل المشروع قائم على ترحيلات إحدى الأدوات؟</li>
+<li>هل تحتاج أنواع استعلام مولَّدة من المخطط فورًا؟</li>
+<li>هل ستختبر الخدمات باستبدال مزوّد واحد؟</li>
+</ul>
+<p>إن تعادلت الإجابات، اتبع مسار الدورة حتى تنتهي الفصول التي تبني على <code>PrismaService</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">قرار واحد
+  PrismaService في المكتبة الجديدة
+  TypeORM إن كان المستودع والكيان هما كود الإنتاج اليوم
+  Drizzle إن كان الفريق يريد SQL المرئي مع @nestjs/drizzle
+لا تجمع ترحيلين على القاعدة نفسها
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-text">مكتبة الحي، مشروع جديد، PostgreSQL
+  المخطط: prisma/schema.prisma
+  الاتصال: PrismaService
+  الوحدة: PrismaModule
+  الترحيل: prisma migrate dev / deploy
+  الفصول 19 وما بعد: تحقن PrismaService
+</code></pre>
+<h2>شرح المثال</h2>
+<p>المشروع الجديد لا يدفع ضريبة أداة موروثة. إبقاء TypeORM في القراءة فقط يشتت أمثلة الفصول التالية بين <code>Repository</code> و <code>prisma.book</code>. القرار يُكتب في README الوحدة: «القاعدة عبر <code>PrismaModule</code>».</p>
+<p>مشروع وظيفة قائم على TypeORM: اقرأ درس TypeORM وطبّق <code>synchronize: false</code>، ولا تعِد كتابة الدورة داخله في الأسبوع الأول.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>أداتان على جدول واحد تعنيان مجمعين، ونموذجين للحقل نفسه، وترحيلين قد يصدمان في <code>ALTER</code>. الاختبار الذي ينجح على Prisma لا يثبت مستودع TypeORM. اختر مالكًا للمخطط: مجلد ترحيل واحد هو مصدر الشكل.</p>
+<p>تغيير القرار لاحقًا ممكن بهجرة بيانات، وهو مشروع مستقل، لا درس جانبي.</p>
+<h2>مثال عملي</h2>
+<p>سؤال مراجعة تصميم: «نريد MongoDB لأن المنشور مرن». منشور المكتبة له عنوان وحالة نشر ومؤلف. المرونة هنا حقول اختيارية وعلاقة، لا سبب للتخلي عن القيد. أبقِ PostgreSQL. إن ظهرت لاحقًا مقتطفات بحث نصي، أضف فهرسًا أو أداة بحث، لا قاعدة ثانية في الأسبوع نفسه.</p>
+<p>سؤال آخر: «Drizzle أخف». خفّة الاستعلام صحيحة كمعيار، وتكلفتها إعادة ربط <code>BooksService</code> و <code>LoansService</code> والاختبارات. بعد أن تتقن المعاملات على Prisma، التجربة على فرع مقبولة. الدمج إلى <code>main</code> يكون بأداة واحدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اختيار الأداة من سرعة مثال في مقال قديم.</li>
+<li><code>synchronize: true</code> بحجة أن الترحيل مؤجّل.</li>
+<li>فتح MongoDB للنواة العلائقية لأن التوثيق يذكرها.</li>
+<li>تأجيل القرار حتى فصل REST فيصبح نصف الموارد على مصفوفة ونصفها على Prisma.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>Prisma لمكتبة الدورة وأي مشروع جديد يتبع هذا المسار. TypeORM أو Drizzle حين يطابقان كودًا قائمًا أو تفضيل فريق صريحًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتشغيل الثلاث معًا في <code>AppModule</code> «حتى نرى». الرؤية تتم بقراءة الدروس على قاعدة تطوير، لا بملكيتين للمخطط.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>سؤال</th>
+<th>إن كانت الإجابة نعم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>مشروع الدورة الجديد؟</td>
+<td>Prisma</td>
+</tr>
+<tr>
+<td>كيانات و <code>Repository</code> في الإنتاج اليوم؟</td>
+<td>أبقِ TypeORM</td>
+</tr>
+<tr>
+<td>تريد <code>pgTable</code> وتكامل <code>@nestjs/drizzle</code>؟</td>
+<td>Drizzle، في مشروع لا يملك Prisma بعد</td>
+</tr>
+<tr>
+<td>مستندات بلا علاقات صارمة؟</td>
+<td>اقرأ صفحة MongoDB، خارج هذا المسار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي أداة ستحقنها <code>BooksService</code> في الفصل التالي من الدورة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>PrismaService</code> عبر <code>PrismaModule</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>مشروعك في العمل يستخدم <code>@InjectRepository</code>. لماذا لا تنسخ <code>PrismaService</code> بجانبه على الجداول نفسها هذا الأسبوع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تظهر ملكيتان للمخطط ومجمعان وترحيلان. إمّا تبقى على TypeORM مع <code>synchronize: false</code>، أو تخطّط هجرة كاملة، لا كتابة مزدوجة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اقترح قاعدة MongoDB لمنشور فيه <code>authorId</code> يجب أن يشير إلى عضو موجود. ماذا تفقد مقارنة بقيد PostgreSQL، وماذا تبقي في الدورة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>القيد الذي يرفض معرّفًا غير موجود يعيش في PostgreSQL مع المفتاح الأجنبي. في MongoDB التطبيق يتحمّل هذا الضمان أو يبني معاملة متعددة المستندات إن وُجدت. الدورة تبقي PostgreSQL و Prisma لأن الإعارة والعضو يحتاجان ذلك القيد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>لماذا أداة واحدة؟</li>
+<li>أين مكان MongoDB و Sequelize و MikroORM في هذا الفصل؟</li>
+<li>ماذا يبقى خطرًا في TypeORM حتى بعد اختياره؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Prisma على PostgreSQL مسار المكتبة حتى نهاية الدورة. TypeORM و Drizzle بديلان تفهمهما من توثيق Nest. <code>synchronize: true</code> ليس خيار إنتاج. الأدوات الأخرى موثّقة وليست فصولًا هنا.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> تجمع اتصالًا وترحيلًا وقراءة كتاب على Prisma فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Databases: <a href="https://docs.nestjs.com/data/overview">https://docs.nestjs.com/data/overview</a></li>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — TypeORM: <a href="https://docs.nestjs.com/data/typeorm">https://docs.nestjs.com/data/typeorm</a></li>
+<li>NestJS — Drizzle: <a href="https://docs.nestjs.com/data/drizzle">https://docs.nestjs.com/data/drizzle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

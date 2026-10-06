@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@Get و @Post و @Put و @Patch و @Delete</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-http-methods.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@Get و @Post و @Put و @Patch و @Delete</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار Decorator الطريقة الذي يطابق فعل HTTP على المورد، ومعرفة بقية الطرق التي يوثّقها Nest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>مسار واحد باسم <code>/editions/save</code> يخفي هل الطلب ينشئ أو يستبدل. طريقة HTTP هي الفعل، والمسار هو المورد. الخلط بينهما يجعل العميل والذاكرة الوسيطة يعاملان الكتابة كقراءة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كل Decorator طريقة يسجل معالجًا لفعل واحد. <code>@Get</code> يقرأ، <code>@Post</code> ينشئ، <code>@Put</code> يستبدل، <code>@Patch</code> يعدّل جزءًا، <code>@Delete</code> يحذف. Nest توفر أيضًا <code>@Head</code> و <code>@Options</code> و <code>@All</code> و <code>@QueryMethod</code>.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق يسرد <code>@Get()</code> و <code>@Post()</code> و <code>@Put()</code> و <code>@Delete()</code> و <code>@Patch()</code> و <code>@Options()</code> و <code>@Head()</code> و <code>@QueryMethod()</code>. الأخير يربط الطريقة <code>QUERY</code>، واسمه <code>QueryMethod</code> حتى لا يصطدم بـ <code>@Query()</code> الذي يقرأ معاملات الاستعلام.</p>
+<p><code>@All()</code> يسجل المسار لكل هذه الطرق.</p>
+<p>الطريقة والمسار معًا يحددان نقطة النهاية. <code>@Post(&#39;reprint&#39;)</code> تحت <code>@Controller(&#39;editions&#39;)</code> هو <code>POST /editions/reprint</code>.</p>
+<p>رمز النجاح الافتراضي 200، و <code>@Post</code> يستخدم 201. تغيير الرمز بـ <code>@HttpCode</code> درس لاحق في هذا الفصل. هنا نختار الفعل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET    /editions          قراءة القائمة
+POST   /editions          إنشاء طبعة
+PUT    /editions/current  استبدال الطبعة الحالية
+PATCH  /editions/current  تعديل حقول مختارة
+DELETE /editions/current  حذف الطبعة الحالية
+</code></pre>
+<p><code>PUT</code> و <code>DELETE</code> في عقد HTTP أفعال يمكن تكرارها بأثر واحد. <code>POST</code> كل استدعاء قد ينشئ موردًا آخر. اختر Decorator وفق هذا العقد.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Delete, Get, Patch, Post, Put } from &#39;@nestjs/common&#39;;
+import { EditionsService } from &#39;./editions.service.js&#39;;
+
+@Controller(&#39;editions&#39;)
+export class EditionsController {
+  constructor(private readonly editions: EditionsService) {}
+
+  @Get()
+  findAll() {
+    return this.editions.findAll();
+  }
+
+  @Post()
+  create() {
+    return this.editions.createDraft();
+  }
+
+  @Put(&#39;current&#39;)
+  replace() {
+    return this.editions.replaceCurrent();
+  }
+
+  @Patch(&#39;current&#39;)
+  retitle() {
+    return this.editions.retitleCurrent();
+  }
+
+  @Delete(&#39;current&#39;)
+  remove() {
+    return this.editions.removeCurrent();
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>خمسة أفعال على مورد الطبعات. القطعة <code>current</code> ثابتة حتى يبقى الدرس على الطريقة، ومعاملات المسار في الدرس التالي.</li>
+<li><code>create</code> تعيد الطبعة الجديدة. Nest ترسلها برمز 201 لأن الطريقة POST.</li>
+<li><code>findAll</code> و <code>replace</code> و <code>retitle</code> و <code>remove</code> نجاحها 200 ما لم تغيّر الرمز لاحقًا.</li>
+<li>الخدمة تملك معنى «استبدال» و«تعديل العنوان». Controller يعلن الفعل فقط.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل Decorator يضيف الطريقة إلى مفتاح الخريطة مع المسار المدمج. طلب <code>POST /editions</code> لا يدخل <code>findAll</code> حتى لو كان المسار النصي واحدًا. <code>@All(&#39;current&#39;)</code> يوسع المفتاح لكل الطرق، فيصل <code>GET</code> و <code>POST</code> وغيرهما إلى الدالة نفسها.</p>
+<p><code>@Head</code> يطلب الرؤوس من غير جسم في عقد HTTP. <code>@Options</code> يعلن الخيارات المتاحة للمسار. <code>@QueryMethod</code> يسجل الطريقة <code>QUERY</code> للعملاء الذين يستخدمونها. الثلاثة موجودون عندما يطلب العقد ذلك، والمثال اليومي يبقى على الخمسة الأوائل.</p>
+<h2>مثال عملي</h2>
+<p>فحص جاهزية يقبل أي طريقة على مسار قصير:</p>
+<pre><code class="language-ts">import { All, Controller, Head } from &#39;@nestjs/common&#39;;
+import { EditionsService } from &#39;./editions.service.js&#39;;
+
+@Controller(&#39;editions&#39;)
+export class EditionProbesController {
+  constructor(private readonly editions: EditionsService) {}
+
+  @Head(&#39;current&#39;)
+  probe() {
+    return this.editions.currentExists();
+  }
+
+  @All(&#39;ping&#39;)
+  ping() {
+    return { ok: true };
+  }
+}
+</code></pre>
+<p><code>HEAD /editions/current</code> منفصل عن <code>GET</code>. <code>ALL /editions/ping</code> يجيب أي طريقة على هذا المسار فقط.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Get(&#39;create&#39;)</code> لإنشاء طبعة</td>
+<td>الكتابة تبدو قراءة، والوسيط قد يخزنها</td>
+</tr>
+<tr>
+<td><code>@Put</code> يعدّل حقلًا واحدًا ويبقي الباقي من نسخة قديمة</td>
+<td>العميل يتوقع استبدالًا كاملًا</td>
+</tr>
+<tr>
+<td>خلط <code>@QueryMethod</code> مع <code>@Query</code></td>
+<td>الأول طريقة HTTP، والثاني يقرأ <code>?</code></td>
+</tr>
+<tr>
+<td><code>@All()</code> على جذر المورد</td>
+<td>كل فعل، بما فيه الحذف، يدخل الدالة نفسها</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p><code>@Get</code> للقراءة، <code>@Post</code> للإنشاء، <code>@Put</code> لاستبدال التمثيل، <code>@Patch</code> لتعديل جزئي، <code>@Delete</code> للإزالة. <code>@Head</code> عندما يكفي وجود المورد. <code>@All</code> لمسار تشغيلي ضيق مثل <code>ping</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتحديد رمز 204 أو تحويل 301. ذلك <code>@HttpCode</code> و <code>@Redirect</code>. الطريقة هنا هي الفعل، والرمز درس Status Codes.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Decorator</th>
+<th>فعل HTTP على المورد</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Get</code></td>
+<td>قراءة</td>
+</tr>
+<tr>
+<td><code>@Post</code></td>
+<td>إنشاء أو عملية غير متطابقة مع استبدال كامل</td>
+</tr>
+<tr>
+<td><code>@Put</code></td>
+<td>استبدال التمثيل</td>
+</tr>
+<tr>
+<td><code>@Patch</code></td>
+<td>تعديل جزئي</td>
+</tr>
+<tr>
+<td><code>@Delete</code></td>
+<td>حذف</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي Decorator لـ <code>POST /editions</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Post()</code> على Controller بادئته <code>editions</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>العميل يرسل عنوانًا جديدًا فقط. أي طريقة تختار، وماذا تعني للخدمة؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Patch</code>. الخدمة تحدّث الحقول المرسلة وتبقي بقية التمثيل. <code>@Put</code> يعني أن الجسم هو التمثيل الكامل بعد الاستبدال.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا سُمّي Decorator الطريقة <code>QUERY</code> باسم <code>@QueryMethod</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Query()</code> محجوز لمعاملات الاستعلام على الدالة. الاسم <code>QueryMethod</code> يسجل طريقة HTTP المسماة <code>QUERY</code> من غير أن يختلط بمعامل <code>@Query</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الطرق الخمسة التي تغطي CRUD المعتاد؟</li>
+<li>ماذا يسجل <code>@All()</code>؟</li>
+<li>أي طريقة نجاحها الافتراضي 201؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Decorator الطريقة هو فعل نقطة النهاية. المسار يسمي المورد، والطريقة تسمي العمل، والخمسة الأساسية تغطي القراءة والإنشاء والاستبدال والتعديل والحذف.</p>
+<h2>ماذا بعد؟</h2>
+<p>التقاط جزء متغير من المسار: Route Params.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers (Resources): <a href="https://docs.nestjs.com/controllers#resources">https://docs.nestjs.com/controllers#resources</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

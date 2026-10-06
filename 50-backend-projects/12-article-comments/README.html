@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>12 — تعليقات المقال</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>12 — تعليقات المقال</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new article-comments</code></p>
+<h2>ماذا تبني</h2>
+<p>تعليق يعيش تحت مقال. لا تعليقات يتيمة، ولا تعليق على مسودة.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>المسار يعبر عن التبعية: /articles/:articleId/comments.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>مورد فرعي</li>
+<li>404 للأب قبل إنشاء الابن</li>
+<li>ترتيب الحذف</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>ردود متداخلة بلا حد</li>
+<li>إشعارات</li>
+<li>مكافحة الإساءة الآلية</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>مقالات التحقق. انسخ الفكرة لا المجلد.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/05-controllers/README.html">05-controllers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>المقال المنشور فقط يقبل تعليقًا.</li>
+<li>حذف المقال يحذف تعليقات أو يرفض 409 إن بقيت. اختر الرفض حتى لا تحذف صامتًا.</li>
+<li>اسم الكاتب نص ظاهر لا هوية. الهوية تأتي في مشروع الحسابات.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/articles/:articleId/comments</code></td>
+<td>201</td>
+<td>يضيف إن كان المقال منشورًا</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/articles/:articleId/comments</code></td>
+<td>200</td>
+<td>تعليقات هذا المقال</td>
+</tr>
+<tr>
+<td><code>DELETE</code></td>
+<td><code>/articles/:articleId</code></td>
+<td>409</td>
+<td>إن وُجد تعليق</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new article-comments</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ابحث عن المقال أولًا. غيابه 404 قبل فحص المتن.</li>
+<li>اربط comment.articleId.</li>
+<li>قائمة تعليقات لمقال بلا تعليقات 200 و [].</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/comments/comments.module.ts
+src/articles/articles.module.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">create(articleId: string, body: string) {
+  const article = this.articles.findOne(articleId);
+  if (!article.publishedAt) {
+    throw new ConflictException(&quot;drafts do not accept comments&quot;);
+  }
+  return this.comments.add(articleId, body);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>تعليق بمعرّف مقال غير موجود يُخزَّن ثم يختفي من القوائم.</li>
+<li>مسار /comments منفصل بلا مقال في العقد الأول.</li>
+<li>حذف الأب مع الأبناء من غير قرار مكتوب.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>مسودة ترفض التعليق.</li>
+<li>مقال فيه تعليق يرفض الحذف بـ 409.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف حدًا 500 حرف للتعليق في DTO.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 12» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../11-article-blog/README.html">11. مقالات بتحقق</a></li>
+<li>التالي: <a href="../13-tag-catalog/README.html">13. وسوم المقالات</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

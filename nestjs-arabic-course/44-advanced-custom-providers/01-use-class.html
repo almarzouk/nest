@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>useClass</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-use-class.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>useClass</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ربط رمز حقن بصنف تختار أنت أي تنفيذ يُبنى له، وهو الشكل الصريح لاختصار <code>providers: [BooksService]</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الاختصار يخفي أن الرمز والبناء شيئان. عندما تريد <code>ConfigService</code> في التطوير و <code>ConfigService</code> آخر في الإنتاج، أو بديلًا يطبق العقد نفسه، تحتاج <code>provide</code> ثابتًا و <code>useClass</code> متغيرًا. Nest يبني الصنف المختار ويحقنه لمن طلب الرمز، لا لمن طلب اسم الملف.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">providers: [
+  { provide: ConfigService, useClass: ProductionConfigService },
+]
+</code></pre>
+<p>من يكتب <code>constructor(private readonly config: ConfigService)</code> يحصل على <code>ProductionConfigService</code>. الصنفان يتشاركان شكل الدوال التي تستدعيها. إن كان الرمز صنفًا مجردًا يبقى وقت التشغيل، فالتنفيذ <code>implements</code> ذلك الصنف.</p>
+<h2>التعريف التقني</h2>
+<p>الاختصار <code>providers: [CatsService]</code> يساوي <code>{ provide: CatsService, useClass: CatsService }</code>. التوثيق يسمي هذا مزودًا قياسيًا.</p>
+<p><code>useClass</code> يبني نسخة جديدة من الصنف المذكور كلما احتاج الرمز نسخة حسب <code>scope</code>. الافتراضي Singleton: نسخة واحدة من صنف الإنتاج خلف رمز <code>ConfigService</code>. هذا يختلف عن <code>useExisting</code> الذي لا يبني ثانيًا بل يشير إلى رمز مبني أصلًا.</p>
+<p>اختيار البيئة عند تحميل الملف:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ConfigService } from &#39;./config.service.js&#39;;
+import { DevelopmentConfigService } from &#39;./development-config.service.js&#39;;
+import { ProductionConfigService } from &#39;./production-config.service.js&#39;;
+
+const configServiceProvider = {
+  provide: ConfigService,
+  useClass:
+    process.env.NODE_ENV === &#39;development&#39;
+      ? DevelopmentConfigService
+      : ProductionConfigService,
+};
+
+@Module({
+  providers: [configServiceProvider],
+  exports: [ConfigService],
+})
+export class ConfigHostModule {}
+</code></pre>
+<p>صدّر الرمز <code>ConfigService</code> لا اسم الصنف التنفيذي فقط، لأن المستهلك يطلب الرمز. يمكن تصدير كائن المزود كاملًا كما في التوثيق.</p>
+<p>الصنف التنفيذي <code>@Injectable()</code> إن كان سيُبنى بالحاوية وتُحقن اعتمادياته. <code>useClass</code> ما زال يحل <code>constructor</code> ذلك الصنف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">الرمز الذي يطلبه المستهلك  -&gt;  provide
+الصنف الذي يُبنى          -&gt;  useClass
+النسخة                    -&gt;  واحدة في DEFAULT
+</code></pre>
+<p>تغيير <code>useClass</code> لا يغيّر ملفات المستهلك.</p>
+<h2>أبسط مثال</h2>
+<p>المقطع أعلاه. <code>BooksService</code> تحقن <code>ConfigService</code> وتنادي <code>get(key)</code>. في <code>NODE_ENV=development</code> التنفيذ يقرأ قيمًا محلية. في غيره يقرأ مصدر الإنتاج. الاختبار يمرر <code>{ provide: ConfigService, useClass: DevelopmentConfigService }</code> داخل <code>Test.createTestingModule</code> حتى لو كانت البيئة مختلفة.</p>
+<h2>شرح المثال</h2>
+<p>المتغير <code>configServiceProvider</code> تنظيم فقط. الشرط يعمل مرة عند تقييم الوحدة، لا لكل طلب. إن أردت التبديل لكل طلب فأنت في نطاق طلب، وهو قرار أثقل من اختيار بيئة الإقلاع. صدّر الرمز حتى ترى الوحدات الأخرى التنفيذ.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الحاوية تسجل الرمز <code>ConfigService</code> مرتبطًا بالصنف المختار.</li>
+<li>عند أول حقن تبني ذلك الصنف وتحل اعتمادياته.</li>
+<li>تخزن النسخة للرمز.</li>
+<li>أي <code>useClass</code> لاحق للرمز نفسه في وحدة تغطي التسجيل يعيد التوجيه. اعرف أي وحدة تملك الربط.</li>
+<li>الاختبار الذي يعيد <code>{ provide: ConfigService, useValue: fake }</code> يغلب الصنف. ذلك درس <code>useValue</code>.</li>
+<li>الواجهة الممحية لا توضع في <code>provide</code>. استعمل صنفًا مجردًا أو <code>Symbol</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>تخزين ملفات: <code>FileStore</code> مجرد، و <code>DiskFileStore</code> أو <code>S3FileStore</code> في <code>useClass</code> حسب الإعداد عند الإقلاع. المتحكم يحقن <code>FileStore</code>. لا فرع <code>if (s3)</code> داخل المتحكم. أغلق عميل S3 في <code>onModuleDestroy</code> على التنفيذ الذي فتحه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تصدير الصنف التنفيذي ونسيان الرمز الذي يحقنه الآخرون.</li>
+<li>شرط <code>NODE_ENV</code> داخل كل دالة بدل مرة في المزود.</li>
+<li><code>useClass</code> لصنف غير <code>@Injectable</code> وفيه اعتماديات لن تُحل.</li>
+<li>توقع نسخة جديدة لكل مستهلك. ذلك <code>scope: Scope.TRANSIENT</code> على كائن المزود.</li>
+<li>وضع واجهة TypeScript في <code>provide</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>تبديل تنفيذ لعقد واحد عند الإقلاع أو في الاختبار، مع بناء الحاوية للصنف.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كائن جاهز أو مزيف بلا <code>constructor</code>. ذلك <code>useValue</code>. اسم ثانٍ لنسخة موجودة. ذلك <code>useExisting</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الحقل</th>
+<th>من يبني</th>
+<th>متى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>useClass</code></td>
+<td>الحاوية</td>
+<td>تنفيذ قابل للحقن</td>
+</tr>
+<tr>
+<td><code>useValue</code></td>
+<td>أنت قبل التسجيل</td>
+<td>ثابت أو مزيف</td>
+</tr>
+<tr>
+<td><code>useExisting</code></td>
+<td>لا أحد من جديد</td>
+<td>لقب لرمز موجود</td>
+</tr>
+<tr>
+<td><code>useFactory</code></td>
+<td>دالتك</td>
+<td>تجميع من عدة مزودات</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما معادل <code>providers: [BooksService]</code> الطويل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ provide: BooksService, useClass: BooksService }</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُصدَّر <code>ConfigService</code> لا <code>ProductionConfigService</code> فقط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن المستهلكين يحقنون الرمز. تصدير التنفيذ وحده لا يخدم من كتب نوع الأساس في الـ <code>constructor</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اختبار يريد قرصًا وهميًا بينما الوحدة ربطت <code>S3FileStore</code>. ماذا تضع في <code>TestingModule</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>{ provide: FileStore, useClass: FakeFileStore }</code> أو <code>useValue</code> لكائن الدوال. الربط في الاختبار يغطي رمز <code>FileStore</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يطلب المستهلك: الرمز أم ملف التنفيذ؟</li>
+<li>متى يُقيَّم شرط <code>NODE_ENV</code> في المثال؟</li>
+<li>ما الفرق المختصر عن <code>useExisting</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useClass</code> يسمي الصنف الذي يُبنى خلف الرمز. الاختصار الشائع حالته الخاصة عندما الرمز والصنف واحد. بدّل التنفيذ من التسجيل لا من داخل المتحكم.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>useValue</code>: قيمة جاهزة خلف الرمز، ومنها مزيف الاختبار.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Class Providers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-class-providers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Class Providers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>استخدام <code>useClass</code> عندما يكون الرمز في <code>provide</code> صنفًا مختلفًا عن الصنف الذي يُنشأ.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الاختصار <code>providers: [Notifier]</code> ينشئ <code>Notifier</code> دائمًا. بيئة التطوير تحتاج <code>ConsoleNotifier</code> والإنتاج <code>MailNotifier</code>، والمستهلك ما زال يطلب <code>Notifier</code> في <code>constructor</code>. <code>useClass</code> يفصل الرمز عن الصنف المبني.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">{
+  provide: Notifier,
+  useClass: MailNotifier,
+}
+</code></pre>
+<p>من يطلب <code>Notifier</code> يحصل على نسخة من <code>MailNotifier</code>. الحاوية تنادي البناء على <code>MailNotifier</code>، وتحل اعتماديات <code>MailNotifier</code> لا اعتماديات رمز قديم.</p>
+<h2>التعريف التقني</h2>
+<p><code>useClass</code> يختار الصنف وقت تقييم الملف، أي عند الإقلاع. شرط <code>NODE_ENV</code> في المثال العملي يُقرأ عند تحميل Module لا عند كل طلب. وضع الكائن في متغير ثم تمريره إلى <code>providers</code> تنظيم فقط.</p>
+<p>الصنف المختار يستبدل تنفيذًا افتراضيًا للرمز نفسه إن وُجد في السياق. <code>MailNotifier</code> تحتاج <code>@Injectable()</code> إن كانت لها اعتماديات، وتلك الاعتماديات تُذكر في <code>providers</code>. الوصفة لا تسجلها تلقائيًا.</p>
+<p>النطاق الافتراضي يخزن نسخة واحدة لكل رمز <code>provide</code>. تسجيل <code>MailNotifier</code> باختصار إضافي بجانب <code>{ provide: Notifier, useClass: MailNotifier }</code> يصنع رمزًا ثانيًا ونسخة ثانية. الاسمين مع النسخة نفسها يأتيان في <code>useExisting</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">constructor(private readonly notifier: Notifier)
+        |
+        v
+الرمز Notifier
+        |
+        v
+useClass: MailNotifier  -&gt;  new MailNotifier(...)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class Notifier {
+  send(_text: string) {
+    return { channel: &#39;base&#39; };
+  }
+}
+
+@Injectable()
+export class MailNotifier extends Notifier {
+  override send(text: string) {
+    return { channel: &#39;mail&#39;, text };
+  }
+}
+
+@Module({
+  providers: [{ provide: Notifier, useClass: MailNotifier }],
+  exports: [Notifier],
+})
+export class NotifyModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>المستهلك يستورد <code>Notifier</code> ويحقنه كالمعتاد. لا يعرف <code>MailNotifier</code>.</li>
+<li>الوراثة هنا عقد مجال صغير. صنفان متوافقان في الدوال يكفيان أيضًا؛ الحاوية لا تفرض <code>extends</code>.</li>
+<li><code>exports: [Notifier]</code> يصدّر الرمز الذي يطلبه الآخرون، لا اسم الصنف المبني فقط.</li>
+<li><code>_text</code> في القاعدة يوثّق التوقيع. التنفيذ الفعلي في <code>MailNotifier</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الحل ترى الحاوية وصفة <code>useClass</code>. تنظر إلى <code>MailNotifier</code> وتقرأ <code>design:paramtypes</code> لذلك الصنف، تبني الاعتماديات، ثم تنشئ النسخة وتخزنها تحت الرمز <code>Notifier</code>. طلب <code>MailNotifier</code> كرمز مستقل يفشل إن لم يكن له سجل خاص.</p>
+<p><code>NODE_ENV</code> يُقرأ عند تحميل Module. تغييره بعد الإقلاع لا يبدّل <code>useClass</code>. اختيار يتغير لكل طلب يحتاج <code>useFactory</code> أو Scope آخر، لا شرطًا مرة واحدة في الملف.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+import { ConsoleNotifier } from &#39;./console-notifier.js&#39;;
+import { MailNotifier } from &#39;./mail-notifier.js&#39;;
+import { Notifier } from &#39;./notifier.js&#39;;
+import { DeskService } from &#39;./desk.service.js&#39;;
+
+const notifierProvider = {
+  provide: Notifier,
+  useClass:
+    process.env.NODE_ENV === &#39;development&#39; ? ConsoleNotifier : MailNotifier,
+};
+
+@Module({
+  providers: [notifierProvider, DeskService],
+})
+export class DeskModule {}
+</code></pre>
+<p><code>DeskService</code> تطلب <code>Notifier</code> في البيئتين. Module الاختبار تمرر <code>{ provide: Notifier, useClass: FakeNotifier }</code> من غير تعديل <code>send</code>.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>providers: [MailNotifier]</code> والمُنشئ يطلب <code>Notifier</code></td>
+<td>الرمز المطلوب غير مسجّل</td>
+</tr>
+<tr>
+<td>تسجيل <code>Notifier</code> و <code>MailNotifier</code> معًا بالإضافة إلى <code>useClass</code></td>
+<td>نسختان إن طُلب الرمزان</td>
+</tr>
+<tr>
+<td>توقع تبديل <code>useClass</code> في كل طلب حسب رأس</td>
+<td>الاختيار تم عند تحميل الملف</td>
+</tr>
+<tr>
+<td>نسيان <code>@Injectable()</code> على الصنف البديل وفيه اعتماديات</td>
+<td>فشل حل معاملات <code>MailNotifier</code></td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>لاستبدال تنفيذ بآخر تحت رمز يعرفه المستهلك: بيئة، أو مزيف اختبار، أو تنفيذ عميل يطابق صنفًا أساسيًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما تكون القيمة جاهزة ولا تحتاج <code>new</code>: كائن إعداد أو عميل مُنشأ خارج Nest. ذلك <code>useValue</code>. وعندما يصنع الإنشاء خطوات تعتمد على مزودات أخرى. ذلك <code>useFactory</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الوصفة</th>
+<th>ماذا يُخزَّن تحت الرمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>اختصار <code>[Notifier]</code></td>
+<td>نسخة <code>Notifier</code></td>
+</tr>
+<tr>
+<td><code>useClass: MailNotifier</code></td>
+<td>نسخة من الصنف المختار، تحت رمز <code>provide</code></td>
+</tr>
+<tr>
+<td><code>useValue</code></td>
+<td>القيمة كما هي، من غير بناء صنف</td>
+</tr>
+<tr>
+<td><code>useExisting</code></td>
+<td>النسخة المسجّلة لرمز آخر، لا بناء جديد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>في <code>{ provide: Notifier, useClass: MailNotifier }</code>، ماذا يكتب المستهلك في <code>constructor</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>Notifier</code>. هذا هو الرمز. <code>MailNotifier</code> هو الصنف الذي تبنيه الحاوية.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا مزيف الاختبار يُمرَّر بـ <code>useClass</code> بدل تعديل <code>DeskService</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>send</code> تعتمد على الرمز. Module الاختبار تعيد ربط الرمز بـ <code>FakeNotifier</code>. الدالة تبقى على عقد <code>send</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى ينتج <code>useClass: MailNotifier</code> نسخة مختلفة عن اختصار <code>providers: [MailNotifier]</code> الموجود في الـ Module نفسها؟</p>
+<details><summary>الحل</summary>
+
+<p>عندما يكون <code>provide</code> رمزًا غير <code>MailNotifier</code>، مثل <code>Notifier</code>. لكل رمز خانة Singleton. الاختصار يملأ خانة <code>MailNotifier</code>، و <code>useClass</code> يملأ خانة <code>Notifier</code>. الخانتان نسختان إن طُلبتا معًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفصل <code>provide</code> عن <code>useClass</code>؟</li>
+<li>متى يُقيَّم شرط <code>NODE_ENV</code> في هذه الوصفة؟</li>
+<li>أي رمز تضعه في <code>exports</code> ليراه المستورد؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useClass</code> يبني صنفًا قد يختلف عن الرمز الذي يطلبه <code>constructor</code>. المستهلك يبقى على الرمز، والوصفة تختار التنفيذ عند الإقلاع.</p>
+<h2>ماذا بعد؟</h2>
+<p>حقن قيمة جاهزة: Value Providers.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Class providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers#class-providers-useclass">https://docs.nestjs.com/fundamentals/custom-providers#class-providers-useclass</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

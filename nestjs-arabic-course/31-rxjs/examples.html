@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاث سلاسل على الكتالوج. الخدمة تبقى <code>async</code>. التيار على المعترض فقط.</p>
+<h2>مثال 1 — غلاف بلا ملف متدفق</h2>
+<pre><code class="language-ts">import { CallHandler, ExecutionContext, NestInterceptor, StreamableFile } from &#39;@nestjs/common&#39;;
+import { map, Observable, tap } from &#39;rxjs&#39;;
+
+export class CatalogEnvelopeInterceptor implements NestInterceptor {
+  intercept(_context: ExecutionContext, next: CallHandler): Observable&lt;unknown&gt; {
+    const started = Date.now();
+    return next.handle().pipe(
+      tap(() =&gt; console.log(`catalog ${Date.now() - started}ms`)),
+      map((data) =&gt; (data instanceof StreamableFile ? data : { data })),
+    );
+  }
+}
+</code></pre>
+<h2>مثال 2 — مهلة الوكيل</h2>
+<pre><code class="language-ts">import { GatewayTimeoutException, HttpException } from &#39;@nestjs/common&#39;;
+import { TimeoutError, catchError, throwError, timeout } from &#39;rxjs&#39;;
+
+export function proxyTimeout(ms: number) {
+  return (source: import(&#39;rxjs&#39;).Observable&lt;unknown&gt;) =&gt;
+    source.pipe(
+      timeout(ms),
+      catchError((error: unknown) =&gt; {
+        if (error instanceof TimeoutError) {
+          return throwError(() =&gt; new GatewayTimeoutException(&#39;catalog timed out&#39;));
+        }
+        if (error instanceof HttpException) {
+          return throwError(() =&gt; error);
+        }
+        return throwError(() =&gt; error);
+      }),
+    );
+}
+</code></pre>
+<p>الاستعمال: <code>return next.handle().pipe(proxyTimeout(800))</code> على مسار البحث الخارجي لا على الرفع.</p>
+<h2>مثال 3 — اختبار بمشترك واحد</h2>
+<pre><code class="language-ts">import { of, lastValueFrom } from &#39;rxjs&#39;;
+
+const result = await lastValueFrom(
+  interceptor.intercept(context, {
+    handle: () =&gt; of({ title: &#39;NestJS in Practice&#39; }),
+  }),
+);
+</code></pre>
+<p>الناتج المتوقع <code>{ data: { title: &#39;NestJS in Practice&#39; } }</code>. لا <code>subscribe</code> إضافي في الاختبار نفسه.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>لا <code>mergeMap</code> ولا <code>retry</code> في هذه الملفات.</li>
+<li><code>tap</code> لا يطبع الجسم.</li>
+<li>المهلة ليست عالمية على <code>AppModule</code>.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

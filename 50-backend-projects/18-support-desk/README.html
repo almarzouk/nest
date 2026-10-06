@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>18 — مكتب تذاكر</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>18 — مكتب تذاكر</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new support-desk</code></p>
+<h2>ماذا تبني</h2>
+<p>تذكرة دعم تمشي على حالات: open ثم pending ثم resolved ثم closed. القفز الممنوع 409. كل انتقال يُسجَّل.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>الحالة ليست نصًا يُستبدل. هي مسار مسموح.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>جدول انتقالات</li>
+<li>سجل أحداث داخل التذكرة</li>
+<li>409 مقابل 400</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>موظفون حقيقيون</li>
+<li>بريد</li>
+<li>أولوية معقدة</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>حجز الغرف.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/15-exception-filters/README.html">15-exception-filters</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>open إلى pending أو resolved.</li>
+<li>pending إلى resolved.</li>
+<li>resolved إلى closed أو إلى pending إن أُعيد فتحها.</li>
+<li>closed نهائية.</li>
+<li>جسم الانتقال { to, note } والـ note يُحفظ في السجل.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/tickets</code></td>
+<td>201</td>
+<td>تبدأ open</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/tickets/:id/transitions</code></td>
+<td>200</td>
+<td>انتقال مسموح</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/tickets/:id</code></td>
+<td>200</td>
+<td>الحالة والسجل</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new support-desk</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>اكتب المسموح كـ Record لا كشروط مبعثرة.</li>
+<li>أضف الحدث إلى السجل في نفس الدالة التي تغيّر الحالة.</li>
+<li>انتقال غير مسموح 409. حالة غير معروفة 400.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/tickets/transitions.ts
+src/tickets/tickets.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">const NEXT: Record&lt;string, string[]&gt; = {
+  open: [&quot;pending&quot;, &quot;resolved&quot;],
+  pending: [&quot;resolved&quot;],
+  resolved: [&quot;closed&quot;, &quot;pending&quot;],
+  closed: [],
+};
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>PATCH يستبدل status بأي نص.</li>
+<li>تغيير الحالة من غير سطر في السجل.</li>
+<li>استخدام 400 للانتقال الممنوع فيختلط مع الدخل الرديء.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>closed ترفض أي انتقال.</li>
+<li>السجل يعرض الترتيب من الأقدم.</li>
+<li>إعادة الفتح من resolved إلى pending تعمل.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>امنع إغلاقًا بلا note.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 18» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../17-room-booking/README.html">17. حجز غرف</a></li>
+<li>التالي: <a href="../19-product-catalog/README.html">19. كتالوج بمنتجات مرقمة</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>دالة bootstrap</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-bootstrap-function.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>دالة bootstrap</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة دالة الإقلاع في <code>main.ts</code> كسلسلة: ابنِ التطبيق ثم ابدأ الاستماع.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>لو وُضع <code>listen</code> قبل أن تُسجَّل المسارات والمزوّدات، يصل طلب إلى منفذ مفتوح وتطبيق غير جاهز. الإقلاع دالة واحدة تُكمل البناء أولًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>bootstrap</code> دالة غير متزامنة تنشئ التطبيق من الوحدة الجذر ثم تفتح المنفذ. في قالب ESM تُستدعى بـ <code>await bootstrap()</code> في أعلى الملف.</p>
+<h2>التعريف التقني</h2>
+<p>من First steps: الملف يستورد <code>NestFactory</code> من <code>@nestjs/core</code> و <code>AppModule</code>، ثم:</p>
+<pre><code class="language-ts">async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+await bootstrap();
+</code></pre>
+<p><code>create</code> يعيد كائنًا يطبّق <code>INestApplication</code>. دوال هذا الكائن تُشرح في الفصول التالية. هنا هو نتيجة البناء.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تحميل main.ts
+    -&gt; await create(AppModule)   بناء الرسم والحاوية والمسارات
+    -&gt; await listen(port)        فتح المنفذ
+    -&gt; العملية تبقى حية
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الكود أعلاه هو المثال الرسمي الحالي. لا تختصره بحذف <code>await</code>.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاستيرادان يحمّلان المصنع والوحدة الجذر. مسار <code>.js</code> أسلوب ESM كما في فصل التثبيت.</li>
+<li><code>async</code> تسمح بـ <code>await</code> داخل الدالة.</li>
+<li><code>create</code> ترجع Promise لأن البناء قد ينتظر تهيئة مزوّدات غير متزامنة لاحقًا.</li>
+<li><code>??</code> يختار <code>3000</code> عندما <code>PORT</code> قيمة <code>null</code> أو <code>undefined</code>. نص فارغ لا يُستبدل بهذا المعامل؛ لا تضع <code>PORT=</code> فارغًا وتتوقع 3000.</li>
+<li><code>await bootstrap()</code> يشغّل الإقلاع ويمنع أن تنتهي الوحدة قبل اكتمال الـ Promise في أسلوب ESM.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>تحميل الملف يشغّل Decorators على الأصناف المستوردة عبر <code>AppModule</code>. ثم <code>create</code> تمشي الرسم وتبني الحاوية وتربط HTTP. <code>listen</code> بعد ذلك يستدعي استماع المنصة. إن رُفضت أي Promise ولم تُمسك، الإقلاع يفشل. الافتراضي عند خطأ إنشاء التطبيق إنهاء العملية برمز <code>1</code>.</p>
+<h2>مثال عملي</h2>
+<p>أضف سطرًا بعد <code>listen</code> فقط عندما تحتاج إعدادًا على <code>app</code> قبل الاستماع، مثل أنبوب عام:</p>
+<pre><code class="language-ts">async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  await app.listen(process.env.PORT ?? 3000);
+}
+</code></pre>
+<p>الأنبوب العام مكانه <strong>قبل</strong> <code>listen</code> حتى لا يفتح المنفذ قبل تركيب الحماية. ستضيف <code>useGlobalPipes</code> في فصل Validation. اليوم لا تضفه قبل أن تعرف DTO.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>استدعاء <code>bootstrap()</code> من غير <code>await</code> في ESM ثم الاعتقاد أن الأخطاء ظاهرة دائمًا.</li>
+<li>وضع منطق عمل داخل <code>bootstrap</code>. المدخل يركّب الإطار فقط.</li>
+<li>قراءة <code>PORT</code> بعد <code>listen</code> لتغيير المنفذ. الاختيار يحدث في الوسيط.</li>
+</ul>
+<h2>متى نستخدم هذه الدالة؟</h2>
+<p>في كل تطبيق HTTP في الدورة. الاسم <code>bootstrap</code> عرف التوثيق لا كلمة سحرية.</p>
+<h2>متى لا نستخدم listen؟</h2>
+<p>في تطبيق Standalone بلا HTTP، مثل أمر CLI لاحقًا. هناك سياق تطبيق من غير استماع. الفصل <code>67</code> يذكره. الآن نبقى على HTTP.</p>
+<h2>مقارنة</h2>
+<pre><code class="language-text">Express:  const app = express(); app.listen(3000)
+Nest:     const app = await NestFactory.create(AppModule); await app.listen(...)
+</code></pre>
+<p>الفرق: Nest تبني وحدات وحاوية قبل الاستماع. Express ينتظر أن تسجّل أنت المسارات على <code>app</code> قبل <code>listen</code> أو بعده حسب أسلوبك، والقالب المرتب يسجّل قبل الاستماع أيضًا.</p>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يحدث أولًا: <code>create</code> أم <code>listen</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>create</code> ثم <code>listen</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الدالة <code>async</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن <code>create</code> و <code>listen</code> ترجعان Promise ويجب انتظار اكتمال البناء والاستماع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>PORT</code> غير موجود في البيئة. أي منفذ يُستخدم، وأي قيمة لا يعوّضها <code>??</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>يُستخدم <code>3000</code> لأن المتغير <code>undefined</code>. سلسلة فارغة ليست <code>null</code> ولا <code>undefined</code>، فلا يستبدلها <code>??</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين يُستورد <code>NestFactory</code>؟</li>
+<li>ماذا يُمرَّر إلى <code>create</code>؟</li>
+<li>لماذا ننتظر <code>create</code> قبل <code>listen</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>bootstrap</code> تبني التطبيق من <code>AppModule</code> ثم تفتح المنفذ. لا عمل مجال داخل هذه الدالة.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>NestFactory</code> نفسه: ماذا يقدر أن ينشئ.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

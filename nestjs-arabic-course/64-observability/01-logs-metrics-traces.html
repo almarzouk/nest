@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Logs و Metrics و Traces</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-logs-metrics-traces.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Logs و Metrics و Traces</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تفرقة ثلاث إشارات تشغيل في رف: سجل يروي طلبًا، مقياس يعدّ، وأثر يتبع مسار النشر عبر الدوال.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل شيء <code>console.log</code>. عند البطء لا تعرفون إن كان العدد ارتفع أم أن طلبًا واحدًا علق في Stripe. عند 500 تبحثون في نص بلا معرّف. الصحة من Terminus تقول إن العملية حية ولا تقول أي مسار تباطأ بعد النشر.</p>
+<h2>الفكرة ببساطة</h2>
+<p>السجل حدث نصي أو JSON لطلب أو لعطل: ماذا حدث. المقياس رقم عبر الزمن: كم نشرًا، ما p95. الأثر شجرة مدد: المتحكم، الخدمة، استعلام القاعدة. الثلاثة معًا تجيب «كم» و«أي طلب» و«أين ذهب الوقت». لا إشارة تغني عن الأخريين.</p>
+<h2>التعريف التقني</h2>
+<p><code>Logger</code> من <code>@nestjs/common</code> للسجلات. لا كلمات مرور ولا <code>rawBody</code> ولا أسرار Stripe. المقاييس عدادات ومدد (معدل 5xx، مدة <code>publish</code>). الأثر spans باسم الدالة لا باسم عام «request» فقط. صفحة Deployment تفرّق فحص الصحة والسجل عن معرفة أي مسار تباطأ، وتشير إلى المراقبة. سجل التدقيق للمراجع البشري ليس هذا السجل؛ ذاك صف أعمال في القاعدة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Log:     publish failed  bookId=b1
+Metric:  publish_duration_ms p95
+Trace:   HTTP → BooksService → prisma
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Logger } from &#39;@nestjs/common&#39;;
+
+const logger = new Logger(&#39;BooksService&#39;);
+
+export function logPublish(organizationId: string, bookId: string) {
+  logger.log({ msg: &#39;book published&#39;, organizationId, bookId });
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>JSON أو كائن يسهّل الجمع. النص الحر يصعب فرزه.</li>
+<li>المعرّفات لا العنوان الكامل إن كان حساسًا.</li>
+<li><code>Logger</code> أفضل من <code>console</code> حتى يمر على تنسيق التطبيق.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الطلب يدخل. السجل يسجل البداية أو يترك ذلك للمعترض حتى لا يتكرر في كل خدمة.</li>
+<li>عند النجاح أو الفشل يُكتب سطر بمستوى مناسب: <code>log</code> للنجاح المهم، <code>error</code> لغير المتوقع فقط لا لكل 404.</li>
+<li>المقياس يزيد بغض النظر عن نص السجل.</li>
+<li>الأثر يفتح span حول Prisma ويغلقه بالمدة.</li>
+<li>404 المتوقعة لا ترفع عداد الأعطال الحرجة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">export function recordPublish(metrics: { observe: (ms: number, ok: boolean) =&gt; void }, started: number, ok: boolean) {
+  metrics.observe(Date.now() - started, ok);
+}
+</code></pre>
+<p>عداد منفصل <code>publish_total{result}</code> أفضل من استنتاج النجاح بعدّ أسطر السجل. السجل يبقى للتفاصيل، والمقياس للرسم.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>error</code> لكل <code>BookNotFound</code>.</li>
+<li>قياس p95 من متوسط السجلات اليدوي.</li>
+<li>أثر بلا اسم خدمة فيضيع بين النسخ.</li>
+<li>دمج سجل التدقيق مع سجل التشغيل في نفس الجدول.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>من أول مسار نشر في الإنتاج. ابدأوا بسجل JSON ومقياس للمسار الساخن ثم الأثر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسجلوا كل حقل في كل <code>GET</code> ناجح بمستوى error. ولا تستبدلوا فحص <code>/health</code> بمقياس؛ الموازن يحتاج المسار.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>سجل</th>
+<th>مقياس</th>
+<th>أثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السؤال</td>
+<td>ماذا في هذا الطلب؟</td>
+<td>كم وكم السرعة؟</td>
+<td>أين الوقت داخل الطلب؟</td>
+</tr>
+<tr>
+<td>الحجم</td>
+<td>سطر لكل حدث مهم</td>
+<td>أرقام مجمّعة</td>
+<td>شجرة لكل طلب عينة أو للكل</td>
+</tr>
+<tr>
+<td>404</td>
+<td>info أو لا شيء</td>
+<td>عداد منفصل</td>
+<td>span قصير بلا إنذار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي إشارة تجيب: هل p95 للنشر ارتفع بعد النشر الأخير؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المقياس عبر الزمن، لا قراءة ألف سطر. السجل يفسّر طلبًا بطيئًا بعد ما يدل المقياس على الانحدار.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا 404 ليس <code>logger.error</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الغياب متوقع وعقده 404. ضجيج error يخفي انقطاع القاعدة. سجّلوا غير المتوقع في فلتر 500.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>Terminus أخضر وموظفون يشتكون من النشر. ماذا تنقصكم الإشارة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الصحة لا تقيس المسار. تحتاجون مدة <code>publish</code> وأثرًا يفرّق Prisma عن Stripe. السجل وحده بلا تجميع لا يرسم p95.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يروي كل من الثلاث؟</li>
+<li>لماذا لا يُستنتج المقياس من عدّ السجلات فقط؟</li>
+<li>أي مستوى لغياب كتاب؟</li>
+<li>ما فرق سجل التشغيل عن التدقيق؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>السجل تفاصيل طلب، والمقياس سلوك عبر الزمن، والأثر مسار داخل الطلب. 404 ليس عطلًا، والصحة ليست p95.</p>
+<h2>ماذا بعد؟</h2>
+<p>توحيد الأسماء بين اللغات والأدوات يتم بمعيار. الدرس التالي OpenTelemetry.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/application/logger">https://docs.nestjs.com/application/logger</a></li>
+<li>NestJS — Deployment: <a href="https://docs.nestjs.com/deployment">https://docs.nestjs.com/deployment</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

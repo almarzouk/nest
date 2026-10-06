@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auth</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-auth.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Auth</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فتح حساب في رف بكلمة مرور، وإصدار إثبات للطلبات التالية، على <code>@nestjs/authentication</code> من غير خلط وصفة Passport في نفس المسار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كلمة المرور تُحفظ كما كُتبت. أو المسار يعيد المستخدم ومعه التجزئة. أو يُركَّب <code>AuthGuard(&#39;local&#39;)</code> بجانب الحزمة الرسمية فيتنازع الحارسان. التسجيل ينشئ منظمة كاملة في هذا الدرس فيصعب اختبار الهوية وحدها.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>POST /auth/register</code> ينشئ <code>User</code> بتجزئة. <code>POST /auth/login</code> يتحقق ويصدر جلسة أو زوج رموز عبر <code>TokenService</code> كما في فصل المصادقة. اختاروا قناة واحدة للجولة الأولى: جلسة للمتصفح أو refresh للجوال، لا الاثنين في نفس الأسبوع إن ضاق الوقت. Passport يبقى وصفة إن بنيتم المشروع عليها وحدها.</p>
+<h2>التعريف التقني</h2>
+<p>الحزمة تتولى التجزئة والجلسة أو الرموز عندما تسجّلون المخزن. لا SHA عارٍ لكلمة المرور. <code>@Public()</code> على التسجيل والدخول. الحارس العام يغلق الباقي. <code>validate</code> يحمّل المستخدم بلا <code>passwordHash</code>. الرد لا يحتوي التجزئة. لا Google في هذه الشريحة؛ OIDC درس سابق يمكن إضافته بعد ما يعمل البريد. المنظمة في الدرس التالي حتى لا يفشل التسجيل إن فشل إنشاء المكتبة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">register → User + hash
+login    → إثبات بلا hash
+الطلبات  → حارس يضع user.id
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Public()
+@Post(&#39;register&#39;)
+@HttpCode(201)
+register(@Body() body: { email: string; password: string }) {
+  return this.auth.register(body.email, body.password);
+}
+</code></pre>
+<p>أضيفوا الاستيراد من <code>@nestjs/common</code> و <code>Public</code> من <code>@nestjs/authentication</code>. 201 لأن الحساب خُلق.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>جسم الدخول ليس 201. الدخول 200 مع الإثبات.</li>
+<li>كلمة المرور لا تُسجَّل.</li>
+<li>الخدمة ترفض البريد المكرر بـ 409 لا بـ 500.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الأنبوب يتحقق من شكل البريد وطول كلمة المرور.</li>
+<li>المستودع يحفظ التجزئة ولا يعيدها.</li>
+<li>الدخول يقارن عبر أدوات الحزمة.</li>
+<li>الإثبات يُسلَّم. الطلب التالي يملأ <code>user</code>.</li>
+<li>لا <code>organizationId</code> بعد. الطلبات المحمية التي تحتاج مكتبة تنتظر الدرس التالي.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">async register(email: string, password: string) {
+  const existing = await this.users.findByEmail(email);
+  if (existing) throw new ConflictException(&#39;email taken&#39;);
+  const user = await this.users.create(email, password);
+  return { id: user.id, email: user.email };
+}
+</code></pre>
+<p><code>create</code> يستدعي التجزئة داخل المستودع. الاختبار يتوقع غياب <code>passwordHash</code> في الكائن المرجع. لا تنشئوا <code>Project</code> هنا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>200 على التسجيل مع إعادة كلمة المرور.</li>
+<li>حارسان: Passport و <code>@nestjs/authentication</code>.</li>
+<li>جعل التسجيل ينشر كتابًا تجريبيًا.</li>
+<li>تخزين JWT في جدول بلا تجزئة لرمز التحديث إن اخترتم الرموز. الحزمة تخزّن التحديث مجزأ عندما تستخدمون مخزنها.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>بعد الأساسات وقبل أي مسار مكتبة. بلا إثبات لا عضوية.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضيفوا العامل الثنائي في هذه الشريحة. ولا تربطوا Stripe بالتسجيل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المسار</th>
+<th>الرمز</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تسجيل جديد</td>
+<td>201 بلا تجزئة</td>
+</tr>
+<tr>
+<td>بريد مكرر</td>
+<td>409</td>
+</tr>
+<tr>
+<td>دخول صحيح</td>
+<td>200 وإثبات</td>
+</tr>
+<tr>
+<td>دخول خاطئ</td>
+<td>401</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يغيب عن JSON التسجيل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>password</code> و <code>passwordHash</code>. يظهر <code>id</code> و <code>email</code> فقط.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا تُنشأ المنظمة داخل <code>register</code> في رف هذه الدورة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يُختبر الحساب وحده، ويستطيع الشخص لاحقًا امتلاك أكثر من مكتبة. الدرس التالي معاملة منظمة + مالك.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>اخترتم الرموز لا الجلسة. ماذا لا تضعون في <code>claims</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الدور والـ <code>organizationId</code> الدائم إن كان الشخص سينتقل بين المكتبات. الدور يُحمَّل من العضوية بعد اختيار المستأجر. الرمز القصير إثبات شخص.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حزمة للشريحة؟</li>
+<li>لماذا Passport ليست طبقة ثانية؟</li>
+<li>ما رمز البريد المكرر؟</li>
+<li>ماذا لا يُنشأ في التسجيل؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التسجيل 201 بحساب مجزّأ بلا سر في الرد. الدخول يصدر إثباتًا واحد القناة. المنظمة ليست داخل هذا المسار.</p>
+<h2>ماذا بعد؟</h2>
+<p>الحساب يحتاج مكتبة يملكها. الدرس التالي المستخدم والمنظمة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>أغلق الدروس ثم أجب. الحلول تحت <code>الحل</code>.</p>
+<h2>سهل</h2>
+<p>ما الأمر الذي تشغّله الحاوية بعد <code>npm run build</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>node dist/main.js</code>. <code>start:dev</code> يعيد تشغيل المصدر ويتتبع الملفات، وهو أمر التطوير.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>الصورة تحتوي <code>.env</code> مع <code>DATABASE_URL</code>، و <code>ConfigModule</code> يحمّل الملف حتى في الإنتاج. ما الخلل وما البديل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>السر صار داخل طبقات الصورة ويمكن أن يُسحب مع السجل. مرّر المتغير من المنصة أو من Compose، وفعّل <code>ignoreEnvFile</code> عندما <code>NODE_ENV=production</code>، وأبقِ <code>.env.example</code> بلا قيم حقيقية.</p>
+</details>
+
+<h2>متوسط — الضغط</h2>
+<p>Nginx فيه <code>gzip on</code> و <code>app.use(compression())</code> مفعّل على Express. ماذا تبقي؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طبقة واحدة. إن كان Nginx هو من يواجه العميل فاترك <code>gzip</code> هناك واحذف وسيط التطبيق حتى لا يُعالَج الجسم مرتين.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>ثلاث حاويات خلف Nginx، ومجمع Prisma بعشرين اتصالًا لكل نسخة، والجلسة في <code>Map</code> على الخدمة. عدّل التصميم.</p>
+<details>
+<summary>الحل</summary>
+
+<p>انقل الجلسة إلى Redis أو إلى القاعدة حتى لا يحتاج الطلب إلى الالتصاق بنسخة. احسب 3 × 20 اتصالًا وأبقها تحت <code>max_connections</code>. لا تشغّل <code>cluster</code> داخل كل حاوية. <code>trust proxy</code> يبقى بعدد القفزات أمام Node، غالبًا 1.</p>
+</details>
+
+<h2>متقدم — الإشارة</h2>
+<p><code>CMD node dist/main.js</code> بصيغة الغلاف <code>sh -c</code>، و <code>enableShutdownHooks()</code> موجود، و Docker يرسل <code>SIGTERM</code>. Prisma لا يقطع. لماذا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الغلاف يبتلع الإشارة فلا تصل إلى Node. استعمل صيغة exec: <code>CMD [&quot;node&quot;, &quot;dist/main.js&quot;]</code>. عندها الخطافات تعمل و <code>$disconnect</code> في <code>onModuleDestroy</code> يُستدعى قبل المهلة.</p>
+</details>
+
+<h2>سؤال ربط</h2>
+<p>لماذا فحص الحياة الذي يضرب القاعدة يعيد تشغيل كل النسخ معًا عند عطل قصير في Postgres؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فشل الحياة يعني للمنسّق أن العملية ميتة فيقتلها. إن كان العطل في القاعدة فكل النسخ تفشل معًا وتُعاد. الحياة تكتفي بأن الحلقة ترد. الجاهزية هي التي تنتظر القاعدة وتسحب النسخة من التوزيع من غير قتل. ذلك أول درس في الفصل التالي.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة إعدادات. لا تضعها كلها في التطبيق نفسه. اختر واحدًا حسب ما يجلس على المنفذ.</p>
+<h2>مثال 1 — أصول عامة فقط</h2>
+<p>الـ API على <code>/</code> والشعار تحت بادئة. لا بدل يلتقط الموقع.</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { ServeStaticModule } from &#39;@nestjs/serve-static&#39;;
+import { join } from &#39;node:path&#39;;
+import { BooksModule } from &#39;./books/books.module.js&#39;;
+
+@Module({
+  imports: [
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), &#39;public&#39;),
+      serveRoot: &#39;/assets&#39;,
+      serveStaticOptions: {
+        index: false,
+        fallthrough: false,
+        dotfiles: &#39;ignore&#39;,
+        maxAge: &#39;1h&#39;,
+      },
+    }),
+    BooksModule,
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p><code>GET /assets/logo.svg</code> ملف. <code>GET /assets/../.env</code> لا يخرج من <code>public</code>. <code>GET /books/1</code> JSON. مجلد <code>var/covers</code> غير مذكور.</p>
+<h2>مثال 2 — واجهة و API معًا</h2>
+<pre><code class="language-ts">ServeStaticModule.forRoot({
+  rootPath: join(process.cwd(), &#39;client&#39;, &#39;dist&#39;),
+  exclude: [&#39;/api/{*path}&#39;],
+  serveStaticOptions: {
+    maxAge: &#39;1y&#39;,
+    setHeaders(res, path) {
+      if (path.endsWith(&#39;index.html&#39;)) {
+        res.setHeader(&#39;Cache-Control&#39;, &#39;no-cache&#39;);
+      }
+    },
+  },
+});
+</code></pre>
+<p>الحزم المجزّأة تُخزَّن طويلًا. <code>index.html</code> يُعاد التحقق منه حتى يشير إلى أسماء الملفات الجديدة بعد النشر. <code>BooksController</code> يعيش تحت <code>@Controller(&#39;api/books&#39;)</code> ليلتقي الاستثناء.</p>
+<p>تحقق:</p>
+<pre><code class="language-bash">curl -s -o /dev/null -w &quot;%{http_code} %{content_type}\n&quot; http://localhost:3000/api/does-not-exist
+curl -s -o /dev/null -w &quot;%{http_code} %{content_type}\n&quot; http://localhost:3000/books/42
+</code></pre>
+<p>الأول <code>404</code> و JSON. الثاني <code>200</code> و HTML.</p>
+<h2>مثال 3 — Fastify بلا exclude</h2>
+<pre><code class="language-ts">ServeStaticModule.forRoot({
+  rootPath: join(process.cwd(), &#39;client&#39;, &#39;dist&#39;),
+  renderPath: /^(?!\/api).*/,
+});
+</code></pre>
+<p>التعبير يرسم الواجهة لكل مسار لا يبدأ بـ <code>/api</code>. جرّب <code>/api</code> و <code>/apiv2</code> حتى لا يبتلع النظر الأمامي بادئة ثانية. إن كانت البادئة <code>/v1</code> فعدّل التعبير. لا تنسخ مثال Express وتتوقع الاستثناء نفسه.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li><code>var/covers</code> ليس <code>rootPath</code> ولا ابنًا له.</li>
+<li>ملف نقطة داخل <code>public</code> لا يُرسل مع <code>dotfiles: &#39;ignore&#39;</code>.</li>
+<li>مسار API الغائب لا يعيد صفحة الواجهة.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

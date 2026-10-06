@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CASL ومتى يناسب</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="06-casl.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>CASL ومتى يناسب</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة CASL كمكتبة قدرات خارجية، ومتى لا تستبدل <code>@nestjs/authorization</code> في هذه الدورة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>البحث عن «authorization nestjs» يعرض مقالات CASL قبل صفحة Nest الحالية. الفريق يثبّت المكتبة ثم يعيد كتابة <code>PostPolicy</code> مرتين. أو يتجنب الحزمة الرسمية لأنها لا تشبه <code>ability.can</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p>CASL مكتبة JavaScript تبني كائن قدرة: أفعال على أنواع، وربما شروط على الحقول. هي ليست حزمة <code>@nestjs</code> في صفحة التفويض الحالية. الدورة تعتمد <code>@Policy</code> و <code>AuthorizationService</code>. CASL يناسب فريقًا يملك قواعدًا كثيرة متشابهة ويريد بناء القدرة من بيانات، أو مشروعًا قائمًا عليها أصلًا.</p>
+<h2>التعريف التقني</h2>
+<p>نمط CASL الشائع، للتعرّف لا للاعتماد:</p>
+<pre><code class="language-ts">import { AbilityBuilder, createMongoAbility } from &quot;@casl/ability&quot;;
+
+export function buildFor(user: PublicUser | null) {
+  const { can, build } = new AbilityBuilder(createMongoAbility);
+  can(&quot;read&quot;, &quot;Post&quot;);
+  if (user?.roles.includes(&quot;editor&quot;)) {
+    can(&quot;create&quot;, &quot;Post&quot;);
+  }
+  if (user) {
+    can(&quot;update&quot;, &quot;Post&quot;, { authorId: user.id });
+  }
+  return build();
+}
+</code></pre>
+<p><code>can(&quot;update&quot;, &quot;Post&quot;, { authorId })</code> شرط على شكل السجل، قريب من دالة <code>update(user, post)</code>. التقييم يتم عبر <code>ability.can(&quot;update&quot;, subject)</code>.</p>
+<p>لا يوجد في هذا الدرس <code>CaslModule</code> رسمي داخل توثيق Nest الحالي الذي قرأناه. إن أضفت المكتبة فأنت تملك ربطها بحارس تكتبه. <code>@Can</code> من <code>@nestjs/authorization</code> لا يقرأ كائن CASL.</p>
+<p>اختر مصدرًا واحدًا للحقيقة: إما دوال <code>PostPolicy</code>، وإما قدرة CASL تُستدعى من تلك الدوال إن احتجت محرّك شروط ضخمًا. استدعاؤها من داخل السياسة يبقي الخدمة على <code>authorize</code> ولا ينشر المكتبة في كل متحكم.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">دورة المكتبة: PostPolicy + AuthorizationModule
+CASL: محرّك شروط خارجي
+        |
+ إن لزم: PostPolicy.update تستشير ability
+ لا حارس ثانٍ موازٍ
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Policy()
+export class PostPolicy {
+  constructor(private readonly casl: CaslFactory) {}
+
+  update(user: PublicUser | null, post: { authorId: number }) {
+    if (!user) return false;
+    return this.casl.for(user).can(&quot;update&quot;, { ...post, kind: &quot;Post&quot; });
+  }
+}
+</code></pre>
+<p><code>CaslFactory</code> مزوّد تكتبه أنت. هذا جسر محتمل، لا ملف الدورة الافتراضي. الافتراضي دالة <code>user.id === post.authorId</code> بلا تبعية.</p>
+<h2>شرح المثال</h2>
+<p>الجسر يبقي <code>@Can</code> و <code>authorize</code> كما في الصفحة الرسمية، وينقل شرطًا معقدًا إلى CASL. اختبار السياسة ما زال ممكنًا بمزيف <code>casl</code>. إن استدعى المتحكم <code>ability.can</code> مباشرة، تجاوزت الحزمة وازدوجت الرسائل <code>403</code>.</p>
+<p>لا تضف هذا البنّاء في مشروع الدورة ما دامت ثلاث دوال تغطي النشر والتعديل والقراءة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>CASL يقيّم الشروط على كائن عادي. لا يفتح PostgreSQL ولا يعرف <code>PrismaService</code>. تحميل المقال يبقى في الخدمة قبل النداء، وإلا فالحقل <code>authorId</code> غير موجود وتفشل القاعدة بصمت أو تمنع الجميع. هذا القيد نفسه الذي منع <code>@Can</code> على <code>update</code>.</p>
+<p>قواعد CASL في الذاكرة لكل طلب. بناء القدرة رخيص عند ثلاث قواعد، ومفيد حين تُولَّد القواعد من صفوف صلاحيات بالمئات بشكل متكرر. عندها المصنع يقرأ تلك الصفوف مرة.</p>
+<h2>مثال عملي</h2>
+<p>مكتبة الدورة: لا حزمة <code>@casl/ability</code> في <code>package.json</code>. <code>PostPolicy</code> دوال صريحة. مشروع شركة فيه مئة شرط <code>can</code> على أنواع المستندات: أبقِ CASL هناك، وضع نداءً واحدًا خلف سياسة أو خلف خدمة تفويض حتى لا يتعلم كل مسار API المكتبة. لا تهاجر ذلك المشروع إلى <code>@Policy</code> في أسبوع الصيانة نفسه إلا بخطة اختبار لكل فعل.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تثبيت CASL لأن مقالًا أقدم من صفحة التفويض الحالية.</li>
+<li>حارس CASL وحارس <code>AuthorizationModule</code> على المسار نفسه.</li>
+<li>شرط CASL على مقال لم يُحمَّل.</li>
+<li>اعتبار CASL جزءًا من <code>@nestjs/authorization</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>قواعد كثيرة متجانسة، أو codebase قائم على CASL، خلف نقطة ندائية واحدة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لمكتبة الدورة ذات السياسات القليلة. الدالة أوضح من محرّك. ولا كبديل عن المصادقة. CASL لا يثبت كلمة المرور.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th><code>@nestjs/authorization</code></th>
+<th>CASL</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صفحة Security الحالية</td>
+<td>مكتبة خارجية</td>
+</tr>
+<tr>
+<td><code>@Policy</code> و <code>@Can</code></td>
+<td><code>AbilityBuilder</code></td>
+</tr>
+<tr>
+<td>مسار الدورة</td>
+<td>خيار عند كثرة الشروط</td>
+</tr>
+<tr>
+<td>يتكامل مع حارس المصادقة</td>
+<td>تدمجه أنت</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل CASL يثبت هوية الطلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. هو تقييم أفعال بعد أن تملك مستخدمًا أو ضيفًا. الهوية من فصل المصادقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا نضع <code>ability.can</code> في المتحكم بجانب <code>@Can</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>يصبح للمسار قراران وقد يختلفان. مصدر واحد: سياسة الحزمة، وتستدعي CASL من داخلها فقط إن وُجدت حاجة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تبقى الدالة <code>user.id === post.authorId</code> أفضل من شرط CASL المكافئ؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حين تكون القاعدة واحدة وواضحة. قراءة الدالة في اختبار السياسة أرخص من تعلّم شكل الشرط. CASL حين تتكرر العائلة نفسها على أنواع كثيرة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين تعيش سياسات الدورة؟</li>
+<li>ماذا لا تفعل CASL؟</li>
+<li>كيف تتجنب حارسين؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>CASL محرّك قدرات خارجي مفيد عند حجم قواعد كبير أو مشروع قائم. مسار المنشورات يبقى على <code>@nestjs/authorization</code> بدوال صريحة.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./07-guards-versus-policies.html">Guard مقابل Policy</a> أي سؤال يُحسم قبل المعالج وأي سؤال بعد تحميل الصف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authorization: <a href="https://docs.nestjs.com/security/authorization">https://docs.nestjs.com/security/authorization</a></li>
+<li>NestJS — Guards: <a href="https://docs.nestjs.com/guards">https://docs.nestjs.com/guards</a></li>
+<li>CASL — Ability: <a href="https://casl.js.org/v6/en/guide/intro">https://casl.js.org/v6/en/guide/intro</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

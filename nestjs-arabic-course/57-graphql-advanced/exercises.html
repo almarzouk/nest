@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — من يملك ماذا</h2>
+<p>ضع الأداة أمام العبارة: DataLoader، complexity plugin، depth rule، persisted safelist، ApolloFederationDriver.</p>
+<ol>
+<li>رفض سلسلة طولها 12.</li>
+<li>استعلام مؤلف واحد لقائمة كتب.</li>
+<li>رفض تجزئة ليست من بناء الواجهة.</li>
+<li><code>resolveReference</code> لـ <code>Book</code>.</li>
+<li>رفض <code>limit</code> كبير قبل Prisma.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 قاعدة العمق. 2 DataLoader. 3 القائمة المغلقة. 4 ApolloFederationDriver مع <code>@ResolveReference</code>. 5 إضافة التعقيد. لا بند منها يُستبدل بديكور Nest وحيد يشمل البقية.</p>
+</details>
+
+<h2>تمرين متوسط — عدّ SQL</h2>
+<p><code>books { author { name } reviews { user { name } } }</code> على 5 كتب، بلا مجمّع. كم مستوى N+1 ترى؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مستوى المؤلف: 5 استعلامات. مستوى المراجعات: 5 إن جُلبت لكل كتاب. ثم مستخدم لكل مراجعة. كل <code>@ResolveField</code> يضرب القاعدة على حدة. مجمّع لكل مستوى (مؤلفون، مراجعات بالكتاب، مستخدمون) ينزل كل مستوى إلى استعلام <code>IN</code>.</p>
+</details>
+
+<h2>تمرين متقدم — إنتاج رف</h2>
+<p>الواجهة أنهت شاشاتها. ماذا تفتح في الإنتاج وبماذا تبقي GraphiQL؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في الإنتاج قائمة تجزئات مغلقة، مع إبقاء التعقيد والعمق على النصوص المسموحة بسبب المتغيرات، و DataLoader على حقول العلاقة. GraphiQL والنص الحر في التطوير فقط. Federation لا يُضاف إلا عندما ينفصل فريق المراجعات فعلًا، ومعه بوابة لا ديكور على الوحدة.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

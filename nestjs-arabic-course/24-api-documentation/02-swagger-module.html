@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>SwaggerModule</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-swagger-module.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>SwaggerModule</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>توليد وثيقة المكتبة وخدمة Swagger UI من تطبيق Nest عبر <code>SwaggerModule</code> و <code>DocumentBuilder</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كتابة <code>openapi.yaml</code> يدويًا تتأخر عن المتحكمات. فريق يفتح <code>/api</code> فيجد صفحة فارغة لأن <code>setup</code> لم يُستدعَ، أو لأن Fastify بلا <code>@fastify/static</code>. أو تُبنى الوثيقة قبل <code>enableVersioning</code> فتُفقد البادئة من المسارات.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>DocumentBuilder</code> يملأ عنوان الوثيقة ووصفها وإصدارها. <code>SwaggerModule.createDocument</code> يقرأ التطبيق ويبني الكائن. غلّف الاستدعاء في دالة حتى يُبنى المستند عند أول طلب. <code>SwaggerModule.setup</code> يقدّم الواجهة على مسار مثل <code>api</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm install --save @nestjs/swagger
+</code></pre>
+<p>على Fastify ثبّت <code>@fastify/static</code> أيضًا، كما تحذّر صفحة المقدمة.</p>
+<pre><code class="language-ts">import { NestFactory } from &quot;@nestjs/core&quot;;
+import { DocumentBuilder, SwaggerModule } from &quot;@nestjs/swagger&quot;;
+import { AppModule } from &quot;./app.module.js&quot;;
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  const config = new DocumentBuilder()
+    .setTitle(&quot;Library posts&quot;)
+    .setDescription(&quot;Users, posts, and comments&quot;)
+    .setVersion(&quot;1.0&quot;)
+    .build();
+  const documentFactory = () =&gt; SwaggerModule.createDocument(app, config);
+  SwaggerModule.setup(&quot;api&quot;, app, documentFactory);
+  await app.listen(3000);
+}
+await bootstrap();
+</code></pre>
+<p>المصنع يؤخر التوليد حتى أول فتح، فيختصر بدء التشغيل. الصفحة تقول إن الاستدعاء المبكر لـ <code>createDocument</code> يحتاج أن يسبق <code>enableVersioning</code> حتى تظهر بادئة الإصدار. المصنع لا يتأثر لأن البناء عند الطلب.</p>
+<p><code>GET /api</code> الواجهة. <code>GET /api-json</code> الوثيقة. غيّر مسار JSON بـ <code>jsonDocumentUrl</code> في الوسيط الرابع لـ <code>setup</code>.</p>
+<p>خيارات الوثيقة الثالثة تشمل <code>include</code> و <code>operationIdFactory</code> و <code>ignoreGlobalPrefix</code> و <code>deepScanRoutes</code>. مصنع يعيد <code>methodKey</code> فقط يجعل <code>operationId</code> مثل <code>create</code> بدل <code>PostsController_create</code>.</p>
+<p><code>ui: false</code> يوقف الصفحة ويبقي التعريف. <code>raw: [&#39;json&#39;]</code> يحد الصيغ. تعطيل الواجهة لا يعطل JSON، والعكس موثّق في الصفحة.</p>
+<p><code>useSecurityHeaders</code> الافتراضي يعمل مع Swagger UI حسب تلميح المقدمة. تخصيص CSP أو Helmet المباشر على Fastify قد يحجب السكربت. الصفحة تعرض توجيهات لذلك الظرف، منها مصادر <code>validator.swagger.io</code> للصور.</p>
+<p>لا تضع سر جلسة داخل <code>setDescription</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">create(AppModule)
+  DocumentBuilder عنوان
+  documentFactory عند أول طلب
+  setup(&#39;api&#39;) صفحة + JSON
+listen
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const documentFactory = () =&gt;
+  SwaggerModule.createDocument(app, config, {
+    operationIdFactory: (_controllerKey, methodKey) =&gt; methodKey,
+  });
+</code></pre>
+<h2>شرح المثال</h2>
+<p>عملاء التوليد يحصلون على <code>findAll</code> بدل اسم طويل. الأسماء تتصادم إن تكررت الطريقة في متحكمين. للمكتبة اجعل المصنع يضم المورد: <code>posts_findAll</code>. الثبات أهم من القصر. بعد تغيير المصنع أعد توليد العميل.</p>
+<p><code>setTitle</code> يظهر أعلى الصفحة. اجعله اسم المنتج لا اسم المجلد.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>createDocument</code> يمشي المسارات المسجّلة في التطبيق، يقرأ معاملات <code>@Body</code> و <code>@Query</code> و <code>@Param</code>، ويبني <code>paths</code>. من غير <code>@ApiProperty</code> أو إضافة CLI تبقى خصائص الصنف غائبة عن النموذج رغم وجودها في TypeScript. ذلك درس DTO. الواجهة تطلب JSON ثم ترسل التجربة إلى نفس الخادم.</p>
+<p><code>patchDocumentOnRequest</code> في خيارات <code>setup</code> يعدّل الكائن قبل الإرسال. مناسب لإخفاء مسار داخلي عن وثيقة عامة. لا تخفِ المسار من الوثيقة وتتركه بلا حارس.</p>
+<h2>مثال عملي</h2>
+<p>شغّل التطبيق وافتح <code>http://localhost:3000/api</code>. سترى وسومًا من أسماء المتحكمات لأن <code>autoTagControllers</code> افتراضيًا <code>true</code>. <code>PostsController</code> يصبح وسم <code>Posts</code>. عطّله فقط إن كنت تضع <code>@ApiTags</code> بنفسك في كل متحكم.</p>
+<p>احفظ <code>api-json</code> في أداة العميل وقارن <code>POST /posts</code> بـ <code>CreatePostDto</code>. إن كان النموذج بلا خصائص، الدرس الرابع أو إضافة CLI يملأها. على Fastify، غياب <code>@fastify/static</code> يمنع الأصول لا توليد JSON بالضرورة. افحص الرسالة عند فتح <code>/api</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>@fastify/static</code> على Fastify.</li>
+<li>بناء الوثيقة مرة عند الإقلاع ثم تفعيل الإصدارات بعده.</li>
+<li><code>operationId</code> مكرر بين <code>UsersController.create</code> و <code>PostsController.create</code> بعد مصنع يبقي اسم الطريقة فقط.</li>
+<li>CSP مخصصة تحجب واجهة Swagger ثم إطفاء السياسة كلها.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في التطوير وعلى بيئة يستطيع الفريق تجربة API فيها. في الإنتاج يمكن إبقاء JSON لشريك مع <code>ui</code> حسب سياسة النشر.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبوابة مصادقة. معرفة شكل الجسم ليست سرًا بديلًا عن الجلسة. ولا تستضف الواجهة على الإنترنت بلا قرار، إن كانت التجارب تضرب قاعدة الإنتاج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مصنع مؤجّل</th>
+<th><code>createDocument</code> فورًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>يُبنى عند أول طلب</td>
+<td>يُبنى عند الإقلاع</td>
+</tr>
+<tr>
+<td>يرى الإصدار إن فُعّل قبل الطلب</td>
+<td>يحتاج الترتيب قبل الاستدعاء</td>
+</tr>
+<tr>
+<td>أخف عند البدء</td>
+<td>جاهز قبل أي طلب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي مسار يفتح الواجهة بعد <code>setup(&#39;api&#39;, ...)</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>/api</code>، والوثيقة على <code>/api-json</code> ما لم تغيّر <code>jsonDocumentUrl</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُغلَّف <code>createDocument</code> في دالة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لتأخير البناء حتى الطلب، ولتجنّب فقدان بادئة الإصدار التي تحدث مع الاستدعاء المبكر قبل <code>enableVersioning</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>تريد <code>operationId</code> فريدًا لكل مورد من غير الاسم الافتراضي الطويل. ماذا يعيد المصنع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>سلسلة تضم المتحكم والطريقة بطريقة ثابتة، مثل <code>posts_create</code>، لا <code>methodKey</code> وحده إن تكررت الأسماء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تثبّت زيادة على Fastify؟</li>
+<li>أين يُضبط عنوان الوثيقة؟</li>
+<li>هل الواجهة تستبدل <code>ValidationPipe</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>DocumentBuilder</code> ثم مصنع <code>createDocument</code> ثم <code>setup</code> ينشرون العقد على <code>/api</code>. الخصائص داخل DTO تحتاج مزخرفًا أو إضافة، وذلك ما يلي.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-operation-decorators.html">Decorators الخاصة بالعمليات</a> الوسوم والاستجابات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — OpenAPI: <a href="https://docs.nestjs.com/openapi/introduction">https://docs.nestjs.com/openapi/introduction</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

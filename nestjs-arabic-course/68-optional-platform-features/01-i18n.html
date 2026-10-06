@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Internationalization</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-i18n.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Internationalization</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إرجاع رسالة تأكيد مسودة رف بلغة القارئ عبر <code>@nestjs/i18n</code>، مع بقاء الخدمات singleton.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نص عربي ثابت في <code>NotFoundException</code> يظهر لقارئ إنجليزي. أو تمرير <code>req</code> إلى كل خدمة لقراءة <code>Accept-Language</code>. أو مجلد ترجمة زائد يصبح لغة بلا قرار. أو مفتاح خاطئ لا يظهر إلا في الإنتاج.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحزمة official اسمها <code>@nestjs/i18n</code>. كتالوجات JSON، مجلد لكل locale، واسم الملف فضاء مفاتيح مثل <code>projects.notFound</code>. <code>I18nModule.forRoot</code> يركّب وسيطًا يحل اللغة مرة لكل طلب ويحفظها في <code>AsyncLocalStorage</code>. <code>I18nService.t</code> يقرأها بلا تمرير الطلب. المحلّلات بالترتيب: استعلام، ترويسة، ثم <code>Accept-Language</code>. اللغة المحفوظة في عضوية المكتبة تتقدم على لغة المتصفح بمحلّل خاص. هذه ميزة منصة تُضاف حين تتعدد لغات الواجهة، لا شرطًا لمسار رف الأساسي.</p>
+<h2>التعريف التقني</h2>
+<p><code>npm i @nestjs/i18n</code>. فعّلوا <code>resolveJsonModule</code> حتى يُشتق نوع المفاتيح من JSON الإنجليزي. انسخوا JSON إلى <code>dist</code> عبر <code>compilerOptions.assets</code> مثل <code>i18n/**/*.json</code> و <code>watchAssets</code>. التسجيل:</p>
+<pre><code class="language-ts">I18nModule.forRoot({
+  defaultLocale: &#39;ar&#39;,
+  supportedLocales: [&#39;ar&#39;, &#39;en&#39;],
+  loader: new JsonI18nLoader({
+    path: join(import.meta.dirname, &#39;i18n&#39;),
+  }),
+  resolvers: [
+    new QueryLocaleResolver(&#39;lang&#39;),
+    new HeaderLocaleResolver(&#39;x-lang&#39;),
+    new AcceptLanguageLocaleResolver(),
+  ],
+});
+</code></pre>
+<p>الاستيراد من <code>@nestjs/i18n</code> و <code>join</code> من <code>node:path</code>. الوحدة عامة. أول مرشح يطابق <code>supportedLocales</code> يفوز. <code>pl-PL</code> يلحق <code>pl</code> بلا إعداد. <code>fallbacks</code> يبقي منطقة كلغة تنسيق، مثل <code>de-AT</code> نحو رسائل <code>de</code>. بلا طلب (مهمة أو طابور) تُستخدم <code>defaultLocale</code>. الوسيط يضع <code>Content-Language</code> و <code>Vary</code> ما لم <code>responseHeaders: false</code>. <code>declare module &#39;@nestjs/i18n&#39;</code> يربط شكل الكتالوج حتى يفشل <code>projects.notFund</code> عند الترجمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">?lang= أو x-lang أو Accept-Language
+→ locale في AsyncLocalStorage
+→ t(&#39;projects.confirmed&#39;) من أي singleton
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { I18nService } from &#39;@nestjs/i18n&#39;;
+
+@Injectable()
+export class ProjectsService {
+  constructor(private readonly i18n: I18nService) {}
+
+  confirmed(id: string, count: number) {
+    return this.i18n.t(&#39;projects.confirmed&#39;, { args: { id, count } });
+  }
+}
+</code></pre>
+<p><code>projects.json</code> الإنجليزي مصدر النوع. العربي في <code>src/i18n/ar/projects.json</code> بنفس المفاتيح، والجمع عبر <code>one</code> و <code>other</code> كما في دليل الصفحة.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الخدمة لا تستقبل <code>Request</code>. اللغة في المخزن طوال الطلب.</li>
+<li><code>defaultLocale: &#39;ar&#39;</code> يناسب رف حين يغيب الترويسة. واجهة إنجليزية ترسل <code>Accept-Language: en</code>.</li>
+<li><code>supportedLocales</code> يمنع مجلدًا شاردًا من أن يصبح لغة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الوسيط يعمل قبل الحارس والأنبوب والمتحكم.</li>
+<li>المحلّلات تُرجع مرشحين بالترتيب المسجّل.</li>
+<li><code>Accept-Language</code> يُرتَّب حسب <code>q</code> ويتخطى لغة غير مدعومة.</li>
+<li><code>t</code> يبحث في كتالوج اللغة ثم الاحتياط.</li>
+<li>الاستجابة تعلن <code>Content-Language</code> حتى لا تخزن ذاكرة وسيطة نسخة واحدة لكل القراء. أضيفوا الترويسات التي تقرأونها إلى منطق <code>Vary</code> الذي تضعه الحزمة.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عضو دار النيل حفظ <code>locale: &#39;en&#39;</code> في صف العضوية. محلّل يطبق <code>LocaleResolver</code> من الحزمة يقرأ <code>request.user</code> بعد الحارس ويعيد <code>en</code> قبل <code>AcceptLanguageLocaleResolver</code>. صفحة i18n تضع هذا النمط في «Use the customer&#39;s saved language»: لغة الحساب تتقدم على لغة المتصفح. رسالة «المشروع غير موجود» المترجمة لا تغيّر رمز 404 ولا شكل الخطأ من فصل التصميم. مفتاح التحقق <code>i18nValidationMessage</code> يبقى لرسائل <code>class-validator</code> حين تفعّلونها، لا بديلًا عن رمز الخطأ الثابت <code>code</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نسيان <code>assets</code> فتُفقد JSON في <code>dist</code>.</li>
+<li>ترجمة نص الاستثناء وتغيير <code>statusCode</code> معه.</li>
+<li>لغة من جسم <code>POST</code> يرسلها العميل بلا مطابقة لقائمة مدعومة.</li>
+<li>جعل كل المزودات <code>Scope.REQUEST</code> لأجل اللغة. الحزمة تبقيهم singleton عبر <code>AsyncLocalStorage</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين تخدم رف قراءًا بلغات متعددة في نفس المسارات: تأكيد، تحقق، وحقول واجهة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستبدلوا به عزل المنظمة. لغة العرض ليست <code>tenantId</code>. ولا تترجموا حدث Stripe أو توقيع الويب هوك.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المصدر</th>
+<th>متى يفوز في المثال</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>لغة العضوية المحفوظة</td>
+<td>بعد المصادقة، عبر محلّل مخصص</td>
+</tr>
+<tr>
+<td><code>?lang</code> و <code>x-lang</code></td>
+<td>قبل <code>Accept-Language</code> إن سُجّلا أولًا</td>
+</tr>
+<tr>
+<td><code>defaultLocale</code></td>
+<td>مهمة بلا طلب</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تُحفظ اللغة أثناء الطلب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في <code>AsyncLocalStorage</code> بعد وسيط <code>I18nModule</code>. الخدمة تنادي <code>t</code> بلا كائن الطلب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>supportedLocales</code> مع أن المجلدات موجودة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يصبح مجلد زائد لغة. التثبيت في الخيارات قرار تطبيق لا اكتشاف صامت.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>Content-Language</code> غائب عن الاستجابة وذاكرة CDN تعرض العربية لطلب إنجليزي. ماذا تفحصون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>responseHeaders</code> لم يُطفأ بلا سبب، و <code>Vary</code> يشمل <code>Accept-Language</code> أو <code>x-lang</code>. بلا <code>Vary</code> قد تُخزَّن نسخة اللغة الأولى لكل القراء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما اسم الحزمة والوحدة؟</li>
+<li>ما ترتيب المحلّلات في المثال؟</li>
+<li>كيف يفشل المفتاح الخاطئ مبكرًا؟</li>
+<li>ماذا تُرجع مهمة بلا طلب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@nestjs/i18n</code> يحل لغة رف مرة لكل طلب ويبقي الخدمات singleton. الكتالوج JSON يُنسخ مع البناء. اللغة المحفوظة للحساب تتقدم على ترويسة المتصفح حين تكتبون محلّلًا بذلك.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعد النشر قد يخرج بريد تأكيد. الدرس التالي <code>@nestjs/mail</code>، واللغة فيه ملف قالب لا مفتاحًا واحدًا فقط.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Internationalization: <a href="https://docs.nestjs.com/application/i18n">https://docs.nestjs.com/application/i18n</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

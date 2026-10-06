@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>BullMQ و @nestjs/bullmq</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-bullmq.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>BullMQ و @nestjs/bullmq</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل الطابور النشط في Nest: اتصال في <code>forRoot</code>، واسم الطابور في <code>registerQueue</code> هو رمز الحقن.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرفة Redis لا تعطي <code>Queue</code> قابلة للحقن. المقالات التي تستعمل <code>@nestjs/bull</code> و <code>@Process</code> تصف Bull، وهو في وضع الصيانة حسب صفحة Nest. المسار الذي تكمله الدورة <code>@nestjs/bullmq</code> مع صنف معالج يمتد <code>WorkerHost</code>.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>BullModule.forRoot</code> مرة للاتصال الذي تشاركه الطوابير. <code>BullModule.registerQueue({ name })</code> لكل طابور. السلسلة <code>name</code> تُحقن بـ <code>@InjectQueue(name)</code> ويستخدمها <code>@Processor(name)</code>. الاسم نفسه على المنتج والمستهلك. اختلاف حرف يعني طابورًا صامتًا ومستهلكًا ينتظر غيره.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-bash">npm i @nestjs/bullmq bullmq
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { BullModule } from &#39;@nestjs/bullmq&#39;;
+import { ConfigModule, ConfigService } from &#39;@nestjs/config&#39;;
+
+@Module({
+  imports: [
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) =&gt; ({
+        connection: {
+          host: config.get&lt;string&gt;(&#39;QUEUE_REDIS_HOST&#39;) ?? &#39;localhost&#39;,
+          port: Number(config.get&lt;string&gt;(&#39;QUEUE_REDIS_PORT&#39;) ?? 6379),
+        },
+      }),
+    }),
+  ],
+})
+export class AppModule {}
+</code></pre>
+<p>طوابير الميزة:</p>
+<pre><code class="language-ts">BullModule.registerQueue({ name: &#39;covers&#39; });
+</code></pre>
+<p>التوثيق: <code>forRoot</code> يسجل إعداد BullMQ الذي تستخدمه الطوابير ما لم تُخصص. <code>name</code> رمز حقن وطريقة ربط المستهلك. لا تضع خيارات Bull القديمة <code>redis: { host, port }</code> على هذا المسار. تلك شكل الحزمة الأخرى.</p>
+<p><code>@nestjs/bull</code> تبقى موثّقة لمن يعتمد على Bull. لا تبدأ بها مشروع المتجر. درس أخير في الفصل يضع الفرق حتى لا تخلط الزينة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">forRoot connection
+  registerQueue name: covers
+    InjectQueue(&#39;covers&#39;) في المنتج
+    @Processor(&#39;covers&#39;) في المستهلك
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { BullModule } from &#39;@nestjs/bullmq&#39;;
+import { CoversProducer } from &#39;./covers.producer.js&#39;;
+
+@Module({
+  imports: [BullModule.registerQueue({ name: &#39;covers&#39; })],
+  providers: [CoversProducer],
+  exports: [CoversProducer],
+})
+export class CoversModule {}
+</code></pre>
+<p><code>forRoot</code> في الجذر أو في وحدة مستوردة مرة. <code>registerQueue</code> في الوحدة التي تنتج أو تستهلك. تكرار <code>forRoot</code> بإعدادين مختلفين يربك الاتصال الافتراضي.</p>
+<h2>شرح المثال</h2>
+<p>الاسم <code>&#39;covers&#39;</code> ليس مسار HTTP. هو هوية القائمة في Redis ضمن بادئة المكتبة. المنتج الذي ستكتبه يحقن الطابور بهذا النص. المستهلك يجب أن يكرر النص نفسه. تصدير المنتج يسمح لـ <code>BooksModule</code> بإدراج المهمة بعد الحفظ بلا حقن <code>Queue</code> في المتحكم.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الإقلاع تتصل المكتبة بـ Redis باستخدام <code>connection</code>. <code>registerQueue</code> ينشئ مزوّدًا مفتاحه الاسم. الحقن بالاسم يعيد فئة <code>Queue</code> من <code>bullmq</code>. إن كان Redis متوقفًا، يفشل الإقلاع أو أول <code>add</code> حسب لحظة الاتصال. لا تؤجل اكتشاف ذلك إلى أول زائر إن استطعت فحصًا عند البدء. العامل الفعلي يُربط عندما يوجد <code>@Processor</code> مسجّل في <code>providers</code>. تسجيل الطابور بلا معالج يعني مهامًا تتراكم بلا قص.</p>
+<h2>مثال عملي</h2>
+<p>طابوران بأسماء ثابتة في ملف واحد حتى لا تُكتب السلسلة في ثلاثة مواضع بشكل مختلف:</p>
+<pre><code class="language-ts">export const coverQueueName = &#39;covers&#39;;
+export const mailQueueName = &#39;mail&#39;;
+</code></pre>
+<p><code>registerQueue({ name: coverQueueName })</code> و <code>@InjectQueue(coverQueueName)</code> و <code>@Processor(coverQueueName)</code> تستورد الثابت. البريد لا يمر على طابور الغلاف حتى لا يؤخر القص رسالة ولا العكس.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>تثبيت <code>@nestjs/bull</code> ونسخ <code>@Process</code> في المسار الجديد.</li>
+<li><code>forRoot({ redis: { host, port } })</code> على BullMQ.</li>
+<li>اسم <code>&#39;Covers&#39;</code> في المعالج و <code>&#39;covers&#39;</code> في التسجيل.</li>
+<li><code>registerQueue</code> بلا <code>forRoot</code> في شجرة التطبيق.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لمهام المتجر الجديدة: غلاف، بريد، تصدير. كل قائمة اسم ثابت واتصال من الإعداد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لجدولة «كل دقيقة» بلا حمولة عمل. ذلك <code>@nestjs/schedule</code> في الفصل التالي. BullMQ يستطيع التأخير، لكن ساعة التطبيق ليست أول سبب لإضافة طابور.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>@nestjs/bullmq</code></th>
+<th><code>@nestjs/bull</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>المكتبة</td>
+<td>BullMQ النشطة</td>
+<td>Bull في الصيانة</td>
+</tr>
+<tr>
+<td>الاتصال</td>
+<td><code>connection</code></td>
+<td><code>redis</code></td>
+</tr>
+<tr>
+<td>المستهلك</td>
+<td><code>WorkerHost.process</code></td>
+<td><code>@Process</code></td>
+</tr>
+<tr>
+<td>مسار الدورة</td>
+<td>نعم</td>
+<td>معرفة بالفرق فقط</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي حقل في <code>forRoot</code> يحمل <code>host</code> و <code>port</code> على المسار النشط؟</p>
+<details>
+<summary>الحل</summary>
+`connection`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يوحّد المنتج بالمستهلك؟</p>
+<details>
+<summary>الحل</summary>
+سلسلة `name` نفسها في `registerQueue` و `@InjectQueue` و `@Processor`.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا الثابت <code>coverQueueName</code> أفضل من تكرار النص؟</p>
+<details>
+<summary>الحل</summary>
+لأن اختلاف حالة الأحرف يصنع طابورين. الثابت يجعل التسجيل والحقن والمعالج يستوردون قيمة واحدة.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أين يُستدعى <code>forRoot</code> مقارنة بـ <code>registerQueue</code>؟</li>
+<li>ما رمز الحقن؟</li>
+<li>أي حزمة لا تبدأ بها مشروعًا جديدًا؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>BullModule.forRoot</code> يتصل و <code>registerQueue</code> يسمي الطابور. الاسم رمز الحقن. المسار النشط <code>@nestjs/bullmq</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>المنتج: <code>queue.add</code> بعد حفظ الكتاب بحمولة <code>{ bookId }</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Queues: <a href="https://docs.nestjs.com/application/queues">https://docs.nestjs.com/application/queues</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

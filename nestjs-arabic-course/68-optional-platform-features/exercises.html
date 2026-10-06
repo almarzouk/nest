@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>تمرين سهل — الميزة</h2>
+<p>اربطوا الحاجة بالحزمة أو الزخرفة.</p>
+<ol>
+<li>نص 404 بلغة العضو.</li>
+<li>HTML تأكيد بعد النشر.</li>
+<li>غلاف بصورة حقيقية لا بادّعاء النوع.</li>
+<li>شريط تقدم في التبويب.</li>
+<li>TCP بجانب HTTP.</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<p>1 <code>@nestjs/i18n</code>. 2 <code>@nestjs/mail</code> بعد الصندوق. 3 <code>@nestjs/storage</code> و <code>uploadToDisk</code>. 4 <code>@Sse</code>. 5 <code>connectMicroservice</code> في تطبيق هجين.</p>
+</details>
+
+<h2>تمرين متوسط — الإقلاع البارد</h2>
+<p>دالة Lambda تعيد بناء Nest على نداء دافئ، وتتصل بـ Redis حتى على مسار لا يقرأ الذاكرة. ماذا تغيّرون؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>خزّنوا <code>handler</code> بعد أول <code>bootstrap</code>. أخرجوا Redis من مزود يؤخر كل إقلاع، وحمّلوا الوحدة بـ <code>LazyModuleLoader</code> عند الحاجة. رقم 32ms في الوثائق قياس آلة قديمة مع webpack لا هدفًا لرف.</p>
+</details>
+
+<h2>تمرين متقدم — حارس على الرسالة</h2>
+<p>حارس المنظمة عام على HTTP، ورسالة TCP تُعالج بلا منظمة. ماذا يفعل الافتراضي، وماذا تضعون في الحمولة حتى مع الوراثة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>connectMicroservice</code> لا يورث الحارس حتى <code>{ inheritAppConfig: true }</code>، وتسجيل الحارس يكون قبل الربط. الحمولة ما زالت تحمل <code>organizationId</code> الذي كُتب عند النشر. لغة الواجهة وعنوان النجاح في المتصفح لا يثبتان المستأجر ولا الخطة.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

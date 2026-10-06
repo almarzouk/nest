@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<p>صالة حجوزات. أجب ثم افتح الحل.</p>
+<h2>سهل</h2>
+<ol>
+<li>أي خيار يحذف مفتاحًا بلا زينة من صنف؟</li>
+<li>ما القيمتان الموثّقتان لـ <code>errorFormat</code>؟</li>
+<li>أي زينة من <code>class-transformer</code> تبني الكائن المتداخل؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li><code>whitelist: true</code>.</li>
+<li><code>&#39;list&#39;</code> و <code>&#39;grouped&#39;</code>.</li>
+<li><code>@Type(() =&gt; ...)</code>، ومعها <code>@ValidateNested()</code> حتى يُفحص الداخل.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>اضبط أنبوب أصناف واحدًا يحقق:</p>
+<ul>
+<li>رفض <code>role</code> الزائد بـ <code>400</code> لا حذفه الصامت.</li>
+<li>المعالج يستلم <code>instanceof ReserveSeatDto</code>.</li>
+<li>رسائل التطوير مجمّعة حسب الحقل.</li>
+</ul>
+<p>لا تخفِ الرسائل في هذا التمرين.</p>
+<details>
+<summary>الحل</summary>
+
+<pre><code class="language-ts">new ValidationPipe({
+  whitelist: true,
+  forbidNonWhitelisted: true,
+  transform: true,
+  errorFormat: &#39;grouped&#39;,
+})
+</code></pre>
+<p><code>forbidNonWhitelisted</code> مع <code>whitelist</code> للرفض. <code>transform</code> للنسخة. <code>grouped</code> لتجميع الرسائل.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>التطبيق فيه <code>CreateMemberDto</code> و <code>reserveSchema</code>. راجع الخطة:</p>
+<ol>
+<li>حذف <code>class-validator</code>.</li>
+<li>تسجيل الأنبوبين عامين.</li>
+<li><code>@Body({ schema: reserveSchema })</code> للحجز، و <code>@Body() dto: CreateMemberDto</code> للعضو.</li>
+<li><code>forbidNonWhitelisted</code> لرفض مفتاح زائد داخل Zod.</li>
+<li><code>@ValidateNested()</code> من غير <code>@Type</code> على <code>billing</code>.</li>
+</ol>
+<p>أي البنود تُبقي، وما أثر كل بند مرفوض؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>تُبقي 2 و 3.</p>
+<ol>
+<li>الأصناف المزيّنة ما زالت مسارًا مدعومًا.</li>
+<li>رفض مفتاح مخطط Zod يُكتب <code>z.strictObject</code> لا خيار أنبوب الأصناف.</li>
+<li>من غير <code>@Type</code> لا تُبنى <code>BillingDto</code> وقد لا تُفحص <code>city</code>.</li>
+</ol>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

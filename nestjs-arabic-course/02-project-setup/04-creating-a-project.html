@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>nest new</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-creating-a-project.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>nest new</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>إنشاء مشروع TypeScript تشغّله وترى Hello World.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>جمع <code>@nestjs/core</code> و <code>reflect-metadata</code> و <code>tsconfig</code> يدويًا ممكن، والتوثيق يذكر الحد الأدنى من الحزم، لكنه طريق أطول للدرس الأول.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>nest new bookstore</code> ينشئ مجلدًا، يسأل عن نظام الوحدات، يثبّت الحزم، ويولد <code>src/</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من First steps: CLI يسأل ESM (الافتراضي، مع Vitest) أو CommonJS (مع Jest). يسأل أيضًا عن NestJS Observe. في طرفية تفاعلية الافتراضي نعم. في CI يُتخطى السؤال ولا تُضاف Observe إلا مع <code>--observe</code>. <code>--no-observe</code> يلغيها. القالب يفعّل <code>strict</code>. بديل من غير CLI: استنساخ <code>typescript-starter</code> ثم <code>npm install</code>، أو كتابة الملفات مع الحزم <code>@nestjs/core</code> و <code>@nestjs/common</code> و <code>rxjs</code> و <code>reflect-metadata</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">nest new bookstore
+  -&gt; سؤال ESM أو CommonJS
+  -&gt; سؤال Observe
+  -&gt; package.json و src/
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-bash">nest new bookstore
+cd bookstore
+</code></pre>
+<h2>شرح المثال</h2>
+<p>الاسم يصبح مجلد المشروع وحقل <code>name</code>. ادخل المجلد قبل أوامر <code>npm run</code>. إن أردت تخطي الأسئلة في سكربت: مرر خيارات المدير ونظام الوحدات كما يعرضها <code>nest new --help</code> على نسختك، ولا تحفظ أعلام مقال قديم من غير مراجعة <code>--help</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المولّد ينسخ قالبًا ويثبت الاعتماديات بمدير الحزم الذي تختاره في السؤال. ESM يعني type module في package.json غالبًا وامتدادات .js في استيرادات TypeScript لأن الناتج ESM. CommonJS يبقي require ممكنًا والأسلوب الأقدم في الاختبارات مع Jest.</p>
+<h2>مثال عملي</h2>
+<p>أنشئ <code>bookstore</code> بـ ESM و <code>strict</code> كما هو الافتراضي، ومن غير Observe في أول أسبوع حتى تبقى ملفات الإقلاع هي ما يشرحه الفصل التالي. أعد تفعيل المراقبة عندما تصل إلى فصل Observability.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اختيار CommonJS فقط لأن درسًا قديمًا يستخدم <code>require</code>. الدورة تتبع ESM الافتراضي.</li>
+<li>تعديل عشر حزم قبل أول تشغيل.</li>
+<li>إنشاء المشروع داخل مجلد الدورة التعليمية نفسها وخلط ملفات الشرح مع <code>src</code>. اجعله مجلدًا شقيقًا للتجارب.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل تطبيق في هذه الدورة ما لم نبنِ مثالًا من ملفين لشرح الإقلاع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تستخدم القالب الجاهز ثم تحذف <code>AppService</code> قبل أن ترى الربط مرة واحدة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>طريق</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>nest new</code></td>
+<td>قالب كامل وأمر <code>nest</code></td>
+</tr>
+<tr>
+<td>git clone للـ starter</td>
+<td>قريب منه من غير سؤال CLI</td>
+</tr>
+<tr>
+<td>تثبيت الحزم يدويًا</td>
+<td>أنت تكتب <code>main.ts</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما الأمر الذي ينشئ مجلد المشروع؟</p>
+<details><summary>الحل</summary>
+
+<p><code>nest new bookstore</code> مع استبدال الاسم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ما فارق الاختبار بين اختيار ESM و CommonJS في السؤال الأول؟</p>
+<details><summary>الحل</summary>
+
+<p>ESM يجهّز Vitest. CommonJS يجهّز Jest.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تظهر الاستيرادات كـ <code>&#39;./app.module.js&#39;</code> داخل ملف <code>.ts</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>في ESM يشير المسار إلى ملف الناتج بعد الترجمة. TypeScript يحل <code>.js</code> إلى المصدر <code>.ts</code> أثناء التطوير. هذا أسلوب قوالب Nest الحديثة لا خطأ إملاء.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما نظام الوحدات الافتراضي؟</li>
+<li>ماذا يفعل <code>--no-observe</code>؟</li>
+<li>ما الحزم الدنيا إن رفضت القالب؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>nest new</code> يعطيك تطبيق ESM صارمًا يشغّل Hello World. اقبله قبل أن تخصصه.</p>
+<h2>ماذا بعد؟</h2>
+<p>نفهم ESM لأن الاستيراد في القالب يفاجئ من اعتاد CommonJS.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

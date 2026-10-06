@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DataLoader و مشكلة N+1</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-dataloader-and-n-plus-one.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>DataLoader و مشكلة N+1</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسمية مشكلة N+1 ورؤية أن DataLoader يُنشأ لكل طلب على context. التحميل المجمّع الكامل مكانه فصل لاحق.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>books { author { name } }</code> على عشرين كتابًا يشغّل <code>@ResolveField</code> عشرين مرة. إن كانت كل مرة <code>SELECT</code> بمعرف، صار الاستعلام 1 للقائمة + N للمؤلفين. البطاقة التي لا تطلب <code>author</code> لا تدفع N. التفاصيل التي تطلبها تدفعها. إخفاء المشكلة بجلب كل المؤلفين في <code>books()</code> يهدر عندما لا يُطلب الحقل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>DataLoader، من مكتبة <code>dataloader</code>، يجمع المفاتيح التي تُطلب في الدورة نفسها وينادي دالة دفعة واحدة. في GraphQL الدورة هي تنفيذ العملية. ضع المحمّل على <code>context</code> عند بناء الطلب، لا كمزوّد singleton، وإلا اختلطت مفاتيح المستخدمين وبقيت ذاكرة التخزين المؤقت داخل المحمّل عبر الطلبات.</p>
+<p>هذا الدرس لا يبني طبقة مستودع ولا يقيس Redis. هو يمنع المحمّل العام الخطأ. الفصل <code>57-graphql-advanced</code> يعيد DataLoader بعمق.</p>
+<h2>التعريف التقني</h2>
+<p>الشكل الذي يكفي هنا:</p>
+<pre><code class="language-ts">import DataLoader from &#39;dataloader&#39;;
+
+export function createAuthorLoader(authors: AuthorsService) {
+  return new DataLoader&lt;string, { id: string; name: string }&gt;(async (ids) =&gt; {
+    const rows = await authors.findManyByIds(ids);
+    const byId = new Map(rows.map((row) =&gt; [row.id, row]));
+    return ids.map((id) =&gt; byId.get(id) ?? new Error(`Author ${id} missing`));
+  });
+}
+</code></pre>
+<p>الدالة تعيد مصفوفة بالترتيب نفسه لمصفوفة <code>ids</code>. هذا عقد DataLoader، لا تفصيل Nest.</p>
+<p>في الإعداد:</p>
+<pre><code class="language-ts">context: ({ req, res }) =&gt; ({
+  req,
+  res,
+  authorLoader: createAuthorLoader(authorsService),
+}),
+</code></pre>
+<p>حقن الخدمة داخل <code>context</code> في <code>forRoot</code> يحتاج أن تكون الخدمة متاحة هناك، غالبًا عبر <code>GraphQLModule.forRootAsync</code>. لا تحشر <code>new AuthorsService()</code> بلا الحاوية. إن صعب الربط الآن، أبقِ <code>@ResolveField</code> كما في درس العلاقات حتى فصل 57، وتذكّر أن singleton loader هو الخطأ الذي ستتجنبه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">لكل POST /graphql
+  authorLoader جديد
+    author(book1) load(id)
+    author(book2) load(id)
+      دالة واحدة findManyByIds
+الطلب التالي محمّل فارغ
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>المحلل بعد أن يوجد المحمّل على context:</p>
+<pre><code class="language-ts">@ResolveField(() =&gt; Author)
+author(
+  @Parent() book: { authorId: string },
+  @Context(&#39;authorLoader&#39;) loader: DataLoader&lt;string, Author&gt;,
+) {
+  return loader.load(book.authorId);
+}
+</code></pre>
+<p>عشرون <code>load</code> في التنفيذ نفسه تصبح نداء <code>findManyByIds</code> واحدًا إن جُمعت في الدورة.</p>
+<h2>شرح المثال</h2>
+<p><code>load</code> يعيد وعدًا. DataLoader ينتظر نهاية الدورة المتزامنة ثم يجمع المفاتيح الفريدة. تكرار معرف المؤلف في كتب عدة لا يكرر العنصر في الدفعة. الناتج يُوزَّع على كل <code>load</code>. الطلب التالي لا يرى ذاكرة الطلب السابق لأن الدالة <code>context</code> بنت محمّلًا جديدًا.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>من غير محمّل، حل الحقول يشغّل الدالة لكل أب فورًا. مع المحمّل، الاستدعاءات تُجدول. إن كانت <code>findManyByIds</code> ما زالت تعمل حلقة استعلام داخلها، لم تربح شيئًا. الدفعة يجب أن تكون استعلام <code>IN</code> أو ما يعادله. DataLoader لا يخترع SQL.</p>
+<p>ذاكرة المحمّل داخل الطلب مفيدة لتكرار المعرف. بقاؤها على مزوّد التطبيق تخدم مستخدمًا آخر بيانات قد لا يجوز أن يراها، وتُقدم اسم مؤلف تغيّر في الصف. لذلك الربط بالطلب جزء من الصحة لا من الأداء فقط.</p>
+<h2>مثال عملي</h2>
+<p>قياس قبل المكتبة: سجّل عدد نداءات <code>findById</code> للمؤلف أثناء <code>query { books { author { name } } }</code>. إن رأيت N، فالمشكلة قائمة. بعد المحمّل لكل طلب يجب أن ترى نداء دفعة. إن بقي N، فالدفعة ليست مجمّعة. أوقف التوسع في الواجهة عند هذا الاختبار. تفاصيل <code>forRootAsync</code> وحقن Prisma تُكتب في الفصل 57 لا هنا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>providers: [AuthorLoader]</code> كـ singleton للتطبيق.</li>
+<li>إرجاع صفوف <code>findManyByIds</code> بترتيب القاعدة لا بترتيب <code>ids</code>.</li>
+<li>جلب المؤلف في <code>books()</code> دائمًا وتعطيل فائدة «لا تطلب الحقل».</li>
+<li>اعتبار هذا الدرس بديلًا عن فهرس المعرف في الجدول.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يضرب <code>@ResolveField</code> مصدرًا لكل عنصر في قائمة يطلبها العميل فعلًا.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>قبل أن ترى N في السجل. محمّل لكل حقل من اليوم الأول يخفي تكلفة لم تقيسها. وليس مكانه كاش HTTP عام بين المستخدمين.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الأسلوب</th>
+<th>استعلامات مؤلف لعشرين كتابًا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@ResolveField</code> يستعلم كل مرة</td>
+<td>1 + 20</td>
+</tr>
+<tr>
+<td>DataLoader لكل طلب</td>
+<td>1 + دفعة</td>
+</tr>
+<tr>
+<td><code>include</code> دائم في الأب</td>
+<td>1 حتى لو لم يُطلب <code>author</code></td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يعني N في N+1 هنا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>نداءً إضافيًا لكل كتاب لجلب مؤلفه، بعد نداء القائمة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يُنشأ المحمّل داخل <code>context</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى تُجمع مفاتيح هذه العملية فقط، ولا تبقى النتائج لمستخدم أو طلب لاحق.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الدفعة أعادت الصفوف مرتبة بالاسم لا بترتيب <code>ids</code>. ماذا يرى <code>load</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>مؤلفًا غير مطابق للمفتاح. عقد DataLoader يفرض ناتجًا بمحاذاة مصفوفة المدخلات.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى لا تُدفع تكلفة N؟</li>
+<li>ما عقد ترتيب الدالة الدفعية؟</li>
+<li>أي فصل يعمّق DataLoader؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>N+1 تظهر عندما يطلب العميل حقل علاقة على قائمة. DataLoader لكل طلب يجمع المفاتيح. لا تبنِ محمّلًا عامًا، واترك التفصيل للفصل <code>57-graphql-advanced</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>اشتراك يبقى مفتوحًا: <code>graphql-ws</code> وحقل على جذر <code>Subscription</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>GraphQL — DataLoader: <a href="https://github.com/graphql/dataloader">https://github.com/graphql/dataloader</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Multer</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-multer.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Multer</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة ما يفعله Multer بجسم <code>multipart/form-data</code> على Express: أين تُحبس البايتات، وكيف تُرفض قبل المعالج.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بعد أن يصل الطلب، شيء ما يجب أن يفصل الحقول عن الملف. إن حُبس ملف كبير في <code>file.buffer</code> امتلأت ذاكرة العملية مع طلبات متوازية. Multer هو هذا المحلل في مسار Express، وسلوكه الافتراضي ذاكرة لا قرص.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Multer وسيط Express يفهم multipart. Nest لا تعيد تنفيذ التحليل. هي تمرر خيارات Multer عبر <code>MulterModule</code> أو عبر المعترض. من غير <code>dest</code> ومن غير <code>storage</code> يبقى الملف في الذاكرة. للملفات الكبيرة اختر تخزين قرص وحد حجم.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق: الملفات تبقى في الذاكرة داخل <code>file.buffer</code> ما لم تضبط <code>dest</code> أو <code>storage</code>. <code>dest</code> يكتب كل ملف في مجلد باسم عشوائي. <code>diskStorage()</code> يتيح لك المجلد واسم الملف، وعندها تمتلئ <code>destination</code> و <code>filename</code> و <code>path</code> ويغيب <code>buffer</code>.</p>
+<p>خيارات تكثر الحاجة إليها:</p>
+<table>
+<thead>
+<tr>
+<th>الخيار</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>limits.fileSize</code></td>
+<td>يقطع الجزء إذا تجاوز البايتات المحددة</td>
+</tr>
+<tr>
+<td><code>limits.files</code></td>
+<td>أقصى عدد ملفات في الطلب</td>
+</tr>
+<tr>
+<td><code>storage</code></td>
+<td>محرك التخزين، مثل <code>diskStorage</code> من حزمة <code>multer</code></td>
+</tr>
+<tr>
+<td><code>fileFilter</code></td>
+<td>قرار قبول أو رفض حسب وصف الملف، قبل اكتمال القصة</td>
+</tr>
+</tbody></table>
+<p>التسجيل الافتراضي على الوحدة:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { MulterModule } from &#39;@nestjs/platform-express&#39;;
+import { diskStorage } from &#39;multer&#39;;
+
+@Module({
+  imports: [
+    MulterModule.register({
+      storage: diskStorage({
+        destination: &#39;./uploads&#39;,
+      }),
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  ],
+})
+export class CoversModule {}
+</code></pre>
+<p><code>MulterModule</code> من <code>@nestjs/platform-express</code>. الإعداد غير المتزامن <code>registerAsync</code> مع <code>useFactory</code> و <code>inject</code>. على Fastify المحلل <code>@fastify/multipart</code> والمعترضات من <code>@nestjs/platform-fastify/multipart</code>. هذا الدرس يبقى على Express.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">تيار multipart
+  Multer يقرأ جزءًا جزءًا
+    حد fileSize انكسر  -&gt; رفض قبل handler
+    بلا storage        -&gt; buffer في الذاكرة
+    diskStorage        -&gt; كتابة على المسار، والذاكرة لا تحتفظ بالملف
+</code></pre>
+<p>الحد هنا أرخص من فحص لاحق، لأن الفحص بالأنبوب يجري بعد أن ينتهي Multer من الإمساك بالملف.</p>
+<h2>أبسط مثال</h2>
+<p>محرك قرص يرفض الاسم الذي يأتي من العميل كمسار.</p>
+<pre><code class="language-ts">import { randomUUID } from &#39;node:crypto&#39;;
+import { extname } from &#39;node:path&#39;;
+import { diskStorage } from &#39;multer&#39;;
+
+export const coverStorage = diskStorage({
+  destination: &#39;./uploads/covers&#39;,
+  filename: (_req, file, callback) =&gt; {
+    const extension = extname(file.originalname).toLowerCase();
+    callback(null, `${randomUUID()}${extension}`);
+  },
+});
+</code></pre>
+<p>الامتداد هنا تلميح للاسم فقط. التحقق من المحتوى درس لاحق. <code>originalname</code> لا يدخل <code>destination</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>callback(null, name)</code> يعني نجاح التسمية. <code>randomUUID</code> يمنع تصادم الأسماء ويمنع <code>../</code> في اسم المتصفح. المجلد النسبي يتبع مجلد تشغيل العملية، فثبّته بمسار مطلق في التطبيق الحقيقي.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Multer يسجّل نفسه كوسيط على المسار عندما يركّب Nest المعترض. أثناء القراءة يحصي البايتات. إذا تجاوز <code>limits.fileSize</code> يتوقف ويُرجع خطأ طلب كبير، ولا يُستدعى المعالج. مع التخزين في الذاكرة تتجمع البايتات في <code>Buffer</code> واحد لكل ملف. مع القرص تُكتب الكتل إلى ملف مؤقت أو نهائي، والكائن الذي يصل المعالج يحمل <code>path</code> لا <code>buffer</code>. عدة طلبات كبيرة في الذاكرة ترفع RSS معًا. القرص يبدل الضغط إلى I/O ومساحة المجلد.</p>
+<h2>مثال عملي</h2>
+<p>غلاف حتى 2 ميغابايت على القرص، ورفض ما هو أكبر قبل الخدمة:</p>
+<pre><code class="language-ts">export const coverLimits = {
+  storage: coverStorage,
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+};
+</code></pre>
+<p>مرّر <code>coverLimits</code> إلى <code>FileInterceptor(&#39;cover&#39;, coverLimits)</code> في الدرس التالي. الخدمة تستلم مسارًا جاهزًا، ولا تستدعي <code>fs.readFile</code> على الملف كله لتتأكد أنه «وصل».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>الاعتماد على الافتراضي ثم استغراب <code>file.buffer</code> لملف بمئات الميغابايت.</li>
+<li>حفظ <code>file.originalname</code> داخل <code>join(destination, originalname)</code>.</li>
+<li>ضبط الحد في الأنبوب فقط، بعد أن يكون الملف قد سكن الذاكرة.</li>
+<li>مجلد <code>uploads</code> داخل جذر يخدمه <code>ServeStaticModule</code> بلا تمييز بين العام والخاص.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على تطبيق Express كلما كان العقد <code>multipart/form-data</code>. اضبط <code>storage</code> و <code>limits</code> في <code>MulterModule.register</code> إن كانت السياسة واحدة لكل المسارات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>على Fastify: الحزمة هناك <code>@fastify/multipart</code> لا Multer. ولرفع ضخم يُضخ إلى مخزن وأثناء وصوله، Express مع <code>diskStorage</code> ما زال يمسك الملف حتى يكتمل الجزء. الضخ أثناء الوصول في التوثيق هو <code>FileStreamInterceptor</code> على Fastify.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الاختيار</th>
+<th>أين البايتات قبل المعالج</th>
+<th>متى يليق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>بلا <code>storage</code></td>
+<td><code>file.buffer</code></td>
+<td>ملف صغير معروف السقف</td>
+</tr>
+<tr>
+<td><code>dest: &#39;./uploads&#39;</code></td>
+<td>قرص باسم عشوائي</td>
+<td>تريد إبعاد الذاكرة فورًا</td>
+</tr>
+<tr>
+<td><code>diskStorage</code></td>
+<td>قرص ومسار تحدده</td>
+<td>اسم مولَّد ومجلد مجال</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين تعيش بايتات الملف إن لم تضبط <code>dest</code> ولا <code>storage</code>؟</p>
+<details>
+<summary>الحل</summary>
+في الذاكرة، على `file.buffer`.
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>limits.fileSize</code> على Multer أهم من فحص الحجم داخل الخدمة؟</p>
+<details>
+<summary>الحل</summary>
+لأن Multer يرفض أثناء القراءة. الخدمة لا تعمل إلا بعد أن أمسك المحلل الملف كاملًا.
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>filename</code> يعيد <code>file.originalname</code> كما وصل. ما الخطر مع قرص وطلبين؟</p>
+<details>
+<summary>الحل</summary>
+اسم العميل قد يحتوي `../` أو يتصادم فيُكتب ملف فوق آخر. ولّد الاسم في الخادم.
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الحزمة التي تصدّر <code>MulterModule</code> على Express؟</li>
+<li>ماذا يملأ <code>diskStorage</code> بدل <code>buffer</code>؟</li>
+<li>لماذا المجلد النسبي <code>./uploads</code> قرار بيئة لا قرار زينة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Multer يحلّل multipart على Express. الافتراضي ذاكرة. الملفات الكبيرة تذهب إلى قرص مع حد بايتات، وباسم يولّده الخادم.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>FileInterceptor</code>: كيف تُعلّق خيارات Multer هذه على مسار واحد وتستلم الملف في المعامل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — File upload: <a href="https://docs.nestjs.com/http/file-upload">https://docs.nestjs.com/http/file-upload</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أساليب التواصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-communication.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أساليب التواصل</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار طلب-رد عندما تحتاج ناتجًا، وحدث عندما تخبر الآخرين بلا انتظار، كما يفرّقهما توثيق Nest على النواقل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>استعمال الرد لكل إشعار يفتح قناة انتظار ويفشل المسار إن كان المستمع بطيئًا. استعمال الحدث لسؤال «ما المجموع؟» يترك المرسل بلا جواب. التوثيق يفرّق النمطين على معظم النواقل ويبني لكل واحد قناة منطقية.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الطلب-الرد يرسل نمطًا وحمولة وينتظر ناتجًا. الحدث ينشر أن شيئًا وقع. Nest يوفر <code>@MessagePattern</code> للأول و <code>@EventPattern</code> للثاني. بعض النواقل، مثل Kafka في جانب السجلات، أنسب للأحداث. إن لم تحتج الرد فاختر الحدث وأخفف القناة الثانية التي ينشئها الإطار للرد على النواقل التي لا تدعمها أصلًا.</p>
+<h2>التعريف التقني</h2>
+<p>الطلب-الرد مفيد عندما يجب أن تتأكد أن العمل أُنجز قبل إكمال المسار، مثل حساب مجموع أو إصدار فاتورة تحتاج <code>invoiceId</code> في الاستجابة. الإطار ينسق إرسال البيانات وانتظار الرد. على NATS يوجد دعم جاهز. على نواقل أخرى قد ينشئ Nest قنوات إضافية، وهذا ثقل. إن لم تحتج الرد فلا تدفعه.</p>
+<p>الحدث لإشعار: «أُلغي الطلب». المستمعون يعالجون المخزون أو البريد. المرسل لا ينتظرهم. هذا قريب من <code>EventBus</code> المحلي والفرق أن الرسالة تعبر العملية عبر الناقل.</p>
+<pre><code class="language-ts">@MessagePattern({ cmd: &#39;sum&#39; })
+sum(data: number[]): number {
+  return (data || []).reduce((a, b) =&gt; a + b, 0);
+}
+</code></pre>
+<pre><code class="language-ts">@EventPattern(&#39;order.cancelled&#39;)
+onCancelled(data: { orderId: string }): void {
+  void data.orderId;
+}
+</code></pre>
+<p>العميل <code>send</code> للأول و <code>emit</code> للثاني، في درس <code>ClientProxy</code>. <code>send</code> بارد: لا يُرسل حتى الاشتراك. <code>emit</code> ساخن: يحاول التسليم فورًا.</p>
+<p>لا تستعمل الطلب-الرد سلسلة طويلة متزامنة عبر أربع خدمات. كل قفزة مهلة وفشل. إن كانت السلسلة داخلية فأبقيها Modular monolith.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">send + MessagePattern  -&gt; أنتظر الناتج
+emit + EventPattern    -&gt; أخبر ولا أنتظر جسم الرد
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>إصدار فاتورة من صفحة الدفع: <code>send({ cmd: &#39;invoice.issue&#39; }, { orderId })</code> لأن الواجهة تحتاج المعرف. بعد الحفظ تنشر الفوترة <code>emit(&#39;order.invoiced&#39;, { orderId, invoiceId })</code> ليحدّث البحث عرضه. صفحة الدفع لا تنتظر البحث.</p>
+<h2>شرح المثال</h2>
+<p>الأسلوب يتبع حاجة الاستجابة لا أناقة الاسم. معرف الفاتورة ناتج. تحديث البحث أثر. خلطهما في <code>send</code> واحد يربط زمن البحث بزمن الدفع.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>النمط يسافر مع الحمولة حتى يطابق المعالج.</li>
+<li>في الطلب-الرد تُفتح مسار عودة حتى يصل الناتج أو المهلة.</li>
+<li>في الحدث لا مسار عودة للمعالجة.</li>
+<li>معالج الطلب يمكن أن يكون <code>async</code> أو <code>Observable</code>.</li>
+<li><code>Observable</code> من معالج الطلب قد يرسل أكثر من قيمة حتى يكتمل، كما في مثال التوثيق.</li>
+<li>فشل المستمع في الحدث لا يلغي كتابة تمت عند الناشر إلا باتفاق تراجع صريح.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>كتالوج يعرض السعر محليًا (لا رسالة). الدفع يرسل طلب-رد لإصدار الفاتورة بمهلة قصيرة. إشعار المستودع حدث. إن غاب المستودع تبقى الفاتورة وتُعاد معالجة الحدث من الطابور أو من إعادة المحاولة في الناقل الذي يدعم ذلك، لا من إبقاء اتصال HTTP مفتوحًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>send</code> لكل سجل تتبع.</li>
+<li><code>emit</code> ثم قراءة الرد.</li>
+<li>سلسلة <code>send</code> عبر أربع عمليات في طلب متصفح واحد.</li>
+<li>نسيان الاشتراك على <code>Observable</code> البارد لـ <code>send</code> فلا تخرج الرسالة.</li>
+<li>توقع نفس ضمان التسليم من TCP و Kafka.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>طلب-رد لناتج تحتاجه لإكمال العقد. حدث للأثر الذي يعيش بعد الرد.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>نداء داخل العملية. دالة أغنى من الأسلوبين. ولا طلب-رد إن كان الناقل مبنيًا كسجل أحداث وأنت لا تحتاج الرد.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>طلب-رد</th>
+<th>حدث</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الزخرفة</td>
+<td><code>@MessagePattern</code></td>
+<td><code>@EventPattern</code></td>
+</tr>
+<tr>
+<td>العميل</td>
+<td><code>send</code></td>
+<td><code>emit</code></td>
+</tr>
+<tr>
+<td>انتظار</td>
+<td>ناتج أو مهلة</td>
+<td>لا ناتج معالجة</td>
+</tr>
+<tr>
+<td>مثال</td>
+<td>مجموع، إصدار</td>
+<td>إشعار، تحديث عرض</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي أسلوب لمعرفة <code>invoiceId</code> قبل رد HTTP؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>طلب-رد عبر <code>@MessagePattern</code> و <code>send</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يحدث البحث بعد الفوترة لا داخل نفس <code>send</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن العرض أثر لاحق. إدخاله في الطلب-الرد يربط زمن البحث بزمن الدفع.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ناقل لا يملك ردًا مدمجًا وتحتاج مجموعًا مرة واحدة. ماذا تكلّف، وما البديل إن لم تحتج الرد أصلًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>Nest قد ينشئ قناة رد إضافية وفيها ثقل. إن لم تحتج الناتج فانتقل إلى حدث. إن احتجته فاقبل الكلفة أو ناقلًا يدعم الطلب-الرد مثل NATS.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يسافر مع الحمولة؟</li>
+<li>أي نداء على العميل بارد؟</li>
+<li>متى السلسلة المتزامنة إشارة للبقاء داخل العملية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>انتظر الرد عندما الناتج جزء من العقد، وانشر حدثًا عندما تخبر عملية أخرى بلا تعليق المسار. لا تحوّل كل أثر إلى <code>send</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>Platform Agnosticism: اكتب المعالج بلا افتراض Express حتى يعمل على النقل.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Microservices: <a href="https://docs.nestjs.com/microservices/basics">https://docs.nestjs.com/microservices/basics</a></li>
+<li>NestJS — Platform agnosticism: <a href="https://docs.nestjs.com/fundamentals/platform-agnosticism">https://docs.nestjs.com/fundamentals/platform-agnosticism</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

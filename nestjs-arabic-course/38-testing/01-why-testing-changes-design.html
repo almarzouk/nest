@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>لماذا يغيّر الاختبار شكل التصميم</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-why-testing-changes-design.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>لماذا يغيّر الاختبار شكل التصميم</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ملاحظة أن الاختبار السهل يكشف اقترانًا سيئًا قبل الحديث عن Jest أو Vitest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>publish</code> التي تفتح Prisma وترسل SMTP وتكتب Redis لا تُختبر إلا بتشغيل كل شيء، فتتأجل الاختبارات. عندما تحاول تمرير وهم بريد، لا يوجد مكان لتمريره لأن النداء <code>smtp.send</code> داخل الدالة لا في الباني. التصميم الذي يقبل الاختبار هو الذي يقبل بديلًا لكل حد خارجي.</p>
+<h2>الفكرة ببساطة</h2>
+<p>إن لم تستطع استدعاء السلوك بمعرفات وهمية في الذاكرة، فالوحدة ما زالت تمسك الشبكة أو القرص. الفصول السابقة فصلت <code>IsbnService</code> و <code>EventEmitter2</code> وحمولة <code>{ bookId }</code>. الاختبار هو السبب العملي لتلك الحدود، لا حفلًا بعد ما يكتمل التطبيق.</p>
+<h2>التعريف التقني</h2>
+<p>ثلاثة أسئلة على كل صنف قبل كتابة أداة:</p>
+<table>
+<thead>
+<tr>
+<th>السؤال</th>
+<th>إن كانت الإجابة لا</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>هل الاعتماد في الباني؟</td>
+<td>لن تبدّله في الاختبار</td>
+</tr>
+<tr>
+<td>هل الأثر الخارجي خلف واجهة؟</td>
+<td>ستتصل بالناشر الحقيقي</td>
+</tr>
+<tr>
+<td>هل النتيجة تُعاد لا تُطبع فقط؟</td>
+<td>لن تستطيع <code>expect</code></td>
+</tr>
+</tbody></table>
+<p><code>BooksService.publish</code> التي تعيد الكتاب وتستدعي <code>emitAsync</code> تُختبر بوهم المُصدِر. التي تطبع فقط وتستدعي SMTP لا تُختبر إلا بمراقبة العالم.</p>
+<p>هذا الدرس لا يثبت مشغّلًا. يثبت شكل الدالة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سلوك صغير
+  اعتمادات في الباني
+    وهم في الاختبار
+      توقع على القيمة أو على النداء
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>صعب:</p>
+<pre><code class="language-ts">async publish(bookId: string) {
+  await fetch(&#39;https://mail.example&#39;, { method: &#39;POST&#39; });
+}
+</code></pre>
+<p>أسهل:</p>
+<pre><code class="language-ts">constructor(private readonly events: EventEmitter2) {}
+
+async publish(bookId: string) {
+  await this.prisma.book.update({ where: { id: bookId }, data: { status: &#39;PUBLISHED&#39; } });
+  await this.events.emitAsync(bookPublished, { bookId });
+}
+</code></pre>
+<p>السطر الثاني ما زال يحتاج قاعدة أو وهم Prisma. لكنه لم يعد يحتاج شبكة بريد. وهم Prisma يتوقع <code>update</code>، ووهم الأحداث يتوقع الاسم والحمولة.</p>
+<h2>شرح المثال</h2>
+<p><code>fetch</code> داخل الجسم اعتماد مخفي. كل اختبار ينشر كتابًا يصبح اختبار شبكة. نقله إلى مستمع يدرج طابورًا يجعل اختبار <code>publish</code> عن الحالة والإعلان، واختبار المستمع عن <code>enqueuePublished</code>. هذا هو تغيير الشكل: ليس إضافة <code>describe</code> حول الدالة القديمة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>اختبار الوحدة يستبدل الباني. لا يوجد سحر يقطع <code>fetch</code> إن لم تمر من بوابة تستطيع استبدالها. مكتبة نقر الشبكة موجودة وتُستعمل في رحلات أوسع، لكنها تعوض عن تصميم صعب لا تغني عن الحد. عندما يكون Prisma في الباني، تمرر كائنًا فيه <code>book.update</code> التي ترجع صفًا في الذاكرة. الدالة لا تعرف الفرق إن كانت تستدعي التابع فقط.</p>
+<h2>مثال عملي</h2>
+<p>حدود كتب المتجر التي صار اختبارها رخيصًا:</p>
+<table>
+<thead>
+<tr>
+<th>الدالة</th>
+<th>الوهم</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>publish</code></td>
+<td>Prisma و <code>EventEmitter2</code></td>
+</tr>
+<tr>
+<td><code>IsbnService.lookup</code></td>
+<td><code>HttpService</code> أو استبدال الخدمة كلها</td>
+</tr>
+<tr>
+<td><code>resize</code></td>
+<td>Prisma وقرص في مجلد مؤقت</td>
+</tr>
+<tr>
+<td>معترض السجل</td>
+<td>لا تتوقع نص stdout، استخرج التنسيق</td>
+</tr>
+</tbody></table>
+<p><code>resize</code> على قرص مؤقت أقرب إلى تكامل صغير. الوحدة الصرف تتوقف عند «استُدعي الكتابة بهذا المفتاح».</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>اختبار يدق الناشر الحقيقي لكل حفظ عنوان.</li>
+<li>منطق في المتحكم لا يُرى إلا عبر HTTP حتى في أول اختبار.</li>
+<li><code>console.log</code> هو الناتج الوحيد.</li>
+<li>تأجيل كل الاختبار حتى «نصب CI».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>هذا المعيار وأنت تفصل خدمة جديدة: إن عجزت عن تسمية الوهم، أعد الحد قبل كتابة الحالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كذريعة لحذف رحلة HTTP. الشكل الجيد يجعل الوحدة رخيصة والرحلة أقل عددًا، لا صفرًا. الرحلة تثبت أن الوحدة رُبطت.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشكل</th>
+<th>أول اختبار</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>fetch</code> داخل <code>publish</code></td>
+<td>شبكة أو لا اختبار</td>
+</tr>
+<tr>
+<td>حدث في الباني</td>
+<td>توقع <code>emitAsync</code></td>
+</tr>
+<tr>
+<td>SQL في المتحكم</td>
+<td>خادم وقاعدة لكل فرع</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يجب أن يظهر اعتماد البريد حتى يُستبدل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>في الباني، أو خلف مستمع لا تستورده <code>publish</code> مباشرة. لا <code>fetch</code> داخل الجسم.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يتوقع اختبار <code>publish</code> بعد الفصل؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أن <code>update</code> استُدعي بحالة <code>PUBLISHED</code> وأن الإعلان <code>book.published</code> حمل <code>{ bookId }</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا وهم الشبكة أضعف من نقل <code>fetch</code> إلى مستمع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الوهم يرمم نداءً مخفيًا. نقل النداء يجعل الاختبار يصف العقد الذي تريده: حالة ثم إعلان، لا تفاصيل عنوان البريد.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما علامة الاعتماد المخفي؟</li>
+<li>ماذا تعيد الدالة حتى تُفحص؟</li>
+<li>أي اختبار لا يُحذف عندما تصبح الوحدة سهلة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الاختبار الرخيص يطلب اعتمادات في الباني وآثارًا خلف واجهات. إن صعب الوهم، غيّر التصميم لا الأداة أولًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>ماذا يثبت اختبار الوحدة وحده، وماذا يترك للأعلى.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Testing: <a href="https://docs.nestjs.com/fundamentals/testing">https://docs.nestjs.com/fundamentals/testing</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

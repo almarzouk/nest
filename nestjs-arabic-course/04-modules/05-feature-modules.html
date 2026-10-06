@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Feature Modules</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-feature-modules.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Feature Modules</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تجميع متحكم وخدمة الميزة الواحدة في وحدة، ثم استيرادها من الجذر.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ميزة بلا وحدة تعود إلى الجذر. ميزة بملفات متفرقة بلا <code>@Module</code> لا تدخل الرسم ككتلة يمكن تصديرها أو منعها.</p>
+<h2>الفكرة ببساطة</h2>
+<p>Feature Module وحدة لقدرة واحدة في المجال: الكتب معًا، الطلبات معًا. التوثيق يضرب مثال <code>CatsModule</code> لهذا السبب ويربطه بحدود أوضح عندما يكبر الفريق، وبمبادئ SOLID.</p>
+<h2>التعريف التقني</h2>
+<p>الوحدة تجمع ما يخدم مجالًا واحدًا. الجذر يستوردها. المجلد <code>cats/</code> في التوثيق فيه المتحكم والخدمة ولاحقًا <code>dto</code>. اتبع التسمية: <code>books/books.module.ts</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">AppModule
+   imports BooksModule
+              controllers BooksController
+              providers   BooksService
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@Module({
+  controllers: [BooksController],
+  providers: [BooksService],
+})
+export class BooksModule {}
+</code></pre>
+<pre><code class="language-ts">@Module({
+  imports: [BooksModule],
+})
+export class AppModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>أنشئ الملفات أو استخدم <code>nest g module books</code> ثم <code>nest g controller books</code> و <code>nest g service books</code>.</li>
+<li>راجع أن المولّد لم يكرر التسجيل.</li>
+<li>المسارات تظهر لأن الوحدة مستوردة، لا لأن المتحكم مذكور في الجذر.</li>
+<li>أبقِ قاعدة السعر في الخدمة. الوحدة لا تجعل المتحكم تلقائيًا نظيفًا؛ هي تعطيك مكانًا للنظافة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>استيراد <code>BooksModule</code> يضم Metadata إلى الرسم. المحوّل يرى متحكمات هذه الوحدة ويسجل مساراتها. مزوّداتها تُنشأ مع الإقلاع المتحمّس.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-text">src/books/dto/create-book.dto.ts
+src/books/books.controller.ts
+src/books/books.service.ts
+src/books/books.module.ts
+</code></pre>
+<p>مجلد <code>dto</code> فارغ حتى فصل DTO مقبول كمكان محجوز، أو تؤجله حتى ذلك الفصل. لا تضع التحقق قبل شرحه. الخدمة الآن تقدر أن تعيد مصفوفة في الذاكرة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وحدة لكل دالة CRUD.</li>
+<li>مشاركة DTO بين ميزتين بنسخ الملف. عندما نحتاج المشاركة نخرج عقدًا واضحًا لا نسخة.</li>
+<li>اسم وحدة <code>UtilsModule</code> فيه كل شيء.</li>
+</ul>
+<h2>متى ننشئها؟</h2>
+<p>مع أول مورد REST بعد القالب: الكتب.</p>
+<h2>متى نؤجلها؟</h2>
+<p>لمثال من عشرين سطرًا داخل اختبار لغة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مجلد بلا Module</th>
+<th>Feature Module</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تنظيم بشري فقط</td>
+<td>تسجيل وحدود</td>
+</tr>
+<tr>
+<td>سهل نسيان providers</td>
+<td>المولّد يكتبها وتراجعها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما أمر CLI لوحدة <code>books</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>nest g module books</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا نضع <code>BooksController</code> في <code>AppModule</code> بعد إنشاء <code>BooksModule</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>التسجيل مرتين يربك من يملك المسار. الوحدة المستوردة تكفي.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تقسم <code>OrdersModule</code> إلى وحدتين؟</p>
+<details><summary>الحل</summary>
+
+<p>عندما يصبح بداخلها مجال ثانٍ مستقل، مثل مدفوعات لها متحكم ومزوّدات ودور حياة خاصة، لا لأن عدد الأسطر تجاوز حدًا شكليًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا تجمع وحدة الميزة؟</li>
+<li>من يستوردها حتى تعمل؟</li>
+<li>ماذا يولّد <code>nest g module</code> زيادة على الملف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>وحدة الميزة صندوق مجال واحد يُستورد من الجذر. المسارات والمزوّدات تعيش فيه لا في <code>AppModule</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>عندما تحتاج ميزة ثانية خدمة الأولى: الاستيراد والتصدير.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Modules (Feature modules): <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

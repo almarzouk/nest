@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Google</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="04-google.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Google</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>توصيل «الدخول بحساب Google» في رف عبر <code>@nestjs/authentication</code>: عميل OAuth من نوع تطبيق ويب، ومسار بداية، ومسار عودة، وإعداد <code>google()</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الفريق يعرف OIDC نظريًا ثم يلصق رمز Google الذي ظهر في المتصفح في ترويسة <code>Authorization</code> لكل طلبات الكتب. أو يضع <code>GOOGLE_CLIENT_SECRET</code> في حزمة الواجهة. أو ينسى عنوان العودة فيطابق Google عنوانًا غير الذي يستمع إليه Nest.</p>
+<h2>الفكرة ببساطة</h2>
+<p>في Google Cloud أنشئوا OAuth client من نوع Web application وسجّلوا عنوان العودة <code>.../auth/oidc/google/callback</code>. السر في بيئة الخادم. زر الواجهة رابط عادي إلى <code>GET /auth/oidc/google/login</code>. الحزمة تكمل PKCE و <code>state</code> و <code>nonce</code> وتستبدل الرمز.</p>
+<h2>التعريف التقني</h2>
+<p>الإعداد داخل <code>AuthenticationModule.forRootAsync</code>: <code>oidc.callbackUrl</code> مثل <code>`${APP_URL}/auth/oidc/:provider/callback`</code> و <code>providers.google = google({ clientId, clientSecret })</code>. <code>:provider</code> يخدم أكثر من مزود على نفس المسار. المتحكم ملككم حتى يخضع للبادئة والإصدار والحد:</p>
+<p><code>OidcService.start(provider, { redirectTo, link })</code> و <code>finish(provider, query)</code>.</p>
+<p><code>start</code> يحفظ المعاملة تحت <code>state</code> ويضع سرًا في كعكة <code>HttpOnly</code> اسمها <code>__Host-oidc_tx</code> لعشر دقائق، والـ <code>state</code> تجزئة SHA-256 لذلك السر. <code>finish</code> يتحقق أن <code>state</code> في الاستعلام يطابق التجزئة، ويستبدل الرمز، ويتحقق من ID token، ثم <code>resolveUser</code>، ثم <code>SignInService</code>. <code>redirectTo</code> مسار نسبي فقط حتى لا يصبح التوجيه مفتوحًا. الكعكة والرد يعملان على Express و Fastify عبر محول HTTP من غير <code>@Req()</code> حسب الصفحة. Passport يبقى وصفة بديلة على صفحة Recipes، لا طبقة تُضاف فوق <code>google()</code> في نفس التدفق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">زر → GET /auth/oidc/google/login?redirectTo=/shelf
+     → حسابات Google
+     → GET /auth/oidc/google/callback?code&amp;state
+     → جلسة رف ثم توجيه إلى /shelf
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Param, Query, Redirect } from &#39;@nestjs/common&#39;;
+import { OidcService, Public } from &#39;@nestjs/authentication&#39;;
+
+@Public()
+@Controller(&#39;auth/oidc&#39;)
+export class OidcController {
+  constructor(private readonly oidc: OidcService) {}
+
+  @Get(&#39;:provider/login&#39;)
+  @Redirect()
+  login(@Param(&#39;provider&#39;) provider: string, @Query(&#39;redirectTo&#39;) redirectTo?: string, @Query(&#39;link&#39;) link?: string) {
+    return this.oidc.start(provider, { redirectTo, link: link === &#39;true&#39; });
+  }
+
+  @Get(&#39;:provider/callback&#39;)
+  @Redirect()
+  callback(@Param(&#39;provider&#39;) provider: string, @Query() query: Record&lt;string, string&gt;) {
+    return this.oidc.finish(provider, query);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Public()</code> لأن الحارس العام للحزمة يغلق المسارات، وهذان المساران قبل الجلسة. الربط <code>link=true</code> تشترطه الحزمة على جلسة قائمة أصلًا.</li>
+<li><code>@Redirect()</code> يفهم القيمة التي يعيدها <code>start</code> و <code>finish</code>.</li>
+<li><code>provider</code> سيكون <code>google</code> في الزر، والمسار نفسه يقبل مزودًا أضفته بجانب <code>google()</code>.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الزر يفتح <code>/auth/oidc/google/login</code>.</li>
+<li><code>start</code> يتحقق من إعداد <code>google</code> ويوجّه إلى Google مع PKCE.</li>
+<li>Google يعيد المتصفح إلى العنوان المسجّل.</li>
+<li><code>finish</code> يرفض إن غابت الكعكة أو اختلف <code>state</code>، حتى لو نُسخ الرابط من السجل.</li>
+<li>بعد <code>resolveUser</code> تُفتح جلسة رف (أو حالة عامل ثنائي معلّقة) ويُوجَّه المتصفح إلى <code>redirectTo</code> أو <code>/</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>عنوان التطوير الذي يُلصق في Google Console يجب أن يطابق <code>APP_URL</code>:</p>
+<pre><code class="language-text">http://localhost:3000/auth/oidc/google/callback
+</code></pre>
+<p>وفي البيئة:</p>
+<pre><code class="language-text">GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+APP_URL=http://localhost:3000
+</code></pre>
+<p><code>callbackUrl</code> في الإعداد يستخدم <code>APP_URL</code> حتى يختلف الإنتاج عن التطوير من غير تعديل المتحكم. لا تطبعوا <code>code</code> في السجل. لا تضعوا السر في مستودع الواجهة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>نوع عميل Google «Desktop» أو عنوان عودة لا يطابق المسار حرفًا.</li>
+<li>تمرير <code>redirectTo=https://evil.example</code> وتوقع أن الحزمة تتبعه. الصفحة تقبل المسارات النسبية فقط.</li>
+<li>استخدام access token الراجع من Google كـ <code>Bearer</code> على <code>/books</code>.</li>
+<li>إضافة <code>AuthGuard(&#39;google&#39;)</code> من Passport في نفس المتحكم «للاحتياط».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يريد قارئ رف الدخول بحساب Google وتفتحون له جلسة على API الكتب.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>إن كان مسار المشروع Passport عن قصد؛ عندها الاستراتيجية هناك لا هذا المتحكم معًا. ولا لمهمة تستورد كتالوجًا بلا مستخدم جالس.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القطعة</th>
+<th>مكانها</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>client id / secret</td>
+<td>بيئة الخادم و Google Console</td>
+</tr>
+<tr>
+<td>زر الدخول</td>
+<td>رابط إلى <code>login</code></td>
+</tr>
+<tr>
+<td>PKCE و state و nonce</td>
+<td><code>OidcService</code></td>
+</tr>
+<tr>
+<td>قرار الحساب المحلي</td>
+<td><code>OidcAccountResolver</code></td>
+</tr>
+<tr>
+<td>Passport</td>
+<td>وصفة منفصلة إن كان هو الاختيار الوحيد</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يفتح زر «الدخول بـ Google» في المتصفح؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>GET /auth/oidc/google/login</code> مع <code>redirectTo</code> نسبي إن لزم. ليس عنوان Google مكتوبًا يدويًا في الواجهة، وليس إرسال السر.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>نُسخ رابط العودة من سجل الوصول وأُعيد فتحه في متصفح آخر. لماذا لا تكتمل الجلسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن <code>state</code> يجب أن يطابق تجزئة سر كعكة <code>__Host-oidc_tx</code> التي وُضعت عند <code>start</code> في المتصفح الذي بدأ. المتصفح الآخر بلا الكعكة، و <code>finish</code> يرفض.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الإنتاج على <code>https://api.raf.example</code> والتطوير على localhost. ماذا يتغير في Google Console وفي <code>APP_URL</code> من غير نسخ المتحكم؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>عنوان عودة لكل بيئة في Console، و <code>APP_URL</code> لكل بيئة حتى يُبنى <code>callbackUrl</code> الصحيح. المتحكم <code>:provider/callback</code> يبقى. السر مختلف لكل عميل OAuth ولا يُشارك بين البيئات في مستودع عام.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي نوع عميل في Google Console؟</li>
+<li>ماذا يفعل <code>start</code> قبل أن يغادر المتصفح؟</li>
+<li>لماذا <code>redirectTo</code> نسبي؟</li>
+<li>لماذا لا يُرسل سر العميل إلى الزر؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Google في رف عميل ويب مسجّل، و <code>google()</code> في إعداد OIDC، ومتحكم يستدعي <code>start</code> و <code>finish</code>. الكعكة تثبت أن العودة من نفس المتصفح. رمز Google ليس مفتاح <code>/books</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>بعد الدخول يصدر رف رمز تحديث للجوال. الدرس التالي ماذا يحدث عندما يُستبدل هذا الرمز عند كل تجديد.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Authentication (Sign in with Google): <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+<li>NestJS — Passport: <a href="https://docs.nestjs.com/recipes/passport">https://docs.nestjs.com/recipes/passport</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

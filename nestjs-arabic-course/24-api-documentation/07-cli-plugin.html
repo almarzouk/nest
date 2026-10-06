@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CLI Plugin</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="07-cli-plugin.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>CLI Plugin</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تشغيل إضافة <code>@nestjs/swagger</code> حتى تُستنتج خصائص DTO والاستجابات من TypeScript ومن <code>class-validator</code>، مع الإبقاء على التحقق وقت التشغيل.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كل حقل في <code>CreatePostDto</code> و <code>PostResponseDto</code> يحتاج <code>@ApiProperty</code> يدويًا. الحد في <code>@Max(50)</code> لا يظهر في الوثيقة إلا إن كررته. تعليق فوق <code>page</code> لا يصل إلى Swagger. بعد عشرات الحقول ينسى أحدهم مزخرف التوثيق فيختلف النموذج عن الأنبوب.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الإضافة اختيارية وتعمل أثناء الترجمة على شجرة الصياغة. تضع <code>@ApiProperty</code> للخصائص، وتستنتج <code>required</code> من <code>?</code>، وتقرأ قواعد <code>class-validator</code> حين يكون <code>classValidatorShim</code> مفعّلًا، وهو الافتراضي. تستطيع قراءة التعليقات و <code>@example</code> عند <code>introspectComments</code>. الملفات التي تُحلَّل تنتهي افتراضيًا بـ <code>.dto.ts</code> أو <code>.entity.ts</code>.</p>
+<h2>التعريف التقني</h2>
+<p>في <code>nest-cli.json</code>:</p>
+<pre><code class="language-json">{
+  &quot;compilerOptions&quot;: {
+    &quot;plugins&quot;: [&quot;@nestjs/swagger&quot;]
+  }
+}
+</code></pre>
+<p>مع خيارات:</p>
+<pre><code class="language-json">{
+  &quot;compilerOptions&quot;: {
+    &quot;plugins&quot;: [
+      {
+        &quot;name&quot;: &quot;@nestjs/swagger&quot;,
+        &quot;options&quot;: {
+          &quot;classValidatorShim&quot;: true,
+          &quot;introspectComments&quot;: true
+        }
+      }
+    ]
+  }
+}
+</code></pre>
+<p>بعد تغيير الخيارات احذف <code>dist</code> وأعد البناء. الصفحة تذكر ذلك.</p>
+<p>ما تفعله الإضافة: تزخرف الخصائص إلا مع <code>@ApiHideProperty</code>، تضبط النوع والتعداد والمصفوفات والافتراض، تضيف مزخرف استجابة بحالة و <code>type</code>، وتنقل التعليق إلى الوصف عند تفعيل الاستنباط.</p>
+<p><code>classValidatorShim</code> الافتراضي <code>true</code> ينقل مثلًا <code>@Max(50)</code> إلى <code>max</code> في المخطط. التعطيل <code>false</code> إن أردت وثيقة لا تعكس المحققات. التحقق نفسه لا ينتقل إلى الإضافة. أبقِ <code>@IsString</code> و <code>@Max</code>. الصفحة تقول ذلك صراحة.</p>
+<p><code>PartialType</code> و <code>PickType</code> و <code>OmitType</code> داخل DTO تُستورد من <code>@nestjs/swagger</code> لا من <code>@nestjs/mapped-types</code> حتى تلتقط الإضافة المخطط.</p>
+<p><code>introspectComments</code> يقرأ وصف الخاصية و <code>@example</code>. على المتحكم يحوّل تعليق الطريقة إلى <code>@ApiOperation</code> بمفتاح <code>summary</code> افتراضيًا. <code>@param</code> منذ الإصدار 12 من الحزمة يوثّق <code>@Query</code> و <code>@Param</code> حسب اسم المتغير لا اسم سلسلة الاستعلام. <code>@Query(&#39;page_size&#39;) pageSize</code> يُوثَّق بـ <code>@param pageSize</code>. مزخرف <code>@ApiQuery</code> الصريح لا يُستبدل.</p>
+<p><code>dtoFileNameSuffix</code> إن سمّيت الملفات غير <code>.dto.ts</code>. <code>classTransformerShim: &#39;exclusive&#39;</code> يوثّق فقط <code>@Expose</code> أو <code>@ApiProperty</code>. <code>skipAutoHttpCode</code> يوقف حقن <code>@HttpCode</code> الآلي. <code>esmCompatible</code> يُكتشف من المشروع. اضبطه إن لزم لمشروع <code>&quot;type&quot;: &quot;module&quot;</code>.</p>
+<p>SWC: الإضافات تحتاج فحص الأنواع، <code>nest start -b swc --type-check</code> في التطبيق العادي. المستودع الأحادي يولّد <code>metadata</code> ثم <code>SwaggerModule.loadPluginMetadata</code>. التفاصيل في الصفحة.</p>
+<p><code>ts-jest</code> لا يشغّل إضافة Nest وحده. صفحة CLI تشرح محوّل AST للاختبارات e2e ومسح الكاش عند تجاهل Jest للإعداد.</p>
+<p>مزخرف صريح يغلب الاستنتاج. أبقِ <code>@ApiProperty</code> حيث المثال أدق من التعليق.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">nest build يقرأ .dto.ts
+  يستنتج الخصائص والحدود
+  class-validator يبقى عند الطلب
+تغيير الخيارات يحتاج مسح dist
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">export class ListPostsQueryDto {
+  /** Page number starting at 1. @example 1 */
+  @Type(() =&gt; Number)
+  @IsInt()
+  @Min(1)
+  page = 1;
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>مع <code>introspectComments</code> و shim يصبح للخاصية وصف ومثال وحد أدنى في الوثيقة. <code>@Type</code> ما زال للتحويل. <code>@IsInt</code> ما زال للرفض. اسم الملف <code>list-posts.query.dto.ts</code> يطابق اللاحقة. ملف <code>posts.types.ts</code> لا تلمسه الإضافة إلا إن وسّعت <code>dtoFileNameSuffix</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المحوّل يحقن المزخرفات في الخرج المترجم. وقت التشغيل يرى البيانات الوصفية كأنها كُتبت يدويًا. <code>createDocument</code> لا يعرف الفرق. لذلك وثيقة <code>nest start</code> تختلف عن تشغيل ملف بلا مرور على المحوّل، مثل اختبار Jest بلا إعداد الصفحة.</p>
+<p>تعليق <code>@example</code> الخاطئ لا يغيّر قاعدة البيانات. يغيّر ما يملؤه المجرب في Swagger.</p>
+<h2>مثال عملي</h2>
+<p>فعّل الإضافة ثم احذف <code>@ApiProperty</code> من <code>CreatePostDto</code> مؤقتًا وأبقِ المحققات. أعد البناء وافتح <code>/api</code>. يجب أن يظهر <code>title</code>. أعد المزخرف إن احتجت مثالًا أغنى من التعليق. حوّل <code>UpdatePostDto</code> إلى <code>PartialType(CreatePostDto)</code> مستوردًا من <code>@nestjs/swagger</code> وتأكد أن <code>title</code> اختياري في <code>PATCH</code>.</p>
+<p>على SWC، إن بقيت النماذج فارغة، شغّل مع <code>--type-check</code> أو حمّل metadata كما في الصفحة قبل أن تعيد المزخرفات كلها يدويًا.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حذف <code>@IsString</code> لأن الوثيقة تعرض النوع.</li>
+<li><code>PartialType</code> من الحزمة الأخرى فتفقد الإضافة الحقول.</li>
+<li>نسيان مسح <code>dist</code> بعد تغيير <code>introspectComments</code>.</li>
+<li>توقع أن Jest e2e يرى الإضافة بلا محوّل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في مشروع تكثر فيه DTO وتريد الوثيقة أن تتبع الأنواع والمحققات.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كبديل عن مراجعة أمن الوثيقة. الإضافة قد تنشر حقلًا في كيان <code>.entity.ts</code> فيه <code>passwordHash</code> إن كان الصنف مذكورًا. أخفِه بـ <code>@ApiHideProperty</code> أو لا تمرّر الكيان كـ <code>type</code> للاستجابة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>مزخرف يدوي</th>
+<th>إضافة CLI</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صريح في المصدر</td>
+<td>يُحقن عند الترجمة</td>
+</tr>
+<tr>
+<td>يعمل بلا nest-cli</td>
+<td>يحتاج البناء أو metadata</td>
+</tr>
+<tr>
+<td>مثال تكتبه في الكود</td>
+<td>تعليق <code>@example</code> عند التفعيل</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما لاحقة الملف التي تراها الإضافة افتراضيًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>.dto.ts</code> و <code>.entity.ts</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>من أين تستورد <code>PartialType</code> مع الإضافة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>من <code>@nestjs/swagger</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا تبقى النماذج فارغة تحت <code>nest start -b swc</code> بلا فحص أنواع؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>إضافة CLI لا تعمل على بناء SWC العادي من غير <code>--type-check</code> أو <code>loadPluginMetadata</code> في إعداد المستودع الأحادي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل الإضافة تستبدل <code>ValidationPipe</code>؟</li>
+<li>ماذا يفعل <code>classValidatorShim</code>؟</li>
+<li>متى تمسح <code>dist</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الإضافة تملأ الوثيقة من الملفات ذات اللاحقة الصحيحة ومن المحققات والتعليقات. الأنبوب يبقى. لا تدع كيان كلمة المرور يصبح نموذج الاستجابة لأن الملف ينتهي بـ <code>.entity.ts</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./examples.html">أمثلة عملية</a> وثيقة المقالات مجمّعة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — CLI plugin: <a href="https://docs.nestjs.com/openapi/cli-plugin">https://docs.nestjs.com/openapi/cli-plugin</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

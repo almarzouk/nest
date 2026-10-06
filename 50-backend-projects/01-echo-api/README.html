@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>01 — صدى الطلب</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>01 — صدى الطلب</h1>
+<p><strong>المستوى:</strong> مبتدئ<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new echo-api</code></p>
+<h2>ماذا تبني</h2>
+<p>خدمة تعيد إليك ما أرسلته: الطريقة، والمسار، وجسمًا صغيرًا، وقائمة قصيرة من الترويسات. لا قاعدة بيانات ولا مستخدمون.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>قبل حفظ أي شيء تحتاج أن ترى الطلب يخرج من Nest كما دخل. هذا المشروع يثبت أن المتحكم يستقبل وأنت تعيد قيمة، وNest تكتب JSON.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>@Controller و @Post و @Get</li>
+<li>إرجاع كائن بدل res.send</li>
+<li>قراءة @Body و @Headers بشكل ضيق</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>حفظ في الذاكرة</li>
+<li>ValidationPipe</li>
+<li>مصادقة</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الفصلان 02 و 05 من الدورة، أو ما يكفي لتشغيل nest new ورؤية مسار GET.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/05-controllers/README.html">05-controllers</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>الصدى لا يخزّن شيئًا بين الطلبات.</li>
+<li>لا تعِد كل الترويسات. قائمة بيضاء: user-agent و x-request-id إن وُجد.</li>
+<li>الجسم إن زاد عن حقول message و tags تتجاهل الزائد أو ترفضه. اختر الرفض بـ 400 عندما تتعلم الأنبوب، وفي هذا المشروع تجاهل الزائد ووثّق ذلك.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>GET</code></td>
+<td><code>/echo</code></td>
+<td>200</td>
+<td>يعيد method و path من غير جسم</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/echo</code></td>
+<td>200</td>
+<td>يعيد method و message و tags. هذا ليس إنشاء مورد فلا تستخدم 201</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new echo-api</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>ولّد وحدة echo وكنترولرًا. اترك الخدمة فارغة أو بلا وجود إن لم تحتجها.</li>
+<li>ابنِ دالة تأخذ body اختياريًا وتُرجع { method, path, message, tags }.</li>
+<li>جرّب curl للمسارين. تأكد أن إعادة التشغيل لا تتذكر الرسالة السابقة.</li>
+<li>أضف حدًا: tags إن لم تكن مصفوفة نصوص فأرجِع 400 باستثناء HttpException بسيطًا.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/echo/echo.controller.ts
+src/echo/echo.module.ts
+src/app.module.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">import { Body, Controller, Get, Post } from &quot;@nestjs/common&quot;;
+
+@Controller(&quot;echo&quot;)
+export class EchoController {
+  @Get()
+  ping() {
+    return { method: &quot;GET&quot;, path: &quot;/echo&quot; };
+  }
+
+  @Post()
+  mirror(@Body() body: { message?: string }) {
+    return { method: &quot;POST&quot;, path: &quot;/echo&quot;, message: body.message ?? &quot;&quot; };
+  }
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>استخدام 201 لأن الطريقة POST.</li>
+<li>كتابة res.json مع return في الوقت نفسه.</li>
+<li>تخزين آخر جسم في متغير على مستوى الملف فيصير للخادم ذاكرة لم تطلبها.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>GET و POST يعملان.</li>
+<li>إعادة التشغيل تمسح أي انطباع بأن الرسالة حُفظت.</li>
+<li>تستطيع شرح من يكتب JSON: Nest بعد return.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف GET /echo/headers يعيد الترويسات المسموحة فقط.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 1» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>هذا أول مشروع في المسار.</li>
+<li>التالي: <a href="../02-notes-memory/README.html">2. ملاحظات في الذاكرة</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>ثلاثة تراكيب على مكتب إعارة. كل مثال يضيف حدًا واحدًا من هذا الفصل: دالة، ثم صنف بحقن، ثم استثناء صحة. الاستيراد المحلي ينتهي بـ <code>.js</code>.</p>
+<h2>مثال 1 — معرّف على كل طلب</h2>
+<p><code>request-id.middleware.ts</code> دالة بلا اعتماديات. <code>main.ts</code> يمررها إلى المنصة فتعمل قبل أي <code>configure</code>.</p>
+<pre><code class="language-ts">import { randomUUID } from &#39;node:crypto&#39;;
+import type { NextFunction, Request, Response } from &#39;express&#39;;
+
+export function requestId(req: Request, res: Response, next: NextFunction): void {
+  const header = req.header(&#39;x-request-id&#39;);
+  const id = header &amp;&amp; header.length &gt; 0 ? header : randomUUID();
+  res.setHeader(&#39;x-request-id&#39;, id);
+  next();
+}
+</code></pre>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+import { requestId } from &#39;./request-id.middleware.js&#39;;
+
+const app = await NestFactory.create(AppModule);
+app.use(requestId);
+await app.listen(3000);
+</code></pre>
+<p>طلب بلا الترويسة يخرج بـ UUID. طلب البوابة يحتفظ بقيمته. لا <code>providers</code> هنا.</p>
+<h2>مثال 2 — ساعة تُحقن على مسارات النسخ</h2>
+<p><code>CopyClock</code> مزوّد. <code>CopyClockMiddleware</code> يلصق الوقت. الوحدة تطبّق <code>NestModule</code> ولا تضع الصنف في <code>providers</code>.</p>
+<pre><code class="language-ts">import { Injectable, type NestMiddleware } from &#39;@nestjs/common&#39;;
+import type { NextFunction, Request, Response } from &#39;express&#39;;
+import { CopyClock } from &#39;./copy-clock.js&#39;;
+
+@Injectable()
+export class CopyClockMiddleware implements NestMiddleware {
+  constructor(private readonly clock: CopyClock) {}
+
+  use(_req: Request, res: Response, next: NextFunction): void {
+    res.setHeader(&#39;x-copy-time&#39;, this.clock.iso());
+    next();
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module, type MiddlewareConsumer, type NestModule } from &#39;@nestjs/common&#39;;
+import { CopiesController } from &#39;./copies.controller.js&#39;;
+import { CopyClock } from &#39;./copy-clock.js&#39;;
+import { CopyClockMiddleware } from &#39;./copy-clock.middleware.js&#39;;
+
+@Module({
+  controllers: [CopiesController],
+  providers: [CopyClock],
+})
+export class CopiesModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CopyClockMiddleware).forRoutes(CopiesController);
+  }
+}
+</code></pre>
+<p>اختبار الوحدة يستبدل <code>CopyClock</code>. مسارات الأعضاء لا ترى الترويسة لأن المتحكم غير مذكور في <code>forRoutes</code>.</p>
+<h2>مثال 3 — تتبع المكتب مع ثقب الصحة</h2>
+<p><code>DeskModule</code> تغطي مساراتها وتطرح <code>GET /health</code> و <code>GET /metrics</code>.</p>
+<pre><code class="language-ts">import {
+  Module,
+  RequestMethod,
+  type MiddlewareConsumer,
+  type NestModule,
+} from &#39;@nestjs/common&#39;;
+import { DeskController } from &#39;./desk.controller.js&#39;;
+import { traceDesk } from &#39;./trace-desk.middleware.js&#39;;
+
+@Module({ controllers: [DeskController] })
+export class DeskModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer
+      .apply(traceDesk)
+      .exclude(
+        { path: &#39;health&#39;, method: RequestMethod.GET },
+        { path: &#39;metrics&#39;, method: RequestMethod.GET },
+      )
+      .forRoutes(DeskController);
+  }
+}
+</code></pre>
+<p><code>traceDesk</code> دالة تشبه <code>requestId</code> لكنها تكتب <code>x-desk: circulation</code> بعد أن ضمن المثال 1 وجود المعرّف. لأنها في وحدة مستوردة من الجذر، تعمل بعد <code>app.use</code>.</p>
+<p>على <code>GET /health</code> داخل هذا المتحكم لا تُكتب <code>x-desk</code>. على <code>GET /loans</code> تُكتب. <code>app.use(requestId)</code> ما زال يعمل على الصحة لأن الاستثناء يخص سلسلة <code>DeskModule</code> فقط.</p>
+<h2>ترتيب طلب واحد</h2>
+<p><code>GET /copies/9</code> يمر على <code>requestId</code> في <code>app.use</code>، ثم على <code>CopyClockMiddleware</code> لأن <code>CopiesController</code> مذكور. لا يمر على <code>traceDesk</code> إن كان النسخ خارج <code>DeskController</code>.</p>
+<p><code>POST /loans</code> داخل المكتب يمر على <code>requestId</code> ثم على <code>traceDesk</code> إن لم يُستثنَ الفعل. <code>GET /health</code> يمر على <code>requestId</code> فقط من هذه الأمثلة، لأن <code>exclude</code> طرحه من سلسلة المكتب.</p>
+<h2>ماذا تتأكد منه</h2>
+<ul>
+<li>كل <code>next()</code> حاضر، أو الرد منتهٍ في الدالة نفسها.</li>
+<li>الدالة في <code>apply</code> أو <code>app.use</code>، والصنف ذو الاعتماد في <code>apply(Class)</code> مع مزوّده مرئيًا في الوحدة.</li>
+<li><code>exclude</code> يسبق <code>forRoutes</code> ويطرح من تلك السلسلة فقط.</li>
+<li>لا فحص أدوار داخل هذه الملفات. الحارس فصل لاحق.</li>
+<li>خطأ يُرمى من <code>configure</code>/<code>apply</code> لا يُمسك بفلتر على المتحكم.</li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

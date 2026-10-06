@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<p>طلب نشر واحد في رف كما يظهر للمشغّل.</p>
+<h2>المثال 1 — ثلاث إشارات</h2>
+<p>المقياس <code>publish_duration_ms</code> يرتفع. السجل <code>{ msg, organizationId, bookId, requestId, traceId }</code> بمستوى log لا error. الأثر span اسمه <code>BooksService.publish</code> وتحته SQL. 404 على كتاب آخر لا يزيد عداد 500.</p>
+<h2>المثال 2 — إقلاع</h2>
+<p>مشروع بلا لوحة: <code>nest new raf-api --no-observe</code> ثم OpenTelemetry إن لزم المجمع. مشروع يريد الأسماء الرسمية: <code>nest new raf-api --observe</code> ثم <code>instrument: ObserveInstrument</code> في <code>create</code>. Fastify يضع المحول ثانيًا والخيار ثالثًا. <code>/health</code> يبقى لـ Terminus.</p>
+<h2>المثال 3 — دعم</h2>
+<p>الموظف يرسل <code>X-Request-Id</code> من الرد. البحث في السجل يجد النشر ورفض التوقيع لاحقًا لنفس المعرّف. <code>tenantId</code> في السطر يثبت المكتبة ولا يُؤخذ من جسم عُرض في الرسالة.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

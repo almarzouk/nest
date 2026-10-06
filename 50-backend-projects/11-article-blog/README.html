@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>11 — مقالات بتحقق</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>11 — مقالات بتحقق</h1>
+<p><strong>المستوى:</strong> متوسط<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new article-blog</code></p>
+<h2>ماذا تبني</h2>
+<p>مدونة صغيرة. المقال يُنشأ مسودة، ثم يُنشر. الدخل يمر على صنف DTO لا على interface.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>من هنا يتوقف الفحص اليدوي المتفرق. الأنبوب يرفض الزائد.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>class-validator</li>
+<li>whitelist و forbidNonWhitelisted</li>
+<li>slug يولَّد على الخادم</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>تعليقات</li>
+<li>مستخدمون</li>
+<li>محرر نصوص</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>العادات، وفصل التحقق في الدورة.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/12-validation/README.html">12-validation</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>العنوان 3 إلى 120 حرفًا.</li>
+<li>المتن مطلوب.</li>
+<li>حقل isPublished في الجسم مرفوض. النشر مسار POST /articles/:id/publish.</li>
+<li>slug من العنوان مع لاحقة قصيرة عند التصادم.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/articles</code></td>
+<td>201</td>
+<td>مسودة</td>
+</tr>
+<tr>
+<td><code>GET</code></td>
+<td><code>/articles</code></td>
+<td>200</td>
+<td>المنشور فقط للزائر</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/articles/:id/publish</code></td>
+<td>200</td>
+<td>يقلب الحالة</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new article-blog</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>فعّل ValidationPipe عالميًا بالخيارات whitelist و forbidNonWhitelisted و transform.</li>
+<li>CreateArticleDto فيه title و body فقط.</li>
+<li>قائمة الزائر تخفي المسودات. مسار الإدارة المؤجل يأتي مع الأدوار.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/articles/dto/create-article.dto.ts
+src/articles/articles.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">import { IsString, Length } from &quot;class-validator&quot;;
+
+export class CreateArticleDto {
+  @IsString()
+  @Length(3, 120)
+  title!: string;
+
+  @IsString()
+  @Length(1, 20000)
+  body!: string;
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>interface بدل الصنف.</li>
+<li>ترك isPublished يمر في الجسم فينشر الزائر مقاله.</li>
+<li>نسيان whitelist فيصل حقل إضافي بصمت.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>جسم فيه حقل زائد 400.</li>
+<li>المسودة لا تظهر في GET العام.</li>
+<li>النشر يضبط publishedAt.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف إلغاء النشر من غير حذف الصف.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 11» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../10-habit-tracker/README.html">10. متتبع عادات</a></li>
+<li>التالي: <a href="../12-article-comments/README.html">12. تعليقات المقال</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

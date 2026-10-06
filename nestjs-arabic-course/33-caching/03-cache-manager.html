@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>cache-manager</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-cache-manager.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>cache-manager</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة المفتاح وكتابته عبر مدير المخبأ المحقون حول نداء ISBN الناجح.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الوحدة مسجّلة والناشر ما زال يُستدعى كل مرة. من غير <code>get</code> قبل الحساب و <code>set</code> بعد النجاح لا يوجد مخبأ، فقط مزوّد فارغ.</p>
+<h2>الفكرة ببساطة</h2>
+<p>تحقن <code>CACHE_MANAGER</code> ونوع المدير من <code>cache-manager</code>. المفتاح سلسلة ثابتة الشكل. <code>get</code> يعيد القيمة أو <code>undefined</code> عند الغياب. <code>set</code> يكتب بعد أن تحصل على <code>{ title }</code> أو <code>null</code> المتعمد. الاستثناء يخرج قبل <code>set</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import { CACHE_MANAGER } from &#39;@nestjs/cache-manager&#39;;
+import { Cache } from &#39;cache-manager&#39;;
+
+@Injectable()
+export class IsbnService {
+  constructor(@Inject(CACHE_MANAGER) private readonly cache: Cache) {}
+
+  private key(isbn: string) {
+    return `isbn:${isbn}`;
+  }
+}
+</code></pre>
+<p>العمليات التي تهم الآن:</p>
+<pre><code class="language-ts">const hit = await this.cache.get&lt;{ title: string } | null&gt;(this.key(isbn));
+await this.cache.set(this.key(isbn), { title }, 10 * 60 * 1000);
+</code></pre>
+<p>الوسيط الثالث لـ <code>set</code> مدة هذا المفتاح بالميلي ثانية وتغلّب الافتراض. <code>del</code> يحذف مفتاحًا إن عرفت أن الناشر حدّث العنوان فورًا.</p>
+<p>البادئة <code>isbn:</code> تمنع الاصطدام مع مفتاح <code>book:</code> لاحقًا على المخزن نفسه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">get(isbn:...)
+  موجود -&gt; أعده
+  غير موجود -&gt; lookup الشبكي
+    نجاح أو null متعمد -&gt; set
+    رمي -&gt; بلا set
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">async lookup(isbn: string): Promise&lt;{ title: string } | null&gt; {
+  const key = this.key(isbn);
+  const cached = await this.cache.get&lt;{ title: string } | null&gt;(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const fresh = await this.fetchFromPublisher(isbn);
+  await this.cache.set(key, fresh, 10 * 60 * 1000);
+  return fresh;
+}
+</code></pre>
+<p><code>fetchFromPublisher</code> هي الدالة التي ترمي عند المهلة وتعيد <code>null</code> عند <code>404</code> كما في الفصل السابق. إن رمت، لا يصل التنفيذ إلى <code>set</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>undefined</code> من <code>get</code> يعني إخفاقًا. <code>null</code> المخزّن يعني إصابة بأن الناشر لا يعرف الرقم. الشرط <code>cached !== undefined</code> يفرّق الحالين. لو كتبت <code>if (cached)</code> لأعاد الطلب عند <code>null</code> وفي كل مرة يُضرب الناشر بالرقم الخاطئ، أو لتجاهلت عنوانًا فارغًا بشكل خاطئ.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p><code>cache-manager</code> يمرر الأمر إلى المخزن، والذاكرة في هذا الدرس. <code>set</code> مع TTL يسجل انتهاء المفتاح. <code>get</code> بعد الانتهاء يتصرف كغياب. العمليات <code>async</code> حتى عندما يكون المخزن ذاكرة، لأن الواجهة نفسها تخدم Redis لاحقًا. لا تبنِ المفتاح من كائن طلب كامل. <code>isbn</code> نص متحقق قبل ذلك حتى لا تصبح مسافة أو ترميز مختلف مفتاحين للرقم نفسه.</p>
+<h2>مثال عملي</h2>
+<p>بعد أن يصحح الناشر عنوانًا وتريد تجاوز المدة:</p>
+<pre><code class="language-ts">await this.cache.del(`isbn:${isbn}`);
+</code></pre>
+<p>الاستدعاء من مسار إداري بعد تحديث تعرفه، لا من كل <code>GET</code> عام. الحذف التالي يعيد <code>fetchFromPublisher</code> مرة واحدة.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>if (!cached)</code> فيضيع تخزين <code>null</code>.</li>
+<li><code>set</code> داخل <code>catch</code>.</li>
+<li>مفتاح <code>isbn</code> بلا بادئة.</li>
+<li>حقن المدير في المتحكم وتخزين جسم HTTP فيه جلسة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حول حساب واضح المفتاح: <code>lookup</code> ولاحقًا قائمة منشورة ثقيلة تبنيها خدمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>كغلاف على <code>BooksService.create</code>. الكتابة تمر على القاعدة ثم تحذف المفتاح المتأثر إن كانت القراءة مخزّنة. التخزين لا يستبدل <code>insert</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>قيمة <code>get</code></th>
+<th>المعنى</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>undefined</code></td>
+<td>لا نسخة، احسب</td>
+</tr>
+<tr>
+<td><code>null</code></td>
+<td>نسخة تقول إن الناشر أعاد غيابًا</td>
+</tr>
+<tr>
+<td><code>{ title }</code></td>
+<td>نسخة العنوان</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي رمز تحقنه للحصول على المدير؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CACHE_MANAGER</code> من <code>@nestjs/cache-manager</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>null</code> المخزّن ليس إخفاقًا؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأنه نتيجة <code>404</code> متعمدة. <code>undefined</code> وحده هو الغياب من المخزن.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>أين يُستدعى <code>del</code> بالنسبة لتحديث عنوان تعرفه من لوحة الناشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>بعد أن تتأكد من التحديث، على المفتاح <code>isbn:${isbn}</code>، حتى القراءة التالية تحسب من جديد ولا تنتظر TTL.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما وحدة المدة في <code>set</code>؟</li>
+<li>لماذا البادئة في المفتاح؟</li>
+<li>ماذا لا يُكتب في فرع الخطأ؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>get</code> ثم حساب ثم <code>set</code> للنجاح و <code>null</code> المتعمد. ميّز <code>undefined</code> عن <code>null</code>. احذف المفتاح عندما تعرف أن المصدر تغيّر الآن.</p>
+<h2>ماذا بعد؟</h2>
+<p>كيف تختار الرقم الذي تمرره مدة حياة، وماذا يحدث عند انتهائها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Caching: <a href="https://docs.nestjs.com/data/caching">https://docs.nestjs.com/data/caching</a></li>
+<li>cache-manager: <a href="https://github.com/jaredwray/cache-manager">https://github.com/jaredwray/cache-manager</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

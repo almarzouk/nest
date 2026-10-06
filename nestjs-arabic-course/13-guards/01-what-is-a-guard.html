@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ما هو Guard</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="01-what-is-a-guard.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ما هو Guard</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تعريف الحارس كبوابة تقرر هل تُستدعى دالة المسار، بعد Middleware وقبل Interceptor و Pipe.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الدالة <code>reserve</code> تفترض أن الطلب مسموح ثم تفحص المقعد ثم تحفظ. رفض الإذن داخل الخدمة يأتي بعد عمل لا لزوم له، ويخلط «من يدخل» مع «هل المقعد صالح».</p>
+<h2>الفكرة ببساطة</h2>
+<p>الحارس صنف <code>@Injectable()</code> يطبّق <code>CanActivate</code>. جوابه نعم أو لا قبل المعالج. تفاصيل <code>canActivate</code> و <code>ExecutionContext</code> درسان يليان. هنا موضع البوابة فقط.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تقول إن للحارس مسؤولية واحدة: هل يُعالَج الطلب بدالة المسار، بناء على شرط وقت التشغيل مثل صلاحية أو دور أو قائمة تحكم. هذا يُسمّى غالبًا تفويضًا. المصادقة قريبة منه وتُذكر في الصفحة لأن Middleware كان مكانها التقليدي حين لا تحتاج سياق الدالة.</p>
+<p>الحارس يُنفَّذ بعد كل Middleware وقبل أي Interceptor أو Pipe. إن رفض، الأنبوب لا يفحص <code>seat</code> لأن الدورة لا تصل إليه.</p>
+<p>الربط على المتحكم أو الدالة أو التطبيق يأتي في درس المستويات. شكل الرفض <code>false</code> أو استثناء يأتي مع <code>CanActivate</code>.</p>
+<p>الفصل هذا آلية البوابة. تسجيل الدخول بالرمز والجلسة فصلان لاحقان. لا تبنِ Passport هنا.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Middleware ختم التتبع
+Guard      هل تُفتح هذه الدالة؟
+Interceptor
+Pipe       شكل seat
+Controller
+</code></pre>
+<p>الختم لا يفتح الباب. الباب لا يحوّل الأنواع.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, type CanActivate } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BoxPassGuard implements CanActivate {
+  canActivate(): boolean {
+    return true;
+  }
+}
+</code></pre>
+<p>الصنف بوابة تسمح بكل شيء. الفائدة الآن رؤية الواجهة والموضع. الشرط الحقيقي في الدرس التالي. الربط <code>@UseGuards(BoxPassGuard)</code> على مسار الحجز أو على المتحكم حين تصل إلى درس المستويات.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>@Injectable()</code> حتى تبنيه الحاوية عند تمرير الصنف لا النسخة.</li>
+<li><code>canActivate</code> اسم الدالة الوحيد في الواجهة.</li>
+<li><code>return true</code> يعني أن الطلب يكمل نحو Interceptor ثم Pipe ثم <code>reserve</code>.</li>
+<li>لا <code>next()</code>. الحارس ليس Middleware.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد سلسلة Middleware يجمع Nest حراس المسار: العام ثم المتحكم ثم الدالة. كل <code>canActivate</code> يُستدعى. <code>true</code> يكمل إلى الحارس التالي. عند اكتمالهم تبدأ Interceptors السابقة ثم الأنابيب.</p>
+<p>هذا الدرس لا يرفض بعد. الرفض يوقف ما بعد البوابة: لا فحص DTO، لا خدمة حجز، لا أثر في المخزن من تلك الدالة.</p>
+<p>استثناء من Middleware لا يمر على هذا الصنف أصلًا إن وُضع الحارس على المتحكم، لأن تلك الطبقة لم تُختر. الحارس يرى طلبًا وصلت سلسلته إلى اختيار الدالة.</p>
+<h2>مثال عملي</h2>
+<p>شباك التذاكر يضع <code>BoxPassGuard</code> على <code>TicketsController</code> قبل أن يكتب الشرط. <code>GET /health</code> على متحكم آخر بلا هذا الربط لا يمر بالبوابة. حين يصبح الحارس عامًا لاحقًا سيمس الصحة أيضًا، وتلك مشكلة درس الربط. الآن الحدود ظاهرة: بوابة على متحكم التذاكر فقط، والشكل ما زال عمل الأنبوب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>فحص <code>@Min</code> على <code>seat</code> داخل الحارس. الشكل للأنبوب بعد البوابة.</li>
+<li>ختم <code>x-request-id</code> هنا. الظرف Middleware.</li>
+<li>بناء إستراتيجية JWT كاملة في هذا الملف. الآلية أولًا، والمصادقة لاحقًا.</li>
+<li>تسمية الصنف Guard وهو يكتب الرد بـ <code>@Res()</code>. البوابة ترجع قرارًا، والإطار يكتب حالة الرفض.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>حين يكون السؤال: هل يُسمح لهذه الدالة أن تعمل لهذا الطلب، قبل دفع تكلفة الفحص والحفظ.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لشكل JSON، ولتتبع الطلب، ولتغليف الرد. ولا كبديل عن قاعدة «المقعد مبيع» داخل الخدمة بعد أن يُسمح أصلًا بالدخول.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>Middleware</th>
+<th>Guard</th>
+<th>Pipe</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>السؤال</td>
+<td>ماذا ألصق على الظرف؟</td>
+<td>هل تُفتح الدالة؟</td>
+<td>هل يطابق المعامل العقد؟</td>
+</tr>
+<tr>
+<td>الموضع</td>
+<td>أولًا</td>
+<td>بعد Middleware</td>
+<td>بعد Interceptor السابق</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أين يقع الحارس بالنسبة إلى Pipe؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قبله. الحارس بعد Middleware وقبل Interceptor و Pipe. رفض البوابة يمنع وصول <code>seat</code> إلى الأنبوب.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يكفي <code>if</code> في أول سطر من <code>reserve</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الأنبوب يكون قد فحص الجسم، وقد تكون الدالة بدأت. البوابة تقرر قبل ذلك حتى يبقى الإذن خارج قاعدة الحجز.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>GET /health</code> يجب أن يبقى بلا بوابة تذاكر، و <code>POST /tickets</code> خلفها. ماذا تستنتج عن مكان الربط قبل قراءة درس المستويات؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الربط على <code>TicketsController</code> أو على دالة الحجز، لا على التطبيق كله. الربط العام سيمس الصحة إلى أن تُعلَّم لاحقًا.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما مسؤولية الحارس الواحدة؟</li>
+<li>ماذا لا يُستدعى إن رفضت البوابة؟</li>
+<li>لماذا هذا الفصل ليس فصل تسجيل الدخول؟</li>
+<li>ما الفرق بينه وبين Middleware في السؤال الذي يجيب عنه؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الحارس بوابة قبل المعالج وبعد Middleware. يسمح للدالة أو يمنع الوصول إليها. الشكل والتتبع والمصادقة الكاملة تعيش في مواضعها، لا داخل هذه المسؤولية.</p>
+<h2>ماذا بعد؟</h2>
+<p>الدرس التالي يفتح <code>canActivate</code>: ماذا ترجع، وماذا يفعل الإطار بـ <code>false</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/guards">Guards</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>مؤشرات قاعدة البيانات و Redis</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-database-and-redis-indicators.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>مؤشرات قاعدة البيانات و Redis</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>اختيار المؤشر الذي يطابق التبعية: TypeORM أو Prisma للقاعدة، ومؤشر تبنيه لـ Redis، مع قرار <code>down</code> أو <code>degraded</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@nestjs/terminus</code> يأتي بمؤشرات قاعدة و HTTP و gRPC وذاكرة وقرص. لا يوجد <code>RedisHealthIndicator</code> جاهز. نسخ فحص HTTP على Redis أو اعتبار الكاش عطلًا قاتلًا يُخرج النسخ من الخدمة كلما تأخر المخبأ. طابور لا يُنشر بدونه يجب أن يُنزل الجاهزية فعلًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p>القاعدة التي تخدم القراءة والكتابة: <code>down</code> عند فشل <code>SELECT 1</code>. كاش يمكن الخدمة بدونه: <code>degraded</code> فيبقى HTTP <code>200</code>. Redis الطابور: <code>down</code>. المهلة قصيرة حتى لا يعلق المسبار. المفتاح في الرد اسم واضح مثل <code>database</code> أو <code>cache</code>.</p>
+<h2>التعريف التقني</h2>
+<p>TypeORM، بعد أن يكون الاتصال قائمًا، ينفّذ <code>SELECT 1</code> (أو ما يعادله على Oracle و SAP HANA):</p>
+<pre><code class="language-ts">() =&gt; this.db.pingCheck(&#39;database&#39;).withTimeout(1000)
+</code></pre>
+<p>اتصال مسمّى يُمرَّر في الخيار <code>connection</code> مع <code>DataSource</code> المحقون بـ <code>@InjectDataSource(&#39;albumsConnection&#39;)</code>.</p>
+<p>Prisma:</p>
+<pre><code class="language-ts">() =&gt; this.prismaHealth.pingCheck(&#39;database&#39;, this.prisma).withTimeout(1000)
+</code></pre>
+<p>العميل يُحقن كما حقنته في التطبيق. المؤشر يستدعي أمر ping لـ Mongo أو <code>$queryRawUnsafe(&#39;SELECT 1&#39;)</code> لغيرها.</p>
+<p>Redis بمؤشر خاص. الحزمة لا تصدّر واحدًا:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+import { HealthIndicatorService } from &#39;@nestjs/terminus&#39;;
+import type { Redis } from &#39;ioredis&#39;;
+
+@Injectable()
+export class RedisHealthIndicator {
+  constructor(
+    private readonly health: HealthIndicatorService,
+    private readonly redis: Redis,
+  ) {}
+
+  cache(key: string) {
+    return this.health.check(key).attempt(async () =&gt; {
+      await this.redis.ping();
+    }).withTimeout(1000);
+  }
+}
+</code></pre>
+<p>للكاش الذي تتحمل غيابه استعمل <code>indicator.degraded(&#39;cache unreachable&#39;)</code> بعد فشل <code>ping</code>، لا <code>down</code>. <code>degraded</code> يظهر تحت <code>info</code>، والحالة العامة <code>degraded</code>، و HTTP يبقى <code>200</code>. أي مؤشر <code>down</code> في نفس الفحص يغلب ذلك ويصبح <code>error</code>. طابور لا يعمل بلا Redis يستعمل <code>attempt</code> حتى يُسجَّل <code>down</code>.</p>
+<p>الذاكرة: <code>checkHeap(&#39;memory_heap&#39;, 150 * 1024 * 1024)</code> يقارن <code>heapUsed</code>. <code>checkRSS</code> يقارن الذاكرة المقيمة. القرص: <code>checkStorage(&#39;storage&#39;, { path: &#39;/&#39;, thresholdPercent: 0.5 })</code> أو <code>threshold</code> بالبايت. هذه مؤشرات تشخيص. لا تلصقها بمسار الحياة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">Postgres لازم     -&gt; pingCheck + down
+Redis كاش         -&gt; degraded و 200
+Redis طابور لازم  -&gt; down و 503
+لا مؤشر Redis جاهز في الحزمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>جاهزية المتجر: <code>pingCheck</code> على Prisma فقط. الكاش في دالة ثانية على مسار <code>/health/ready</code> إن قررت أن البطء مقبول، باستعمال <code>degraded</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>attempt</code> يعلّم <code>up</code> إن انتهى <code>ping</code>، و <code>down</code> إن رمى أو انتهت المهلة. <code>degraded</code> قرارك أنت عندما النجاح ليس ثنائيًا. لا تغلّف <code>degraded</code> ثم ترمي بعده.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>TypeORM أو Prisma يرسل استعلامًا رخيصًا على الاتصال القائم.</li>
+<li>المهلة تُجهض المحاولة وتكتب <code>timeout of 1000ms exceeded</code>.</li>
+<li>Redis <code>PING</code> على عميل ioredis الذي فتحته عند الإقلاع.</li>
+<li><code>degraded</code> لا يملأ كائن <code>error</code>.</li>
+<li><code>down</code> يملأه ويقلب الحالة إلى <code>error</code>.</li>
+<li>المنسّق يرى <code>503</code> فيسحب النسخة، أو <code>200</code> فيبقيها مع تنبيه على <code>degraded</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>نسختان، Postgres لازم، Redis للكتب الشائعة فقط. الجاهزية: مؤشر القاعدة <code>down</code> عند الفشل، ومؤشر الكاش <code>degraded</code>. انقطاع Redis يبقي <code>200</code> وتزداد القراءة على القاعدة. إن كان Redis طابور الفواتير الوحيد، بدّل المؤشر إلى <code>down</code> حتى لا تقبل النسخة طلبات لن تُنشر.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>البحث عن <code>RedisHealthIndicator</code> في الحزمة.</li>
+<li><code>degraded</code> لطابور لا مسار بديل له.</li>
+<li><code>SELECT 1</code> على الحياة.</li>
+<li>عتبة قرص 50٪ على مسبار يقتل الحاوية.</li>
+<li>مهلة أطول من مهلة المسبار فيعلّق المنسّق قبل Terminus.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في <code>/health/ready</code> لكل تبعية تغيّر قرار التوزيع.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تفحص كل مفتاح Redis ولا تشغّل استعلامًا ثقيلًا. <code>SELECT 1</code> و <code>PING</code> يكفي. لا تضع المؤشر على كل طلب مستخدم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>التبعية</th>
+<th>الأداة</th>
+<th>عند الفشل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>TypeORM</td>
+<td><code>pingCheck().withTimeout</code></td>
+<td><code>down</code></td>
+</tr>
+<tr>
+<td>Prisma</td>
+<td><code>PrismaHealthIndicator</code></td>
+<td><code>down</code></td>
+</tr>
+<tr>
+<td>Redis كاش</td>
+<td>مؤشر خاص + <code>degraded</code></td>
+<td>تبقى النسخة</td>
+</tr>
+<tr>
+<td>Redis طابور</td>
+<td>مؤشر خاص + <code>attempt</code></td>
+<td><code>503</code></td>
+</tr>
+<tr>
+<td>ذاكرة / قرص</td>
+<td><code>checkHeap</code> / <code>checkStorage</code></td>
+<td>تشخيص لا حياة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا ينفّذ <code>TypeOrmHealthIndicator</code> على Postgres؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>SELECT 1</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الكاش <code>degraded</code> لا <code>down</code> في المتجر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الصفحات تُقرأ من القاعدة عند غياب المخبأ. <code>degraded</code> يُبقي HTTP <code>200</code> ويظهر في المراقبة. <code>down</code> كان سيخرج النسخ كلها.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مهلة المؤشر 3000 مللي ثانية ومسبار Kubernetes ينتظر 1000. ماذا يرى المنسّق عند تعليق القاعدة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>انتهاء مهلة المسبار قبل رد Terminus، فيُحسب الفشل غامضًا وقد يُعاد التشغيل. اجعل <code>withTimeout</code> أقصر من مهلة المسبار.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>هل تصدر الحزمة مؤشر Redis؟</li>
+<li>أين يعيش <code>degraded</code> في JSON؟</li>
+<li>ماذا يقارن <code>checkHeap</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>القاعدة اللازمة تُسقِط الجاهزية عبر <code>pingCheck</code>. Redis يُبنى بمؤشر خاص: <code>degraded</code> للكاش و <code>down</code> للطابور الذي لا بديل له. الذاكرة والقرص تشخيص، والحياة تبقى بلا هذه الاستعلامات.</p>
+<h2>ماذا بعد؟</h2>
+<p>الأداء: أين يضيع الوقت بعد أن صارت النسخة تعرف إن كانت جاهزة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Terminus: <a href="https://docs.nestjs.com/recipes/terminus">https://docs.nestjs.com/recipes/terminus</a></li>
+<li>NestJS — Redis: <a href="https://docs.nestjs.com/microservices/redis">https://docs.nestjs.com/microservices/redis</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HttpOnly و Secure و SameSite</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-httponly-secure-samesite.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>HttpOnly و Secure و SameSite</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ضبط الصفات الثلاث التي تذكرها كعكة جلسة <code>@nestjs/authentication</code>، ومعرفة ماذا تمنع كل صفة.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>كعكة جلسة يقرأها <code>document.cookie</code> يسرقها سكربت حقن في الصفحة. كعكة بلا <code>Secure</code> تخرج على HTTP. كعكة بلا <code>SameSite</code> قد تُرفق مع طلب يبدؤه موقع آخر، فيغيّر حالة وأنت ما زلت داخلًا.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>HttpOnly</code> يخفي الكعكة عن JavaScript في الصفحة. <code>Secure</code> يرسلها على HTTPS فقط. <code>SameSite</code> يحدّد إن كانت تُرفق مع طلب قادم من موقع آخر. كعكة الحزمة: <code>HttpOnly</code> و <code>Secure</code> و <code>SameSite=Lax</code> والاسم <code>__Host-sid</code>.</p>
+<h2>التعريف التقني</h2>
+<p>من صفحة الكعكات في Nest، الصفات على <code>setCookie</code>، والقيم الافتراضية ليست كلها آمنة: <code>httpOnly</code> افتراضيًا <code>false</code>، و <code>secure</code> افتراضيًا <code>false</code>، و <code>sameSite</code> غير مضبوط حتى تكتبه. للكعكة التي تحمل دليلًا، اكتب الثلاث صراحة. صفحة المصادقة تفعل ذلك لكعكة <code>__Host-sid</code>.</p>
+<p><code>maxAge</code> في واجهة Nest بالثواني. <code>res.cookie</code> في Express بالمللي ثانية. نقل رقم من مقال Express إلى <code>setCookie</code> يطيل العمر ألف مرة.</p>
+<p><code>SameSite=Lax</code> يرسل الكعكة مع الانتقالات العليا مثل رابط <code>GET</code>، ويمنع إرفاقها مع <code>POST</code> قادم من موقع آخر. <code>Strict</code> أضيق. <code>None</code> يسمح بالإرفاق عبر المواقع ويشترط <code>Secure</code>، وإلا ترفض الواجهة في Nest الطلب الخاطئ عند الكتابة لأن المتصفح يسقط الكعكة.</p>
+<p>بادئة <code>__Host-</code> تشترط <code>Secure</code> و <code>Path=/</code> ومن غير <code>Domain</code>، حتى لا يزرع نطاق فرعي كعكة على المضيف الأب. الحزمة تسمي الكعكة هكذا. على HTTP غير <code>localhost</code> تشرح صفحة المصادقة ضبط <code>cookie.secure</code> إلى <code>false</code> فيصبح الاسم <code>sid</code>.</p>
+<p><code>localhost</code> يُعامل كأصل آمن في المتصفحات الحديثة فيقبل <code>Secure</code> أثناء التطوير.</p>
+<p>هذه الصفات لا تغني عن CSRF بالكامل لكل تصميم. فصل الأمان يشرح <code>enableCsrfProtection</code> الذي ينظر إلى <code>Sec-Fetch-Site</code> و <code>Origin</code>. الحزمة أصلًا تتجاهل كعكة الجلسة على الطلبات المغيّرة القادمة من أصل آخر.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">HttpOnly  -&gt; السكربت لا يقرأ الكعكة
+Secure    -&gt; لا إرسال على HTTP العادي
+SameSite=Lax -&gt; POST من موقع آخر بلا هذه الكعكة
+__Host-   -&gt; مضيف فقط، Path=/ ، Secure
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">this.adapterHost.httpAdapter.setCookie(res, &quot;library_sid&quot;, token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: &quot;lax&quot;,
+  path: &quot;/&quot;,
+  maxAge: 60 * 60 * 24 * 14,
+});
+</code></pre>
+<h2>شرح المثال</h2>
+<p>هذا شكل تعليمي لكتابة الصفات بنفسك. في مشروع الدورة <code>SignInService</code> يكتب <code>__Host-sid</code> فلا تنسخ كعكة ثانية للجلسة. المثال يوضح الوحدات: أربعة عشر يومًا بالثواني <code>60 * 60 * 24 * 14</code>. <code>token</code> عشوائي لا <code>user.id</code>.</p>
+<p><code>theme</code> يمكن أن تبقى بلا <code>HttpOnly</code> إن كانت الواجهة تحتاج قراءتها من السكربت. لا تنسخ صفات الهوية إلى كل كعكة، ولا صفات التفضيل إلى كعكة الهوية.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المتصفح يسقط الكعكة المخالفة: <code>SameSite=None</code> بلا <code>Secure</code> لا تُحفظ. بادئة <code>__Host-</code> مع <code>Domain</code> تُرفض. خادمك قد يظن أنه ضبط الجلسة بينما المتصفح رمى الرأس. افحص تبويب الكعكات في أدوات المتصفح بعد الدخول.</p>
+<p>سكربت XSS على الصفحة لا يرى <code>__Host-sid</code> بسبب <code>HttpOnly</code>، لكنه قد يفعل طلبات من نفس الأصل والمتصفح يرفق الكعكة. <code>HttpOnly</code> ليس بديلًا عن منع XSS. هو يضيّق السرقة المباشرة للقيمة.</p>
+<h2>مثال عملي</h2>
+<p>ادخل على <code>http://localhost:3000</code> وتوقع كعكة جلسة <code>Secure</code> كما تشرح الحزمة. انقل التجربة إلى <code>http://192.168.1.20</code> بلا TLS وستختفي الكعكة إن بقيت <code>Secure</code>. هذا فرق تطوير لا سبب لتعطيل الصفة في الإنتاج. صفحة على <code>https://evil.example</code> ترسل نموذج <code>POST</code> إلى مكتبتك: مع <code>Lax</code> لا تُرفق كعكة الجلسة بذلك <code>POST</code>. رابط <code>GET</code> قد يرفقها، لذلك <code>GET</code> لا يغيّر حالة الحساب.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li><code>maxAge</code> بأرقام Express على <code>setCookie</code>.</li>
+<li><code>SameSite=None</code> للكعكة العادية من غير حاجة عبر المواقع.</li>
+<li>تعطيل <code>Secure</code> في الإنتاج لتسهيل اختبار.</li>
+<li>الاعتقاد أن <code>HttpOnly</code> يمنع الطلب المزور من نفس السكربت. هو يمنع قراءة القيمة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على كل كعكة تحمل معرّف جلسة أو رمزًا. الحزمة تضبطها لـ <code>__Host-sid</code>. إن كتبت كعكة دليل بنفسك، انسخ الصفات لا الاسم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p><code>HttpOnly</code> على كعكة يجب أن يقرأها سكربت السمة عمدًا. <code>Secure</code> على قناة بلا TLS خارج <code>localhost</code> لن تُحفظ، والحل TLS لا حذف الصفة من الإنتاج.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الصفة</th>
+<th>تضيّق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>HttpOnly</code></td>
+<td>قراءة JavaScript</td>
+</tr>
+<tr>
+<td><code>Secure</code></td>
+<td>الإرسال على HTTP</td>
+</tr>
+<tr>
+<td><code>SameSite=Lax</code></td>
+<td>إرفاق <code>POST</code> من موقع آخر</td>
+</tr>
+<tr>
+<td><code>__Host-</code></td>
+<td>النطاق والمسار</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي صفة تمنع <code>document.cookie</code> من رؤية الجلسة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>HttpOnly</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>maxAge: 14 * 24 * 60 * 60 * 1000</code> خطأ على <code>setCookie</code> في Nest؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الواجهة تتوقع ثوانٍ. الضرب في <code>1000</code> يجعل العمر ألف ضعف، لأن ذلك التحويل خاص بـ <code>res.cookie</code> في Express.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>XSS نُفّذ على صفحتك و <code>HttpOnly</code> مفعّل. ماذا ما زال السكربت يستطيع فعله بالكعكة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا يقرأ قيمتها، لكن طلبًا من نفس الأصل يرفقه المتصفح فيذهب إلى API كأن المستخدم أرسله. لذلك يبقى منع XSS و CSRF لازمين، لا الصفة وحدها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الصفات الثلاث على كعكة الحزمة؟</li>
+<li>ماذا تشترط بادئة <code>__Host-</code>؟</li>
+<li>ما وحدة <code>maxAge</code> في Nest؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>كعكة الدليل <code>HttpOnly</code> و <code>Secure</code> و <code>SameSite=Lax</code>. الحزمة تسميها <code>__Host-sid</code>. التفضيل البصري لا يحتاج إخفاءً إن كان السكربت يقرأه عمدًا.</p>
+<h2>ماذا بعد؟</h2>
+<p><a href="./03-sessions.html">Session</a> ماذا يبقى على الخادم مقابل ما تحمله الكعكة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Cookies: <a href="https://docs.nestjs.com/http/cookies">https://docs.nestjs.com/http/cookies</a></li>
+<li>NestJS — Authentication: <a href="https://docs.nestjs.com/security/authentication">https://docs.nestjs.com/security/authentication</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

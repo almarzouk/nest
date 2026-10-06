@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ترتيب اختيار Filter</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-filter-resolution-order.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ترتيب اختيار Filter</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>حفظ أن الفلاتر تُختار من المسار إلى المتحكم إلى العام، وأن أول إمساك يوقف الباقي.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فلتر عام صحيح وفلتر مسار يكتب <code>500</code> يجعل اختبار <code>400</code> يفشل. الفريق يبحث في العام لأن الملف أشهر، بينما الذي كتب الرد هو الأخص. ترتيب الفلاتر عكس ترتيب الحراس.</p>
+<h2>الفكرة ببساطة</h2>
+<p>من دورة الطلب: عند الاستثناء يُفحص فلتر المسار، ثم فلتر المتحكم، ثم الفلتر العام. إن مسك أحدهم، الباقي لا يرى الاستثناء. لا يوجد تمرير تلقائي. مشاركة السلوك تكون بوراثة فلتر من فلتر.</p>
+<p>استثناء Middleware لا يدخل الخطوتين الأوليين. يبدأ من العام.</p>
+<p><code>try/catch</code> في المتحكم يخرج عن الخط كله.</p>
+<h2>التعريف التقني</h2>
+<p>الصفحة تقول إن الفلاتر المكوّن الوحيد الذي لا يبدأ بالعام. الترتيب:</p>
+<ol>
+<li>Route filters</li>
+<li>Controller filters</li>
+<li>Global filters</li>
+</ol>
+<p>وتقول: لا يُمرَّر الاستثناء من فلتر إلى فلتر. لتحقيق أثر مشابه استخدم الوراثة.</p>
+<p>الحراس والمعترضات في الدخول: عام ثم متحكم ثم مسار. الفلاتر عند الفشل: مسار ثم متحكم ثم عام. المعترض على طريق الخروج أقرب إلى هذا الاتجاه لأنه يعكس الالتفاف، لكنه ليس فلترًا. <code>catchError</code> الذي يرجع قيمة يمنع الوصول إلى الفلتر أصلًا.</p>
+<p>عدة فلاتر على الزينة نفسها: <code>@UseFilters(A, B)</code>. الإطار يختار من يطابق <code>@Catch</code>. لا تفترض أن <code>B</code> يضيف حقلًا بعد أن كتب <code>A</code> الرد. إن تطابق <code>A</code> أولًا فقد انتهى الأمر. اجعل التطابق ضيقًا أو ادمج الكتابة في صنف واحد.</p>
+<p>العام المدمج يبقى خلف فلاترك إن لم يمسك أحد الأنواع. <code>@Catch()</code> على المسار يسبق المدمج دائمًا لتلك الدالة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">throw من reserve
+  فلتر الدالة إن طابق @Catch
+  وإلا فلتر الصنف
+  وإلا العام ثم المدمج
+throw من Middleware
+  العام فقط
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">@UseFilters(SeatTakenFilter)
+@Controller(&#39;tickets&#39;)
+export class TicketsController {
+  @UseFilters(RefundFilter)
+  @Post(&#39;refund&#39;)
+  refund(): never {
+    throw new SeatTakenException(4);
+  }
+}
+</code></pre>
+<p><code>RefundFilter</code> إن كان <code>@Catch(SeatTakenException)</code> أو <code>@Catch()</code> فهو الذي يكتب رد <code>refund</code>. <code>SeatTakenFilter</code> على الصنف لا يُستدعى بعد أن كتب الأول. <code>GET</code> على المتحكم نفسه من غير فلتر دالة يصل إلى <code>SeatTakenFilter</code> ثم إلى العام إن لم يطابق.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>الأخص هو زينة الدالة لا زينة الصنف.</li>
+<li><code>SeatTakenException</code> على <code>list</code> بلا فلتر دالة يستخدم فلتر الصنف.</li>
+<li>فلتر عام للشكل لا يعمل على <code>refund</code> إن مسك <code>RefundFilter</code> كل شيء بقوس فارغ.</li>
+<li>ضيّق <code>@Catch</code> على <code>RefundFilter</code> حتى تمر بقية الأخطاء إلى فلتر الصنف أو العام.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الرمي تتوقف بقية الدورة: لا قيمة من الدالة، ولا <code>map</code> إن كان الخطأ قبل الإصدار أو إن لم يُلتقط على التيار. البحث عن الفلتر يبدأ من بيانات الدالة. أول صنف يطابق النوع تُستدعى <code>catch</code> الخاصة به. بعدها لا قائمة.</p>
+<p>استثناء من <code>ParseIntPipe</code> على المعامل يتبع البحث نفسه لأن المسار مختار والأنبوب داخل المنطقة. فلتر الدالة يراه. هذا يختلف عن Middleware.</p>
+<p>استثناء من <code>IdentifyDeskGuard</code> كذلك يراه فلتر الدالة. إن كان ذلك الفلتر يكتب <code>500</code> لكل شيء، فـ <code>401</code> الحارس يفسد. أصلح الأخص لا العام.</p>
+<p>الوراثة: <code>RefundFilter extends DeskExceptionFilter</code> ويستدعي <code>super.catch</code> بعد سطر سجل. هكذا «يمر» السلوك من غير تمرير الاستثناء في الإطار.</p>
+<h2>مثال عملي</h2>
+<p>جدول تشخيص لطلب واحد <code>POST /tickets/refund</code>:</p>
+<table>
+<thead>
+<tr>
+<th>الرمي</th>
+<th>من يكتب إن وُجدت الزينة كما فوق</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>SeatTakenException</code> و <code>RefundFilter</code> يمسكها</td>
+<td><code>RefundFilter</code></td>
+</tr>
+<tr>
+<td><code>BadRequestException</code> و <code>RefundFilter</code> يمسك <code>SeatTaken</code> فقط</td>
+<td>فلتر الصنف أو العام</td>
+</tr>
+<tr>
+<td>ترويسة تتبع تالفة في Middleware</td>
+<td>العام فقط</td>
+</tr>
+<tr>
+<td><code>try/catch</code> في <code>refund</code></td>
+<td>لا أحد</td>
+</tr>
+</tbody></table>
+<p>راجع الاختبارات على هذا الجدول قبل إضافة فلتر رابع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>البحث في <code>APP_FILTER</code> بينما <code>@Catch()</code> على الدالة يكتب <code>500</code>.</li>
+<li>توقع ترتيب الحراس: عام أولًا.</li>
+<li>استدعاء فلتر ثانٍ يدويًا بعد <code>response.json</code>.</li>
+<li>نسيان أن أنبوب المسار يمر بفلتر المسار، بخلاف Middleware.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عند كل فلتر جديد: حدّد المستوى، وضيّق <code>@Catch</code>، وتأكد أن <code>400</code> و <code>409</code> لا يختفيان خلف قوس فارغ على الدالة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضع <code>@Catch()</code> على كل دالة «للتتبع» إن كان العام يكفي ويملك الفرع الصحيح. التتبع على الأخص الذي يطمس الرمز أغلى من غياب سطر سجل.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الطبقة</th>
+<th>ترتيب الدخول</th>
+<th>ترتيب اختيار الفلتر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Guard</td>
+<td>عام → مسار</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Interceptor</td>
+<td>عام → مسار ثم عكس على الرد</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Filter</td>
+<td>—</td>
+<td>مسار → متحكم → عام</td>
+</tr>
+<tr>
+<td>Middleware</td>
+<td>قبل الكل</td>
+<td>عام فقط عند الرمي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من يُفحص أولًا: فلتر الدالة أم <code>APP_FILTER</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فلتر الدالة. العام أخير بين المستويات.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>RefundFilter</code> كتب الرد. لماذا لم يضف الفلتر العام حقل <code>path</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الاستثناء لا يُمرَّر بعد الإمساك. أضف <code>path</code> داخل <code>RefundFilter</code> أو اجعله يمتد من الفلتر العام ويستدعي <code>super.catch</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ارسم من يكتب الرد في ثلاث حالات: <code>ConflictException</code> من الخدمة وعلى الدالة <code>@Catch()</code> يثبّت <code>500</code>، و <code>BadRequestException</code> من Middleware، و <code>NotFoundException</code> من الخدمة مع فلتر دالة يمسك <code>SeatTakenException</code> فقط وعام ينسخ رمز HTTP.</p>
+<details>
+<summary>الحل</summary>
+
+<p>الأولى يكتبها فلتر الدالة كـ <code>500</code> لأن القوس الفارغ يمسك التعارض قبل العام، وهذا خلل يجب إصلاحه بفرع <code>HttpException</code>. الثانية يكتبها العام كـ <code>400</code> إن كان الفرع صحيحًا، لأن Middleware لا يرى فلتر الدالة. الثالثة يكتبها العام كـ <code>404</code> لأن فلتر الدالة لا يطابق <code>NotFoundException</code>.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما ترتيب المستويات الثلاثة عند الفشل؟</li>
+<li>كيف تشارك سلوكًا بين فلترين من غير تمرير الاستثناء؟</li>
+<li>أين يُلتقط رمي الأنبوب مقارنة برمي Middleware؟</li>
+<li>لماذا يفسد <code>@Catch()</code> على الدالة اختبار <code>400</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>البحث من المسار إلى العام، وأول تطابق يكتب الرد ويتوقف. Middleware يبدأ من العام. الوراثة بديل تمرير الاستثناء. الأخص الضيق يحمي العام، والأخص الفارغ الذي يثبّت <code>500</code> يطمس رموز العميل.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع <code>SeatTakenException</code> وفلترًا يحفظ الرمز، ثم التمارين، ثم الزينة المخصصة التي تقرأها البوابات.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/exception-filters">Exception filters</a></li>
+<li><a href="https://docs.nestjs.com/faq/request-lifecycle">Request lifecycle</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

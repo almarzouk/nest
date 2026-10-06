@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<ol>
+<li>من أين يُستورد <code>HttpModule</code> في هذا الفصل؟</li>
+<li>أين عنوان الكتاب في رد <code>HttpService</code>؟</li>
+<li>ماذا يعيد <code>lookup</code> عند <code>404</code> الناشر في العقد الذي كتبناه؟</li>
+</ol>
+<details>
+<summary>الحل</summary>
+
+<ol>
+<li>من <code>@nestjs/axios</code>.</li>
+<li>في <code>response.data.title</code>.</li>
+<li><code>null</code>، لا <code>NotFoundException</code> على كتاب المتجر.</li>
+</ol>
+</details>
+
+<h2>متوسط</h2>
+<p>صمم خريطة أخطاء لنداء ISBN: مهلة، غياب، حمولة بلا عنوان، ومفتاح مرفوض. اذكر الرمز الوارد الذي يراه الزائر.</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>مهلة <code>ECONNABORTED</code>: <code>GatewayTimeoutException</code> أي <code>504</code>.</li>
+<li><code>404</code>: <code>null</code> حتى تقرر خدمة الكتب العنوان اليدوي.</li>
+<li><code>200</code> بلا <code>title</code>: <code>BadGatewayException</code>.</li>
+<li><code>401</code> من الناشر: <code>BadGatewayException</code> أيضًا، لأن المفتاح سر الخادم لا جلسة الزائر.</li>
+<li>جسم الناشر لا يُنسخ إلى الرسالة.</li>
+</ul>
+</details>
+
+<h2>متقدم</h2>
+<p>الإنتاج يستعمل <code>@nestjs/axios</code> والتوثيق الذي فتحه زميلك يعرض <code>HttpClient</code> و <code>baseUrl</code>. ماذا تثبت في مراجعة الشيفرة حتى لا يختلط المساران في الملف نفسه؟</p>
+<details>
+<summary>الحل</summary>
+
+<ul>
+<li>هذا الفصل يبقى <code>HttpModule.register</code> و <code>HttpService</code> و <code>baseURL</code> و <code>Observable</code> ثم <code>firstValueFrom</code>.</li>
+<li><code>@nestjs/http-client</code> عميل <code>fetch</code> بوعود وحقل <code>baseUrl</code> ومهلة قد تُكتب مدة نصية. لا تخلط الحقلين في مصنع واحد.</li>
+<li>كلاهما رسمي. اختيار المتجر هنا Axios لأن سلسلة RxJS السابقة تخدمه.</li>
+<li>الاختبار يستبدل <code>IsbnService</code> في الحالتين، فلا يتسرب اختيار الحزمة إلى <code>BooksController</code>.</li>
+</ul>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

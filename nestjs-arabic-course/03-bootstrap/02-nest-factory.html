@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>NestFactory</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-nest-factory.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>NestFactory</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>معرفة أن المصنع هو الباب الوحيد الذي تبني منه التطبيق في هذه الدورة، وما الذي يعيده <code>create</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>تجميع الحاوية ومحوّل HTTP والوحدات يدويًا يكرر ما يفعله الإطار ويفوّت ترتيب الإقلاع. المصنع يوحّد هذه الخطوات.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>NestFactory</code> من <code>@nestjs/core</code> فيه دوال إنشاء التطبيق. <code>create</code> ترجع تطبيق HTTP. دوال أخرى لاحقًا تنشئ سياقًا بلا خادم عندما نحتاج Standalone.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق: <code>create</code> يعيد كائنًا يطبّق <code>INestApplication</code>. تمرير نوع عام مثل <code>NestExpressApplication</code> اختياري ويظهر دوال المنصة على الكائن. المعامل الثاني للمحوّل يختار Fastify بدل Express. الافتراضي Express عبر <code>@nestjs/platform-express</code>.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">NestFactory.create(RootModule, adapter?)
+        |
+        +-- يقرأ الوحدة الجذر
+        +-- يبني الحاوية
+        +-- يركب محوّل HTTP
+        |
+        v
+INestApplication
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">const app = await NestFactory.create(AppModule);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>AppModule</code> الجذر لا كائن Express.</li>
+<li>الناتج <code>app</code> ليس دالة معالج طلب. هو واجهة الإطار: <code>listen</code> و <code>useGlobalPipes</code> وما يشبههما في الفصول القادمة.</li>
+<li>من غير <code>await</code> تحصل على Promise لا على التطبيق.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المصنع ينشئ حاوية، يحمّل الوحدات المستوردة بشكل متحمّس (eager) ما لم نستخدم تحميلًا كسولًا لاحقًا، يسجّل المزوّدات، ينشئها حسب الرسم، ويسجّل المسارات على المحوّل. بعد عودة <code>create</code> المسارات موجودة حتى لو لم يُفتح المنفذ بعد. هذا يفيد الاختبار: يمكن طلب الخادم الداخلي من غير <code>listen</code> على منفذ عام، كما سترى مع Supertest.</p>
+<h2>مثال عملي</h2>
+<p>الوصول إلى API منصة Express فقط عند الحاجة:</p>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import type { NestExpressApplication } from &#39;@nestjs/platform-express&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+const app = await NestFactory.create&lt;NestExpressApplication&gt;(AppModule);
+</code></pre>
+<p>القوس الزاوي نوع فقط. هو لا يبدّل المنصة. تبديل Fastify يكون بتمرير <code>new FastifyAdapter()</code> كما في فصل المقدمة. لا تفعل ذلك في هذا الدرس.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>إنشاء <code>express()</code> إضافي بجانب المصنع.</li>
+<li>اعتبار نوع <code>NestExpressApplication</code> تبديلًا للمنصة.</li>
+<li>استدعاء <code>create</code> أكثر من مرة في العملية نفسها للحصول على &quot;نسختين&quot; من غير قصد. كل استدعاء تطبيق مستقل.</li>
+</ul>
+<h2>متى نستخدم create؟</h2>
+<p>لكل تطبيق HTTP في المسار الأساسي.</p>
+<h2>متى نستخدم مصنعًا بلا HTTP؟</h2>
+<p>عندما تبني مهمة أو أمرًا لا يستمع إلى طلبات. <code>NestFactory.createApplicationContext</code> مسار Standalone في التوثيق. نؤجله حتى لا نخلط الإقلاع.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>استدعاء</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>create(AppModule)</code></td>
+<td>تطبيق HTTP على Express</td>
+</tr>
+<tr>
+<td><code>create(AppModule, new FastifyAdapter())</code></td>
+<td>تطبيق HTTP على Fastify</td>
+</tr>
+<tr>
+<td>سياق Standalone</td>
+<td>وحدات وحاوية بلا منفذ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من أي حزمة يُستورد <code>NestFactory</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@nestjs/core</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا يملك <code>app</code> بعد <code>create</code> وقبل <code>listen</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>تطبيقًا مبنيًا: وحدات ومزوّدات ومسارات مربوطة على المحوّل. المنفذ لم يُفتح بعد.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا اختبار قد يستدعي <code>create</code> ولا يستدعي <code>listen</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>لأن المسارات مسجّلة على خادم المنصة الداخلي بعد البناء. أداة مثل Supertest تستطيع إرسال طلب إلى هذا الخادم من غير فتح منفذ على الجهاز. <code>listen</code> لازم عندما تريد عميلًا خارج العملية.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>create</code>؟</li>
+<li>ماذا لا يفعل النوع العام <code>NestExpressApplication</code>؟</li>
+<li>متى تكون المسارات جاهزة بالنسبة إلى <code>listen</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>NestFactory.create</code> يبني تطبيق HTTP من الوحدة الجذر. المنصة افتراضيًا Express. الاستماع خطوة لاحقة.</p>
+<h2>ماذا بعد؟</h2>
+<p>الوحدة التي تُمرَّر إلى <code>create</code> هي الجذر. نسمي دورها.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — Modules: <a href="https://docs.nestjs.com/modules">https://docs.nestjs.com/modules</a></li>
+<li>NestJS — Standalone applications: <a href="https://docs.nestjs.com/standalone-applications">https://docs.nestjs.com/standalone-applications</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

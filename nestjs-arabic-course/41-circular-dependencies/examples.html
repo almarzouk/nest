@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أمثلة عملية</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="examples.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أمثلة عملية</h1>
+<h2>دورة ملفات تختفي بتغيير الاستيراد</h2>
+<p><code>books/index.ts</code> يصدّر <code>BooksService</code> و <code>BooksController</code>. المتحكم كان يستورد الخدمة من <code>./index.js</code>. غيّره إلى:</p>
+<pre><code class="language-ts">import { BooksService } from &#39;./books.service.js&#39;;
+</code></pre>
+<p>لا دورة منطق هنا. البرميل كان يعيد التحميل. بعد الإصلاح احذف أي <code>forwardRef</code> أضفته قبل أن تتأكد من الرسالة.</p>
+<h2>دورة خدمتين تُفك بوسيط</h2>
+<p>قبلًا <code>BillingService</code> تحقن <code>OrdersService.findTotal</code>. بعدها:</p>
+<pre><code class="language-ts">import { Injectable } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class BillingService {
+  open(orderId: string, totalMinor: number): { orderId: string; totalMinor: number } {
+    return { orderId, totalMinor };
+  }
+}
+</code></pre>
+<p><code>OrdersService</code> تستدعي <code>open</code> وتمرر المجموع. <code>BillingModule</code> لا يستورد <code>OrdersModule</code>.</p>
+<h2>غلاف مؤقت على الطرفين</h2>
+<p>إن بقي حقن متبادل في هذا السحب:</p>
+<pre><code class="language-ts">import { Inject, Injectable, forwardRef } from &#39;@nestjs/common&#39;;
+import { BillingService } from &#39;../billing/billing.service.js&#39;;
+
+@Injectable()
+export class OrdersService {
+  constructor(
+    @Inject(forwardRef(() =&gt; BillingService))
+    private readonly billing: BillingService,
+  ) {}
+}
+</code></pre>
+<p>اكتب الغلاف نفسه في <code>BillingService</code> نحو <code>OrdersService</code>. لا تندِ الطرف الآخر من داخل <code>constructor</code>. وخطّط لحذفه بالوسيط.</p>
+<h2>ورقة مشتركة</h2>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { MoneyService } from &#39;./money.service.js&#39;;
+
+@Module({
+  providers: [MoneyService],
+  exports: [MoneyService],
+})
+export class MoneyModule {}
+</code></pre>
+<p>الميزتان تستوردان <code>MoneyModule</code>. الرسم شجرة، والإقلاع لا يحتاج مصنعًا مؤجلًا.</p>
+<h2>ماذا تتأكد منه</h2>
+<ol>
+<li>استيراد الجار من ملفه لا من <code>index.ts</code>.</li>
+<li>بعد الوسيط تختفي دورة <code>imports</code>.</li>
+<li>مع <code>forwardRef</code>، احذفه من طرف واحد وتأكد أن الإقلاع يفشل، ثم أرجعه. هذا يثبت أن الطرفين لازمان ما دامت الدورة قائمة.</li>
+<li>لا تجمع <code>Scope.REQUEST</code> مع الدورة.</li>
+</ol>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

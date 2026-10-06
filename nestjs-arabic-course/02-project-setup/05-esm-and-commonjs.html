@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ESM و CommonJS</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="05-esm-and-commonjs.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>ESM و CommonJS</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة استيرادات قالب Nest 12 وعدم كسرها بأسلوب <code>require</code> من درس قديم.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نظاما الوحدات في Node يصفان كيف يصدّر ملف رمزًا وكيف يحمّله ملف آخر. خلطهما في المشروع نفسه ينتج أخطاء تحميل غامضة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ESM يستخدم <code>import</code> و <code>export</code> وهو افتراضي <code>nest new</code>. CommonJS يستخدم <code>require</code> و <code>module.exports</code> ويبقى خيارًا في CLI مع Jest.</p>
+<h2>التعريف التقني</h2>
+<p>في ESM مسار الاستيراد النسبي يحدد الملف، ولذلك تكتب <code>.js</code> حتى داخل TypeScript لأن المسار يصف الناتج. الحزم الرسمية لـ Nest 12 ESM. مشروع CommonJS ما زال قادرًا على تحميلها على نسخ Node المدعومة عبر <code>require(esm)</code>. الترقية إلى 12 لا تهاجر مشروعك إلى ESM تلقائيًا؛ <code>nest upgrade</code> يترك ذلك قرارًا لك.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ESM:  import { AppModule } from &#39;./app.module.js&#39;
+CJS:  const { AppModule } = require(&#39;./app.module&#39;)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { NestFactory } from &#39;@nestjs/core&#39;;
+import { AppModule } from &#39;./app.module.js&#39;;
+
+export class Placeholder {}
+</code></pre>
+<h2>شرح المثال</h2>
+<p>السطر الأول يستورد رمزًا مُسمّى من حزمة. السطر الثاني يستورد من ملف محلي مع الامتداد الذي سينتج بعد البناء. <code>export</code> يجعل الرمز متاحًا للمستوردين. لا يوجد <code>require</code> في هذا القالب.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>Node يحمّل ESM بشكل ثابت: الاستيرادات في أعلى الملف وتُحل قبل تنفيذ الجسم. CommonJS يحمّل <code>require</code> حين يصل التنفيذ إليه. أدوات مثل SWC و Vitest في القالب مضبوطة على النظام الذي اخترته. تغيير حقل type في package.json من غير تحويل الاستيرادات يكسر التشغيل.</p>
+<h2>مثال عملي</h2>
+<p>أبقِ مشروع الدورة ESM. عندما تنسخ مثالًا من مقال يستخدم <code>require</code>، حوّله إلى <code>import</code> قبل لصقه. الحزم التي لا توفّر ESM تحتاج قرارًا لاحقًا، لا خلطًا عشوائيًا في <code>main.ts</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حذف <code>.js</code> من الاستيراد المحلي لأن الملف على القرص <code>.ts</code>. في قالب ESM البناء يفشل أو المحمّل لا يجد الملف.</li>
+<li>استخدام <code>import type</code> لخدمة تُحقن.</li>
+<li>افتراض أن كل مثال على الإنترنت CommonJS ما زال هو افتراضي Nest.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>ESM لكل مشروع جديد في هذه الدورة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تحوّل مكتبة قديمة كبيرة إلى ESM في منتصف فصل تعليمي. إن وُجد مشروع CommonJS قائم، <code>nest upgrade</code> يبقيه ويبقي Jest.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>ESM</th>
+<th>CommonJS</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>الصيغة</td>
+<td>import/export</td>
+<td>require/module.exports</td>
+</tr>
+<tr>
+<td>اختبار القالب</td>
+<td>Vitest</td>
+<td>Jest</td>
+</tr>
+<tr>
+<td>امتداد الاستيراد المحلي</td>
+<td><code>.js</code> في المصدر TS</td>
+<td>غالبًا بلا امتداد في الأسلوب القديم</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما صيغة الاستيراد في القالب الافتراضي؟</p>
+<details><summary>الحل</summary>
+
+<p><code>import { Symbol } from &#39;...&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا الامتداد <code>.js</code> داخل ملف TypeScript؟</p>
+<details><summary>الحل</summary>
+
+<p>لأنه مسار ناتج ESM بعد الترجمة، و TypeScript يطابقه مع المصدر أثناء الفحص.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مشروع CommonJS على Node 22 يحمّل <code>@nestjs/core</code> بنجاح. ما الميزة التي جعلت ذلك ممكنًا من غير تحويل المشروع كله؟</p>
+<details><summary>الحل</summary>
+
+<p>دعم <code>require(esm)</code> في نسخة Node التي يشترطها Nest 12.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما افتراضي <code>nest new</code>؟</li>
+<li>ماذا يحدث لو حذفت <code>.js</code> من استيراد محلي في ESM؟</li>
+<li>هل الترقية إلى 12 تجبر ESM؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>القالب الحديث ESM. اكتب <code>import</code> واترك امتداد <code>.js</code> في المسارات المحلية.</p>
+<h2>ماذا بعد؟</h2>
+<p>نقرأ الملفات الخمسة داخل <code>src/</code>.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — First steps: <a href="https://docs.nestjs.com/first-steps">https://docs.nestjs.com/first-steps</a></li>
+<li>NestJS — CLI overview: <a href="https://docs.nestjs.com/cli/overview">https://docs.nestjs.com/cli/overview</a></li>
+<li>NestJS — CLI scripts: <a href="https://docs.nestjs.com/cli/scripts">https://docs.nestjs.com/cli/scripts</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

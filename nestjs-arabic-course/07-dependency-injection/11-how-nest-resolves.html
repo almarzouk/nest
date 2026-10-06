@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>كيف تحل NestJS الاعتمادية داخليًا</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="11-how-nest-resolves.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>كيف تحل NestJS الاعتمادية داخليًا</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ترتيب ما تفعله Nest من Metadata حتى تمرير الوسائط إلى المُنشئ، كما يصفه التوثيق.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>الدروس السابقة فصلت <code>new</code> و DI و IoC والانقلاب والحاوية والرمز والعمر والرسم. التشغيل اليومي يصطدم برسالة واحدة: Nest لا تستطيع حل اعتمادية عند فهرس معامل. هذا الدرس يجمع الخطوات التي تؤدي إلى تلك الرسالة أو إلى نسخة جاهزة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>ثلاث خطوات في توثيق Custom providers: <code>@Injectable()</code> يعلن أن الحاوية تدير الصنف، والمُنشئ يعلن الرمز، و <code>providers</code> يربط الرمز بالوصفة. عند إنشاء المستهلك تُحل الاعتماديات من الأسفل، ومع Singleton تُنشأ النسخة مرة وتُخزَّن أو تُعاد إن كانت مخزنة. التحليل يحدث أثناء الإقلاع وهو متعدٍ.</p>
+<h2>التعريف التقني</h2>
+<ol>
+<li><code>NestFactory.create</code> يبدأ من Module الجذر ويمشي على <code>imports</code>.</li>
+<li>كل عنصر في <code>providers</code> يصبح خانة. الاختصار <code>{ provide: DraftService, useClass: DraftService }</code>.</li>
+<li>لكل صنف مُدار تُقرأ معاملات المُنشئ: <code>@Inject</code> إن وُجد، وإلا <code>design:paramtypes</code> التي أصدرها Decorator الصنف.</li>
+<li>الواجهة و <code>import type</code> يتركان الخانة بلا مفتاح، فتفشل الخطوة.</li>
+<li>الطلبات تُجمع في رسم متعدٍ.</li>
+<li>الحل من الأوراق: <code>useValue</code> تعيد المرجع، <code>useClass</code> تبني بعد حل مُنشئ الهدف، <code>useFactory</code> تُنادى بعد <code>inject</code>، <code>useExisting</code> يتبع مفتاحًا آخر.</li>
+<li>نطاق <code>DEFAULT</code> يخزّن الناتج في الخانة. طلب لاحق للمفتاح يعيد المخزن.</li>
+<li>الوسائط تُمرَّر إلى مُنشئ المستهلك بالترتيب.</li>
+<li>Controller يُبنى بالطريقة نفسها بعد حل خدماته، ثم تُربط مساراته.</li>
+</ol>
+<p><code>@Optional()</code> على معامل: الخطوة 6 عند غياب الخانة تعيد <code>undefined</code> لذلك الفهرس فقط.</p>
+<p>متغير البيئة <code>NEST_DEBUG</code> يضيف سجلات الحل أثناء الإقلاع عندما تكبر الشجرة. هو أداة تشخيص موثّقة، لا جزءًا من الكود الإنتاجي الدائم.</p>
+<p>أسماء أصناف داخل محرك Nest تتغير بين الإصدارات. السلوك الذي يُبنى عليه التطبيق هو هذه الخطوات، لا اسم صنف داخلي.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">اقرأ Module
+  سجّل المفاتيح
+  اقرأ المُنشئات
+  رتّب الأوراق ثم الجذر
+  خزّن Singleton
+  نادِ constructor(ready, ready)
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Injectable, Module } from &#39;@nestjs/common&#39;;
+
+@Injectable()
+export class SystemClock {
+  now() {
+    return new Date();
+  }
+}
+
+@Injectable()
+export class TaxPolicy {
+  constructor(private readonly clock: SystemClock) {}
+
+  rate() {
+    return this.clock.now().getMonth() === 11 ? 0.05 : 0.15;
+  }
+}
+
+@Injectable()
+export class DraftService {
+  constructor(private readonly tax: TaxPolicy) {}
+
+  total(net: number) {
+    return net * (1 + this.tax.rate());
+  }
+}
+
+@Module({
+  providers: [SystemClock, TaxPolicy, DraftService],
+})
+export class AcquisitionModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>SystemClock</code> ورقة: مصفوفة أنواعها فارغة، فالحل ينشئها أولًا ويخزنها.</li>
+<li><code>TaxPolicy</code> مفتاح معاملها <code>SystemClock</code> لأن الاستيراد قيمة و <code>@Injectable()</code> أصدر النوع.</li>
+<li><code>DraftService</code> تُبنى بعد السياسة، وداخلها الساعة أصلًا لأن الرسم متعدٍ.</li>
+<li>لا يوجد <code>new DraftService</code> في ملف التطبيق. <code>create</code> على الجذر الذي يستورد هذه الـ Module يؤدي الخطوات.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>فهرس المعامل في رسالة الخطأ يعدّ من الصفر: المعامل الثاني الذي نوعه ممسوح يظهر كموضع لا يُحل. أصلح ذلك الموضع: استيراد قيمة، أو <code>@Inject</code>، أو تسجيل المفتاح في السياق المرئي، أو <code>exports</code> إن كان المفتاح في Module أخرى.</p>
+<p><code>useFactory</code> غير المتزامنة توقف السلسلة عند تلك العقدة حتى يكتمل الوعد، ثم تكمل نحو الجذر. لذلك تتأخر جاهزية التطبيق إن كانت الورقة الثقيلة Singleton.</p>
+<p>نطاق <code>REQUEST</code> يعيد الخطوات 6 إلى 8 لكل طلب على الفرع المصاب، بعد أن بقي التسجيل من الإقلاع. هذا الدرس لا يغيّر تلك القاعدة.</p>
+<p>Controller:</p>
+<pre><code class="language-ts">@Controller(&#39;drafts&#39;)
+export class DraftsController {
+  constructor(private readonly drafts: DraftService) {}
+}
+</code></pre>
+<p><code>@Controller</code> يصدر أنواع المعاملات. الحل يجد <code>DraftService</code> في الخانة ويمررها. ثم يسجل <code>@Get</code> على النسخة.</p>
+<p>دورة في الرسم توقف الخطوة 6 لأن لا ورقة تبدأ. العلاج في فصل Circular Dependencies.</p>
+<h2>مثال عملي</h2>
+<p>رسالة على المعامل الأول من <code>DraftService</code> بعد أن كتب أحدهم <code>import type { TaxPolicy }</code>. الخطوة 3 لا تجد مفتاحًا. الإصلاح إعادة استيراد القيمة. إن كانت <code>TaxPolicy</code> في <code>BillingModule</code> غير مصدَّرة، الخطوة 6 لا تجد الخانة في سياق المشتريات: أضف <code>exports</code> ثم <code>imports</code>. العَرضان رسالة حل، والخطوة الفاشلة مختلفة.</p>
+<p>تشغيل التشخيص محليًا:</p>
+<pre><code class="language-bash">NEST_DEBUG=true npm run start
+</code></pre>
+<p>السجل يتبع المفاتيح التي تُحل. بعد الإصلاح أزل المتغير حتى يبقى الإقلاع هادئًا.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الخطوة التي تفشل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نسيان الصنف في <code>providers</code></td>
+<td>6، المفتاح بلا خانة في السياق</td>
+</tr>
+<tr>
+<td><code>import type</code> أو واجهة</td>
+<td>3، لا مفتاح في Metadata</td>
+</tr>
+<tr>
+<td>الاعتماد على ترتيب المصفوفة</td>
+<td>لا خطوة تقرأ الترتيب كأسبقية</td>
+</tr>
+<tr>
+<td>البحث عن اسم صنف داخلي في التوثيق السطحي</td>
+<td>السلوك موثّق بالرسم والتخزين لا بأسماء المحرك</td>
+</tr>
+<tr>
+<td>دورة بلا كسر</td>
+<td>6، لا ورقة تُبنى</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عند قراءة رسالة إقلاع أو عند تخيل طريق <code>TaxPolicy</code> من الملف إلى المُنشئ. تتبّع الخطوات التسعة بالترتيب بدل تجربة <code>new</code> داخل الخدمة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تعطّل الحل ببناء الخدمات في <code>main</code> ثم تمريرها إلى Nest بطريقة جانبية. الوصفة <code>useValue</code> موجودة إن كانت القيمة جاهزة خارج الرسم، وتبقى خانة صريحة. تجنب نسخ المحرك أو الاعتماد على حقوله الخاصة.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المرحلة</th>
+<th>الناتج</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>قراءة <code>imports</code></td>
+<td>السياقات التي تدخل الرسم</td>
+</tr>
+<tr>
+<td>Registration</td>
+<td>مفتاح إلى وصفة</td>
+</tr>
+<tr>
+<td>قراءة المُنشئ</td>
+<td>مفتاح لكل معامل</td>
+</tr>
+<tr>
+<td>Resolution من الأوراق</td>
+<td>قيم جاهزة</td>
+</tr>
+<tr>
+<td>تخزين <code>DEFAULT</code></td>
+<td>مرجع ثابت لبقية العمر</td>
+</tr>
+<tr>
+<td>بناء Controller</td>
+<td>مسارات على نسخة حُلّت خدماتها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ما أول مكان تبدأ منه <code>NestFactory.create</code> في الرسم؟</p>
+<details><summary>الحل</summary>
+
+<p>Module الجذر، ثم ما تصل إليه عبر <code>imports</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>معامل واحد في <code>DraftService</code> ورسالته تقول إن الاعتمادية لا تُحل عند الفهرس 0. ماذا تراجع في Metadata قبل أن تراجع <code>exports</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>أن <code>TaxPolicy</code> صنف مستورد استيراد قيمة، وأن <code>@Injectable()</code> على الخدمة. <code>import type</code> أو واجهة تعني أن الخطوة 3 بلا مفتاح، و <code>exports</code> لن تُصلح مفتاحًا غير موجود.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>رتّب بناء مثال هذا الدرس، ثم قل متى تُنادى <code>useFactory</code> غير متزامنة لو استُبدلت بـ <code>SystemClock</code>.</p>
+<details><summary>الحل</summary>
+
+<p>الساعة، ثم السياسة، ثم المسودة، ثم Controller إن وُجد. المصنع غير المتزامن في موضع الساعة يُنتظَر قبل بناء السياسة وما فوقها، لذلك يتأخر اكتمال <code>create</code> كله ضمن Singleton.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ما الخطوات الثلاث التي يلخصها توثيق DI fundamentals؟</li>
+<li>أين يُخزَّن ناتج الحل للنطاق الافتراضي؟</li>
+<li>ماذا يضيف <code>NEST_DEBUG</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Nest تسجل المفاتيح من Module، وتقرأ المُنشئات، وتحل الرسم من الأوراق، وتخزن Singleton، وتمرر الوسائط إلى المُنشئ. الرسالة عند الإقلاع تشير إلى مفتاح ممسوح أو خانة غير مرئية أو دورة، لا إلى نقص <code>new</code> داخل الدالة.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع سياسة وضريبة وساعة على مكتب المشتريات، ثم طلب HTTP يمشي على النسخ الجاهزة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+<li>NestJS — Providers: <a href="https://docs.nestjs.com/providers">https://docs.nestjs.com/providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

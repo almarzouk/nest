@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Audit Logs</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-audit-logs.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Audit Logs</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل نشر المشروع ودعوة العضو في رف داخل نفس معاملة الأثر، بصف إلحاق يقرأه مدير المكتبة فقط.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>النشر ينجح ولا أحد يعرف الفاعل. أو السجل يُكتب بعد الرد فينقطع. أو مدير دار النيل يرى تدقيق مكتبة أخرى لأن الاستعلام بلا <code>organizationId</code>. أو السطر يحفظ كلمة مرور الدعوة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>AuditLog</code> يُدرج مع <code>UPDATE</code> النشر ومع إنشاء العضوية. الحقول: فاعل من الإثبات، فعل مغلق، معرّف الهدف. لا حذف من API. القراءة قائمة 200 فارغة إن لم يحدث شيء، بصلاحية المالك.</p>
+<h2>التعريف التقني</h2>
+<p>فهرس <code>(organizationId, createdAt)</code>. <code>action</code> مثل <code>project.publish</code> و <code>member.invite</code>. <code>metadata</code> اختياري فيه العنوان لا الرمز. الشكل مختلف عن جسم خطأ HTTP وعن سجل <code>Logger</code>. لا تحدّثوا السطر عند التراجع عن النشر؛ أضيفوا <code>project.unpublish</code> إن وُجد المسار.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">tx: مشروع published + سطر project.publish
+قراءة لاحقة GET /audit-logs لنفس المنظمة
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">await tx.auditLog.create({
+  data: {
+    organizationId,
+    actorUserId,
+    action: &#39;project.publish&#39;,
+    targetType: &#39;project&#39;,
+    targetId: projectId,
+  },
+});
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>داخل نفس <code>tx</code> التي تغيّر <code>status</code>.</li>
+<li>الفاعل وسيط من المتحكم لا من الجسم.</li>
+<li>لا <code>payload</code> للطلب كاملًا.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li><code>publish</code> يفحص الخطة.</li>
+<li>يبدأ معاملة: تحديث المشروع إن كان <code>draft</code> وتابعًا للمنظمة، ثم السطر.</li>
+<li>الالتزام معًا.</li>
+<li>فشل السطر يتراجع عن النشر.</li>
+<li><code>GET</code> يقيّد المنظمة ويعيد <code>{ data, nextCursor }</code> وقد يكون <code>data</code> فارغًا بـ 200.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@Get()
+logs() {
+  return this.audit.list(currentTenantId());
+}
+</code></pre>
+<p>الحارس <code>audit.read</code> للمالك. <code>editor</code> يأخذ 403. هذا ليس <code>/health</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كتابة السجل في مستمع ذاكرة بعد الالتزام فقط، فيضيع عند القتل قبل المستمع.</li>
+<li>حذف السطر من واجهة المدير.</li>
+<li>خلط <code>requestId</code> التشغيلي كبديل عن اسم الفعل.</li>
+<li>تسجيل <code>GET /projects</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>على النشر والدعوة وتغيّر الخطة عندما يكتبه الويب هوك كفاعل <code>system</code>.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسجلوا قائمة المشاريع. ولا تضعوا فيه stack.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>تدقيق</th>
+<th>إشعار</th>
+<th>سجل تشغيلي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>متى</td>
+<td>مع المعاملة</td>
+<td>صف pending</td>
+<td>عند الطلب</td>
+</tr>
+<tr>
+<td>من يقرأ</td>
+<td>مالك المكتبة</td>
+<td>قناة الشخص</td>
+<td>المشغّل</td>
+</tr>
+<tr>
+<td>حذف</td>
+<td>لا</td>
+<td>لا يلزم</td>
+<td>أداة خارجية</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل قائمة تدقيق فارغة 404؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. 200 و <code>data: []</code> مثل قائمة المشاريع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا السطر داخل معاملة النشر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا يُنشر مشروع بلا أثر أو يُكتب أثر بلا نشر. التراجع يشمل الاثنين.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>الويب هوك يضع <code>active</code>. أي فاعل يُكتب إن سجّلتم تغيير الخطة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>فاعل نظام مثل <code>system:stripe</code> لا مستخدم من جسم الحدث. <code>organizationId</code> من عميل Stripe المخزن. لا <code>actorUserId</code> من JSON.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي فعلان يُسجَّلان في هذه الشريحة؟</li>
+<li>لماذا لا حذف؟</li>
+<li>من يقرأ القائمة؟</li>
+<li>ما الفرق عن الإشعار؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>التدقيق إلحاق داخل معاملة النشر والدعوة، مقيد بالمنظمة، بلا أسرار وبلا 404 للقائمة الفارغة.</p>
+<h2>ماذا بعد؟</h2>
+<p>توليد غلاف أو تصدير لا ينتظر داخل طلب النشر. الدرس التالي المهام.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Prisma: <a href="https://docs.nestjs.com/data/prisma">https://docs.nestjs.com/data/prisma</a></li>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/application/logger">https://docs.nestjs.com/application/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

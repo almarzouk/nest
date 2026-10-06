@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Swagger</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="13-swagger.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Swagger</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>نشر عقد REST لرف من الكود عبر OpenAPI حتى ترى الواجهة 201 والقائمة وشكل الخطأ من غير قراءة المتحكمات.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>العقد في رسالة. الواجهة تتوقع 200 على الإنشاء لأن المخطط وُلد من دالة بلا <code>@HttpCode</code>. شكل الخطأ غير ظاهر. مسارات الويب هوك تظهر كأنها للموظف.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>SwaggerModule</code> من <code>@nestjs/swagger</code> يبني الوثيقة من الديكورات. علّموا الإنشاء 201 والقائمة بنوع الغلاف وخطأ <code>project_not_found</code>. أخفوا <code>/webhooks/stripe</code> من وثيقة العميل العام أو ضعوها في وثيقة داخلية. GraphQL ليس هذا الملف؛ له مخططه.</p>
+<h2>التعريف التقني</h2>
+<p><code>DocumentBuilder</code> يضبط العنوان و <code>addBearerAuth</code> أو وصف الجلسة حسب قناة الإثبات التي اخترتموها في درس Auth. <code>@ApiCreatedResponse</code> على <code>POST /projects</code>. <code>@ApiOkResponse</code> على القائمة يوضح أن <code>data</code> قد تكون فارغة. <code>@ApiNotFoundResponse</code> بشكل <code>{ statusCode, code, message }</code>. لا تضعوا سر Stripe في مثال الجسم. الوثيقة على <code>/docs</code> في التطوير. الإنتاج قد يغلق المسار أو يحميه.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">ديكور على المسار → openapi.json
+الواجهة تقرأ الرموز لا تخمّنها
+ويب هوك خارج وثيقة الموظف
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { DocumentBuilder, SwaggerModule } from &#39;@nestjs/swagger&#39;;
+
+const config = new DocumentBuilder().setTitle(&#39;Raf&#39;).setVersion(&#39;1&#39;).addBearerAuth().build();
+const document = SwaggerModule.createDocument(app, config);
+SwaggerModule.setup(&#39;docs&#39;, app, document);
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الإصدار هنا إصدار وثيقة لا <code>enableVersioning</code> إلا إن فعّلتموه.</li>
+<li><code>addBearerAuth</code> يطابق الرموز إن كانت هي القناة. الجلسة تُوصف نصًا حتى لا تُعلِم الواجهة ترويسة كاذبة.</li>
+<li>المسار <code>/docs</code> لا يُسجَّل كصحة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>عند الإقلاع تُمسح الديكورات.</li>
+<li><code>POST /projects</code> يظهر 201 وشكل <code>Project</code>.</li>
+<li><code>GET /projects</code> يظهر 200 والغلاف.</li>
+<li>الأخطاء المعلّمة تظهر بالمكوّن المشترك.</li>
+<li>مسار بلا ديكور قد يولد شكلًا ناقصًا. علّموا ما تحتاجه الواجهة ولا تثقوا بالتوليد الأعمى لحالة النشر.</li>
+</ol>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">@ApiCreatedResponse({ description: &#39;Draft project created&#39; })
+@Post()
+@HttpCode(201)
+create(@Body() body: CreateProjectDto) {
+  return this.projects.create(currentTenantId(), body.title);
+}
+</code></pre>
+<p><code>CreateProjectDto</code> فيه <code>title</code> فقط. لا حقل <code>organizationId</code> حتى لا توثّقوا مصدرًا مرفوضًا. <code>@ApiProperty()</code> على الحقل إن لم تستعملوا الإضافة التي تستنتج الأنواع.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>وثيقة تقول 200 والإنشاء 201 في الكود.</li>
+<li>مثال success يغيّر الاشتراك.</li>
+<li>إظهار سر الويب هوك كترويسة على وثيقة عامة بلا تحذير أنه سر وجهة لا سر موظف.</li>
+<li>اعتبار Swagger بديلًا عن اختبار العزل.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما يثبت مسار المشاريع والمنظمة. حدّثوا الديكور في نفس التغيير الذي يغيّر الرمز.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تولّدوا عميلًا لكل بيئة. ولا توثّقوا GraphQL داخل OpenAPI كمسارات وهمية.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>البند</th>
+<th>في الوثيقة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>إنشاء مشروع</td>
+<td>201 بلا <code>organizationId</code> في الجسم</td>
+</tr>
+<tr>
+<td>قائمة فارغة</td>
+<td>200</td>
+</tr>
+<tr>
+<td>success للدفع</td>
+<td>قراءة حالة لا كتابة</td>
+</tr>
+<tr>
+<td>ويب هوك Stripe</td>
+<td>خارج وثيقة الموظف أو موسوم كداخلي</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي ديكور يعلن 201؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@ApiCreatedResponse</code> مع <code>@HttpCode(201)</code> حتى يتفق الكود والوثيقة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>organizationId</code> ليس في <code>CreateProjectDto</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى لا تدعو الوثيقة العميل لإرساله. المصدر السياق. وجوده في المثال يعيد الثقب الذي أغلقه الحارس.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>ما الذي لا يثبت OpenAPI رغم صحته؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أن منظمة لا تقرأ مشاريع أخرى. ذلك اختبار. الوثيقة تصف الشكل والرمز لا العزل الفعلي.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>من أين تُولَّد الوثيقة؟</li>
+<li>ماذا يغيب عن جسم الإنشاء؟</li>
+<li>أين يُذكر أن القائمة قد تفرغ؟</li>
+<li>لماذا الويب هوك ليس مع مسارات الموظف؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>Swagger يعرض عقد رف: 201 للإنشاء، 200 لقائمة قد تفرغ، وخطأ بلا سر. الوثيقة لا تثبت العزل ولا تفعّل الاشتراك.</p>
+<h2>ماذا بعد؟</h2>
+<p>التشغيل والاختبار الذي يثبت العزل. الدرس التالي Docker والاختبارات، وهو آخر شريحة النطاق.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — OpenAPI: <a href="https://docs.nestjs.com/openapi/introduction">https://docs.nestjs.com/openapi/introduction</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Tokens</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-tokens.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Tokens</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>فهم الرمز كمفتاح بحث في الحاوية: لماذا يصلح الصنف، ومتى يتصادم النص، ولماذا هوية <code>Symbol</code> هي المتغير نفسه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>فصل Providers عرّف النص والـ <code>Symbol</code> كأدوات تسجيل. هنا السؤال داخل الحل: الحاوية لا تبحث بالاسم الذي يراه الإنسان، بل بمفتاح. مفتاحان بوصف واحد قد يكونان خانتين، ونص واحد في سياقين قد يكون خانة تُستبدل.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الرمز مفتاح الخانة. الصنف مفتاح لأن الدالة البانية كائن فريد في الذاكرة بعد التحميل. النص مفتاح بالمساواة اللغوية، فيتطابق <code>&#39;TAX&#39;</code> مع <code>&#39;TAX&#39;</code> من ملف آخر. <code>Symbol</code> مفتاح بالهوية، فـ <code>Symbol(&#39;TAX&#39;)</code> الجديد لا يفتح الخانة التي فُتحت بـ <code>Symbol(&#39;TAX&#39;)</code> الأول.</p>
+<h2>التعريف التقني</h2>
+<p>الاستنتاج من <code>design:paramtypes</code> يستخدم الصنف مفتاحًا. <code>@Inject(token)</code> يضع المفتاح صراحة، ويتقدم على النوع. لذلك واجهة بجانب <code>@Inject(TAX)</code> لا تحتاج أن تكون مفتاحًا.</p>
+<p>التوثيق يسمح بنص أو <code>Symbol</code> أو <code>enum</code>. الـ <code>enum</code> العددي أو النصي كائن يبقى وقت التشغيل، فمفتاحه القيمة التي تمررها لـ <code>provide</code> و <code>@Inject</code> نفسها.</p>
+<p>تصادم النص يحدث عندما يسجل سياقان مرئيان معًا <code>provide: &#39;CONFIG&#39;</code>. أحدهما يستبدل الآخر أو يلتبس أي قيمة وصلت إلى المُنشئ. <code>Symbol</code> المصدَّر من ملف <code>tax.token.ts</code> يمنع ذلك ما دام الطرفان يستوردان المتغير نفسه.</p>
+<pre><code class="language-ts">export const TAX = Symbol(&#39;TAX&#39;);
+</code></pre>
+<p>لا تكتب <code>Symbol(&#39;TAX&#39;)</code> داخل <code>@Inject</code> مباشرة في كل ملف. ذلك ينشئ مفتاحًا لا يطابق التسجيل.</p>
+<p>الصنف المجرد مفتاح من نوع «دالة بانية» لا من نوع <code>Symbol</code>. حقنه يتم بالنوع في المُنشئ. اختره عندما تريد مفتاحًا ووصف دوال في أثر واحد. اختر <code>Symbol</code> عندما يجب أن يبقى المفتاح خارج شجرة الوراثة.</p>
+<p><code>useExisting</code> لا يصنع قيمة جديدة؛ هو مفتاح يتبع مفتاحًا آخر عند الحل. المفتاحان مختلفان والخانة المنفَّذة واحدة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">خريطة السياق
+  [دالة TaxPolicy] -&gt; وصفة
+  [Symbol TAX]     -&gt; وصفة
+  [&quot;TAX&quot;]          -&gt; وصفة قد تصطدم بنص آخر
+</code></pre>
+<p>المقارنة للمفتاح كما في <code>Map</code>: الصنف والـ <code>Symbol</code> بالمرجع، والنص بالمحتوى.</p>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Inject, Injectable } from &#39;@nestjs/common&#39;;
+import type { TaxQuote } from &#39;./tax-quote.js&#39;;
+import { TAX } from &#39;./tax.token.js&#39;;
+
+@Injectable()
+export class DraftService {
+  constructor(@Inject(TAX) private readonly quote: TaxQuote) {}
+
+  total(net: number) {
+    return net * (1 + this.quote.rate);
+  }
+}
+</code></pre>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { DraftService } from &#39;./draft.service.js&#39;;
+import { TAX } from &#39;./tax.token.js&#39;;
+
+@Module({
+  providers: [
+    DraftService,
+    { provide: TAX, useValue: { rate: 0.15 } },
+  ],
+})
+export class AcquisitionModule {}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>TAX</code> في الملفين استيراد للمتغير نفسه، فالهوية واحدة.</li>
+<li><code>TaxQuote</code> نوع فقط: <code>{ rate: number }</code> مثلًا، ولا يدخل <code>provide</code>.</li>
+<li><code>useValue</code> يضع الكائن تحت الـ <code>Symbol</code> لا تحت اسم الخدمة.</li>
+<li><code>DraftService</code> لا تذكر صنف ضريبة. المفتاح مستقل عن التنفيذ.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند قراءة معاملات <code>DraftService</code> تجد Nest بيانات <code>@Inject</code> تحمل مرجع <code>TAX</code>. تبحث في خريطة السياق بهذا المرجع. الخانة التي فُتحت بـ <code>provide: TAX</code> تُحل وتُمرَّر. بحث متوازٍ بالنص <code>&#39;TAX&#39;</code> لا يرى هذه الخانة.</p>
+<p>إن حُمّل الملف مرتين بمسارين مختلفين في ESM فقد تحصل على نسختين من المتغير. في مشروع Nest المعتاد ملف الرمز يُحمَّل مرة، والاستيراد من المسار نفسه يعيد الهوية. أبقِ الرمز في ملف واحد حتى يبقى هذا الضمان واضحًا.</p>
+<p><code>enum</code> يعمل لأن العضو قيمة ثابتة. مرّر العضو نفسه في <code>provide</code> و <code>@Inject</code>، لا نص العضو إن كان المفتاح هو العضو العددي.</p>
+<h2>مثال عملي</h2>
+<p>مفتاحان متعمدان لسياستين:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { IMPORT_TAX, LOCAL_TAX } from &#39;./tax.tokens.js&#39;;
+
+@Module({
+  providers: [
+    { provide: LOCAL_TAX, useValue: { rate: 0.15 } },
+    { provide: IMPORT_TAX, useValue: { rate: 0.05 } },
+  ],
+  exports: [LOCAL_TAX, IMPORT_TAX],
+})
+export class TaxModule {}
+</code></pre>
+<p>نصان <code>&#39;TAX&#39;</code> ما كانا ليحملا سعرين في السياق نفسه. <code>Symbol</code> لكل سياسة خانة. المستهلك الذي يحتاج الاثنين يحقن <code>@Inject(LOCAL_TAX)</code> و <code>@Inject(IMPORT_TAX)</code> في مُنشئ واحد. التصدير ينشر المفتاحين لا الكائن فقط.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Inject(Symbol(&#39;TAX&#39;))</code> عند كل استخدام</td>
+<td>مفتاح جديد في كل تقييم، والخانة لا تُفتح</td>
+</tr>
+<tr>
+<td><code>&#39;CONFIG&#39;</code> مشترك بين مكتبتين في Module واحدة</td>
+<td>قيمة واحدة تزيح الأخرى تحت المفتاح اللغوي نفسه</td>
+</tr>
+<tr>
+<td>البحث عن الصنف بينما <code>provide</code> هو <code>Symbol</code></td>
+<td>خانة الصنف غير موجودة</td>
+</tr>
+<tr>
+<td>اعتبار <code>useExisting</code> مفتاحًا ينسخ القيمة</td>
+<td>المفتاحان يتبعان حلًا واحدًا</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما لا يكون المفتاح صنف الخدمة نفسه: سياسة قابلة للاستبدال، أو ثابت، أو تنفيذان تحت عقد واحد. <code>Symbol</code> مصدَّر هو الافتراضي الآمن خارج الأمثلة القصيرة. الصنف الملموس يبقى مفتاحًا أفضل لخدمة واحدة مستقرة.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تضع <code>Symbol</code> على <code>DraftService</code> التي تُسجَّل باختصار وتُحقن بنوعها. مفتاح إضافي من غير تنفيذ ثانٍ يكرر الاسم. ولا تستخدم النص العام <code>CONFIG</code> في مكتبة سيعاد استعمالها داخل تطبيقات لا تملكها.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>المفتاح</th>
+<th>المساواة في الخريطة</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>صنف أو صنف مجرد</td>
+<td>مرجع الدالة البانية</td>
+</tr>
+<tr>
+<td><code>Symbol</code> المصدَّر</td>
+<td>مرجع ذلك الرمز</td>
+</tr>
+<tr>
+<td><code>Symbol(&#39;TAX&#39;)</code> مضمّن في كل ملف</td>
+<td>مراجع مختلفة، خانات مختلفة</td>
+</tr>
+<tr>
+<td>نص</td>
+<td>تطابق المحتوى، واحتمال التصادم</td>
+</tr>
+<tr>
+<td><code>enum</code></td>
+<td>قيمة العضو نفسها في الطرفين</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا يفتح الصنف خانة من غير <code>@Inject</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>الدالة البانية تبقى بعد الترجمة وتُكتب في <code>design:paramtypes</code>، فتستخدمها الحاوية مفتاح بحث.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا لا يرى <code>@Inject(&#39;TAX&#39;)</code> قيمة سُجّلت تحت <code>const TAX = Symbol(&#39;TAX&#39;)</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>النص والـ <code>Symbol</code> مفتاحان مختلفان في الخريطة. الحقن يجب أن يمرر <code>TAX</code> نفسه الذي وُضع في <code>provide</code>.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>متى تفضّل صنفًا مجردًا على <code>Symbol</code> كمفتاح لسياسة الضريبة؟</p>
+<details><summary>الحل</summary>
+
+<p>عندما تريد أن يكون <code>rate()</code> عقدًا ورمز حاوية معًا، ويُحقن <code>constructor(tax: TaxPolicy)</code> من غير <code>@Inject</code>. <code>Symbol</code> أنسب عندما تبقى القيمة كائنًا بلا وراثة، أو عندما تخاف تصادم الأسماء في مكتبة.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>بمَ تقارن الحاوية مفتاح <code>Symbol</code>؟</li>
+<li>لماذا يتصادم نص <code>&#39;CONFIG&#39;</code>؟</li>
+<li>ماذا يتقدم على <code>design:paramtypes</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الرمز مفتاح خانة: مرجع للصنف وللـ <code>Symbol</code>، ومحتوى للنص. المفتاح الذي تكتبه في <code>provide</code> هو الذي يُعاد في <code>@Inject</code> أو في نوع المعامل، ومتغير <code>Symbol</code> واحد يمنع فتح خانة فارغة بالخطأ.</p>
+<h2>ماذا بعد؟</h2>
+<p>عمر النسخة الافتراضية بعد أن وُجد المفتاح: Singleton Lifecycle.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Non-class-based tokens: <a href="https://docs.nestjs.com/fundamentals/custom-providers#non-class-based-provider-tokens">https://docs.nestjs.com/fundamentals/custom-providers#non-class-based-provider-tokens</a></li>
+<li>NestJS — DI fundamentals: <a href="https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals">https://docs.nestjs.com/fundamentals/custom-providers#di-fundamentals</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

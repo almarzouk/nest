@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Standard Nest Response Handling</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="12-standard-response-handling.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Standard Nest Response Handling</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>ماذا يحدث للقيمة التي يعيدها المعالج عندما يبقى الإرسال عند Nest.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>بناء <code>res.status().json()</code> في كل مسار يكرر التسلسل والرمز. الأسلوب القياسي يعيد قيمة، وNest تختار JSON أو إرسالًا خامًا، وتنتظر <code>Promise</code>، وتشترك في <code>Observable</code> حتى آخر قيمة.</p>
+<h2>الفكرة ببساطة</h2>
+<p>كائن أو مصفوفة تُسلسل JSON. النص والعدد والقيمة المنطقية تُرسل كما هي من غير محاولة تسلسل JSON. الرمز 200، و POST يستخدم 201، إلا إذا غيّره <code>@HttpCode</code>. <code>@Header</code> يضيف رأس استجابة مع بقاء هذا الأسلوب.</p>
+<h2>التعريف التقني</h2>
+<p>التوثيق يسمّي هذا الخيار Standard. الشرط أن المعالج لا يستخدم <code>@Res()</code> أو <code>@Next()</code> من غير <code>passthrough</code>.</p>
+<pre><code class="language-ts">@Get(&#39;count&#39;)
+async count(): Promise&lt;number&gt; {
+  return this.members.count();
+}
+</code></pre>
+<p>Nest تنتظر الـ Promise ثم تطبق قاعدة النوع على القيمة المحلولة.</p>
+<p>يمكن إعادة <code>Observable</code>. Nest تشترك داخليًا وتأخذ آخر قيمة عند الاكتمال. عمق RxJS و <code>next.handle()</code> في فصل Interceptors. هنا يكفي أن التدفق المكتمل يعامل كنتيجة المعالج.</p>
+<p><code>@Header(&#39;Cache-Control&#39;, &#39;no-store&#39;)</code> يضبط رأسًا ثابتًا من غير الخروج إلى وضع المكتبة.</p>
+<p>معالج <code>async</code> يعيد Promise دائمًا. هذا مدعوم مباشرة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">return { id: &#39;m-2&#39; }     -&gt; JSON   و 201 إن كان POST
+return [&#39;جديد&#39;]          -&gt; JSON
+return 4                 -&gt; الجسم &quot;4&quot; من غير كائن JSON
+return &#39;ready&#39;           -&gt; الجسم ready
+return promise           -&gt; انتظر ثم القاعدة نفسها
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Header, Post } from &#39;@nestjs/common&#39;;
+import { MembersService } from &#39;./members.service.js&#39;;
+
+@Controller(&#39;members&#39;)
+export class MembersController {
+  constructor(private readonly members: MembersService) {}
+
+  @Get(&#39;count&#39;)
+  @Header(&#39;Cache-Control&#39;, &#39;no-store&#39;)
+  async count(): Promise&lt;number&gt; {
+    return this.members.count();
+  }
+
+  @Post()
+  create() {
+    return { id: &#39;m-2&#39;, name: &#39;هدى&#39; };
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li><code>count</code> عدد. Nest ترسل القيمة الأولية بعد انتظار الـ Promise، مع الرأس الثابت، ورمز 200.</li>
+<li><code>@Get(&#39;count&#39;)</code> مسار ثابت. لا معامل <code>:id</code> هنا حتى لا يحجب كلمة <code>count</code>.</li>
+<li><code>create</code> يعيد كائنًا على POST، فيخرج JSON برمز 201.</li>
+<li>الخدمة تملك العد والإنشاء. Controller يختار شكل القيمة المعادة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>بعد انتهاء الدالة، طبقة الاستجابة تفحص القيمة. المصفوفة والكائن يدخلان <code>json</code>. القيم الأولية تُرسل مباشرة. <code>@HttpCode</code> وافتراض POST يحددان الرمز قبل الكتابة. <code>@Header</code> يضيف الرؤوس المعلنة على المعالج.</p>
+<p>Interceptors على مسار العودة ترى هذه القيمة لأن الأسلوب القياسي ما زال شغالًا. تفاصيل ترتيبها في فصل Request Lifecycle. <code>@Res({ passthrough: true })</code> يبقي هذا المسار أيضًا، بينما <code>@Res()</code> وحده يوقفه.</p>
+<p>إن رمت الخدمة استثناءً غير ممسوك، لا تُسلسل قيمة نجاح. Exception Filter يكتب استجابة الخطأ.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get } from &#39;@nestjs/common&#39;;
+import { of, type Observable } from &#39;rxjs&#39;;
+import { MembersService } from &#39;./members.service.js&#39;;
+
+@Controller(&#39;members&#39;)
+export class MemberLabelsController {
+  constructor(private readonly members: MembersService) {}
+
+  @Get(&#39;labels&#39;)
+  labels(): Observable&lt;string[]&gt; {
+    return of(this.members.labels());
+  }
+
+  @Get(&#39;banner&#39;)
+  banner() {
+    return &#39;المكتبة مفتوحة&#39;;
+  }
+}
+</code></pre>
+<p><code>of</code> من RxJS يصدر المصفوفة ثم يكتمل. Nest تأخذ آخر إصدار وترسله JSON لأن المصفوفة كائن بالمعنى الذي يسلسله الإطار. <code>banner</code> نص يُكتب كما هو في الجسم. استيراد RxJS هنا ضيق؛ بناء تدفقات أوسع مؤجل إلى فصل Interceptors.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>توقع JSON لكائن عند <code>return &#39;ready&#39;</code></td>
+<td>النص يُرسل خامًا</td>
+</tr>
+<tr>
+<td><code>@Res()</code> ثم <code>return { id }</code> من غير passthrough</td>
+<td>الأسلوب القياسي متوقف على ذلك المسار</td>
+</tr>
+<tr>
+<td>افتراض 200 لـ <code>POST</code> الذي يعيد كائنًا</td>
+<td>الافتراضي 201</td>
+</tr>
+<tr>
+<td>إمساك كل الأخطاء بـ <code>try/catch</code> فارغ ثم <code>return null</code> كنجاح</td>
+<td>العميل يرى نجاحًا. الفشل الذي تريد تحويله يُرمى ليصل إلى Exception Filter</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>في مسارات REST التي تعيد JSON أو نصًا أو عددًا أو Promise لهذه الأشكال. هذا هو المسار الذي يوثّقه Nest كخيار موصى به.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يجب أن تكتب تدفق CSV أو تنهي الرد بأدوات المنصة فقط. ذلك <code>@Res()</code> من غير passthrough، وأنت ترسل الجسم. تحويل العنوان يبقى <code>@Redirect</code> وهو ما زال أسلوب Nest لا <code>res.redirect</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>القيمة المعادة</th>
+<th>الإرسال القياسي</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>كائن أو مصفوفة</td>
+<td>JSON</td>
+</tr>
+<tr>
+<td><code>string</code> / <code>number</code> / <code>boolean</code></td>
+<td>القيمة كما هي</td>
+</tr>
+<tr>
+<td><code>Promise</code></td>
+<td>انتظار ثم القاعدة على الناتج</td>
+</tr>
+<tr>
+<td><code>Observable</code> مكتمل</td>
+<td>آخر قيمة ثم القاعدة نفسها</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>ماذا يرسل <code>return { id: &#39;m-2&#39; }</code> من معالج <code>@Post</code> من غير <code>@HttpCode</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>JSON للكائن مع رمز 201.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>كيف تمنع تخزين <code>GET /members/count</code> من غير <code>@Res()</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>@Header(&#39;Cache-Control&#39;, &#39;no-store&#39;)</code> على المعالج، وأعد العدد. الأسلوب القياسي يبقى.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>labels</code> تعيد <code>Observable</code> يصدر <code>[&#39;جديد&#39;]</code> ثم يكتمل. ماذا يصل إلى العميل، ولماذا؟</p>
+<details><summary>الحل</summary>
+
+<p>Nest تشترك وتأخذ آخر قيمة، وهي المصفوفة، فترسلها JSON. التدفق الذي لا يكتمل لا ينهي هذه الخطوة. بناء التدفقات الأعقد في فصل Interceptors.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تُسلسل القيمة JSON؟</li>
+<li>ماذا يحدث لـ <code>async</code> يعيد <code>Promise&lt;number&gt;</code>؟</li>
+<li>أي Decorator رأس يبقى متوافقًا مع <code>return</code>؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>إعادة القيمة تترك Nest ترسل JSON للكائنات والمصفوفات، وترسل القيم الأولية كما هي، وتنتظر Promise وآخر قيمة في Observable. الرمز 200 أو 201 ما لم يغيّره <code>@HttpCode</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة تجمع مسارات هذا الفصل على موارد مختلفة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers (Standard approach): <a href="https://docs.nestjs.com/controllers#routing">https://docs.nestjs.com/controllers#routing</a></li>
+<li>NestJS — Asynchronicity: <a href="https://docs.nestjs.com/controllers#asynchronicity">https://docs.nestjs.com/controllers#asynchronicity</a></li>
+<li>NestJS — Response headers: <a href="https://docs.nestjs.com/controllers#response-headers">https://docs.nestjs.com/controllers#response-headers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>useValue</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="02-use-value.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>useValue</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل قيمة جاهزة خلف رمز: ثابت إعداد، كائن مكتبة بنيته أنت، أو مزيف يستبدل خدمة في الاختبار.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>ليست كل الاعتماديات أصنافًا يبنيها Nest. عنوان جاهز، أو عميل أنشأته في الاختبار، أو كائن <code>{ findAll: () =&gt; [] }</code> يغطي <code>BooksService</code>. <code>useClass</code> يستدعي <code>new</code> ويحل constructor. <code>useValue</code> يأخذ المرجع كما هو ويحقنه لمن يطلب الرمز.</p>
+<h2>الفكرة ببساطة</h2>
+<pre><code class="language-ts">{
+  provide: BooksService,
+  useValue: fakeBooks,
+}
+</code></pre>
+<p>أي <code>constructor(private readonly books: BooksService)</code> يستلم <code>fakeBooks</code>. الشكل البنيوي في TypeScript يكفي إن وُجدت الدوال التي تُستدعى. لا خطاف <code>onModuleInit</code> على كائن عادي لم يمر بصنف مسجّل.</p>
+<h2>التعريف التقني</h2>
+<p>من التوثيق، الاستبدال في الاختبار أو في وحدة تغطي التسجيل:</p>
+<pre><code class="language-ts">import { Module } from &#39;@nestjs/common&#39;;
+import { BooksService } from &#39;./books.service.js&#39;;
+
+const fakeBooks = {
+  findAll: () =&gt; [{ id: &#39;b1&#39;, title: &#39;مقدمة&#39; }],
+};
+
+@Module({
+  providers: [{ provide: BooksService, useValue: fakeBooks }],
+  exports: [BooksService],
+})
+export class BooksTestModule {}
+</code></pre>
+<p>ولقيمة ليست صنف خدمة:</p>
+<pre><code class="language-ts">import { connection } from &#39;./connection.js&#39;;
+
+@Module({
+  providers: [{ provide: &#39;CONNECTION&#39;, useValue: connection }],
+})
+export class AppModule {}
+</code></pre>
+<p>الحقن: <code>@Inject(&#39;CONNECTION&#39;) connection: Connection</code>. الرمز النصي يحتاج <code>@Inject</code> لأن المعامل بلا نوع يبقى رمزًا وقت التشغيل.</p>
+<p><code>useValue</code> لا يمر على اعتماديات الكائن. إن كان <code>fakeBooks</code> يحتاج Prisma فأنت تبنيه في الاختبار قبل التسجيل، أو تنتقل إلى <code>useFactory</code>.</p>
+<p>النطاق الافتراضي يشارك المرجع نفسه. تغيير حقل على المزيف يظهر لكل من حقنه في تلك الحاوية.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">أنت تبني القيمة -&gt; useValue -&gt; الحاوية تخزن المرجع
+المستهلك يطلب الرمز -&gt; المرجع نفسه
+</code></pre>
+<p>لا <code>new</code> من الإطار لهذا الرمز.</p>
+<h2>أبسط مثال</h2>
+<p><code>fakeBooks</code> أعلاه داخل <code>Test.createTestingModule({ providers: [...] })</code>. المتحكم الذي يحقن <code>BooksService</code> يستدعي <code>findAll</code> ويرى عنصرًا واحدًا من غير قاعدة. لا تسجل <code>BooksService</code> مرة ثانية كصنف في المصفوفة نفسها فتتنافس التسجيلات. آخر تسجيل للرمز هو ما تعتمده الحاوية حسب ترتيب البناء، فاجعل التغطية مقصودة في وحدة الاختبار.</p>
+<h2>شرح المثال</h2>
+<p>الكائن ليس <code>@Injectable</code>. الدالة <code>findAll</code> تطابق ما يناديه المتحكم في هذا الاختبار. أضف الدوال التي سيصل إليها المسار فقط. مزيف أوسع من الاستدعاء يخفي أن الاختبار لا يمر بتلك الدوال.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<ol>
+<li>الإطار يخزن المرجع في خريطة الرمز.</li>
+<li>عند بناء المستهلك يمرر المرجع إلى المعامل.</li>
+<li>لا يستدعي <code>onModuleInit</code> على الكائن العادي.</li>
+<li>إن كان الرمز صنفًا، التغطية تستبدل بناء ذلك الصنف في هذه الحاوية.</li>
+<li>التصدير يمرر الرمز كما في أي مزود.</li>
+<li>كائن قابل للتغيير مشترك. للاختبارات المتوازية في العملية نفسها ابنِ مزيفًا لكل <code>TestingModule</code>.</li>
+</ol>
+<h2>مثال عملي</h2>
+<p>خيارات ثابتة لاختبار مهلة:</p>
+<pre><code class="language-ts">export const MAIL_OPTIONS = Symbol(&#39;MAIL_OPTIONS&#39;);
+
+@Module({
+  providers: [
+    { provide: MAIL_OPTIONS, useValue: { timeoutMs: 5, from: &#39;test@shop.test&#39; } },
+  ],
+})
+export class MailTestModule {}
+</code></pre>
+<p>الخدمة <code>@Inject(MAIL_OPTIONS)</code>. لا تقرأ البيئة داخل الاختبار. أغلق عميلًا حقيقيًا وضعته بـ <code>useValue</code> في <code>afterAll</code> لأن الخطاف لن يراه.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>توقع حقن اعتماديات داخل كائن <code>useValue</code>.</li>
+<li>مزيف ناقص يرمي عند أول دالة لم تكتبها.</li>
+<li>مشاركة مزيف ذي حالة بين اختبارات.</li>
+<li>وضع سر إنتاج كـ <code>useValue</code> داخل مستودع.</li>
+<li>نسيان <code>@Inject</code> مع الرمز النصي أو <code>Symbol</code>.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>ثابت، كائن مكتبة مبني مسبقًا، أو مزيف اختبار شكله يطابق الاستدعاء.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>عندما يجب أن تبني الحاوية صنفًا وتعبئ constructor. استعمل <code>useClass</code>. عندما تتوقف القيمة على مزود آخر، استعمل <code>useFactory</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th></th>
+<th><code>useValue</code></th>
+<th><code>useClass</code></th>
+</tr>
+</thead>
+<tbody><tr>
+<td>البناء</td>
+<td>خارج الحاوية</td>
+<td>داخلها</td>
+</tr>
+<tr>
+<td>خطافات الصنف</td>
+<td>لا على الكائن العادي</td>
+<td>نعم إن طبّقها الصنف</td>
+</tr>
+<tr>
+<td>الاختبار</td>
+<td>مزيف سريع</td>
+<td>تنفيذ بديل كامل</td>
+</tr>
+<tr>
+<td>الاعتماديات</td>
+<td>تُجهَّز أنت</td>
+<td>تُحل تلقائيًا</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>من ينفذ <code>new</code> لقيمة <code>useValue</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>أنت قبل التسجيل، أو مكتبة أرجعت الكائن. الحاوية تخزن المرجع.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا <code>@Inject(&#39;CONNECTION&#39;)</code> واجب؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن الرمز ليس صنفًا يظهر في <code>design:paramtypes</code>. <code>@Inject</code> يمرر الرمز صراحة.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>مزيف <code>useValue</code> فتح مقبسًا. لماذا لا يكفي <code>enableShutdownHooks</code> لإغلاقه؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>الكائن ليس صنف مزود يطبّق <code>OnModuleDestroy</code>. أغلق المقبس في الاختبار أو غلف القيمة بخدمة لها خطاف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يستلم المستهلك؟</li>
+<li>هل تُستدعى خطافات على الكائن؟</li>
+<li>متى تفضّل مصنعًا على القيمة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>useValue</code> يضع مرجعًا جاهزًا خلف الرمز. مناسب للثابت والمزيف، وبلا بناء ولا خطافات إلا إذا غلفته بصنف.</p>
+<h2>ماذا بعد؟</h2>
+<p><code>useFactory</code>: بناء القيمة من مزودات تُحقن في الدالة.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Custom providers: <a href="https://docs.nestjs.com/fundamentals/custom-providers">https://docs.nestjs.com/fundamentals/custom-providers</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Headers</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-headers.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Headers</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>قراءة رؤوس الطلب الواردة بـ <code>@Headers</code>: رأس واحد أو المجموعة كلها.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>معرف التتبع ومفتاح المستودع يسافران في الرؤوس لأنهما بيانات عن الطلب، لا عن مورد الكتب في المسار ولا حقولًا في جسم الإعارة. قراءتها من <code>req.headers</code> داخل كل دالة تكرر الفهرس نفسه. <code>@Headers</code> يسمي الرأس عند الوسيط.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@Headers(&#39;x-warehouse&#39;)</code> يقرأ ذلك الرأس. <code>@Headers()</code> يقرأ الكائن. Node يخزن أسماء الرؤوس بأحرف صغيرة، فتبحث عن <code>x-warehouse</code> حتى لو أرسل العميل <code>X-Warehouse</code>.</p>
+<h2>التعريف التقني</h2>
+<p><code>@Headers(name)</code> يأخذ <code>req.headers[name]</code>. <code>@Headers()</code> يأخذ <code>req.headers</code>. القيمة <code>string</code> أو <code>string[]</code> عندما يتكرر الرأس. افحص النوع قبل استدعاء دوال النص.</p>
+<p>الرأس <code>authorization</code> يصل كما كتبه العميل، غالبًا <code>Bearer ...</code>. تحليل الهوية فصل Authentication. هنا نمرر النص إلى Service إن كانت العملية تحتاج إليه.</p>
+<p><code>@Header()</code> من غير s يكتب رأس استجابة ثابتًا على المعالج. هو أداة إخراج في الأسلوب القياسي، وموضعه الطبيعي مع إرجاع القيمة. هذا الدرس يقرأ المدخل.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">GET /warehouses/stock
+X-Warehouse: jeddah
+X-Request-Id: 8f2
+
+@Headers(&#39;x-warehouse&#39;) -&gt; &quot;jeddah&quot;
+@Headers(&#39;x-request-id&#39;) -&gt; &quot;8f2&quot;
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-ts">import { Controller, Get, Headers } from &#39;@nestjs/common&#39;;
+import { StockService } from &#39;./stock.service.js&#39;;
+
+@Controller(&#39;warehouses&#39;)
+export class StockController {
+  constructor(private readonly stock: StockService) {}
+
+  @Get(&#39;stock&#39;)
+  stockAt(@Headers(&#39;x-warehouse&#39;) warehouse?: string) {
+    return this.stock.list(warehouse);
+  }
+}
+</code></pre>
+<h2>شرح المثال</h2>
+<ul>
+<li>الاسم <code>x-warehouse</code> بالأحرف الصغيرة يطابق ما يخزنه Node.</li>
+<li>الغياب يعطي <code>undefined</code>. الخدمة ترفض الطلب أو تختار مستودعًا افتراضيًا بقاعدة ظاهرة.</li>
+<li>المسار <code>GET /warehouses/stock</code> ثابت. المستودع معلومة نقل لا جزءًا من مجموعة الرفوف في URL.</li>
+<li>إعادة قائمة الخدمة تُرسل JSON برمز 200.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>المحوّل يملأ <code>req.headers</code> قبل المعالج. Nest تقرأ المفتاح المطلوب. البحث حساس لحالة الأحرف في كائن JavaScript، لذلك <code>X-Warehouse</code> كمفتاح في <code>@Headers(&#39;X-Warehouse&#39;)</code> لا يجد القيمة بعد تصغير Node للاسم.</p>
+<p>بعض الرؤوس مصفوفة. <code>accept</code> قد يبقى نصًا واحدًا فيه فواصل، بينما رأسًا مكررًا قد يصل <code>string[]</code>. مرّر إلى الخدمة الشكل الذي وثّقته، أو خذ أول عنصر بعد أن تتأكد من النوع.</p>
+<h2>مثال عملي</h2>
+<pre><code class="language-ts">import { Controller, Get, Headers } from &#39;@nestjs/common&#39;;
+import { StockService } from &#39;./stock.service.js&#39;;
+
+@Controller(&#39;warehouses&#39;)
+export class StockTraceController {
+  constructor(private readonly stock: StockService) {}
+
+  @Get(&#39;movements&#39;)
+  movements(
+    @Headers(&#39;x-warehouse&#39;) warehouse: string,
+    @Headers(&#39;x-request-id&#39;) requestId: string | string[],
+  ) {
+    const trace = Array.isArray(requestId) ? requestId[0] : requestId;
+    return this.stock.movements(warehouse, trace);
+  }
+}
+</code></pre>
+<p><code>movements</code> تحتاج المستودع ورقم التتبع معًا. تحويل المصفوفة إلى نص يتم في المعالج لأنه تفصيل بروتوكول، ثم تتسلم الخدمة نصين.</p>
+<h2>أخطاء شائعة</h2>
+<table>
+<thead>
+<tr>
+<th>الخطأ</th>
+<th>الأثر</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Headers(&#39;X-Request-Id&#39;)</code> بالحالة الأصلية</td>
+<td>المفتاح غير موجود بعد تصغير Node للاسم</td>
+</tr>
+<tr>
+<td>معاملة كل رأس كـ <code>string</code></td>
+<td>رأس مكرر يرمي عند استدعاء <code>.slice</code> على مصفوفة</td>
+</tr>
+<tr>
+<td>تحليل <code>authorization</code> إلى مستخدم داخل Controller</td>
+<td>قاعدة الهوية تتوزع على المسارات قبل فصلها</td>
+</tr>
+<tr>
+<td>الخلط مع <code>@Header(&#39;Cache-Control&#39;, &#39;no-store&#39;)</code></td>
+<td>الأول يقرأ طلبًا، والثاني يثبت رأس استجابة</td>
+</tr>
+</tbody></table>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تكون المعلومة عن النقل أو السياق: مستودع، معرف طلب، لغة <code>accept-language</code>، مفتاح idempotency. اقرأ المفتاح الذي تحتاجه فقط.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتمرير ISBN أو رقم الصفحة. تلك <code>@Param</code> و <code>@Query</code> و <code>@Body</code>. ولكتابة <code>Cache-Control</code> على الاستجابة. تلك <code>@Header</code> مع إرجاع القيمة، أو <code>@Res</code> في درس Response Object.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>Decorator</th>
+<th>الاتجاه</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@Headers(&#39;x-warehouse&#39;)</code></td>
+<td>يقرأ رأس الطلب</td>
+</tr>
+<tr>
+<td><code>@Headers()</code></td>
+<td>كائن رؤوس الطلب</td>
+</tr>
+<tr>
+<td><code>@Header(&#39;Cache-Control&#39;, &#39;no-store&#39;)</code></td>
+<td>يثبت رأس استجابة على المعالج</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي سلسلة تمررها إلى <code>@Headers</code> لقراءة <code>X-Warehouse</code>؟</p>
+<details><summary>الحل</summary>
+
+<p><code>&#39;x-warehouse&#39;</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p><code>x-request-id</code> وصل مصفوفة من قيمتين. ماذا تفعل قبل تمريره إلى <code>movements</code>؟</p>
+<details><summary>الحل</summary>
+
+<p>تفحص <code>Array.isArray</code>. إن صدقت خذ عنصرًا موثّقًا، غالبًا الأول، ومرّر نصًا. استدعاء دوال النص على المصفوفة يفشل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يبقى <code>authorization</code> نصًا خامًا في هذا الفصل؟</p>
+<details><summary>الحل</summary>
+
+<p>الرأس مدخل بروتوكول. استخراج المستخدم والصلاحية قاعدة لاحقة في Authentication و Guards. Controller هنا يقرأ الرأس أو يمرره، ولا يبني جلسة من النص.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يعيد <code>@Headers()</code> بلا اسم؟</li>
+<li>لماذا تُكتب أسماء الرؤوس صغيرة في الـ Decorator؟</li>
+<li>أي Decorator يثبت رأسًا على الاستجابة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@Headers</code> يقرأ رؤوس الطلب بعد أن يصغّر Node أسماءها. القيمة قد تكون نصًا أو مصفوفة، ورأس الاستجابة الثابت يُكتب بـ <code>@Header</code>.</p>
+<h2>ماذا بعد؟</h2>
+<p>رموز الحالة والتحويل: Status Codes و Redirects.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Controllers (Request object): <a href="https://docs.nestjs.com/controllers#request-object">https://docs.nestjs.com/controllers#request-object</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

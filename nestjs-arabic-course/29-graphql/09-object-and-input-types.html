@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>@ObjectType و @Field و @InputType</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="09-object-and-input-types.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>@ObjectType و @Field و @InputType</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة صنف الخرج وصنف الدخل اللذين يولّد منهما code-first نوع <code>Book</code> ومدخل <code>CreateBookInput</code>.</p>
+<h2>المشكلة التي يحلها</h2>
+<p><code>@Query(() =&gt; Book)</code> بلا صنف مزين لا يعرف الحقول. إن مررت واجهة TypeScript فقط، التوليد لا يرى ما يُسلسَل. وإن استعملت كيان القاعدة كنوع GraphQL ظهر عمود لا يخص العميل.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>@ObjectType()</code> على صنف الرد. <code>@Field()</code> على كل ورقة تريدها في المخطط. <code>@InputType()</code> على صنف الحجج. أسماء الخصائص تصبح أسماء الحقول ما لم تغيّرها. الصنفان ملفان في مجلد الميزة، والمحلل يستقبلهما ويعيدهما.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">import { Field, ID, InputType, ObjectType } from &#39;@nestjs/graphql&#39;;
+
+@ObjectType()
+export class Book {
+  @Field(() =&gt; ID)
+  id: string;
+
+  @Field()
+  title: string;
+}
+
+@InputType()
+export class CreateBookInput {
+  @Field()
+  title: string;
+}
+</code></pre>
+<p><code>@Field()</code> بلا دالة يكفي لـ <code>String</code> و <code>Boolean</code> عندما يستطيع الانعكاس قراءة النوع. <code>ID</code> ليس نوع TypeScript، لذلك <code>() =&gt; ID</code>. المصفوفات تُكتب <code>() =&gt; [Book]</code>.</p>
+<p>خاصية بلا <code>@Field</code> لا تدخل المخطط في code-first. هذا هو مكان إخفاء <code>stockInternal</code> أو تجزئة كلمة المرور.</p>
+<p><code>@InputType()</code> لا يُستعمل مكان <code>@ObjectType()</code> في قيمة الإرجاع. الدرس 04 شرح الاتجاه في SDL. الزينة هنا هي الترجمة.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreateBookInput  --@Args--&gt;  service.create
+                                |
+Book  &lt;-- @Field id, title -----+
+</code></pre>
+<p>حقل على الصنف بلا زينة يبقى في الذاكرة ولا يسافر في GraphQL.</p>
+<h2>أبسط مثال</h2>
+<p>محلل الإنشاء يعيد صنف الخرج لا كائنًا مجهولًا فقط من أجل النوع:</p>
+<pre><code class="language-ts">@Mutation(() =&gt; Book)
+createBook(@Args(&#39;input&#39;) input: CreateBookInput) {
+  return this.books.create(input);
+}
+</code></pre>
+<p>الخدمة تعيد <code>{ id, title }</code> بشكل <code>Book</code>. بعد الإقلاع يظهر في <code>schema.gql</code> النوعان وحقل <code>createBook(input: CreateBookInput!): Book!</code>.</p>
+<h2>شرح المثال</h2>
+<p><code>title</code> على المدخل مطلوب لأن الخاصية ليست اختيارية ولم تضع <code>nullable: true</code> على <code>@Field</code>. على الخرج، <code>id</code> و <code>title</code> مطلوبان. إن أعادت الخدمة <code>title: undefined</code> فشل التنفيذ. املأ الحقول المعلنة أو أعلنها قابلة للغياب صراحة.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>مسح code-first يقرأ الزينة ويبني حقول SDL. أثناء الرد يقرأ Apollo الحقول المطلوبة من الكائن بالاسم. <code>@Field(() =&gt; ID)</code> لا يحوّل الرقم إلى معرف قاعدة. هو يعلن النوع. التحويل، إن لزم، في الخدمة. المدخل يصل كائنًا عاديًا بعد التحقق من المخطط. إن أضفت <code>class-validator</code> لاحقًا فذلك أنبوب على الحجة، وليس أثر <code>@Field</code> وحده.</p>
+<h2>مثال عملي</h2>
+<p>حالة الكتاب enum في TypeScript والزينة معًا:</p>
+<pre><code class="language-ts">import { registerEnumType } from &#39;@nestjs/graphql&#39;;
+
+export enum BookStatus {
+  DRAFT = &#39;DRAFT&#39;,
+  PUBLISHED = &#39;PUBLISHED&#39;,
+}
+
+registerEnumType(BookStatus, { name: &#39;BookStatus&#39; });
+</code></pre>
+<p>ثم <code>@Field(() =&gt; BookStatus) status: BookStatus</code> على <code>Book</code>. <code>registerEnumType</code> لازم لأن enum في TypeScript لا تلتقطه زينة الحقل وحدها كنوع GraphQL باسم مستقر. ضعه في ملف يُستورد عند إقلاع الوحدة.</p>
+<p>للتحديث الجزئي <code>@Field({ nullable: true }) title?: string</code> على <code>UpdateBookInput</code>. الغياب مسموح ويطابق درس المدخلات.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>كيان Prisma عليه <code>@ObjectType()</code> فيسري كل عمود أضفته للزينة بالخطأ.</li>
+<li>نسيان <code>registerEnumType</code> فيصبح النوع مبهمًا أو يفشل التوليد.</li>
+<li><code>@InputType()</code> على الصنف الذي يعيده <code>createBook</code>.</li>
+<li><code>@Field()</code> على دالة getter تكشف حقلًا محسوبًا ثقيلًا بلا <code>@ResolveField</code> يوضّح التكلفة.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>لكل نوع يراه عميل الكتالوج: خرج مستقل عن صف القاعدة، ودخل مستقل عن الخرج.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تزين كائن الإعداد أو كيان المستخدم الداخلي. الزينة عقد عام. ما لا يملك <code>@Field</code> يمكن أن يعيش على صنف آخر بلا <code>@ObjectType</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الزينة</th>
+<th>SDL الناتج</th>
+<th>اتجاه البيانات</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>@ObjectType</code> + <code>@Field</code></td>
+<td><code>type</code></td>
+<td>من الخادم</td>
+</tr>
+<tr>
+<td><code>@InputType</code> + <code>@Field</code></td>
+<td><code>input</code></td>
+<td>من العميل</td>
+</tr>
+<tr>
+<td><code>registerEnumType</code></td>
+<td><code>enum</code></td>
+<td>قيمة مغلقة</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>أي زينة تضع <code>id</code> في المخطط كـ <code>ID</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>@Field(() =&gt; ID)</code> على خاصية داخل <code>@ObjectType()</code>.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>خاصية <code>costPrice</code> بلا <code>@Field</code> على صنف <code>@ObjectType()</code>. هل يستطيع العميل طلبها؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. التوليد لا يراها، فالتحقق يرفض الحقل.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا لا تضع <code>@ObjectType()</code> على نموذج Prisma مباشرة في هذا المتجر؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لأن أعمدة التخزين ستميل إلى أن تصبح حقول واجهة. صنف <code>Book</code> يختار ما يُعرض، والخدمة تملأه من الصف.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>متى تكفي <code>@Field()</code> بلا <code>() =&gt; ...</code>؟</li>
+<li>ماذا يلزم قبل استخدام enum في حقل؟</li>
+<li>كيف تعلن عنوانًا اختياريًا في التحديث؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p><code>@ObjectType</code> للرد و <code>@InputType</code> للدخل و <code>@Field</code> لكل ورقة ظاهرة. إخفاء حقل يعني عدم تزيينه. enum يُسجَّل بالاسم.</p>
+<h2>ماذا بعد؟</h2>
+<p>حقل على <code>Book</code> لا يأتي من الكائن الأب وحده: <code>@ResolveField</code> لعلاقة المؤلف.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Resolvers: <a href="https://docs.nestjs.com/graphql/resolvers">https://docs.nestjs.com/graphql/resolvers</a></li>
+<li>NestJS — Quick start: <a href="https://docs.nestjs.com/graphql/quick-start">https://docs.nestjs.com/graphql/quick-start</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

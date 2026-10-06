@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>أسئلة مقابلات</title>
+<link rel="stylesheet" href="../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="INTERVIEW-QUESTIONS.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>أسئلة مقابلات</h1>
+<p>الجواب المتوقع يشرح السبب. الأسئلة 1–25 من المقدمة، و26–42 من بقية المسار.</p>
+<h2>المقدمة — HTTP و REST</h2>
+<ol>
+<li>لماذا نعيد التحقق على الخادم إذا كانت الواجهة تتحقق؟</li>
+<li>ما الذي يعرّف Client في محادثة واحدة؟ هل تستطيع عملية Nest أن تكون Client؟</li>
+<li>ما أجزاء Request، وما الذي يضيفه Status ولا يغني عنه حقل <code>error</code> داخل JSON؟</li>
+<li>ماذا يعني أن HTTP بروتوكول Stateless، وأين تعيش حالة المستخدم إذًا؟</li>
+<li>لماذا يُوصف <code>GET</code> بأنه safe، وماذا ينكسر إذا نشرنا كتابًا عبر <code>GET</code>؟</li>
+<li>ما الفرق العملي بين <code>PUT</code> و <code>PATCH</code> و <code>POST</code> عند التكرار؟</li>
+<li>متى تستخدم <code>401</code> ومتى تستخدم <code>403</code>؟</li>
+<li>لماذا لا يكفي إرجاع JSON لنسمي الواجهة REST؟</li>
+<li>ما الفرق بين المورد وتمثيله؟</li>
+<li>لماذا نوع TypeScript على جسم الطلب لا يحمي الإنتاج؟</li>
+</ol>
+<h2>المقدمة — Node و Express و Nest</h2>
+<ol start="11">
+<li>لماذا لا يسرّع <code>async/await</code> حلقة حساب طويلة على خيط JavaScript؟</li>
+<li>ما الفرق بين مكتبة تناديها وإطار يناديك؟ أين يقع Express، وأين تقع Nest؟</li>
+<li>ماذا يفعل <code>next()</code> في Express، وماذا يحدث إذا لم تُستدعَ ولم يُنهَ الرد؟</li>
+<li>لماذا <code>req</code> في Express ما زال كائن Node؟</li>
+<li>ما أعراض مشروع Express صارت المعمارية مشكلته لا التوجيه؟</li>
+<li>ما المشكلة التي تسميها صفحة Nest الأولى قبل Decorators؟</li>
+<li>ما الحزم الدنيا لمشروع Nest من غير CLI؟</li>
+<li>ماذا يستقبل <code>NestFactory.create</code>، وما المنصة الافتراضية تحته؟</li>
+<li>ما وظيفة HTTP Adapter، ولماذا بقي Express الافتراضي رغم حديث التوثيق عن سرعة Fastify؟</li>
+<li>ماذا يشترك مع Angular، وماذا لا ينتقل من الواجهة إلى الخادم؟</li>
+<li>ما الفرق بين Provider و Service في جملة واحدة؟</li>
+<li>لماذا تسجيل Controller في <code>@Module</code> شرط، ووجود الملف لا يكفي؟</li>
+<li>رتّب مسار الطلب الناجح: Pipe، Guard، Middleware، Interceptor قبل المتحكم، Controller.</li>
+<li>من أي مستوى يبدأ اختيار Exception Filter، وماذا يختلف استثناء Middleware؟</li>
+<li>لماذا تُرجع دالة المتحكم قيمة في الأسلوب القياسي بدل استدعاء <code>res.send</code>؟ ما رمز <code>POST</code> الافتراضي؟</li>
+</ol>
+<h2>من المسار الكامل</h2>
+<ol start="26">
+<li>لماذا تُغلَّف المزوّدات داخل الوحدة، وماذا يغيّر <code>exports</code>؟</li>
+<li>ما ترتيب Request Lifecycle حتى المتحكم، وكيف تُختار الفلاتر؟</li>
+<li>لماذا Interface لا تكفي لـ <code>ValidationPipe</code>؟ وماذا يضيف <code>StandardSchemaValidationPipe</code>؟</li>
+<li>ما الفرق بين Middleware و Guard و Pipe و Interceptor و Exception Filter؟</li>
+<li>لماذا <code>@Res()</code> بدون <code>passthrough</code> يغيّر من يكتب الرد؟</li>
+<li>ما النطاق الافتراضي للحقن، ولماذا <code>REQUEST</code> مكلف؟</li>
+<li>متى يكون <code>forwardRef</code> عرضًا لا علاجًا؟</li>
+<li>ماذا يُخزَّن بدل كلمة المرور، وأين يعيش سر التوقيع؟</li>
+<li>ما الفرق بين 401 و 403؟</li>
+<li>لماذا قائمة فارغة 200 لا 404؟</li>
+<li>كيف تمنع أثر الويب هوك المكرر؟</li>
+<li>لماذا لا تؤكد صفحة نجاح الدفع وحدها الاشتراك؟</li>
+<li>ما فرق الجلسة عن JWT من جهة الإبطال؟</li>
+<li>لماذا نمرر <code>bookId</code> إلى BullMQ لا كائن Prisma؟</li>
+<li>متى تبقى على مونوليث الوحدات بدل Microservices؟</li>
+<li>ما فرق liveness عن readiness؟</li>
+<li>ماذا تشغّل في الإنتاج: <code>start:dev</code> أم ناتج <code>dist</code>؟</li>
+</ol>
+<h2>أجوبة مختصرة للمراجعة</h2>
+<details>
+<summary>23 — الترتيب</summary>
+
+<p>Middleware، ثم Guard، ثم Interceptor قبل المتحكم، ثم Pipe، ثم Controller.</p>
+</details>
+
+<details>
+<summary>24 — الفلاتر</summary>
+
+<p>من Route ثم Controller ثم Global. استثناء Middleware تراه الفلاتر العامة فقط.</p>
+</details>
+
+<details>
+<summary>25 — الرد القياسي</summary>
+
+<p>Nest تكتب الحالة والجسم عندما تُرجع قيمة. الافتراضي <code>200</code>، و <code>POST</code> يستخدم <code>201</code> إلا إذا غيّرته بـ <code>@HttpCode</code>. الأسلوب الآخر حقن <code>@Res()</code> وهو library-specific ويُشرح في فصل Controllers.</p>
+</details>
+
+<details>
+<summary>26 — exports</summary>
+
+<p>المزوّد خاص بوحدته. <code>exports</code> يفتحه لمن يستورد الوحدة، مع مشاركة التسجيل نفسه.</p>
+</details>
+
+<details>
+<summary>27 — lifecycle</summary>
+
+<p>Middleware ثم Guard ثم Interceptor قبل المتحكم ثم Pipe ثم Controller. الفلاتر من المسار إلى المتحكم إلى العام. استثناء Middleware تراه الفلاتر العامة فقط.</p>
+</details>
+
+<details>
+<summary>28 — DTO</summary>
+
+<p>Interface تُمحى قبل التشغيل فلا يوجد ما يفحصه <code>ValidationPipe</code>. الصنف يبقى. <code>StandardSchemaValidationPipe</code> يفحص مخططات مثل Zod، ويمكن أن يعمل مع الأنبوب الأول.</p>
+</details>
+
+<details>
+<summary>31 — REQUEST</summary>
+
+<p>الافتراضي singleton. <code>REQUEST</code> نسخة لكل طلب، وأي singleton يحقنه يصير على النطاق نفسه، فيرتفع عدد الإنشاءات.</p>
+</details>
+
+<details>
+<summary>33 — كلمة المرور</summary>
+
+<p>يُخزَّن ناتج تجزئة بطيئة مخصصة لكلمات المرور. سر توقيع الرمز يعيش في الإعداد على الخادم، لا في المستودع ولا في الرد.</p>
+</details>
+
+<details>
+<summary>36 — تكرار الويب هوك</summary>
+
+<p>مفتاح تكرار من معرّف الحدث، مع حفظ الأثر مرة واحدة. التحقق من التوقيع على الجسم الخام قبل قراءة JSON.</p>
+</details>
+
+<details>
+<summary>42 — الإنتاج</summary>
+
+<p><code>npm run build</code> ثم تشغيل <code>dist</code>. <code>start:dev</code> يراقب الملفات ولا يناسب صورة الإنتاج.</p>
+</details>
+
+</article>
+</main>
+<script src="../assets/learn.js"></script>
+</body>
+</html>

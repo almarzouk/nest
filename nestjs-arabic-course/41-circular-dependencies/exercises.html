@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>تمارين الفصل</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="exercises.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>تمارين الفصل</h1>
+<h2>سهل</h2>
+<p>أين تضع <code>forwardRef</code> إن كانت <code>OrdersModule</code> و <code>BillingModule</code> تستورد كل منهما الأخرى، والخدمان لا تتبادلان الحقن؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>على <code>imports</code> في الوحدتين: <code>forwardRef(() =&gt; OtherModule)</code>. لا حاجة لغلاف الـ <code>constructor</code> إن كان الحقن في اتجاه واحد.</p>
+</details>
+
+<h2>متوسط</h2>
+<p>رسالة دورة ظهرت بعد إضافة <code>export * from &#39;./orders.service.js&#39;</code> في <code>index.ts</code> واستيراد الوحدة من <code>./index.js</code> داخل الخدمة. ماذا تصلح قبل أي غلاف؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>استورد <code>./orders.module.js</code> أو الملف المعني مباشرة. التوثيق يمنع برميلًا يُستورد من داخل مجلده. إن زالت الرسالة فالدورة كانت في التحميل.</p>
+</details>
+
+<h2>متقدم</h2>
+<p>ارسم حدودًا لدفع يحدث فاتورة ويحدّث طلبًا ويرجع الحالة في نفس <code>POST</code>. امنع الدورة، ولا تؤجل الناتج إلى حدث.</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>CheckoutModule</code> يستورد <code>BillingModule</code> و <code>OrdersModule</code> وينسق: يفتح الفاتورة، يحدّث الطلب، ويرجع الحالة. الورقتان لا تستوردان بعضهما ولا تستوردان المنسق. الناتج متزامن لأن النداءات في الدالة نفسها.</p>
+</details>
+
+<h2>سؤال من فصل النطاقات</h2>
+<p>لماذا لا تترك أحد طرفي <code>forwardRef</code> على <code>Scope.REQUEST</code>؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>التوثيق يحذر أن الدورات مع مزودات الطلب قد تعطي اعتمادًا <code>undefined</code>، وترتيب البناء غير محدد أصلًا.</p>
+</details>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

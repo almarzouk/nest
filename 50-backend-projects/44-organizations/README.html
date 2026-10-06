@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>44 — منظمات ودعوات</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="README.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>44 — منظمات ودعوات</h1>
+<p><strong>المستوى:</strong> إنتاج<br><strong>النوع:</strong> Backend فقط<br><strong>الأمر الذي تبدأ منه:</strong> <code>nest new organizations</code></p>
+<h2>ماذا تبني</h2>
+<p>شخص ينشئ منظمة فيصير مالكًا. يدعو بريدًا. القبول يضيف عضوًا. آخر مالك لا يُحذف.</p>
+<h2>لماذا هذا المشروع الآن</h2>
+<p>المنتج متعدد الزبائن يبدأ بالعضوية لا بالفاتورة.</p>
+<h2>ماذا ستتعلم</h2>
+<ul>
+<li>دعوة ذات عمر</li>
+<li>دور owner و member</li>
+<li>قاعدة آخر مالك</li>
+</ul>
+<h2>ما الذي لن تبنيه في هذا المشروع</h2>
+<ul>
+<li>دفع</li>
+<li>فرق داخل المنظمة</li>
+</ul>
+<h2>قبل أن تبدأ</h2>
+<p>الحسابات وعزل المستأجر.</p>
+<p>من الدورة: <a href="../../nestjs-arabic-course/60-saas-backend-architecture/README.html">60-saas-backend-architecture</a>.</p>
+<h2>قواعد العمل</h2>
+<ul>
+<li>منشئ المنظمة owner.</li>
+<li>الدعوة تنتهي بعد 7 أيام.</li>
+<li>قبول دعوة منتهية 409.</li>
+<li>حذف آخر owner 409.</li>
+<li>العضو يرى منظمته فقط.</li>
+</ul>
+<h2>عقد HTTP</h2>
+<table>
+<thead>
+<tr>
+<th>الطريقة</th>
+<th>المسار</th>
+<th>الرمز</th>
+<th>ماذا يفعل</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>POST</code></td>
+<td><code>/organizations</code></td>
+<td>201</td>
+<td>ينشئ ويملّك</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/organizations/:id/invites</code></td>
+<td>201</td>
+<td>للمالك</td>
+</tr>
+<tr>
+<td><code>POST</code></td>
+<td><code>/invites/:token/accept</code></td>
+<td>200</td>
+<td>يضيف العضو</td>
+</tr>
+</tbody></table>
+<p>القائمة الفارغة <code>200</code> بجسم <code>[]</code> أو غلاف بيانات، لا <code>404</code>. الإنشاء <code>201</code>. الغائب <code>404</code>. التعارض <code>409</code>. الدخل الرديء <code>400</code>.</p>
+<h2>من الصفر</h2>
+<ol>
+<li>أنشئ مجلدًا فارغًا خارج هذا الدليل التعليمي، ثم نفّذ <code>nest new organizations</code>. اختر ESM عندما يسأل Nest CLI.</li>
+<li>لا تنسخ <code>node_modules</code> إلى مجلد الدليل. هذا المجلد للشرح، والكود يعيش في مشروعك.</li>
+<li>أبقِ <code>AppModule</code> جذرًا يسجّل وحدة الميزة. لا تضع القاعدة داخل <code>main.ts</code>.</li>
+<li>ابنِ بالترتيب الموجود تحت «خطوات البناء». لا تقفز إلى آخر مسار قبل أن يعمل الأول.</li>
+</ol>
+<h2>خطوات البناء</h2>
+<ol>
+<li>الرمز العشوائي للدعوة يُخزَّن هاشًا أو يُعرض مرة. اختر العرض مرة إن كان الرابط سرًا.</li>
+<li>القبول يتحقق من البريد المطابق لحساب الداخل.</li>
+<li>عدّ المالكين قبل الحذف.</li>
+</ol>
+<h2>شكل مقترح</h2>
+<pre><code class="language-text">src/organizations/organizations.service.ts
+src/invites/invites.service.ts
+</code></pre>
+<h2>أصغر قطعة تبدأ منها</h2>
+<pre><code class="language-ts">if (owners === 1 &amp;&amp; target.role === &quot;owner&quot;) {
+  throw new ConflictException(&quot;last owner&quot;);
+}
+</code></pre>
+<p>هذه القطعة بداية لا مشروعًا مكتملًا. أكمل القواعد والمسارات بنفسك، ثم ارجع إلى العقد في الأعلى.</p>
+<h2>أخطاء تظهر هنا كثيرًا</h2>
+<ul>
+<li>دعوة بلا انتهاء.</li>
+<li>قبول أي شخص يحمل الرابط حتى لو اختلف البريد. قرر واربط البريد.</li>
+<li>حذف المالك الأخير فتصير منظمة بلا مسؤول.</li>
+</ul>
+<h2>ينتهي المشروع عندما</h2>
+<ul>
+<li>مسار الدعوة والقبول يعمل.</li>
+<li>آخر مالك محمي.</li>
+<li>غير العضو 404 على موارد المنظمة.</li>
+</ul>
+<h2>تمديد بعد الانتهاء</h2>
+<p>أضف إلغاء الدعوة قبل القبول.</p>
+<h2>كيف نبنيه معًا</h2>
+<p>عندما تقول «ابدأ المشروع 44» نفتح مشروع Nest فارغًا وننفّذ خطوة واحدة في كل مرة: مسار، ثم قاعدة، ثم خطأ متوقع، ثم اختبارًا صغيرًا إن كان الفصل قد وصل إليه. لا نلصق الحل كاملًا قبل أن ترى الطلب يفشل للسبب الصحيح.</p>
+<h2>الجوار</h2>
+<ul>
+<li>السابق: <a href="../43-tenant-pool/README.html">43. عزل المستأجر في كل استعلام</a></li>
+<li>التالي: <a href="../45-subscriptions/README.html">45. خطط واشتراك</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Structured Logging</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="03-structured-logging.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>Structured Logging</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>كتابة كل سطر JSON بحقول ثابتة: المستوى، والوقت، والسياق، والرسالة، ومعرفات مثل <code>bookId</code> لا نصًا ملتصقًا.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>البحث عن الكتاب 42 في نص <code>published book 42 after isbn 978...</code> هش. مجمع السجلات يفلتر على حقل. نص حر يتغير مع صياغة الجملة فيضيع التنبيه. الحقول الثابتة تبقى عندما تعيد صياغة العربية أو الإنجليزية في الرسالة.</p>
+<h2>الفكرة ببساطة</h2>
+<p><code>write</code> يطبع <code>JSON.stringify</code> لكائن واحد في السطر. الرسالة للإنسان. المعرفات حقول. لا تضع الكائن كله إن كان فيه سر. المستوى أسماء ثابتة: <code>log</code> و <code>warn</code> و <code>error</code> و <code>debug</code> و <code>fatal</code>.</p>
+<h2>التعريف التقني</h2>
+<pre><code class="language-ts">private write(level: string, message: unknown, context?: string, stack?: string, extra?: Record&lt;string, string&gt;) {
+  const line = {
+    level,
+    time: new Date().toISOString(),
+    context: context ?? null,
+    message: typeof message === &#39;string&#39; ? message : &#39;non-string message&#39;,
+    ...extra,
+    stack,
+  };
+  process.stdout.write(`${JSON.stringify(line)}\n`);
+}
+</code></pre>
+<p>الخدمة لا تبني JSON بيدها. تستدعي واجهة صغيرة على مسجّلك أو تمرر كائنًا يفهمه غلاف حول <code>Logger</code>. إن بقي <code>Logger</code> الافتراضي، يمكن تسجيل رسالة قصيرة مع الإبقاء على المعرف في بداية ثابتة <code>bookId=42</code> كحل مؤقت. الهدف في الإنتاج حقول.</p>
+<p>مثال نداء:</p>
+<pre><code class="language-ts">this.logger.log({ message: &#39;published&#39;, bookId });
+</code></pre>
+<p>إن كان تنفيذك يمرر الكائن إلى <code>write</code> كما في <code>message</code>، فكّكه: إن كان كائنًا فيه <code>message</code> فخذ بقية المفاتيح إلى <code>extra</code> بعد حذف أي مفتاح اسمه <code>authorization</code> أو <code>token</code> أو <code>password</code>.</p>
+<p>قائمة ممنوع دخولها الحقول: كلمة المرور، <code>ISBN_TOKEN</code>، ترويسة <code>Authorization</code>، جسم بطاقة، ومحتوى ملف الغلاف.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">سطر واحد
+  level time context message
+  bookId أو isbn أو jobId
+بلا أسرار
+</code></pre>
+<h2>أبسط مثال</h2>
+<pre><code class="language-json">{&quot;level&quot;:&quot;log&quot;,&quot;time&quot;:&quot;2026-10-05T06:00:00.000Z&quot;,&quot;context&quot;:&quot;BooksService&quot;,&quot;message&quot;:&quot;published&quot;,&quot;bookId&quot;:&quot;42&quot;}
+</code></pre>
+<p>التنبيه في المجمع: <code>level=error</code> و <code>context=IsbnService</code>. لا بحث عن كلمة «فشل» العربية والإنجليزية معًا.</p>
+<h2>شرح المثال</h2>
+<p><code>time</code> بصيغة ISO حتى يرتب المجمع الأحداث. <code>bookId</code> حقل لا جزء من <code>message</code>. تغيير الجملة من <code>published</code> إلى <code>book published</code> لا يكسر لوحة تراقب <code>bookId</code>. <code>stack</code> يظهر في الخطأ فقط حتى لا تتضخم أسطر <code>log</code>.</p>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>كل نداء يسلسل كائنًا ويكتب سطرًا مع <code>\n</code>. المجمع يقرأ stdout سطرًا سطرًا. كسر السطر داخل <code>message</code> يفسد التقسيم، لذلك استبدل الأسطر الجديدة أو اترك المكدس في حقل <code>stack</code> المهرّب داخل JSON فيبقى سطرًا واحدًا. <code>JSON.stringify</code> يهريب <code>\n</code> في القيم. لا تطبع ثم تلحق المكدس خارج الكائن كما في المسجّل النصي السابق.</p>
+<p>حجم السطر: لا تلحق مصفوفة كل كتب الصفحة. المعرف والعدد يكفي: <code>{ message: &#39;list&#39;, count: 20 }</code>.</p>
+<h2>مثال عملي</h2>
+<p>فشل الناشر:</p>
+<pre><code class="language-json">{&quot;level&quot;:&quot;error&quot;,&quot;context&quot;:&quot;IsbnService&quot;,&quot;message&quot;:&quot;upstream failed&quot;,&quot;isbn&quot;:&quot;9780000000001&quot;,&quot;status&quot;:502}
+</code></pre>
+<p>بلا <code>headers</code> وبلا <code>responseBody</code>. رمز HTTP الخارجي في <code>status</code> يكفي لمعرفة أن الخريطة أنتجت <code>502</code> واردًا. المهلة:</p>
+<pre><code class="language-json">{&quot;level&quot;:&quot;error&quot;,&quot;message&quot;:&quot;isbn timed out&quot;,&quot;isbn&quot;:&quot;9780000000001&quot;,&quot;code&quot;:&quot;ECONNABORTED&quot;}
+</code></pre>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>جملة عربية فيها المعرف الوحيد.</li>
+<li>لصق <code>JSON.stringify(axiosError)</code> في <code>message</code>.</li>
+<li>عدة أسطر غير مهرّبة لحدث واحد.</li>
+<li>حقل <code>password</code> من جسم <code>POST</code> «للتصحيح».</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>عندما تُشحن السجلات إلى مجمع. في التمرين المحلي النص المقروء مقبول، والشكل نفسه يسهّل التعود على الحقول.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لتسجيل كل استعلام Prisma مع المعاملات. الضجيج يخفي <code>error</code>. فعّل ذلك مؤقتًا على <code>debug</code> لا على <code>log</code>.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>الشكل</th>
+<th>البحث عن كتاب 42</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>نص <code>published 42</code></td>
+<td>هش</td>
+</tr>
+<tr>
+<td>JSON فيه <code>bookId</code></td>
+<td>حقل مساوٍ</td>
+</tr>
+<tr>
+<td>كائن Axios كامل</td>
+<td>تسريب وبحث بلا داعٍ</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>لماذا المعرف حقل لا كلمة في الجملة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يبقى الفلتر ثابتًا عندما تتغير صياغة الرسالة.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>ماذا تضع لفشل ISBN بدل جسم الرد؟</p>
+<details>
+<summary>الحل</summary>
+
+<p><code>isbn</code> و <code>code</code> أو <code>status</code> و <code>message</code> ثابتة. بلا ترويسات وبلا جسم.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p>لماذا يُهرَّب المكدس داخل JSON لا يُطبع بعده؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>حتى يبقى الحدث سطرًا واحدًا يقرأه المجمع. سطر ثانٍ يُحسب حدثًا آخر.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>أي حقول دنيا في كل سطر؟</li>
+<li>أي مفاتيح تُحذف إن وصلت في الكائن؟</li>
+<li>لماذا العدد أفضل من قائمة كاملة؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>سطر JSON بحقول ثابتة ومعرفات. الرسالة للإنسان والأسرار لا تدخل السطر. المكدس حقل لا حدث ثانٍ.</p>
+<h2>ماذا بعد؟</h2>
+<p>سطر لكل طلب HTTP: الطريقة والمسار والرمز والمدة، من غير الجسم السري.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li>NestJS — Logger: <a href="https://docs.nestjs.com/techniques/logger">https://docs.nestjs.com/techniques/logger</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

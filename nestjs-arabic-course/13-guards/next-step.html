@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>التمهيد للفصل التالي</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="next-step.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>التمهيد للفصل التالي</h1>
+<p>الحارس يقرر قبل أن تُستدعى الدالة. بعد آخر <code>true</code> لا يلتف على القيمة التي ترجعها الخدمة. قياس الزمن وتغليف <code>{ data }</code> وتغيير الخطأ على طريق العودة تحتاج طبقة ترى ما قبل <code>handle</code> وما بعده.</p>
+<p>الفصل <code>14-interceptors</code> يبدأ بحد أدنى من RxJS لأن <code>next.handle()</code> ترجع <code>Observable</code>. من غير تلك الصفحة تبدو <code>pipe</code> و <code>map</code> و <code>tap</code> زينة بلا معنى. ثم تعريف المعترض و <code>NestInterceptor</code> وفرق الكود الذي قبل <code>handle</code> عن الكود الذي داخل <code>pipe</code> بعد أن يصدر المعالج قيمة.</p>
+<p>الترتيب هناك غير ترتيب الحراس على طريق الرجوع: الداخل عام ثم متحكم ثم مسار، والخارج يعكس لأن المراقبات تُلف أول داخل وآخر خارج.</p>
+<p>ما لا تنتقل به إلى المعترض: قرار <code>401</code> و <code>403</code> يبقى في <code>canActivate</code>. المعترض الذي يمنع الطلب بتجاهل <code>handle</code> ممكن للتخزين المؤقت كما سترى، وهو استثناء موثّق لا بديل عن البوابة.</p>
+<p>افتح <a href="../14-interceptors/README.html"><code>14-interceptors</code></a> من ملف RxJS أولًا، لا من ملف التسجيل.</p>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>

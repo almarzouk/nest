@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>استخدام الأسلوبين معًا</title>
+<link rel="stylesheet" href="../../assets/learn.css" />
+</head>
+<body class="learn-page" data-learn="lesson" data-md="08-classes-and-schemas-together.md">
+<div id="learn-root"></div>
+<main>
+<article>
+<h1>استخدام الأسلوبين معًا</h1>
+<h2>الهدف من هذا الدرس</h2>
+<p>تسجيل <code>ValidationPipe</code> و <code>StandardSchemaValidationPipe</code> في التطبيق نفسه، كل واحد على ما يخصه.</p>
+<h2>المشكلة التي يحلها</h2>
+<p>نصف المسارات أصناف مزيّنة تعمل اليوم، ونصفها الجديد مخططات. إعادة كتابة الكل دفعة واحدة تكسر عقودًا مستقرة. إبقاء أنبوب واحد يجعل النصف الآخر بلا فحص.</p>
+<h2>الفكرة ببساطة</h2>
+<p>الأنبوبان عامّان معًا. أنبوب الأصناف يفحص <code>metatype</code> الذي هو صنف عليه زينة. أنبوب المخططات يفحص المعامل الذي يعلن <code>schema</code>. كل واحد يمرر ما لا يفهمه. <code>class-validator</code> ليست مهملة في توثيق Nest الحالي.</p>
+<h2>التعريف التقني</h2>
+<p>صفحة التحقق تقول إن الأنبوبين يُسجَّلان في الوقت نفسه. <code>ValidationPipe</code> يتحقق من معاملات موصوفة بصنف فقط. <code>StandardSchemaValidationPipe</code> يتحقق من معاملات تعلن مخططًا فقط. لذلك يمكن تبني المخططات تدريجيًا في تطبيق قائم.</p>
+<pre><code class="language-ts">import { StandardSchemaValidationPipe, ValidationPipe } from &#39;@nestjs/common&#39;;
+
+app.useGlobalPipes(
+  new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }),
+  new StandardSchemaValidationPipe(),
+);
+</code></pre>
+<p>مسار الصنف:</p>
+<pre><code class="language-ts">@Post(&#39;members&#39;)
+create(@Body() dto: CreateMemberDto): CreateMemberDto {
+  return dto;
+}
+</code></pre>
+<p>مسار المخطط:</p>
+<pre><code class="language-ts">@Post(&#39;reservations&#39;)
+reserve(@Body({ schema: reserveSchema }) dto: ReserveInput): ReserveInput {
+  return dto;
+}
+</code></pre>
+<p>لا تضع <code>@IsInt()</code> و <code>z.number()</code> على عملية واحدة. المصدر واحد حتى لا تفترق القاعدتان.</p>
+<p>ترتيب الأنابيب العامة هو ترتيب التسجيل، ثم بقية مستويات الربط من دورة الطلب. المعامل الذي بلا مخطط وبلا صنف مفحوص، مثل <code>string</code> أصلي، يمر من الاثنين. حلّله بـ <code>Parse*</code> إن لزم.</p>
+<p><code>class-validator</code> و <code>class-transformer</code> تبقيان اعتماد إنتاج لمسارات الأصناف. إضافة <code>zod</code> لا تحذفهما من <code>package.json</code> ما دامت تلك المسارات قائمة.</p>
+<p>أدوات الاشتقاق تبقى كل في أسلوبها: <code>PartialType</code> للأصناف، و <code>.partial()</code> لمخطط Zod. لا تشتق صنف تحديث من مخطط ولا العكس في العملية نفسها.</p>
+<h2>Mental Model</h2>
+<pre><code class="language-text">CreateMemberDto     → ValidationPipe يفحص، أنبوب المخطط يمر
+reserveSchema       → أنبوب المخطط يفحص، أنبوب الصنف يمر
+@param string       → الاثنان يمران
+</code></pre>
+<h2>أبسط مثال</h2>
+<p>الصالة تُبقي <code>CreateMemberDto</code> لتسجيل العضو كما كُتب في فصل DTO. الحجوزات الجديدة على <code>reserveSchema</code>. الإقلاع يسجّل الأنبوبين كما في الأعلى. طلب عضو بحقل <code>role</code> يرفضه <code>forbidNonWhitelisted</code>. طلب حجز بمفتاح زائد يتبع سلوك <code>z.object</code> أو <code>z.strictObject</code> الذي اخترته في المخطط، لا خيار التبييض.</p>
+<h2>شرح المثال</h2>
+<ul>
+<li>خيارا التبييض على أنبوب الأصناف فقط.</li>
+<li><code>transform: true</code> على أنبوب الأصناف يسلّم نسخة <code>CreateMemberDto</code>. أنبوب المخطط سلّم مخرج Zod افتراضيًا من غير هذا السطر.</li>
+<li><code>@Body()</code> بلا خيار <code>schema</code> لا يوقظ أنبوب المخطط.</li>
+<li><code>@Body({ schema })</code> لا يوقظ زينة <code>class-validator</code> لأن النوع المشتق ليس صنف الزينة.</li>
+</ul>
+<h2>ماذا يحدث داخليًا؟</h2>
+<p>عند الطلب يمشي كل أنبوب عام بالترتيب. الأول إن رأى صنفًا مزيّنًا يفحصه وقد يستبدل القيمة. الثاني إن رأى مخططًا على المعامل يفحصه وقد يستبدل القيمة بمخرج المخطط. إن رمى الأول توقفت الدورة قبل الثاني. لذلك مصدر واحد لكل معامل يمنع رفضًا مزدوجًا أو قبولًا من طرف ورفضًا من طرف.</p>
+<p>المعامل الذي يمر من الاثنين يصل إلى أنابيب المعامل مثل <code>ParseIntPipe</code> حسب ترتيب الدورة: العام ثم المتحكم ثم المسار ثم المعاملات من الأخير إلى الأول.</p>
+<p>لا علامة إهمال على <code>ValidationPipe</code> في الصفحة. القسم يقدّم الأنبوبين كاختيارين لمكان القواعد.</p>
+<h2>مثال عملي</h2>
+<p>خطة الترحيل لأربعة أسابيع: الأسبوع الأول تسجيل الأنبوبين واختبار أن <code>POST /members</code> ما زال <code>400</code> على بريد تالف. الأسبوع الثاني مسار <code>POST /reservations</code> فقط على Zod. لا نقل لـ <code>PATCH /members</code> في الأسبوع نفسه. اختبار تكامل لكل مسار يثبت أنبوبه: عضو بلا <code>schema</code> في الزينة، حجز بلا زينة <code>class-validator</code>.</p>
+<h2>أخطاء شائعة</h2>
+<ul>
+<li>حذف <code>class-validator</code> يوم إضافة Zod.</li>
+<li>وضع <code>schema</code> و نوع صنف مزيّن على المعامل نفسه فتتنافس القاعدتان.</li>
+<li>توقع <code>whitelist</code> على مخطط. اكتب <code>strictObject</code> أو اقبل الإسقاط الافتراضي لـ <code>z.object</code>.</li>
+<li>أنبوب مخطط فقط ثم الدهشة أن <code>CreateMemberDto</code> صار يقبل أي جسم.</li>
+</ul>
+<h2>متى نستخدمه؟</h2>
+<p>في التطبيق الذي يملك عقود أصناف عاملة ويضيف عمليات بالمخططات، أو العكس، من غير يوم هدم.</p>
+<h2>متى لا نستخدمه؟</h2>
+<p>لا تسجّل الأنبوبين لتغطية عملية واحدة مرتين. ولا تؤجل فحصًا لأن «الأسلوب الآخر سيأتي». كل مسار عامل له أنبوب يقرأ مصدره اليوم.</p>
+<h2>مقارنة</h2>
+<table>
+<thead>
+<tr>
+<th>العملية</th>
+<th>المصدر</th>
+<th>الأنبوب الذي يرفض</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>تسجيل عضو</td>
+<td><code>CreateMemberDto</code></td>
+<td><code>ValidationPipe</code></td>
+</tr>
+<tr>
+<td>حجز بمخطط</td>
+<td><code>reserveSchema</code></td>
+<td><code>StandardSchemaValidationPipe</code></td>
+</tr>
+<tr>
+<td><code>page</code> عدد في المسار</td>
+<td>نص مسار</td>
+<td><code>ParseIntPipe</code> أو <code>coerce</code> داخل مخطط الاستعلام</td>
+</tr>
+</tbody></table>
+<h2>تمارين</h2>
+<h3>تمرين سهل</h3>
+<p>هل إضافة Zod تلغي فحص الأصناف المزيّنة؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>لا. <code>class-validator</code> و <code>ValidationPipe</code> يبقيان لمسارات الأصناف. الصفحة تعرض الأسلوبين معًا.</p>
+</details>
+
+<h3>تمرين متوسط</h3>
+<p>لماذا يمر <code>CreateMemberDto</code> من <code>StandardSchemaValidationPipe</code> العام بلا فحص مخطط؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>المعامل لا يعلن <code>schema</code>. ذلك الأنبوب يفحص من يعلن مخططًا فقط.</p>
+</details>
+
+<h3>تمرين متقدم</h3>
+<p><code>POST /reservations</code> عليه <code>@Body({ schema: reserveSchema })</code> والنوع في TypeScript هو صنف قديم عليه <code>@IsInt()</code>. ما الخطر، وما التوحيد الذي تختاره؟</p>
+<details>
+<summary>الحل</summary>
+
+<p>قاعدتان قد تفترقان: طول أو حد أدنى في مكان دون الآخر. اختر المخطط وحدّث النوع بـ <code>z.infer</code>، أو اختر الصنف واحذف <code>schema</code>. لا تُبقِ الاثنين على العملية نفسها.</p>
+</details>
+
+<h2>أسئلة مراجعة</h2>
+<ul>
+<li>ماذا يفحص كل أنبوب حين يكونان عامين؟</li>
+<li>هل <code>class-validator</code> مهملة؟</li>
+<li>أين يُكتب رفض المفتاح الزائد لكل أسلوب؟</li>
+<li>لماذا مصدر حقيقة واحد لكل عملية؟</li>
+</ul>
+<h2>الخلاصة</h2>
+<p>الأنبوبان يتعايشان لأن كل واحد يتجاهل ما لا يخصه. الأصناف المزيّنة تبقى مسارًا أولًا مدعومًا. المخططات تُضاف على المعاملات التي تعلن <code>schema</code>. العملية الواحدة لا تحمل القاعدتين معًا.</p>
+<h2>ماذا بعد؟</h2>
+<p>أمثلة الفصل تجمع التبييض والتحويل والمخطط على الصالة، ثم التمارين، ثم الحراس: من يُسمح له بتجاوز المسار بعد أن صار الشكل مفهومًا.</p>
+<h2>المصادر الرسمية</h2>
+<ul>
+<li><a href="https://docs.nestjs.com/application/validation">Validation</a></li>
+<li><a href="https://docs.nestjs.com/pipes">Pipes</a></li>
+</ul>
+
+</article>
+</main>
+<script src="../../assets/learn.js"></script>
+</body>
+</html>
