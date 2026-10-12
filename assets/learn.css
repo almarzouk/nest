@@ -1,16 +1,21 @@
+@import url("https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap");
+
 html:has(body.learn-page) { scroll-behavior: smooth; }
 
 body.learn-page {
-  --bg: #f6f4f1;
-  --paper: #fffcf8;
+  --bg: #f3efe6;
+  --paper: #fffaf3;
   --ink: #1c1916;
-  --muted: #7d776f;
-  --line: #e7e1d8;
+  --muted: #7a736a;
+  --line: #e4d9cc;
   --accent: #7c3f36;
-  --soft: #f3ebe7;
+  --soft: #f6efe6;
   --code: #1a1816;
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(920px 480px at 100% -10%, rgba(124, 63, 54, 0.1), transparent 58%),
+    radial-gradient(640px 360px at 0% 0%, rgba(28, 25, 22, 0.04), transparent 50%);
   color: var(--ink);
   font-family: "IBM Plex Sans Arabic", "Geeza Pro", "SF Arabic", "Segoe UI", Tahoma, sans-serif;
   line-height: 1.85;
@@ -25,7 +30,7 @@ body.learn-page #learn-root { min-height: 58px; background: var(--bg); }
   position: sticky;
   top: 0;
   z-index: 30;
-  background: rgba(246, 244, 241, 0.88);
+  background: rgba(243, 239, 230, 0.9);
   color: var(--ink);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(16px);
@@ -48,12 +53,14 @@ body.learn-page #learn-root { min-height: 58px; background: var(--bg); }
   white-space: nowrap;
 }
 .learn-brand i {
-  width: 7px;
-  height: 7px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
-  background: var(--accent);
+  background: transparent;
+  border: 2px solid var(--accent);
   display: block;
   font-style: normal;
+  box-sizing: border-box;
 }
 .learn-crumb {
   flex: 1;
@@ -199,19 +206,23 @@ body.learn-page article {
   padding: 8px 0 0;
   max-width: 40rem;
 }
-.learn-kicker { margin: 0 0 10px; color: var(--accent); font-size: 13px; }
+.learn-kicker { margin: 0 0 10px; color: var(--accent); font-size: 13px; font-weight: 600; }
 body.learn-page article h1 {
-  font-size: 40px;
-  line-height: 1.3;
+  font-family: Amiri, "Geeza Pro", serif;
+  font-size: 48px;
+  line-height: 1.25;
   margin: 0 0 16px;
-  font-weight: 650;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
+body.learn-page article h1 + p { font-size: 1.12rem; color: #3c342c; }
 body.learn-page article h2 {
-  font-size: 22px;
+  font-family: Amiri, "Geeza Pro", serif;
+  font-size: 28px;
   margin: 42px 0 8px;
   border: 0;
   padding: 0;
-  font-weight: 650;
+  font-weight: 700;
 }
 body.learn-page article h2 ~ h2 { border: 0; padding: 0; }
 body.learn-page article h3 { font-size: 18px; margin: 26px 0 8px; font-weight: 650; }
@@ -223,6 +234,8 @@ body.learn-page article code {
   background: var(--soft);
   padding: 0 5px;
   border-radius: 4px;
+  unicode-bidi: isolate;
+  direction: ltr;
 }
 body.learn-page article pre {
   background: var(--code);
@@ -281,7 +294,7 @@ body.learn-page article summary { cursor: pointer; font-weight: 650; }
 }
 .learn-finish p { margin: 0; }
 .finish-kicker { color: var(--muted); font-size: 13px; }
-.finish-next { color: var(--ink); font-size: 18px; margin-top: 4px; }
+.finish-next { color: var(--ink); font-family: Amiri, "Geeza Pro", serif; font-size: 26px; margin-top: 4px; font-weight: 700; }
 .learn-finish .row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
 .finish-btn {
   font: inherit;

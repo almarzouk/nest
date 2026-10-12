@@ -5,18 +5,34 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>الفهرس الكامل — من الصفر إلى المقابلة</title>
 <style>
-  :root { --bg:#f6f4f1; --ink:#1c1916; --muted:#7d776f; --line:#e7e1d8; --accent:#7c3f36; --soft:#f3ebe7; }
+  @import url("https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap");
+  :root { --bg:#f3efe6; --ink:#1c1916; --muted:#7a736a; --line:#e4d9cc; --accent:#7c3f36; --soft:#f6efe6; --paper:#fffaf3; }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
-  body { margin:0; font-family:"IBM Plex Sans Arabic","Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif; background:var(--bg); color:var(--ink); line-height:1.75; -webkit-font-smoothing:antialiased; }
+  body {
+    margin:0;
+    font-family:"IBM Plex Sans Arabic","Geeza Pro","SF Arabic","Segoe UI",Tahoma,sans-serif;
+    background-color:var(--bg);
+    background-image:
+      radial-gradient(920px 520px at 100% -8%, rgba(124,63,54,.12), transparent 58%),
+      radial-gradient(640px 380px at -8% 12%, rgba(28,25,22,.05), transparent 52%);
+    color:var(--ink);
+    line-height:1.75;
+    -webkit-font-smoothing:antialiased;
+  }
   a { color:var(--accent); }
   header, main { width:min(1080px, calc(100% - 40px)); margin:0 auto; }
-  header { padding:72px 0 8px; }
-  h1 { font-size:52px; line-height:1.25; margin:0 0 12px; font-weight:650; }
-  h2 { font-size:28px; margin:0 0 18px; font-weight:650; }
+  header.cover { padding:84px 0 12px; }
+  .eyebrow { margin:0 0 18px; color:var(--accent); font-weight:600; letter-spacing:.02em; }
+  .eyebrow::before { content:""; display:inline-block; width:9px; height:9px; margin-inline-end:8px; border:2px solid var(--accent); border-radius:50%; transform:translateY(1px); }
+  h1 { font-family:Amiri, "Geeza Pro", serif; font-size:clamp(52px, 8vw, 84px); line-height:1.15; margin:0 0 18px; font-weight:700; letter-spacing:-.02em; }
+  h1 em { font-style:italic; font-weight:400; color:var(--accent); }
+  .lede { font-size:20px; line-height:1.7; max-width:28rem; color:#3c342c; }
+  .facts { color:var(--muted); font-size:14px; margin-top:18px; }
+  h2 { font-family:Amiri, "Geeza Pro", serif; font-size:34px; margin:0 0 18px; font-weight:700; letter-spacing:-.02em; }
   p { margin:0 0 10px; }
   .muted { color:var(--muted); }
-  nav { position:sticky; top:0; z-index:5; background:rgba(246,244,241,.9); border-bottom:1px solid var(--line); backdrop-filter:blur(16px); }
+  nav { position:sticky; top:0; z-index:5; background:rgba(243,239,230,.9); border-bottom:1px solid var(--line); backdrop-filter:blur(16px); }
   nav ul { width:min(1080px, calc(100% - 40px)); margin:0 auto; padding:14px 0 4px; list-style:none; display:flex; gap:22px; flex-wrap:wrap; }
   nav a { text-decoration:none; color:var(--ink); border:0; padding:6px 0; background:transparent; transition:color 180ms ease; }
   nav a:hover { color:var(--accent); }
@@ -25,8 +41,8 @@
   .step { background:transparent; border:0; border-inline-start:1px solid var(--line); padding:28px 22px 26px; text-decoration:none; color:inherit; display:block; min-height:0; transition:background 180ms ease; }
   .step:first-child { border-inline-start:0; }
   .step:hover { background:rgba(255,252,248,.7); }
-  .step b { display:block; color:var(--muted); font-size:13px; font-weight:500; }
-  .step strong { display:block; font-size:30px; margin:8px 0 6px; font-weight:650; }
+  .step b { display:block; color:var(--accent); font-size:13px; font-weight:600; }
+  .step strong { display:block; font-family:Amiri, "Geeza Pro", serif; font-size:36px; margin:8px 0 6px; font-weight:700; }
   .step .door-stat { display:block; margin-top:16px; color:var(--accent); font-size:13px; font-variant-numeric:tabular-nums; text-align:right; }
   .tools { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:8px 0 18px; }
   input, button { font:inherit; border:0; background:transparent; color:var(--ink); padding:8px 12px; }
@@ -38,9 +54,10 @@
   .refs { display:flex; flex-wrap:wrap; gap:8px 18px; }
   .refs a { background:transparent; border:0; text-decoration:none; color:var(--ink); padding:4px 0; border-bottom:1px solid transparent; }
   .refs a:hover { border-bottom-color:var(--accent); color:var(--accent); }
-  details.block { background:transparent; border:0; border-bottom:1px solid var(--line); margin:0; padding:14px 0; }
+  details.block { background:transparent; border:0; border-bottom:1px solid var(--line); margin:0; padding:16px 0; }
+  details.block[open] { background:linear-gradient(180deg, rgba(255,250,243,.72), transparent 120px); }
   summary { cursor:pointer; display:flex; gap:12px; align-items:baseline; flex-wrap:wrap; }
-  summary b { font-size:18px; font-weight:650; }
+  summary b { font-family:Amiri, "Geeza Pro", serif; font-size:24px; font-weight:700; }
   summary em, summary span { color:var(--muted); font-style:normal; font-size:13px; }
   ol { margin:10px 0 4px; padding:0 18px 0 0; }
   ol a { text-decoration:none; color:var(--ink); }
@@ -66,6 +83,7 @@
   a.is-done { background:transparent; }
   ol a.is-done { color:var(--muted); }
   ol a.is-done span::after { content:" · تم"; color:var(--accent); font-weight:650; }
+  .colophon { margin:8px 0 72px; color:var(--muted); font-family:Amiri, "Geeza Pro", serif; font-size:22px; font-style:italic; }
   @media (max-width:800px) {
     h1 { font-size:36px; }
     header { padding-top:40px; }
@@ -82,10 +100,11 @@
 </style>
 </head>
 <body data-learn="index">
-<header>
-  <p class="muted">فهرس واحد. الترتيب: الدورة من الصفر، ثم المشاريع، ثم المقابلة.</p>
-  <h1>من أول درس حتى مقابلة العمل</h1>
-  <p>69 فصلًا، 722 درسًا، 50 مشروعًا. كل رابط يفتح صفحة HTML، وملف Markdown الأصلي يبقى بجانب الصفحة.</p>
+<header class="cover">
+  <p class="eyebrow">المسار</p>
+  <h1>من أول درس<br><em>حتى باب المقابلة.</em></h1>
+  <p class="lede">اجلس لدرس واحد. علّم مكانك. عد غدًا من الشريط نفسه.</p>
+  <p class="facts"><bdi dir="ltr">69</bdi> فصلًا · <bdi dir="ltr">722</bdi> درسًا · <bdi dir="ltr">50</bdi> مشروعًا</p>
 </header>
 <nav>
   <ul>
@@ -99,7 +118,7 @@
 </nav>
 <main>
 <section id="start">
-  <h2>ثلاثة أبواب بالترتيب</h2>
+  <h2>الطريق له ثلاثة أبواب</h2>
   <div class="path">
     <a class="step" href="nestjs-arabic-course/00-introduction/01-what-is-backend.html">
       <b>أولًا</b>
@@ -120,7 +139,7 @@
 </section>
 
 <section id="refs">
-  <h2>مراجع تفتحها عند الحاجة</h2>
+  <h2>أوراق بجانب الدفتر</h2>
   <div class="refs">
     <a href="nestjs-arabic-course/README.html">مدخل الدورة</a>
     <a href="nestjs-arabic-course/ROADMAP.html">خريطة الفصول</a>
@@ -137,8 +156,8 @@
 </section>
 
 <section id="course">
-  <h2>الدورة من الفصل 00</h2>
-  <p class="muted">افتح الفصل. الدروس داخله مرتبة. ابحث بالاسم إن عدت إلى موضوع بعينه.</p>
+  <h2>الفصول، من الصفر</h2>
+  <p class="muted">افتح فصلًا واحدًا. الباقي ينتظر مكانه.</p>
   <div class="tools">
     <input id="q" type="search" placeholder="ابحث في فصل أو درس أو مشروع" />
     <button type="button" data-filter="all" class="on">الكل</button>
@@ -830,7 +849,7 @@
 </section>
 
 <section id="interview">
-  <h2>المقابلة بعد المادة</h2>
+  <h2>وحين يشتد العود</h2>
   <div class="cards">
     <article class="card">
       <h2>تدريب emvion</h2>
@@ -849,6 +868,7 @@
     </article>
   </div>
 </section>
+<p class="colophon">كُتب ليُقرأ ببطء. الأسماء التقنية تبقى كما في التوثيق.</p>
 </main>
 <script>
 const q = document.getElementById("q");
